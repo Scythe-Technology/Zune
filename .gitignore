@@ -1,0 +1,20 @@
+# Zig build artifacts
+.zig-cache/
+zig-out/
+
+# MacOs Directory
+**/.DS_Store
+
+**/**.luac
+**/**.gz
+
+# Vscode
+.vscode/
+# Zed
+.zed/
+# Neovim
+.nvim.lua
+.nvimrc
+.nvim/
+# Emacs
+.dir-locals.el

@@ -1,0 +1,485 @@
+const std = @import("std");
+const json = @import("../libraries/json.zig");
+
+const zune = @import("../zune.zig");
+const command = @import("lib.zig");
+
+const file = @import("../core/resolvers/file.zig");
+
+const typedef = struct {
+    name: []const u8,
+    content: []const u8,
+};
+
+const typedefs = &[_]typedef{
+    typedef{ .name = "core/fs", .content = @embedFile("../types/core/fs.luau.gz") },
+    typedef{ .name = "core/net", .content = @embedFile("../types/core/net.luau.gz") },
+    typedef{ .name = "core/task", .content = @embedFile("../types/core/task.luau.gz") },
+    typedef{ .name = "core/luau", .content = @embedFile("../types/core/luau.luau.gz") },
+    typedef{ .name = "core/serde", .content = @embedFile("../types/core/serde.luau.gz") },
+    typedef{ .name = "core/stdio", .content = @embedFile("../types/core/stdio.luau.gz") },
+    typedef{ .name = "core/process", .content = @embedFile("../types/core/process.luau.gz") },
+    typedef{ .name = "core/testing", .content = @embedFile("../types/core/testing.luau.gz") },
+};
+const luaudefs = &[_]typedef{
+    typedef{ .name = "global/zune", .content = @embedFile("../types/global/zune.d.luau.gz") },
+};
+
+const SetupInfo = struct {
+    cwd: std.fs.Dir,
+    args: []const []const u8,
+    home: []const u8,
+};
+
+const SetupMap = std.StaticStringMap(*const fn (allocator: std.mem.Allocator, setupInfo: SetupInfo) anyerror!void).initComptime(.{
+    .{ "vscode", setupVscode },
+    .{ "nvim", setupNeovim },
+    .{ "emacs", setupEmacs },
+    .{ "zed", setupZed },
+});
+
+fn setupVscode(allocator: std.mem.Allocator, setupInfo: SetupInfo) !void {
+    const vscode = ".vscode";
+
+    const LUAU_LSP_REQUIRE_MODE = "luau-lsp.require.mode";
+    const LUAU_LSP_DEFINITION_FILES = "luau-lsp.types.definitionFiles";
+    const LUAU_LSP_DIRECTORY_ALIASES = "luau-lsp.require.directoryAliases";
+
+    const cwd = setupInfo.cwd;
+
+    cwd.makeDir(vscode) catch |err| switch (err) {
+        error.PathAlreadyExists => {},
+        else => return err,
+    };
+
+    const settings = try std.fs.path.resolve(allocator, &.{ vscode, "settings.json" });
+    defer allocator.free(settings);
+
+    // Load .vscode/settings.json file
+    //   Exists -> Read
+    //   Does not exists -> Create
+    const settingsFile = settings: {
+        break :settings cwd.openFile(settings, .{ .mode = .read_only }) catch |err| switch (err) {
+            error.FileNotFound => {
+                try cwd.writeFile(std.fs.Dir.WriteFileOptions{
+                    .sub_path = settings,
+                    .data = "{}",
+                });
+                break :settings try cwd.openFile(settings, .{ .mode = .read_only });
+            },
+            else => return err,
+        };
+    };
+    defer settingsFile.close();
+
+    // Read settings.json
+    const settingsContent = try settingsFile.readToEndAlloc(allocator, std.math.maxInt(usize));
+    defer allocator.free(settingsContent);
+
+    // Parse settings.json
+    const settingsValue = json.parse(allocator, settingsContent) catch |err| switch (err) {
+        error.ParseValueError => {
+            std.debug.print("Failed to parse settings.json\n", .{});
+            return;
+        },
+        else => return err,
+    };
+    defer settingsValue.deinit(allocator);
+
+    const settingsObject = settingsValue.object();
+
+    // Get Values of luau-lsp.require.mode and luau-lsp.require.directoryAliases
+    const directoryAliases = settingsObject.getOrNull(LUAU_LSP_DIRECTORY_ALIASES) orelse try json.newObject(allocator);
+    const definitionFiles = settingsObject.getOrNull(LUAU_LSP_DEFINITION_FILES) orelse try json.newArray(allocator);
+    const requireMode = settingsObject.getOrNull(LUAU_LSP_REQUIRE_MODE);
+    if (requireMode == null) {
+        // Set luau-lsp.require.mode to relativeToFile if it does not exist
+        if (try json.setObject(settingsObject, LUAU_LSP_REQUIRE_MODE, try json.newString(allocator, "relativeToFile"))) |value| value.deinit(allocator);
+    }
+    // Set luau-lsp.require.directoryAliases to Json Object
+    if (try json.setObject(settingsObject, LUAU_LSP_DIRECTORY_ALIASES, directoryAliases)) |value| value.deinit(allocator);
+    const directoryAliasesObject = directoryAliases.object();
+    // Set @zcore/ to ~/.zune/typedefs
+    if (try json.setObject(directoryAliasesObject, "@zcore/", try json.newString(allocator, "~/.zune/typedefs/core"))) |value| value.deinit(allocator);
+
+    // Set luau-lsp.types.definitionFiles to Json Object
+    if (try json.setObject(settingsObject, LUAU_LSP_DEFINITION_FILES, definitionFiles)) |value| value.deinit(allocator);
+    const definitionFilesArray = definitionFiles.array();
+    for (luaudefs) |typeFile| {
+        const fileName = try std.mem.join(allocator, "", &.{ typeFile.name, ".d.luau" });
+        defer allocator.free(fileName);
+        const defPath = try std.fs.path.resolve(allocator, &.{ setupInfo.home, ".zune/typedefs/", fileName });
+        defer allocator.free(defPath);
+        var exists = false;
+        for (definitionFilesArray.items()) |value| {
+            if (value.value == null) continue;
+            if (value.type != .string) continue;
+            const str = value.string();
+            if (std.mem.eql(u8, str, defPath)) {
+                exists = true;
+                break;
+            }
+        }
+        if (exists) continue;
+        try definitionFilesArray.array.append(try json.newString(allocator, defPath));
+    }
+
+    // Serialize settings.json
+    const serializedSettings = try json.serializePretty(allocator, settingsValue, json.INDENTS.SPACES_2);
+    defer allocator.free(serializedSettings);
+
+    // Write settings.json
+    try cwd.writeFile(std.fs.Dir.WriteFileOptions{
+        .sub_path = settings,
+        .data = serializedSettings,
+    });
+    std.debug.print(
+        \\Saved configuration to '{s}'
+        \\{{
+        \\  "luau-lsp.require.mode": "relativeToFile",
+        \\  "luau-lsp.require.directoryAliases": {{
+        \\    "@zcore/": "~/.zune/typedefs/core"
+        \\  }},
+        \\  "luau-lsp.types.definitionFiles": [
+        \\    "{s}/.zune/typedefs/global/zune.d.luau"
+        \\  ]
+        \\}}
+        \\
+    , .{ settings, setupInfo.home });
+}
+
+fn setupZed(allocator: std.mem.Allocator, setupInfo: SetupInfo) !void {
+    const zed = ".zed";
+
+    const cwd = setupInfo.cwd;
+
+    cwd.makeDir(zed) catch |err| switch (err) {
+        error.PathAlreadyExists => {},
+        else => return err,
+    };
+
+    const settings = try std.fs.path.resolve(allocator, &.{ zed, "settings.json" });
+    defer allocator.free(settings);
+
+    // Load .zed/settings.json file
+    //   Exists -> Read
+    //   Does not exists -> Create
+    const settingsFile = settings: {
+        break :settings cwd.openFile(settings, .{ .mode = .read_only }) catch |err| switch (err) {
+            error.FileNotFound => {
+                try cwd.writeFile(std.fs.Dir.WriteFileOptions{
+                    .sub_path = settings,
+                    .data = "{}",
+                });
+                break :settings try cwd.openFile(settings, .{ .mode = .read_only });
+            },
+            else => return err,
+        };
+    };
+    defer settingsFile.close();
+
+    // Read settings.json
+    const settingsContent = try settingsFile.readToEndAlloc(allocator, std.math.maxInt(usize));
+    defer allocator.free(settingsContent);
+
+    // Parse settings.json
+    const settingsValue = json.parse(allocator, settingsContent) catch |err| switch (err) {
+        error.ParseValueError => {
+            std.debug.print("Failed to parse settings.json\n", .{});
+            return;
+        },
+        else => return err,
+    };
+    defer settingsValue.deinit(allocator);
+
+    const settingsObject = settingsValue.object();
+
+    // Get Values of luau-lsp.require.mode and luau-lsp.require.directoryAliases
+    const lsp = settingsObject.getOrNull("lsp") orelse try json.newObject(allocator);
+    if (try json.setObject(settingsObject, "lsp", lsp)) |value| value.deinit(allocator);
+    const lspObject = lsp.object();
+
+    const luau_lsp_ext = lspObject.getOrNull("luau-lsp") orelse try json.newObject(allocator);
+    if (try json.setObject(lspObject, "luau-lsp", luau_lsp_ext)) |value| value.deinit(allocator);
+    const luau_lsp_extObject = luau_lsp_ext.object();
+
+    const lsp_settings = luau_lsp_extObject.getOrNull("settings") orelse try json.newObject(allocator);
+    if (try json.setObject(luau_lsp_extObject, "settings", lsp_settings)) |value| value.deinit(allocator);
+    const lsp_settingsObject = lsp_settings.object();
+
+    const luau_lsp_native = lsp_settingsObject.getOrNull("luau-lsp") orelse try json.newObject(allocator);
+    if (try json.setObject(lsp_settingsObject, "luau-lsp", luau_lsp_native)) |value| value.deinit(allocator);
+    const luau_lsp_nativeObject = luau_lsp_native.object();
+
+    const luau_lsp_require = luau_lsp_nativeObject.getOrNull("require") orelse try json.newObject(allocator);
+    if (try json.setObject(luau_lsp_nativeObject, "require", luau_lsp_require)) |value| value.deinit(allocator);
+    const luau_lsp_requireObject = luau_lsp_require.object();
+
+    const requireMode = luau_lsp_requireObject.getOrNull("mode");
+    if (requireMode == null) {
+        // Set luau-lsp.require.mode to relativeToFile if it does not exist
+        if (try json.setObject(luau_lsp_requireObject, "mode", try json.newString(allocator, "relativeToFile"))) |value| value.deinit(allocator);
+    }
+
+    // Set luau-lsp.require.directoryAliases to Json Object
+    const directoryAliases = luau_lsp_requireObject.getOrNull("directoryAliases") orelse try json.newObject(allocator);
+    if (try json.setObject(luau_lsp_requireObject, "directoryAliases", directoryAliases)) |value| value.deinit(allocator);
+    const directoryAliasesObject = directoryAliases.object();
+    // Set @zcore/ to ~/.zune/typedefs
+    if (try json.setObject(directoryAliasesObject, "@zcore/", try json.newString(allocator, "~/.zune/typedefs/core"))) |value| value.deinit(allocator);
+
+    const luau_ext = lsp_settingsObject.getOrNull("ext") orelse try json.newObject(allocator);
+    if (try json.setObject(lsp_settingsObject, "ext", luau_ext)) |value| value.deinit(allocator);
+    const luau_extObject = luau_ext.object();
+
+    const definitionFiles = luau_extObject.getOrNull("definitions") orelse try json.newArray(allocator);
+    if (try json.setObject(luau_extObject, "definitions", definitionFiles)) |value| value.deinit(allocator);
+    const definitionFilesArray = definitionFiles.array();
+    for (luaudefs) |typeFile| {
+        const fileName = try std.mem.join(allocator, "", &.{ typeFile.name, ".d.luau" });
+        defer allocator.free(fileName);
+        const defPath = try std.fs.path.resolve(allocator, &.{ setupInfo.home, ".zune/typedefs/", fileName });
+        defer allocator.free(defPath);
+        var exists = false;
+        for (definitionFilesArray.items()) |value| {
+            if (value.value == null) continue;
+            if (value.type != .string) continue;
+            const str = value.string();
+            if (std.mem.eql(u8, str, defPath)) {
+                exists = true;
+                break;
+            }
+        }
+        if (exists) continue;
+        try definitionFilesArray.array.append(try json.newString(allocator, defPath));
+    }
+
+    // Serialize settings.json
+    const serializedSettings = try json.serializePretty(allocator, settingsValue, json.INDENTS.SPACES_2);
+    defer allocator.free(serializedSettings);
+
+    // Write settings.json
+    try cwd.writeFile(std.fs.Dir.WriteFileOptions{
+        .sub_path = settings,
+        .data = serializedSettings,
+    });
+    std.debug.print(
+        \\Saved configuration to '{s}'
+        \\{{
+        \\  "lsp": {{
+        \\    "luau-lsp": {{
+        \\      "settings": {{
+        \\        "luau-lsp": {{
+        \\          "require": {{
+        \\            "mode": "relativeToFile",
+        \\            "directoryAliases": {{
+        \\              "@zcore/": "~/.zune/typedefs/core"
+        \\            }}
+        \\          }}
+        \\        }},
+        \\        "ext": {{
+        \\          "definitions": [
+        \\            "{s}/.zune/typedefs/global/zune.d.luau"
+        \\          ]
+        \\        }}
+        \\      }}
+        \\    }}
+        \\  }}
+        \\}}
+        \\
+    , .{ settings, setupInfo.home });
+}
+
+fn setupNeovim(allocator: std.mem.Allocator, setupInfo: SetupInfo) !void {
+    const cwd = setupInfo.cwd;
+
+    const settings = try std.fs.path.resolve(allocator, &.{".nvim.lua"});
+    defer allocator.free(settings);
+
+    const configInfo = try std.fmt.allocPrint(allocator,
+        \\require("luau-lsp").config {{
+        \\  types = {{
+        \\    definition_files = {{
+        \\      "{s}/.zune/typedefs/global/zune.d.luau"
+        \\    }},
+        \\  }},
+        \\  server = {{
+        \\    settings = {{
+        \\      ["luau-lsp"] = {{
+        \\        require = {{
+        \\          mode = "relativeToFile",
+        \\          directoryAliases = {{
+        \\            ["@zcore/"] = "~/.zune/typedefs/core",
+        \\          }},
+        \\        }},
+        \\      }},
+        \\    }},
+        \\  }},
+        \\}}
+        \\
+    , .{setupInfo.home});
+
+    // Load .nvim.lua file
+    //   Exists -> Cancel, print settings instead
+    //   Does not exists -> Create
+    const settingsFile = cwd.openFile(settings, .{ .mode = .read_only }) catch |err| switch (err) {
+        error.FileNotFound => {
+            try cwd.writeFile(std.fs.Dir.WriteFileOptions{
+                .sub_path = settings,
+                .data = configInfo,
+            });
+            std.debug.print(
+                \\Saved configuration to '{s}'
+                \\ - configuration based on https://github.com/lopi-py/luau-lsp.nvim
+                \\{s}
+                \\
+            , .{ settings, configInfo });
+            return;
+        },
+        else => return err,
+    };
+    defer settingsFile.close();
+
+    std.debug.print(
+        \\Copy and paste the configuration below to '{s}'
+        \\ - configuration based on https://github.com/lopi-py/luau-lsp.nvim
+        \\{s}
+        \\
+    , .{ settings, configInfo });
+}
+
+fn setupEmacs(allocator: std.mem.Allocator, setupInfo: SetupInfo) !void {
+    const cwd = setupInfo.cwd;
+
+    const settings = try std.fs.path.resolve(allocator, &.{".dir-locals.el"});
+    defer allocator.free(settings);
+
+    const configInfo = try std.fmt.allocPrint(allocator,
+        \\((nil . ((eglot-workspace-configuration
+        \\  . (:luau-lsp (:require
+        \\                (:mode "relativeToFile"
+        \\                 :directoryAliases (:@zune/ "~/.zune/typedefs/core/")))))
+        \\  (eglot-luau-custom-type-files . ("{s}/.zune/typedefs/global/zune.d.luau")))))
+        \\
+    , .{setupInfo.home});
+
+    // Load .dir-locals.el file
+    //   Exists -> Cancel, print settings instead
+    //   Does not exists -> Create
+    const settingsFile = cwd.openFile(settings, .{ .mode = .read_only }) catch |err| switch (err) {
+        error.FileNotFound => {
+            try cwd.writeFile(std.fs.Dir.WriteFileOptions{
+                .sub_path = settings,
+                .data = configInfo,
+            });
+            std.debug.print(
+                \\Saved configuration to '{s}'
+                \\ - configuration based on https://github.com/kennethloeffler/eglot-luau
+                \\{s}
+                \\
+            , .{ settings, configInfo });
+            return;
+        },
+        else => return err,
+    };
+    defer settingsFile.close();
+
+    std.debug.print(
+        \\Copy and paste the configuration below to '{s}'
+        \\ - configuration based on https://github.com/kennethloeffler/eglot-luau
+        \\{s}
+        \\
+    , .{ settings, configInfo });
+}
+
+const USAGE = "Usage: setup <nvim | zed | vscode | emacs>\n";
+fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const arenaAllocator = arena.allocator();
+
+    const envMap = try arenaAllocator.create(std.process.EnvMap);
+    envMap.* = try std.process.getEnvMap(arenaAllocator);
+    defer envMap.deinit();
+
+    const cwd = std.fs.cwd();
+
+    const HOME = envMap.get("HOME") orelse std.debug.panic("Failed to setup, $HOME variable not found", .{});
+
+    const path = try std.fs.path.resolve(arenaAllocator, &.{ HOME, ".zune/typedefs" });
+    defer arenaAllocator.free(path);
+
+    std.debug.print("Setting up zune in {s}\n", .{path});
+    {
+        const core_dir = try std.fs.path.resolve(arenaAllocator, &.{ path, "core" });
+        defer arenaAllocator.free(core_dir);
+        cwd.makePath(core_dir) catch |err| switch (err) {
+            error.PathAlreadyExists => {},
+            else => return err,
+        };
+    }
+
+    {
+        const global_dir = try std.fs.path.resolve(arenaAllocator, &.{ path, "global" });
+        defer arenaAllocator.free(global_dir);
+        cwd.makePath(global_dir) catch |err| switch (err) {
+            error.PathAlreadyExists => {},
+            else => return err,
+        };
+    }
+
+    for (typedefs) |typeFile| {
+        const fileName = try std.mem.join(arenaAllocator, "", &.{ typeFile.name, ".luau" });
+        defer arenaAllocator.free(fileName);
+        const typePath = try std.fs.path.resolve(arenaAllocator, &.{ path, fileName });
+        defer arenaAllocator.free(typePath);
+
+        var contentStream = std.io.fixedBufferStream(typeFile.content);
+        var decompressed = std.ArrayList(u8).init(arenaAllocator);
+        defer decompressed.deinit();
+
+        try std.compress.gzip.decompress(contentStream.reader(), decompressed.writer());
+
+        try cwd.writeFile(std.fs.Dir.WriteFileOptions{
+            .sub_path = typePath,
+            .data = decompressed.items,
+        });
+    }
+    for (luaudefs) |typeFile| {
+        const fileName = try std.mem.join(arenaAllocator, "", &.{ typeFile.name, ".d.luau" });
+        defer arenaAllocator.free(fileName);
+        const typePath = try std.fs.path.resolve(arenaAllocator, &.{ path, fileName });
+        defer arenaAllocator.free(typePath);
+
+        var contentStream = std.io.fixedBufferStream(typeFile.content);
+        var decompressed = std.ArrayList(u8).init(arenaAllocator);
+        defer decompressed.deinit();
+
+        try std.compress.gzip.decompress(contentStream.reader(), decompressed.writer());
+
+        try cwd.writeFile(std.fs.Dir.WriteFileOptions{
+            .sub_path = typePath,
+            .data = decompressed.items,
+        });
+    }
+
+    if (args.len > 0) {
+        var out: [6]u8 = undefined;
+        if (args[0].len > 6) {
+            std.debug.print("Unknown configuration (input too large)\n", .{});
+            return;
+        }
+        if (SetupMap.get(std.ascii.lowerString(&out, args[0]))) |configuration| {
+            try configuration(arenaAllocator, .{
+                .cwd = cwd,
+                .args = args,
+                .home = HOME,
+            });
+        } else std.debug.print(USAGE, .{});
+    } else {
+        std.debug.print("Setup complete, configuration: <none>\n", .{});
+        std.debug.print("  For configuration -> {s}", .{USAGE});
+    }
+}
+
+pub const Command = command.Command{ .name = "setup", .execute = Execute };

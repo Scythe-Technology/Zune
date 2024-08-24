@@ -1,0 +1,6 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Use LF
+test/**/*.txt eol=lf
+*.zig text eol=lf
