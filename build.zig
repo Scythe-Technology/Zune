@@ -10,6 +10,75 @@ fn compressFile(b: *std.Build, exe: *std.Build.Step.Compile, file: []const u8, o
     return embedded_compressor_run;
 }
 
+fn compressRecursive(b: *std.Build, exe: *std.Build.Step.Compile, step: *std.Build.Step, dependentStep: *std.Build.Step, path: []const u8) !void {
+    const dir = try std.fs.cwd().openDir(path, .{ .iterate = true });
+    var iter = dir.iterate();
+    while (try iter.next()) |entry| {
+        if (entry.kind == .file and !std.mem.eql(u8, entry.name[entry.name.len - 2 ..], "gz")) {
+            const file_name = try std.fs.path.resolve(b.allocator, &[_][]const u8{ path, entry.name });
+            defer b.allocator.free(file_name);
+            const file_name_with_ext = try std.mem.concat(b.allocator, u8, &[_][]const u8{ entry.name, ".gz" });
+            defer b.allocator.free(file_name_with_ext);
+            const out_file_name = try std.fs.path.resolve(b.allocator, &[_][]const u8{ path, file_name_with_ext });
+            defer b.allocator.free(out_file_name);
+            const run = compressFile(b, exe, file_name, out_file_name);
+            run.step.dependOn(dependentStep);
+            step.dependOn(&run.step);
+        } else if (entry.kind == .directory) {
+            const dir_path = try std.fs.path.resolve(b.allocator, &[_][]const u8{ path, entry.name });
+            defer b.allocator.free(dir_path);
+            try compressRecursive(b, exe, step, dependentStep, dir_path);
+        }
+    }
+}
+
+fn prebuild(b: *std.Build, step: *std.Build.Step) !void {
+    const compile = b.step("prebuild_compile", "Compile static luau");
+    const compress = b.step("prebuild_compress", "Compress static files");
+
+    const build_native_target: std.Build.ResolvedTarget = .{
+        .query = try std.Target.Query.parse(.{}),
+        .result = builtin.target,
+    };
+
+    { // Pre-compile Luau
+        const local_zigLuauDep = b.dependency("zig-luau", .{ .target = build_native_target, .optimize = .Debug });
+        const bytecode_builder = b.addExecutable(.{
+            .name = "bytecode_builder",
+            .root_source_file = b.path("prebuild/bytecode.zig"),
+            .target = build_native_target,
+            .optimize = .Debug,
+        });
+
+        bytecode_builder.root_module.addImport("luau", local_zigLuauDep.module("zig-luau"));
+
+        const bytecode_builder_run = b.addRunArtifact(bytecode_builder);
+
+        bytecode_builder_run.addArg(b.path("src/core/lua/testing_lib.luau").getPath(b));
+        bytecode_builder_run.addArg(b.path("src/core/lua/testing_lib.luac").getPath(b));
+
+        compile.dependOn(&bytecode_builder_run.step);
+    }
+
+    { // Compress files
+        const embedded_compressor = b.addExecutable(.{
+            .name = "embedded_compressor",
+            .root_source_file = b.path("prebuild/compressor.zig"),
+            .target = build_native_target,
+            .optimize = .Debug,
+        });
+
+        try compressRecursive(b, embedded_compressor, compress, compile, "src/types/");
+
+        const run = compressFile(b, embedded_compressor, "src/core/lua/testing_lib.luac", "src/core/lua/testing_lib.luac.gz");
+        run.step.dependOn(compile);
+        compress.dependOn(&run.step);
+    }
+
+    step.dependOn(compile);
+    step.dependOn(compress);
+}
+
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
 
@@ -20,52 +89,9 @@ pub fn build(b: *std.Build) !void {
     const zig_luau = b.dependency("zig-luau", .{ .target = target, .optimize = optimize });
     const zig_lz4 = b.dependency("zig-lz4", .{ .target = target, .optimize = optimize });
 
-    const preprocess = b.step("preprocess", "Preprocess the project");
-    const build_native_target: std.Build.ResolvedTarget = .{
-        .query = try std.Target.Query.parse(.{}),
-        .result = builtin.target,
-    };
-    { // Pre-compile Luau
-        const local_zigLuauDep = b.dependency("zig-luau", .{ .target = build_native_target, .optimize = optimize });
-        const bytecode_builder = b.addExecutable(.{
-            .name = "bytecode_builder",
-            .root_source_file = b.path("prebuild/bytecode.zig"),
-            .target = build_native_target,
-            .optimize = optimize,
-        });
+    const prebuild_step = b.step("prebuild", "Setup project for build");
 
-        bytecode_builder.root_module.addImport("luau", local_zigLuauDep.module("zig-luau"));
-
-        const bytecode_builder_run = b.addRunArtifact(bytecode_builder);
-
-        bytecode_builder_run.addArg(b.path("src/core/lua/testing_lib.luau").getPath(b));
-        bytecode_builder_run.addArg(b.path("src/core/lua/testing_lib.luac").getPath(b));
-
-        preprocess.dependOn(&bytecode_builder_run.step);
-    }
-
-    { // Compress files
-        const embedded_compressor = b.addExecutable(.{
-            .name = "embedded_compressor",
-            .root_source_file = b.path("prebuild/compressor.zig"),
-            .target = build_native_target,
-            .optimize = optimize,
-        });
-
-        const dir = try std.fs.cwd().openDir("src/types/core/", .{ .iterate = true });
-        var iter = dir.iterate();
-        while (try iter.next()) |entry| {
-            if (entry.kind == .file and !std.mem.eql(u8, entry.name[entry.name.len - 2 ..], "gz")) {
-                const file_name = try std.mem.concat(b.allocator, u8, &[_][]const u8{ "src/types/core/", entry.name });
-                defer b.allocator.free(file_name);
-                const out_file_name = try std.mem.concat(b.allocator, u8, &[_][]const u8{ "src/types/core/", entry.name, ".gz" });
-                defer b.allocator.free(out_file_name);
-                preprocess.dependOn(&compressFile(b, embedded_compressor, file_name, out_file_name).step);
-            }
-        }
-
-        preprocess.dependOn(&compressFile(b, embedded_compressor, "src/core/lua/testing_lib.luac", "src/core/lua/testing_lib.luac.gz").step);
-    }
+    try prebuild(b, prebuild_step);
 
     const exe = b.addExecutable(.{
         .name = "zune",
@@ -74,7 +100,7 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
 
-    exe.step.dependOn(preprocess);
+    exe.step.dependOn(prebuild_step);
 
     exe.root_module.addImport("yaml", zig_yaml.module("yaml"));
     exe.root_module.addImport("lz4", zig_lz4.module("zig-lz4"));
@@ -96,9 +122,10 @@ pub fn build(b: *std.Build) !void {
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
+        .filters = b.args orelse &.{},
     });
 
-    exe_unit_tests.step.dependOn(preprocess);
+    exe_unit_tests.step.dependOn(prebuild_step);
 
     exe_unit_tests.root_module.addImport("yaml", zig_yaml.module("yaml"));
     exe_unit_tests.root_module.addImport("lz4", zig_lz4.module("zig-lz4"));

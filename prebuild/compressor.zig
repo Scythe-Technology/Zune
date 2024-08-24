@@ -19,6 +19,4 @@ pub fn main() !void {
     defer compressed_file.close();
 
     try std.compress.gzip.compress(file.reader(), compressed_file.writer(), .{});
-
-    std.process.exit(0);
 }

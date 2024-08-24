@@ -116,7 +116,7 @@ pub const LuaMeta = struct {
 
 pub const NetStreamData = struct {
     stream: ?std.net.Stream,
-    owned: []?*NetStreamData,
+    owned: ?[]?*NetStreamData,
     id: usize,
 };
 
@@ -139,12 +139,13 @@ websockets: []?NetWebSocket,
 fds: []if (builtin.os.tag == .windows) std.os.windows.ws2_32.pollfd else std.posix.pollfd,
 
 pub fn closeConnection(ctx: *Self, L: *Luau, id: usize, cleanUp: bool) void {
+    if (ctx.responses[id]) |responsePtr| {
+        responsePtr.stream = null;
+        responsePtr.owned = null;
+        ctx.responses[id] = null;
+    }
     if (ctx.connections[id]) |connection| {
         ctx.fds[id].fd = context.INVALID_SOCKET;
-        if (ctx.responses[id]) |responsePtr| {
-            responsePtr.stream = null;
-            ctx.responses[id] = null;
-        }
 
         defer {
             connection.stream.close();
@@ -258,9 +259,10 @@ pub fn responseResumed(responsePtr: *NetStreamData, L: *Luau, scheduler: *Schedu
     _ = scheduler;
     const allocator = L.allocator();
     defer {
-        responsePtr.owned[responsePtr.id] = null;
+        if (responsePtr.owned) |owned| owned[responsePtr.id] = null;
         allocator.destroy(responsePtr);
     }
+    if (responsePtr.owned == null) return; // Server dead
     const stream = responsePtr.stream orelse {
         std.debug.print("Stream is null, connection closed", .{});
         return;
@@ -522,7 +524,6 @@ pub fn handleRequest(ctx: *Self, L: *Luau, scheduler: *Scheduler, i: usize, conn
         .owned = responses,
         .id = i,
     };
-    responses[i] = responsePtr;
     if (!prepRefType(.function, L, ctx.request_lua_function)) {
         std.debug.print("Function not found\n", .{});
         return HandleError.ShouldEnd;
@@ -538,11 +539,14 @@ pub fn handleRequest(ctx: *Self, L: *Luau, scheduler: *Scheduler, i: usize, conn
         return;
     };
 
+    responses[i] = responsePtr;
+
     scheduler.awaitCall(NetStreamData, responsePtr, thread, 1, responseResumed, L) catch |err| {
         Engine.logError(thread, err);
         connection.stream.writeAll(HTTP_500) catch |werr| {
             std.debug.print("Error writing response: {}\n", .{werr});
         };
+        responses[i] = null;
         allocator.destroy(responsePtr);
         return;
     };
@@ -624,13 +628,7 @@ pub fn dtor(ctx: *Self, L: *Luau, scheduler: *Scheduler) void {
         allocator.destroy(ctx);
     }
 
-    if (builtin.os.tag == .windows) {
-        std.os.windows.WSACleanup() catch |err| {
-            std.debug.print("Error cleaning up: {}\n", .{err});
-        };
-    }
-
-    for (0..MAX_SOCKETS) |i| if (ctx.connections[i] != null) ctx.closeConnection(L, i, false);
+    for (0..MAX_SOCKETS) |i| ctx.closeConnection(L, i, false);
 
     L.unref(ctx.request_lua_function);
     if (ctx.websocket_lua_handlers) |handlers| {

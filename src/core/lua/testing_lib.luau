@@ -37,6 +37,10 @@ function testing.defer(fn: () -> ())
     table.insert(fn_defer, fn);
 end
 
+local function secondstoMs(seconds : number) : number
+    return (seconds * 1000) // 1;
+end
+
 function testing.test(name : string, fn: () -> (), timeout : number?)
     testing._COUNT += 1;
     if (not testing._START) then
@@ -44,7 +48,10 @@ function testing.test(name : string, fn: () -> (), timeout : number?)
     end
     local ok, err;
     local stacktrace = {};
+    local _time = 0;
+    local _time_start = os.clock();
     ok = xpcall(fn, function(e)
+        _time = os.clock() - _time_start;
         local lastN = debug.info(1, "n");
         for i = 1, 30 do
             local f, n, l, _ = debug.info(i + 1, "fnls");
@@ -73,6 +80,10 @@ function testing.test(name : string, fn: () -> (), timeout : number?)
         end
         err = e;
     end)
+    if (ok) then
+        _time = os.clock() - _time_start;
+    end
+    _time = secondstoMs(_time);
 
     local scope = if (#scope_stack > 0)
         then `{table.concat(scope_stack, "/")} `
@@ -93,9 +104,9 @@ function testing.test(name : string, fn: () -> (), timeout : number?)
 
     if (ok) then
         if (task.count() == 0) then
-            print(` \x1b[32m✔\x1b[0m \x1b[2m{scope}\x1b[0m(\x1b[1m{name}\x1b[0m)`);
+            print(` \x1b[32m✓\x1b[0m \x1b[2m{scope}\x1b[0m(\x1b[1m{name}\x1b[0m) \x1b[2m[{_time}ms]\x1b[0m`);
         else
-            print(` \x1b[33m?\x1b[0m \x1b[2m{scope}\x1b[0m(\x1b[1m{name}\x1b[0m)`);
+            print(` \x1b[33m?\x1b[0m \x1b[2m{scope}\x1b[0m(\x1b[1m{name}\x1b[0m) \x1b[2m[{_time}ms]\x1b[0m`);
             print(` \x1b[2m│\x1b[0;33m Test Running Tasks Timedout (Possible Leak)\x1b[0m`);
             print(` \x1b[2m│    This message is just a warning, but should be noted, that the test has active tasks\x1b[0m`);
             print(` \x1b[2m│    in the scheduler for more than 5 seconds.\x1b[0m`);
@@ -150,7 +161,7 @@ function testing.test(name : string, fn: () -> (), timeout : number?)
 
     testing._FAILED += 1;
 
-    print(` \x1b[31mX\x1b[0m \x1b[2m{scope}\x1b[0m(\x1b[1m{name}\x1b[0m)`);
+    print(` \x1b[31mX\x1b[0m \x1b[2m{scope}\x1b[0m(\x1b[1m{name}\x1b[0m) \x1b[2m[{_time}ms]\x1b[0m`);
     
     if (type(err) ~= "string") then
         return;

@@ -191,7 +191,6 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
         if (ctx.establishedLua == null) {
             var response = Response.init(allocator, stream.reader().any(), .{}) catch |err| {
                 std.debug.print("Error: {}\n", .{err});
-                ctx.closeConnection(L, true, null);
                 return .Stop;
             };
             defer response.deinit();
@@ -199,13 +198,9 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
             if (response.getHeader("sec-websocket-accept")) |header| {
                 if (!std.mem.eql(u8, header.value, ctx.key)) {
                     std.debug.print("Websocket Error (Bad Accept)\n", .{});
-                    ctx.closeConnection(L, true, null);
                     return .Stop;
                 }
-            } else {
-                ctx.closeConnection(L, true, null);
-                return .Stop;
-            }
+            } else return .Stop;
 
             const data = L.newUserdata(LuaWebSocketClient);
             data.ptr = ctx;
@@ -262,10 +257,7 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
 
             return ctx.handleSocket(L, &socket);
         }
-    } else if (sockfd.revents & (context.POLLNVAL | context.POLLERR | context.POLLHUP) != 0) {
-        stream.close();
-        return .Stop;
-    }
+    } else if (sockfd.revents & (context.POLLNVAL | context.POLLERR | context.POLLHUP) != 0) return .Stop;
 
     return .Continue;
 }
@@ -275,16 +267,12 @@ pub fn dtor(ctx: *Self, L: *Luau, scheduler: *Scheduler) void {
     const allocator = L.allocator();
 
     defer {
+        ctx.closeConnection(L, true, null);
+
         allocator.free(ctx.fds);
         allocator.free(ctx.key);
         allocator.destroy(ctx.stream);
         allocator.destroy(ctx);
-    }
-
-    if (builtin.os.tag == .windows) {
-        std.os.windows.WSACleanup() catch |err| {
-            std.debug.print("Error cleaning up: {}\n", .{err});
-        };
     }
 
     if (ctx.handlers.close) |function| L.unref(function);

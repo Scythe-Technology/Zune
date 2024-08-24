@@ -123,7 +123,7 @@ describe("Load", function()
                 nativeCodeGen = true;
             });
             expect(func).toBe(expect.type("function"));
-            expect(timeFunction(func)).toBeCloseTo(safeNativeTime, 2);
+            expect(timeFunction(func)).toBeCloseTo(safeNativeTime, 1);
         end)
 
         test("New Environment (NCG Enabled)", function()
@@ -134,7 +134,7 @@ describe("Load", function()
                 };
             });
             expect(func).toBe(expect.type("function"));
-            expect(timeFunction(func)).toBeCloseTo(safeNativeTime, 2);
+            expect(timeFunction(func)).toBeCloseTo(safeNativeTime, 1);
         end)
 
         getfenv(); -- Force unsafe environment
@@ -146,7 +146,7 @@ describe("Load", function()
                 nativeCodeGen = false;
             });
             expect(func).toBe(expect.type("function"));
-            expect(timeFunction(func)).toBeCloseTo(UnsafeNativeTime, 1);
+            expect(timeFunction(func)).toBeCloseTo(UnsafeNativeTime, 0.25);
         end)
 
         test("New Environment (NCG Disabled)", function()
@@ -157,7 +157,7 @@ describe("Load", function()
                 };
             });
             expect(func).toBe(expect.type("function"));
-            expect(timeFunction(func)).toBeCloseTo(UnsafeNativeTime, 0.3); -- could be much faster, since it is a stripped environment
+            expect(timeFunction(func)).toBeCloseTo(UnsafeNativeTime, 0); -- could be much faster, since it is a stripped environment
         end)
 
         test("Basic (NCG Enabled, Unsafe)", function()
@@ -166,7 +166,7 @@ describe("Load", function()
             });
             expect(func).toBe(expect.type("function"));
             -- Should be slower than the safe native time, because the global environment is unsafe
-            expect(timeFunction(func)).toBeCloseTo(UnsafeNativeTime, 1);
+            expect(timeFunction(func)).toBeCloseTo(UnsafeNativeTime, 0.25);
         end)
 
         test("New Environment (NCG Enabled, Unsafe)", function()
@@ -178,7 +178,7 @@ describe("Load", function()
             });
             expect(func).toBe(expect.type("function"));
             -- Should be faster than the unsafe native time, because the environment is safe (custom table)
-            expect(timeFunction(func)).toBeCloseTo(safeNativeTime, 2);
+            expect(timeFunction(func)).toBeCloseTo(safeNativeTime, 1);
         end)
     end)
 

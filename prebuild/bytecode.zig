@@ -28,6 +28,4 @@ pub fn main() !void {
     defer luau_bytecode_path.close();
 
     try luau_bytecode_path.writeAll(luau_bytecode);
-
-    std.process.exit(0);
 }

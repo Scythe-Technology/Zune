@@ -225,12 +225,6 @@ pub fn dtor(ctx: *Self, L: *Luau, scheduler: *Scheduler) void {
         allocator.destroy(ctx);
     }
 
-    if (builtin.os.tag == .windows) {
-        std.os.windows.WSACleanup() catch |err| {
-            std.debug.print("Error cleaning up: {}\n", .{err});
-        };
-    }
-
     if (ctx.success) {
         var responseBody = std.ArrayList(u8).init(allocator);
         defer responseBody.deinit();
