@@ -220,7 +220,7 @@ describe("ChildProcess", function()
 				code = 0,
 				stderr = "",
 				status = "Exited",
-				stdout = "Test\n",
+				stdout = if IS_WINDOWS then "Test\r\n" else "Test\n",
 			}));
 		end)
 
