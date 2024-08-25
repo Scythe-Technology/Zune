@@ -110,7 +110,7 @@ test "Run Basic" {
     defer L.deinit();
     if (luau.CodeGen.Supported()) luau.CodeGen.Create(L);
     L.openLibs();
-    try loadModule(L, "test", "print('Hello, World!')\n", null);
+    try loadModule(L, "test", "tostring(\"Hello, World!\")\n", null);
     try run(L);
 }
 
@@ -125,5 +125,5 @@ test "Run Basic Syntax Error" {
 }
 
 test {
-    _ = @import("../resolvers/require.zig");
+    std.testing.refAllDecls(@This());
 }
