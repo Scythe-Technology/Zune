@@ -205,10 +205,13 @@ describe("ChildProcess", function()
 		end)
 
 		test("Echo w/ variables", function()
+			-- Windows Powershell requires existing variables to run.
+			local newEnv = table.clone(process.env);
+			newEnv["NAME"] = "Test";
 			local success2, result2 = process.run("echo", {
 				if IS_WINDOWS then '"$Env:NAME"' else '"$NAME"',
 			}, {
-				env = { NAME = "Test" },
+				env = newEnv,
 				shell = if IS_WINDOWS then "powershell" else "bash",
 			});
 			expect(success2).toBeTruthy();
@@ -271,8 +274,8 @@ describe("ChildProcess", function()
 			expect(status).toBe(expect.any("table"));
 			expect(status).toBe(expect.similar({
 				ok = false,
-				code = 15,
-				status = "Signal",
+				code = if IS_WINDOWS then 1 else 15,
+				status = if IS_WINDOWS then "Exited" else "Signal",
 			}));
 		end)
 	end)
