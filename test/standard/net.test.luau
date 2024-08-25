@@ -43,7 +43,7 @@ describe("Server", function()
         expect(request.headers["host"]).toBe("localhost:8080");
         expect(request.headers["user-agent"]).toBe("Zune/0.0.1");
 
-        local rOk2, rRes2 = net.request("http://localhost:80");
+        local rOk2, rRes2 = net.request("http://localhost:8085");
         expect(rOk2).toBe(false);
         expect(rRes2).toBe(expect.type("string"));
         expect(rRes2).toBe("ConnectionRefused");
@@ -106,7 +106,7 @@ describe("Server", function()
 
         end
 
-        local rOk2, rRes2 = net.request("http://localhost:80");
+        local rOk2, rRes2 = net.request("http://localhost:8085");
         expect(rOk2).toBe(false);
         expect(rRes2).toBe(expect.type("string"));
         expect(rRes2).toBe("ConnectionRefused");
