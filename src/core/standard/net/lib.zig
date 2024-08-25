@@ -38,7 +38,7 @@ test {
 test "Net" {
     const TestRunner = @import("../../utils/testrunner.zig");
 
-    const testResult = try TestRunner.runTest(std.testing.allocator, "test/standard/net.test.luau", &.{});
+    const testResult = try TestRunner.runTest(std.testing.allocator, @import("zune-test-files").@"net.test", &.{}, true);
 
     try std.testing.expect(testResult.failed == 0);
     try std.testing.expect(testResult.total > 0);

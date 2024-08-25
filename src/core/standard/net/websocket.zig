@@ -126,11 +126,8 @@ pub fn handleSocket(ctx: *Self, L: *Luau, socket: *WebSocket) Scheduler.TaskResu
         ctx.closeConnection(L, true, 1006);
         if (err == error.ConnectionClosed) {
             std.debug.print("Connection closed\n", .{});
-            return .Stop;
-        } else {
-            std.debug.print("Error reading from websocket: {}\n", .{err});
-            return .Stop;
         }
+        return .Stop;
     };
 
     switch (frame.header.opcode) {

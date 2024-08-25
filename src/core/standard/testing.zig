@@ -64,7 +64,10 @@ pub fn loadLib(L: *Luau, enabled: bool) void {
         GL.xMove(L, 1);
         ML.sandboxThread();
 
-        ML.setFieldFn(luau.GLOBALSINDEX, "print", testing_debug);
+        if (L.getField(luau.GLOBALSINDEX, "_testing_stdOut") == .boolean and !L.toBoolean(-1)) {
+            ML.setFieldFn(luau.GLOBALSINDEX, "print", empty);
+        } else ML.setFieldFn(luau.GLOBALSINDEX, "print", testing_debug);
+        L.pop(1);
         ML.setFieldFn(luau.GLOBALSINDEX, "declare_safeEnv", testing_declareSafeEnv);
         ML.setFieldFn(luau.GLOBALSINDEX, "scheduler_droptasks", Scheduler.toSchedulerFn(testing_droptasks));
         ML.setFieldBoolean(luau.GLOBALSINDEX, "_FILE", false);
@@ -116,6 +119,9 @@ pub fn finish_testing(L: *Luau, rawstart: f64) TestResult {
     _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
     if (L.getField(-1, "@zcore/testing") != .table) std.debug.panic("No test framework loaded", .{});
 
+    const stdOut = if (L.getField(luau.GLOBALSINDEX, "_testing_stdOut") == .boolean) L.toBoolean(-1) else true;
+    L.pop(1);
+
     const start = if (L.getField(luau.REGISTRYINDEX, "_START") == .number) L.toNumber(-1) catch rawstart else rawstart;
     const time = end - start;
     L.pop(1);
@@ -124,13 +130,15 @@ pub fn finish_testing(L: *Luau, rawstart: f64) TestResult {
     const mainFailedCount = if (L.getField(-1, "_FAILED") == .number) L.toInteger(-1) catch 0 else 0;
     L.pop(1);
 
-    std.debug.print("\n", .{});
-    if (mainFailedCount > 0) {
-        std.debug.print(" \x1b[1mTests\x1b[0m: \x1b[1;31m{} failed\x1b[0m, {} total\n", .{ mainFailedCount, mainTestCount });
-    } else {
-        std.debug.print(" \x1b[1mTests\x1b[0m: {} total\n", .{mainTestCount});
+    if (stdOut) {
+        std.debug.print("\n", .{});
+        if (mainFailedCount > 0) {
+            std.debug.print(" \x1b[1mTests\x1b[0m: \x1b[1;31m{} failed\x1b[0m, {} total\n", .{ mainFailedCount, mainTestCount });
+        } else {
+            std.debug.print(" \x1b[1mTests\x1b[0m: {} total\n", .{mainTestCount});
+        }
+        std.debug.print(" \x1b[1mTime\x1b[0m:  {d} s\n", .{std.math.ceil(time * 1000) / 1000});
     }
-    std.debug.print(" \x1b[1mTime\x1b[0m:  {d} s\n", .{std.math.ceil(time * 1000) / 1000});
     return .{
         .failed = mainFailedCount,
         .total = mainTestCount,
@@ -148,8 +156,8 @@ pub fn runTestAsync(L: *Luau, sched: *Scheduler) !TestResult {
 test "Test" {
     const TestRunner = @import("../utils/testrunner.zig");
 
-    const testResult = try TestRunner.runTest(std.testing.allocator, "test/standard/testing.test.luau", &.{});
+    const testResult = try TestRunner.runTest(std.testing.allocator, @import("zune-test-files").@"testing.test", &.{}, false);
 
-    try std.testing.expect(testResult.failed > 0);
-    try std.testing.expect(testResult.total > 0);
+    try std.testing.expect(testResult.failed == 3);
+    try std.testing.expect(testResult.total == 11);
 }

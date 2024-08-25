@@ -3,19 +3,19 @@
     .version = "0.0.1",
     .minimum_zig_version = "0.13.0",
     .dependencies = .{
-        .@"zig-json" = .{
+        .json = .{
             .url = "https://codeload.github.com/part1zano/zig-json/tar.gz/7ac4633f24b723bd8ebcdfeb0249d365bc8cb9b9",
             .hash = "1220aaba53d38fd5689b6a29e496ab8a262c54ae8a52321e61ed8da9f1d968c69e7e",
         },
-        .@"zig-yaml" = .{
+        .yaml = .{
             .url = "https://codeload.github.com/kubkon/zig-yaml/tar.gz/beddd5da24de91d430ca7028b00986f7745b13e9",
             .hash = "1220841471bd4891cbb199d27cc5e7e0fb0a5b7c5388a70bd24fa3eb7285755c396c",
         },
-        .@"zig-lz4" = .{
+        .lz4 = .{
             .url = "https://codeload.github.com/SnorlaxAssist/zig-lz4/tar.gz/9ee5c6f8c6a50c1e2b5193d8bf41c0eda8dbd206",
             .hash = "1220d6bbca59a59f16bda33b69e140d90bad313d11c07c0e2ab16076c59355845112",
         },
-        .@"zig-luau" = .{
+        .luau = .{
             .url = "https://codeload.github.com/SnorlaxAssist/zig-luau/tar.gz/8882a1255ac16f62d49c7e35764bd5695106f13d",
             .hash = "12200aa6708f0c8d03cc052841cfc45a84cc1301b603c787496da3261ded562161f5",
         },

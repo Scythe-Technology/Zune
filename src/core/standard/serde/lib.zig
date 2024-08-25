@@ -86,7 +86,7 @@ test {
 test "Serde" {
     const TestRunner = @import("../../utils/testrunner.zig");
 
-    const testResult = try TestRunner.runTest(std.testing.allocator, "test/standard/serde/init.test.luau", &.{});
+    const testResult = try TestRunner.runTest(std.testing.allocator, @import("zune-test-files").@"serde.test", &.{}, true);
 
     try std.testing.expect(testResult.failed == 0);
     try std.testing.expect(testResult.total > 0);

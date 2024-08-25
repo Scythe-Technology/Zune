@@ -6,6 +6,9 @@ local describe = testing.describe;
 local expect = testing.expect;
 local test = testing.test;
 
+local version = _VERSION:match("%d+%.%d+%.%d+");
+assert(version and #version > 0, "No version");
+
 describe("Server", function()
     test("Temporary", function()
         local requests = {};
@@ -41,7 +44,7 @@ describe("Server", function()
         expect(request.path).toBe("/");
         expect(request.headers).toBe(expect.type("table"));
         expect(request.headers["host"]).toBe("localhost:8080");
-        expect(request.headers["user-agent"]).toBe("Zune/0.0.1");
+        expect(request.headers["user-agent"]).toBe("Zune/" .. version);
 
         local rOk2, rRes2 = net.request("http://localhost:8085");
         expect(rOk2).toBe(false);
@@ -102,7 +105,7 @@ describe("Server", function()
             expect(request.path).toBe("/");
             expect(request.headers).toBe(expect.type("table"));
             expect(request.headers["host"]).toBe("localhost:8080");
-            expect(request.headers["user-agent"]).toBe("Zune/0.0.1");
+            expect(request.headers["user-agent"]).toBe("Zune/" .. version);
 
         end
 

@@ -1,4 +1,4 @@
-name: ci
+name: CI
 
 on:
   pull_request:
@@ -24,7 +24,7 @@ jobs:
       run: zig fmt --check **/*.zig
 
   test:
-    needs: ["fmt"]
+    needs: fmt
     strategy:
       matrix:
         include:
@@ -35,11 +35,19 @@ jobs:
             name: Windows x86_64
             target: x86_64-windows
           - os: macos-13
-            name: MacOs x86_64
+            name: macOs x86_64
             target: x86_64-macos
           - os: macos-14
-            name: MacOs Arm64
+            name: macOs Arm64
             target: aarch64-macos
+          - os: ubuntu-latest
+            name: Linux Arm64
+            target: aarch64-linux
+            qemu-platform: arm64
+          # - os: ubuntu-latest
+          #   name: Linux Risc-v64
+          #   target: riscv64-linux
+          #   qemu-platform: riscv64
 
     name: ${{ matrix.name }}
     timeout-minutes: 20
@@ -53,5 +61,10 @@ jobs:
       with:
         version: 0.13.0
 
+    - name: Setup QEMU
+      if: matrix.qemu-platform != ''
+      uses: docker/setup-qemu-action@v1
+
     - name: Run tests
-      run: zig build test -Dtarget=${{ matrix.target }}
+      continue-on-error: ${{ matrix.qemu-platform != '' }}
+      run: zig build test -Dtarget=${{ matrix.target }}${{ matrix.qemu-platform != '' && ' -fqemu' || '' }}

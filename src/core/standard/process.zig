@@ -566,7 +566,7 @@ pub fn loadLib(L: *Luau, args: []const []const u8) !void {
 test "Process" {
     const TestRunner = @import("../utils/testrunner.zig");
 
-    const testResult = try TestRunner.runTest(std.testing.allocator, "test/standard/process.test.luau", &.{ "Test", "someValue" });
+    const testResult = try TestRunner.runTest(std.testing.allocator, @import("zune-test-files").@"process.test", &.{ "Test", "someValue" }, true);
 
     try std.testing.expect(testResult.failed == 0);
     try std.testing.expect(testResult.total > 0);

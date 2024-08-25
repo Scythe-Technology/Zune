@@ -204,7 +204,7 @@ pub fn handleWebSocket(ctx: *Self, L: *Luau, scheduler: *Scheduler, i: usize, co
             std.debug.print("Connection closed\n", .{});
             return;
         } else {
-            std.debug.print("Error reading from websocket: {}\n", .{err});
+            std.debug.print("Server error reading from websocket: {}\n", .{err});
             return;
         }
     };

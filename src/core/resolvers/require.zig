@@ -127,7 +127,7 @@ pub fn zune_require(L: *Luau) i32 {
 test "Require" {
     const TestRunner = @import("../utils/testrunner.zig");
 
-    const testResult = try TestRunner.runTest(std.testing.allocator, "test/engine/require.test.luau", &.{});
+    const testResult = try TestRunner.runTest(std.testing.allocator, @import("zune-test-files").@"require.test", &.{}, true);
 
     try std.testing.expect(testResult.failed == 0);
     try std.testing.expect(testResult.total > 0);

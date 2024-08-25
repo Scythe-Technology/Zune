@@ -8,6 +8,8 @@ const Scheduler = @import("../../runtime/scheduler.zig");
 const Response = @import("http/response.zig");
 const WebSocket = @import("http/websocket.zig");
 
+const zune_info = @import("zune-info");
+
 const Luau = luau.Luau;
 
 const context = Common.context;
@@ -18,6 +20,8 @@ const Self = @This();
 const RequestError = error{
     RedirectNotAllowed,
 };
+
+const ZUNE_CLIENT_HEADER = "Zune/" ++ zune_info.version;
 
 client: *std.http.Client,
 req: *std.http.Client.Request,
@@ -447,7 +451,7 @@ pub fn lua_request(L: *Luau, scheduler: *Scheduler) i32 {
         .redirect_behavior = redirectBehavior,
         .extra_headers = headers.items,
         .headers = .{
-            .user_agent = .{ .override = "Zune/0.0.1" },
+            .user_agent = .{ .override = ZUNE_CLIENT_HEADER },
             .connection = .omit,
             .accept_encoding = .omit,
         },

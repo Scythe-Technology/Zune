@@ -328,7 +328,7 @@ pub fn loadLib(L: *Luau) void {
 test "Filesystem" {
     const TestRunner = @import("../utils/testrunner.zig");
 
-    const testResult = try TestRunner.runTest(std.testing.allocator, "test/standard/fs.test.luau", &.{});
+    const testResult = try TestRunner.runTest(std.testing.allocator, @import("zune-test-files").@"fs.test", &.{}, true);
 
     try std.testing.expect(testResult.failed == 0);
     try std.testing.expect(testResult.total > 0);

@@ -2,7 +2,7 @@
 .zig-cache/
 zig-out/
 
-# MacOs Directory
+# macOs Directory
 **/.DS_Store
 
 **/**.luac
@@ -18,3 +18,5 @@ zig-out/
 .nvim/
 # Emacs
 .dir-locals.el
+# Nix Environment
+shell.nix

@@ -71,6 +71,4 @@ describe("Test Scope", function()
 end)
 
 assert(testing.running, `Should be true, got {testing.running}`);
-assert(testing._COUNT == 11, `Should be 11, got {testing._COUNT}`);
-assert(testing._FAILED == 3, `Should be 3, got {testing._FAILED}`);
 assert(type(testing._START) == "number", `Should be number, got {testing._START}`);

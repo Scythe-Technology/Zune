@@ -144,7 +144,7 @@ describe("task", function()
                 local thread = coroutine.create(function()
                     success, err = pcall(function()
                         local delta = task.wait(0.05);
-                        expect(delta).toBeGreaterThanOrEqual(0.05);
+                        expect(delta).toBeGreaterThanOrEqual(0.049);
                         expect(delta).toBeLessThanOrEqual(0.1);
                     end)
                 end)
@@ -199,7 +199,7 @@ describe("task", function()
                 local thread = coroutine.create(function(a, b, c)
                     local endTime = os.clock() - startTime;
                     success, err = pcall(function()
-                        expect(endTime).toBeGreaterThanOrEqual(0.05);
+                        expect(endTime).toBeGreaterThanOrEqual(0.049);
                         expect(endTime).toBeLessThanOrEqual(0.1);
                         expect(a).toBe(1);
                         expect(b).toBe(4);

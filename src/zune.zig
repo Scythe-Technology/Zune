@@ -10,10 +10,15 @@ pub const DEFAULT_ALLOCATOR = std.heap.c_allocator;
 const resolvers_require = @import("core/resolvers/require.zig");
 const resolvers_fmt = @import("core/resolvers/fmt.zig");
 
+const zune_info = @import("zune-info");
+
 pub const RunMode = enum {
     Run,
     Test,
 };
+
+// TODO: change luau version to the package options, when it exists.
+const VERSION = "Zune " ++ zune_info.version ++ "+638";
 
 pub fn openZune(L: *luau.Luau, args: []const []const u8, mode: RunMode) !void {
     L.openLibs();
@@ -23,6 +28,8 @@ pub fn openZune(L: *luau.Luau, args: []const []const u8, mode: RunMode) !void {
 
     L.pushFunction(resolvers_require.zune_require, "zcore_require");
     L.setGlobal("require");
+
+    L.setGlobalLString("_VERSION", VERSION);
 
     corelib.fs.loadLib(L);
     corelib.task.loadLib(L);

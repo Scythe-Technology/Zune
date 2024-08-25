@@ -2,12 +2,13 @@ const std = @import("std");
 
 const zune = @import("zune.zig");
 
-const commands = @import("commands/lib.zig");
+const Commands = @import("commands/lib.zig");
 
-const CommandMap = std.StaticStringMap(commands.Command).initComptime(.{
-    .{ "run", @import("commands/run.zig").Command },
-    .{ "test", @import("commands/test.zig").Command },
-    .{ "setup", @import("commands/setup.zig").Command },
+const CommandMap = Commands.initCommands(&.{
+    @import("commands/run.zig").Command,
+    @import("commands/test.zig").Command,
+    @import("commands/setup.zig").Command,
+    @import("commands/version.zig").Command,
 });
 
 pub fn start() !void {

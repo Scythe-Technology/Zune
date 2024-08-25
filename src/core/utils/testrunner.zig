@@ -7,9 +7,13 @@ const Scheduler = @import("../runtime/scheduler.zig");
 
 const Luau = luau.Luau;
 
-pub fn runTest(allocator: std.mem.Allocator, testFile: []const u8, args: []const []const u8) !zune.corelib.testing.TestResult {
+const zune_test_files = @import("zune-test-files");
+
+pub fn runTest(allocator: std.mem.Allocator, comptime testFile: zune_test_files.File, args: []const []const u8, comptime stdOutEnabled: bool) !zune.corelib.testing.TestResult {
     var L = try Luau.init(&allocator);
     defer L.deinit();
+
+    if (!stdOutEnabled) L.setFieldBoolean(luau.GLOBALSINDEX, "_testing_stdOut", false);
 
     var scheduler = Scheduler.init(allocator);
     defer scheduler.deinit();
@@ -25,7 +29,7 @@ pub fn runTest(allocator: std.mem.Allocator, testFile: []const u8, args: []const
     defer allocator.free(tempPath);
     L.setGlobalString("__test_tempdir", tempPath);
 
-    const testFileAbsolute = try std.fs.cwd().realpathAlloc(allocator, testFile);
+    const testFileAbsolute = try std.fs.cwd().realpathAlloc(allocator, testFile.path);
     defer allocator.free(testFileAbsolute);
 
     try Engine.prepAsync(L, &scheduler, .{
@@ -39,13 +43,10 @@ pub fn runTest(allocator: std.mem.Allocator, testFile: []const u8, args: []const
 
     Engine.setLuaFileContext(ML, testFileAbsolute);
 
-    const testSource = try std.fs.cwd().readFileAlloc(allocator, testFile, std.math.maxInt(usize));
-    defer allocator.free(testSource);
-
-    const zbasename = try allocator.dupeZ(u8, std.fs.path.basename(testFile));
+    const zbasename = try allocator.dupeZ(u8, std.fs.path.basename(testFile.path));
     defer allocator.free(zbasename);
 
-    Engine.loadModule(ML, zbasename, testSource, .{
+    Engine.loadModule(ML, zbasename, testFile.content, .{
         .debug_level = 2,
     }) catch |err| switch (err) {
         error.Syntax => {
