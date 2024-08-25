@@ -1,0 +1,56 @@
+name: ci
+
+on:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Setup Zig
+      uses: mlugg/setup-zig@v1
+      with:
+        version: 0.13.0
+
+    - name: Run fmt
+      run: zig fmt --check **/*.zig
+
+  test:
+    needs: ["fmt"]
+    strategy:
+      matrix:
+        - os: ubuntu-latest
+          name: Linux x86_64
+          target: x86_64-linux
+        - os: windows-latest
+          name: Windows x86_64
+          target: x86_64-windows
+        - os: macos-13
+          name: MacOs x86_64
+          target: x86_64-macos
+        - os: macos-14
+          name: MacOs Arm64
+          target: aarch64-macos
+
+    name: ${{ matrix.name }}
+    timeout-minutes: 20
+    runs-on: ${{matrix.os}}
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Setup Zig
+      uses: mlugg/setup-zig@v1
+      with:
+        version: 0.13.0
+
+    - name: Run tests
+      run: zig build test -Dtarget=${{ matrix.target }}

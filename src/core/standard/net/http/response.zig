@@ -308,15 +308,9 @@ pub fn pushToStack(self: *Self, L: *Luau, customBody: ?[]const u8) !void {
     L.setFieldInteger(-1, "statusCode", @intCast(self.statusCode));
 
     if (self.statusReason) |reason| {
-        const zreason = try allocator.dupeZ(u8, reason);
-        defer allocator.free(zreason);
-        L.setFieldString(-1, "statusReason", zreason);
+        L.setFieldLString(-1, "statusReason", reason);
     } else if (safeStatusCast(self.statusCode)) |status| {
-        if (status.phrase()) |reason| {
-            const zreason = try allocator.dupeZ(u8, reason);
-            defer allocator.free(zreason);
-            L.setFieldString(-1, "statusReason", zreason);
-        }
+        if (status.phrase()) |reason| L.setFieldLString(-1, "statusReason", reason);
     }
 
     if (self.headers) |headers| {

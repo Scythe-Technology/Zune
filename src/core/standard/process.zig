@@ -204,7 +204,7 @@ const ProcessChildOptions = struct {
         L.checkType(1, .userdata);
         const namecall = L.nameCallAtom() catch return 0;
         var handlePtr = L.toUserdata(ProcessChildHandle, 1) catch return 0;
-        var childProcess = handlePtr.child;
+        var childProcess = &handlePtr.child;
 
         if (std.mem.eql(u8, namecall, "kill")) {
             const term = childProcess.kill() catch |err| {
@@ -214,7 +214,6 @@ const ProcessChildOptions = struct {
             };
             L.newTable();
             internal_process_term(L, term);
-            handlePtr.child = childProcess;
             return 1;
         } else if (std.mem.eql(u8, namecall, "wait")) {
             const term = childProcess.wait() catch |err| {
@@ -224,7 +223,6 @@ const ProcessChildOptions = struct {
             };
             L.newTable();
             internal_process_term(L, term);
-            handlePtr.child = childProcess;
             return 1;
         } else if (std.mem.eql(u8, namecall, "readOut")) {
             if (childProcess.stdout == null) return outputError(L, "InternalError (No stdout stream found, did you spawn?)", .{});
@@ -241,8 +239,6 @@ const ProcessChildOptions = struct {
                 outputError(L, "Error reading process output", .{});
             };
             L.pushLString(buffer[0..read_bytes]);
-
-            handlePtr.child = childProcess;
             return 1;
         } else if (std.mem.eql(u8, namecall, "readErr")) {
             if (childProcess.stderr == null) return outputError(L, "InternalError (No stdout stream found, did you spawn?)", .{});
@@ -260,8 +256,6 @@ const ProcessChildOptions = struct {
             };
 
             L.pushLString(buffer[0..read_bytes]);
-
-            handlePtr.child = childProcess;
             return 1;
         } else if (std.mem.eql(u8, namecall, "writeIn")) {
             if (childProcess.stdin == null) return outputError(L, "InternalError (No stdout stream found, did you spawn?)", .{});
@@ -272,8 +266,6 @@ const ProcessChildOptions = struct {
                 std.debug.print("Error: {}\n", .{err});
                 outputError(L, "Error writing to process input", .{});
             };
-
-            handlePtr.child = childProcess;
             return 1;
         }
         outputError(L, "Unknown method: %s\n", .{namecall.ptr});
@@ -303,16 +295,11 @@ fn process_run(L: *Luau) i32 {
     defer allocator.free(proc.stdout);
     defer allocator.free(proc.stderr);
 
-    const zstdout = allocator.dupeZ(u8, proc.stdout) catch |err| return outputStatus(L, @errorName(err));
-    const zstderr = allocator.dupeZ(u8, proc.stderr) catch |err| return outputStatus(L, @errorName(err));
-    defer allocator.free(zstdout);
-    defer allocator.free(zstderr);
-
     L.pushBoolean(true);
     L.newTable();
 
-    L.setFieldString(-1, "stdout", zstdout);
-    L.setFieldString(-1, "stderr", zstderr);
+    L.setFieldLString(-1, "stdout", proc.stdout);
+    L.setFieldLString(-1, "stderr", proc.stderr);
 
     internal_process_term(L, proc.term);
 
@@ -560,9 +547,7 @@ pub fn loadLib(L: *Luau, args: []const []const u8) !void {
     {
         const path = try std.fs.cwd().realpathAlloc(allocator, "./");
         defer allocator.free(path);
-        const zpath = try allocator.dupeZ(u8, path);
-        defer allocator.free(zpath);
-        L.setFieldString(-1, "cwd", zpath);
+        L.setFieldLString(-1, "cwd", path);
     }
 
     L.setFieldFn(-1, "run", process_run);

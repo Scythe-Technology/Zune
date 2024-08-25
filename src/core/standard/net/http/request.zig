@@ -467,15 +467,11 @@ pub fn pushToStack(self: *Self, L: *Luau) !void {
     errdefer L.pop(1);
 
     if (self.method) |method| {
-        const zmethod = try allocator.dupeZ(u8, method);
-        defer allocator.free(zmethod);
-        L.setFieldString(-1, "method", zmethod);
+        L.setFieldLString(-1, "method", method);
     }
 
     if (self.url) |url| {
-        const zpath = try allocator.dupeZ(u8, url.path);
-        defer allocator.free(zpath);
-        L.setFieldString(-1, "path", zpath);
+        L.setFieldLString(-1, "path", url.path);
     }
 
     if (self.query) |queries| {
@@ -517,9 +513,7 @@ pub fn pushToStack(self: *Self, L: *Luau) !void {
     }
 
     if (self.body) |body| {
-        const zbody = try allocator.dupeZ(u8, body);
-        defer allocator.free(zbody);
-        L.setFieldString(-1, "body", zbody);
+        L.setFieldLString(-1, "body", body);
     }
 }
 

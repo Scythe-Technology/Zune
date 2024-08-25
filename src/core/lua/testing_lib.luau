@@ -104,9 +104,9 @@ function testing.test(name : string, fn: () -> (), timeout : number?)
 
     if (ok) then
         if (task.count() == 0) then
-            print(` \x1b[32m✓\x1b[0m \x1b[2m{scope}\x1b[0m(\x1b[1m{name}\x1b[0m) \x1b[2m[{_time}ms]\x1b[0m`);
+            print(` \x1b[1;32mPASS\x1b[0m \x1b[2m{scope}\x1b[0m(\x1b[1m{name}\x1b[0m) \x1b[2m[{_time}ms]\x1b[0m`);
         else
-            print(` \x1b[33m?\x1b[0m \x1b[2m{scope}\x1b[0m(\x1b[1m{name}\x1b[0m) \x1b[2m[{_time}ms]\x1b[0m`);
+            print(` \x1b[1;33mWARN\x1b[0m \x1b[2m{scope}\x1b[0m(\x1b[1m{name}\x1b[0m) \x1b[2m[{_time}ms]\x1b[0m`);
             print(` \x1b[2m│\x1b[0;33m Test Running Tasks Timedout (Possible Leak)\x1b[0m`);
             print(` \x1b[2m│    This message is just a warning, but should be noted, that the test has active tasks\x1b[0m`);
             print(` \x1b[2m│    in the scheduler for more than 5 seconds.\x1b[0m`);
@@ -161,7 +161,7 @@ function testing.test(name : string, fn: () -> (), timeout : number?)
 
     testing._FAILED += 1;
 
-    print(` \x1b[31mX\x1b[0m \x1b[2m{scope}\x1b[0m(\x1b[1m{name}\x1b[0m) \x1b[2m[{_time}ms]\x1b[0m`);
+    print(` \x1b[1;31mFAIL\x1b[0m \x1b[2m{scope}\x1b[0m(\x1b[1m{name}\x1b[0m) \x1b[2m[{_time}ms]\x1b[0m`);
     
     if (type(err) ~= "string") then
         return;
@@ -391,7 +391,7 @@ local function deepScan(a : any, b : any, state : {[any] : any}) : (boolean, str
         end
         return true;
     end
-    return false, `not the same value ({tostring(a)} ~= {tostring(b)})`, true;
+    return false, `not the same value ({readable(a)} ~= {readable(b)})`, true;
 end
 
 local expect = setmetatable({
