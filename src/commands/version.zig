@@ -1,5 +1,4 @@
 const std = @import("std");
-const luau = @import("luau");
 
 const command = @import("lib.zig");
 

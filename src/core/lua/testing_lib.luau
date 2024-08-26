@@ -1,6 +1,7 @@
 --!strict
 local fs = require("@zcore/fs");
 local task = require("@zcore/task");
+local process = require("@zcore/process");
 
 local testing = {
     running = true,
@@ -17,6 +18,11 @@ local scheduler_droptasks = GLOBAL.scheduler_droptasks :: () -> ();
 local declare_safeEnv = GLOBAL.declare_safeEnv :: () -> ();
 
 declare_safeEnv();
+
+local IS_WINDOWS = process.os == "windows";
+local L = if (IS_WINDOWS) then "|" else "│";
+local CL = if (IS_WINDOWS) then "--" else "└─";
+local CL2 = if (IS_WINDOWS) then "|-" else "└─";
 
 function testing.describe(name, fn)
     table.insert(scope_stack, name);
@@ -107,50 +113,50 @@ function testing.test(name : string, fn: () -> (), timeout : number?)
             print(` \x1b[1;32mPASS\x1b[0m \x1b[2m{scope}\x1b[0m(\x1b[1m{name}\x1b[0m) \x1b[2m[{_time}ms]\x1b[0m`);
         else
             print(` \x1b[1;33mWARN\x1b[0m \x1b[2m{scope}\x1b[0m(\x1b[1m{name}\x1b[0m) \x1b[2m[{_time}ms]\x1b[0m`);
-            print(` \x1b[2m│\x1b[0;33m Test Running Tasks Timedout (Possible Leak)\x1b[0m`);
-            print(` \x1b[2m│    This message is just a warning, but should be noted, that the test has active tasks\x1b[0m`);
-            print(` \x1b[2m│    in the scheduler for more than 5 seconds.\x1b[0m`);
-            print(` \x1b[2m│\x1b[0m`);
+            print(` \x1b[2m{L}\x1b[0;33m Test Running Tasks Timedout (Possible Leak)\x1b[0m`);
+            print(` \x1b[2m{L}    This message is just a warning, but should be noted, that the test has active tasks\x1b[0m`);
+            print(` \x1b[2m{L}    in the scheduler for more than 5 seconds.\x1b[0m`);
+            print(` \x1b[2m{L}\x1b[0m`);
             local s, d, w, t = task.count("sdwt");
             local show = {};
             if (s> 0) then
-                print(` \x1b[2m│    "Sleeping" - (Zune Luau), \x1b[0m`);
-                print(` \x1b[2m│      Active luau task, usually means there is a running task created by luau or zune.\x1b[0m`);
-                print(` \x1b[2m│      Caused when a sleeping task is still in queue.\x1b[0m`);
-                print(` \x1b[2m│      From calling 'task.delay'/'task.sleep' or zune backend has requested a delayed resume on a thread\x1b[0m`);
+                print(` \x1b[2m{L}    "Sleeping" - (Zune Luau), \x1b[0m`);
+                print(` \x1b[2m{L}      Active luau task, usually means there is a running task created by luau or zune.\x1b[0m`);
+                print(` \x1b[2m{L}      Caused when a sleeping task is still in queue.\x1b[0m`);
+                print(` \x1b[2m{L}      From calling 'task.delay'/'task.sleep' or zune backend has requested a delayed resume on a thread\x1b[0m`);
                 table.insert(show, `Sleeping Tasks: \x1b[33m{s}\x1b[0m`);
             end
             if (d > 0) then
-                print(` \x1b[2m│    "Deferred" - (Zune Luau), \x1b[0m`);
-                print(` \x1b[2m│      Active luau task, usually means there is a running task created by luau or zune.\x1b[0m`);
-                print(` \x1b[2m│      Caused when a deferred task is still in queue.\x1b[0m`);
-                print(` \x1b[2m│      From calling 'task.defer' or zune backend has requested a deferred resume on a thread\x1b[0m`);
+                print(` \x1b[2m{L}    "Deferred" - (Zune Luau), \x1b[0m`);
+                print(` \x1b[2m{L}      Active luau task, usually means there is a running task created by luau or zune.\x1b[0m`);
+                print(` \x1b[2m{L}      Caused when a deferred task is still in queue.\x1b[0m`);
+                print(` \x1b[2m{L}      From calling 'task.defer' or zune backend has requested a deferred resume on a thread\x1b[0m`);
                 table.insert(show, `Deferred Tasks: \x1b[33m{d}\x1b[0m`);
             end
             if (w > 0) then
-                print(` \x1b[2m│    "Awaiting" - (Zune Backend > Zig), \x1b[0m`);
-                print(` \x1b[2m│      Active zune awaiting task, usually means there is a running task created by the zune backend.\x1b[0m`);
-                print(` \x1b[2m│      Caused by a the zune backend waiting for a response from luau\x1b[0m`);
-                print(` \x1b[2m│      For example, a active task waiting for a response from a zune server "@zcore/net" called in 'request'\x1b[0m`);
+                print(` \x1b[2m{L}    "Awaiting" - (Zune Backend > Zig), \x1b[0m`);
+                print(` \x1b[2m{L}      Active zune awaiting task, usually means there is a running task created by the zune backend.\x1b[0m`);
+                print(` \x1b[2m{L}      Caused by a the zune backend waiting for a response from luau\x1b[0m`);
+                print(` \x1b[2m{L}      For example, a active task waiting for a response from a zune server "@zcore/net" called in 'request'\x1b[0m`);
                 table.insert(show, `Awaiting Tasks: \x1b[33m{w}\x1b[0m`);
             end
             if (t > 0) then
-                print(` \x1b[2m│    "Internal" - (Zune Backend > Zig)\x1b[0m`);
-                print(` \x1b[2m│      Active zune core task, usually means there is a running task created by the zune backend.\x1b[0m`);
-                print(` \x1b[2m│      Caused by undisposed backend tasks.\x1b[0m`);
-                print(` \x1b[2m│      For example, a open zune server from "@zcore/net"\x1b[0m`);
+                print(` \x1b[2m{L}    "Internal" - (Zune Backend > Zig)\x1b[0m`);
+                print(` \x1b[2m{L}      Active zune core task, usually means there is a running task created by the zune backend.\x1b[0m`);
+                print(` \x1b[2m{L}      Caused by undisposed backend tasks.\x1b[0m`);
+                print(` \x1b[2m{L}      For example, a open zune server from "@zcore/net"\x1b[0m`);
                 table.insert(show, `Internal Tasks: \x1b[33m{t}\x1b[0m`);
             end
-            print(` \x1b[2m│\x1b[0m`);
-            print(` \x1b[2m│    If this is a bug, please report it!\x1b[0m`);
+            print(` \x1b[2m{L}\x1b[0m`);
+            print(` \x1b[2m{L}    If this is a bug, please report it!\x1b[0m`);
             scheduler_droptasks();
-            print(` \x1b[2m│    \x1b[0;34mAll tasks has been dropped\x1b[0m`);
+            print(` \x1b[2m{L}    \x1b[0;34mAll tasks has been dropped\x1b[0m`);
             for i, v in show do
                 if (i ~= #show) then
-                    print(` \x1b[2m│\x1b[0m  {v}`);
+                    print(` \x1b[2m{L}\x1b[0m  {v}`);
                     continue;
                 end
-                print(` \x1b[2m└─\x1b[0m {v}`);
+                print(` \x1b[2m{CL}\x1b[0m {v}`);
             end
         end
 
@@ -170,7 +176,7 @@ function testing.test(name : string, fn: () -> (), timeout : number?)
     local sz = #stacktrace;
     local errorLines = err:split("\n");
     for _, v in errorLines do
-        print(` \x1b[2m│\x1b[0m \x1b[31m{v}\x1b[0m`);
+        print(` \x1b[2m{L}\x1b[0m \x1b[31m{v}\x1b[0m`);
     end
 
     for i, v in stacktrace do
@@ -196,9 +202,9 @@ function testing.test(name : string, fn: () -> (), timeout : number?)
             end
         end
         
-        print(` \x1b[2m│\x1b[0m \x1b[31m{v.file}:{v.line}:{column}:\x1b[0m \x1b[2m{v.address:sub(11)}{#v.source > 0 and ` {v.source}` or ""}{nameHasValue and ` called {v.name}` or ""} (test)\x1b[0m`);
-        print(` \x1b[2m│\x1b[0m \x1b[0m{safeLine}\x1b[0m`);
-        print(` \x1b[2m{last and "└─" or "│ "}\x1b[0m{string.rep("\32", indent)}\x1b[31m^\x1b[0m`);
+        print(` \x1b[2m{L}\x1b[0m \x1b[31m{v.file}:{v.line}:{column}:\x1b[0m \x1b[2m{v.address:sub(11)}{#v.source > 0 and ` {v.source}` or ""}{nameHasValue and ` called {v.name}` or ""} (test)\x1b[0m`);
+        print(` \x1b[2m{L}\x1b[0m \x1b[0m{safeLine}\x1b[0m`);
+        print(` \x1b[2m{last and `{CL}` or `{L} `}\x1b[0m{string.rep("\32", indent)}\x1b[31m^\x1b[0m`);
     end
 
     declare_safeEnv();
@@ -361,7 +367,7 @@ local function deepScan(a : any, b : any, state : {[any] : any}) : (boolean, str
             return result, if (reason) then reason:gsub("%%s", ''):gsub("\n", function(c)
                 if (not first) then
                     first = true;
-                    return "\n└─ ";
+                    return `\n{CL2} `;
                 end
                 return "\n   ";
             end) else "failed condition", true;

@@ -9,6 +9,7 @@ const CommandMap = Commands.initCommands(&.{
     @import("commands/test.zig").Command,
     @import("commands/setup.zig").Command,
     @import("commands/version.zig").Command,
+    @import("commands/help.zig").Command,
 });
 
 pub fn start() !void {
@@ -16,8 +17,8 @@ pub fn start() !void {
     defer std.process.argsFree(zune.DEFAULT_ALLOCATOR, args);
 
     if (args.len < 2) {
-        std.debug.print("Usage: {s} <operation>\n", .{args[0]});
-        return;
+        const command = CommandMap.get("help") orelse @panic("Help command missing.");
+        return command.execute(zune.DEFAULT_ALLOCATOR, &.{});
     }
 
     if (CommandMap.get(args[1])) |command| return command.execute(zune.DEFAULT_ALLOCATOR, args[2..]);
