@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## `0.0.2` - August 28, 2024
+
 ### Added
 - `help`, `--help` and `-h` command/flags to display help message.
 
