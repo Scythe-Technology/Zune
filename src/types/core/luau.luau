@@ -31,10 +31,10 @@ luau.compile = (nil :: any) :: (source: string, options: CompileOptions?) -> (bo
         - If the global environment is an unsafe environment, `nativeCodeGen` will not work.
     - If `chunkName` is not provided, it will default to `(load)`.
 
-    @param source The source code to load.
+    @param bytecode The bytecode to load.
     @param options The options for the load.
     @return (...any) -> ...any The loaded function.
 ]]
-luau.load = (nil :: any) :: (source: string, options: LoadOptions?) -> ((...any) -> ...any);
+luau.load = (nil :: any) :: (bytecode: string, options: LoadOptions?) -> ((...any) -> ...any);
 
 return luau;

@@ -20,14 +20,7 @@ stdio.cursorMove = (nil :: any) ::
     @param erase The erase action.
     @return string
 ]]
-stdio.erase = (nil :: any) ::
-    & ((erase: "endOf") -> string)
-    & ((erase: "startOf") -> string)
-    & ((erase: "entire") -> string)
-    & ((erase: "savedLines") -> string)
-    & ((erase: "endOfLine") -> string)
-    & ((erase: "startOfLine") -> string)
-    & ((erase: "entireLine") -> string);
+stdio.erase = (nil :: any) :: ((erase: "endOf" | "startOf" | "entire" | "savedLines" | "endOfLine" | "startOfLine" | "entireLine") -> string);
 
 --[[
     Generates style.
@@ -35,15 +28,7 @@ stdio.erase = (nil :: any) ::
     @param action The action.
     @return string
 ]]
-stdio.style = (nil :: any) ::
-    & ((style: "bold") -> string)
-    & ((style: "dim") -> string)
-    & ((style: "italic") -> string)
-    & ((style: "underline") -> string)
-    & ((style: "blinking") -> string)
-    & ((style: "inverse") -> string)
-    & ((style: "hidden") -> string)
-    & ((style: "strikethrough") -> string);
+stdio.style = (nil :: any) :: (style: "bold" | "dim" | "italic" | "underline" | "blinking" | "inverse" | "hidden" | "strikethrough") -> string;
 
 --[[
     Resets styles.
@@ -55,32 +40,9 @@ stdio.style = (nil :: any) ::
 ]]
 stdio.reset = (nil :: any) ::
     & (() -> string)
-    & ((style: "weight") -> string)
-    & ((style: "italic") -> string)
-    & ((style: "underline") -> string)
-    & ((style: "blinking") -> string)
-    & ((style: "inverse") -> string)
-    & ((style: "hidden") -> string)
-    & ((style: "strikethrough") -> string)
-    & ((style: "color") -> string);
+    & ((style: "weight" | "italic" | "underline" | "blinking" | "inverse" | "hidden" | "strikethrough" | "color") -> string);
 
-type color =
-    & ((color: "black") -> string)
-    & ((color: "red") -> string)
-    & ((color: "green") -> string)
-    & ((color: "yellow") -> string)
-    & ((color: "blue") -> string)
-    & ((color: "magenta") -> string)
-    & ((color: "cyan") -> string)
-    & ((color: "white") -> string)
-    & ((color: "bblack") -> string)
-    & ((color: "bred") -> string)
-    & ((color: "bgreen") -> string)
-    & ((color: "byellow") -> string)
-    & ((color: "bblue") -> string)
-    & ((color: "bmagenta") -> string)
-    & ((color: "bcyan") -> string)
-    & ((color: "bwhite") -> string);
+type color = (color: "black" | "red" | "green" | "yellow" | "blue" | "magenta" | "cyan" | "white" | "bblack" | "bred" | "bgreen" | "byellow" | "bblue" | "bmagenta" | "bcyan" | "bwhite") -> string;
 
 --[[
     Generates color.

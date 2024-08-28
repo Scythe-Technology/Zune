@@ -1,12 +1,12 @@
 export type JsonEncoder = {
     --[[
-        Encodes table to JSON
+        Encodes value to JSON
     ]]
-    encode : (object: any) -> string,
+    encode : (value: any) -> string,
     --[[
         Decodes JSON
     ]]
-    decode : (string) -> any,
+    decode : (json: string) -> any,
 };
 export type TomlEncoder = {
     --[[
@@ -16,7 +16,7 @@ export type TomlEncoder = {
     --[[
         Decodes TOML
     ]]
-    decode : (string) -> {[string]: any},
+    decode : (toml: string) -> {[string]: any},
 };
 export type YamlEncoder = {
     --[[
@@ -26,7 +26,7 @@ export type YamlEncoder = {
     --[[
         Decodes YAML
     ]]
-    decode : (string) -> {[string]: any},
+    decode : (yaml: string) -> {[string]: any},
 };
 
 export type GenericCompressionOptions = {
@@ -34,7 +34,7 @@ export type GenericCompressionOptions = {
         The compression level.
     ]]
     level : number?,
-}
+};
 export type GenericCompressor = {
     --[[
         Compresses a string.

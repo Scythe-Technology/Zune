@@ -139,7 +139,7 @@ export type ProcessChild = {
 
 		@return ProcessResult
 	]]
-	wait: (self : ProcessChild) -> ProcessResult,
+	wait: (self: ProcessChild) -> ProcessResult,
 	--[[
 		Kills process. Calls system function.
 
@@ -147,7 +147,7 @@ export type ProcessChild = {
 
 		@return ProcessResult
 	]]
-	kill: (self : ProcessChild) -> ProcessResult,
+	kill: (self: ProcessChild) -> ProcessResult,
 
 	--[[
 		Reads the output of the process. Stdout.
@@ -158,13 +158,13 @@ export type ProcessChild = {
 		@param size The size of the output to read.
 		@return string
 	]]
-	readOut: (self : ProcessChild, size : number?) -> string,
+	readOut: (self: ProcessChild, size: number?) -> string,
 	--[[
 		Writes to the input of the process. Stdin.
 
 		@param data The data to write to the process.
 	]]
-	writeIn: (self : ProcessChild, data : string) -> (),
+	writeIn: (self: ProcessChild, data: string) -> (),
 	--[[
 		Reads the error output of the process. Stderr.
 
@@ -174,7 +174,7 @@ export type ProcessChild = {
 		@param size The size of the output to read.
 		@return string
 	]]
-	readErr: (self : ProcessChild, size : number?) -> string,
+	readErr: (self: ProcessChild, size: number?) -> string,
 }
 
 local process = {};
@@ -229,7 +229,7 @@ process.loadEnv = (nil :: any) :: () -> { [string]: string };
 	@param procOpts The options for the process.
 	@return ProcessChild
 ]]
-process.create = (nil :: any) :: (exec : string, args : {string}?, procOpts : ProcessOptions?) -> (boolean, ProcessChild | string);
+process.create = (nil :: any) :: (exec: string, args: {string}?, procOpts: ProcessOptions?) -> (boolean, ProcessChild | string);
 
 --[[
 	Runs a new process.
@@ -243,13 +243,13 @@ process.create = (nil :: any) :: (exec : string, args : {string}?, procOpts : Pr
 	@param procOpts The options for the process.
 	@return ProcessRunResult
 ]]
-process.run = (nil :: any) :: (exec : string, args : {string}?, procOpts : ProcessOptions?) -> (boolean, ProcessRunResult | string);
+process.run = (nil :: any) :: (exec: string, args: {string}?, procOpts: ProcessOptions?) -> (boolean, ProcessRunResult | string);
 
 --[[
 	Exits the current process with the given exit code.
 
 	@param code
 ]]
-process.exit = (nil :: any) :: (code : number) -> never;
+process.exit = (nil :: any) :: (code: number) -> never;
 
 return process;

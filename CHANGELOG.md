@@ -7,8 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
-N/A
+### Added
+- `help`, `--help` and `-h` command/flags to display help message.
+
+### Changed
+
+- Test traceback line styles uses regular characters, instead of unicode for Windows.
+  - Fixes weird characters in Windows terminal.
+- Running zune without params would default to `help` command.
+
+### Fixed
+
+- Some Luau type documentation with incorrect definitions.
 
 ## `0.0.1` - August 26, 2024
 
-Initial release.
+Initial pre-release.

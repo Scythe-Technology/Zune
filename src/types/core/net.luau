@@ -100,10 +100,11 @@ export type RequestOptions = BareRequestOptions & BodyRequestOptions;
 local network = {};
 
 --[[
-	Starts a server on the specified port.
+    Starts a server on the specified port.
 
-	@param options The options for the server.
-	@return ProcessChild
+    @param options The options for the server.
+    @return boolean Whether the server started successfully.
+    @return string | NetServerHandle The error message, or the server handle.
 ]]
 network.serve = (nil :: any) :: (options: ServeOptions) -> (boolean, string | NetServerHandle);
 
@@ -116,6 +117,7 @@ network.serve = (nil :: any) :: (options: ServeOptions) -> (boolean, string | Ne
 
     @param host The host to make the request to.
     @param options The options for the request.
+    @return boolean Whether the request was successful.
     @return Response
 ]]
 network.request = (nil :: any) :: (host: string, options: RequestOptions?) -> (boolean, string | Response);
@@ -127,8 +129,9 @@ network.request = (nil :: any) :: (host: string, options: RequestOptions?) -> (b
 
     @param host The host to connect to.
     @param protocols The protocols to use.
+    @return boolean Whether the connection was successful.
     @return NetClientWebSocket
 ]]
-network.websocket = (nil :: any) :: (host: string, protocols: {string}) -> (boolean, string | NetClientWebSocket);
+network.websocket = (nil :: any) :: (host: string, protocols: {string}?) -> (boolean, string | NetClientWebSocket);
 
 return network;

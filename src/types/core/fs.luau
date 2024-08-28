@@ -107,6 +107,7 @@ export type SymlinkError = IOError
 	| "SymbolicLinkLoop"
 	| "NotDirectory"
 	| "NotFile"
+	| "NotSupported"
 
 local fs = {};
 

@@ -5,7 +5,7 @@ local task = {};
 
     @param thread The task to cancel.
 ]]
-task.cancel = (nil :: any) :: (thread : thread) -> ();
+task.cancel = (nil :: any) :: (thread: thread) -> ();
 
 --[[
     Defers a task.
@@ -26,7 +26,7 @@ task.defer = (nil :: any) :: <A..., R...>(f: ((A...) -> R...) | thread, A...) ->
     @param f The function to delay.
     @return thread
 ]]
-task.delay = (nil :: any) :: <A..., R...>(sec: number, f: ((A...) -> (R...)) | thread, A...) -> thread
+task.delay = (nil :: any) :: <A..., R...>(sec: number, f: ((A...) -> (R...)) | thread, A...) -> thread;
 
 --[[
     Spawns a task.
@@ -36,7 +36,7 @@ task.delay = (nil :: any) :: <A..., R...>(sec: number, f: ((A...) -> (R...)) | t
     @param f The function to spawn.
     @return thread
 ]]
-task.spawn = (nil :: any) :: <A..., R...>(f: ((A...) -> (R...)) | thread, A...) -> thread
+task.spawn = (nil :: any) :: <A..., R...>(f: ((A...) -> (R...)) | thread, A...) -> thread;
 
 --[[
     Sleeps task.
@@ -47,7 +47,7 @@ task.spawn = (nil :: any) :: <A..., R...>(f: ((A...) -> (R...)) | thread, A...) 
     @param sec The time to wait.
     @return number
 ]]
-task.wait = (nil :: any) :: (sec: number?) -> number
+task.wait = (nil :: any) :: (sec: number?) -> number;
 
 --[[
     Counts the number of tasks.
@@ -73,6 +73,6 @@ task.wait = (nil :: any) :: (sec: number?) -> number
     @param kinds The kinds of tasks to count.
     @return number
 ]]
-task.count = (nil :: any) :: (() -> number) & ((kinds: string?) -> ...number)
+task.count = (nil :: any) :: (() -> number) & ((kinds: string?) -> ...number);
 
 return task;
