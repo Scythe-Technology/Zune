@@ -20,8 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   print(crypto.password.verify("pass", pass_hash))
   ```
 
-- Updated backend for print formating.
-- Updated Internal package.
+### Changed
+- Partial backend code for print formating.
+- Internal package.
 
 ## `0.0.5` - August 29, 2024
 
