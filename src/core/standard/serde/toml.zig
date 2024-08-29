@@ -664,7 +664,7 @@ fn decode(L: *Luau, string: []const u8, info: *DecodeInfo) !void {
     returnTop(L, main);
 }
 
-pub fn lua_encode(L: *Luau) i32 {
+pub fn lua_encode(L: *Luau) !i32 {
     L.checkType(1, .table);
     const allocator = L.allocator();
 
@@ -683,14 +683,7 @@ pub fn lua_encode(L: *Luau) i32 {
         .tracked = &tracked,
     };
 
-    encode(L, allocator, &buf, info) catch |err| {
-        buf.deinit();
-        tagged.deinit();
-        tracked.deinit();
-        switch (err) {
-            else => L.raiseErrorStr("%s", .{@errorName(err).ptr}),
-        }
-    };
+    try encode(L, allocator, &buf, info);
 
     L.pushLString(buf.items);
 

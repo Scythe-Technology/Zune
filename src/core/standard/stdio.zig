@@ -83,26 +83,26 @@ const EraseActionMap = std.StaticStringMap(EraseKind).initComptime(.{
     .{ "entireLine", .EntireLine },
 });
 
-fn stdio_color(L: *Luau) i32 {
+fn stdio_color(L: *Luau) !i32 {
     const allocator = L.allocator();
     const color = L.checkString(1);
 
     const code = ColorMap.get(color) orelse L.raiseErrorStr("UnknownColor", .{});
 
-    const buf = std.fmt.allocPrint(allocator, "\x1b[{d}m", .{code}) catch |err| L.raiseErrorStr("%s", .{@errorName(err).ptr});
+    const buf = try std.fmt.allocPrint(allocator, "\x1b[{d}m", .{code});
     defer allocator.free(buf);
 
     L.pushLString(buf);
 
     return 1;
 }
-fn stdio_bgColor(L: *Luau) i32 {
+fn stdio_bgColor(L: *Luau) !i32 {
     const allocator = L.allocator();
     const color = L.checkString(1);
 
     const code = ColorMap.get(color) orelse L.raiseErrorStr("UnknownColor", .{});
 
-    const buf = std.fmt.allocPrint(allocator, "\x1b[{d}m", .{code + 10}) catch |err| L.raiseErrorStr("%s", .{@errorName(err).ptr});
+    const buf = try std.fmt.allocPrint(allocator, "\x1b[{d}m", .{code + 10});
     defer allocator.free(buf);
 
     L.pushLString(buf);
@@ -110,26 +110,26 @@ fn stdio_bgColor(L: *Luau) i32 {
     return 1;
 }
 
-fn stdio_color256(L: *Luau) i32 {
+fn stdio_color256(L: *Luau) !i32 {
     const allocator = L.allocator();
     const code = L.checkInteger(1);
 
     if (code < 0 or code > 255) L.raiseErrorStr("Code must be between 0 to 255", .{});
 
-    const buf = std.fmt.allocPrint(allocator, "\x1b[38;5;{d}m", .{code}) catch |err| L.raiseErrorStr("%s", .{@errorName(err).ptr});
+    const buf = try std.fmt.allocPrint(allocator, "\x1b[38;5;{d}m", .{code});
     defer allocator.free(buf);
 
     L.pushLString(buf);
 
     return 1;
 }
-fn stdio_bgColor256(L: *Luau) i32 {
+fn stdio_bgColor256(L: *Luau) !i32 {
     const allocator = L.allocator();
     const code = L.checkInteger(1);
 
     if (code < 0 or code > 255) L.raiseErrorStr("Code must be between 0 to 255", .{});
 
-    const buf = std.fmt.allocPrint(allocator, "\x1b[48;5;{d}m", .{code}) catch |err| L.raiseErrorStr("%s", .{@errorName(err).ptr});
+    const buf = try std.fmt.allocPrint(allocator, "\x1b[48;5;{d}m", .{code});
     defer allocator.free(buf);
 
     L.pushLString(buf);
@@ -137,7 +137,7 @@ fn stdio_bgColor256(L: *Luau) i32 {
     return 1;
 }
 
-fn stdio_trueColor(L: *Luau) i32 {
+fn stdio_trueColor(L: *Luau) !i32 {
     const allocator = L.allocator();
     const r = L.checkInteger(1);
     const g = L.checkInteger(2);
@@ -147,16 +147,16 @@ fn stdio_trueColor(L: *Luau) i32 {
     if (g < 0 or g > 255) L.raiseErrorStr("G must be between 0 to 255", .{});
     if (b < 0 or b > 255) L.raiseErrorStr("B must be between 0 to 255", .{});
 
-    const buf = std.fmt.allocPrint(allocator, "\x1b[38;2;{d};{d};{d}m", .{
+    const buf = try std.fmt.allocPrint(allocator, "\x1b[38;2;{d};{d};{d}m", .{
         r, g, b,
-    }) catch |err| L.raiseErrorStr("%s", .{@errorName(err).ptr});
+    });
     defer allocator.free(buf);
 
     L.pushLString(buf);
 
     return 1;
 }
-fn stdio_bgTrueColor(L: *Luau) i32 {
+fn stdio_bgTrueColor(L: *Luau) !i32 {
     const allocator = L.allocator();
     const r = L.checkInteger(1);
     const g = L.checkInteger(2);
@@ -166,9 +166,9 @@ fn stdio_bgTrueColor(L: *Luau) i32 {
     if (g < 0 or g > 255) L.raiseErrorStr("G must be between 0 to 255", .{});
     if (b < 0 or b > 255) L.raiseErrorStr("B must be between 0 to 255", .{});
 
-    const buf = std.fmt.allocPrint(allocator, "\x1b[48;2;{d};{d};{d}m", .{
+    const buf = try std.fmt.allocPrint(allocator, "\x1b[48;2;{d};{d};{d}m", .{
         r, g, b,
-    }) catch |err| L.raiseErrorStr("%s", .{@errorName(err).ptr});
+    });
     defer allocator.free(buf);
 
     L.pushLString(buf);
@@ -176,13 +176,13 @@ fn stdio_bgTrueColor(L: *Luau) i32 {
     return 1;
 }
 
-fn stdio_style(L: *Luau) i32 {
+fn stdio_style(L: *Luau) !i32 {
     const allocator = L.allocator();
     const color = L.checkString(1);
 
     const code = StyleMap.get(color) orelse L.raiseErrorStr("UnknownStyle", .{});
 
-    const buf = std.fmt.allocPrint(allocator, "\x1b[{d}m", .{code}) catch |err| L.raiseErrorStr("%s", .{@errorName(err).ptr});
+    const buf = try std.fmt.allocPrint(allocator, "\x1b[{d}m", .{code});
     defer allocator.free(buf);
 
     L.pushLString(buf);
@@ -190,13 +190,13 @@ fn stdio_style(L: *Luau) i32 {
     return 1;
 }
 
-fn stdio_reset(L: *Luau) i32 {
+fn stdio_reset(L: *Luau) !i32 {
     const allocator = L.allocator();
     const reset = L.optString(1);
 
     if (reset) |kind| {
         if (ResetMap.get(kind)) |code| {
-            const buf = std.fmt.allocPrint(allocator, "\x1b[{d}m", .{code}) catch |err| L.raiseErrorStr("%s", .{@errorName(err).ptr});
+            const buf = try std.fmt.allocPrint(allocator, "\x1b[{d}m", .{code});
             defer allocator.free(buf);
             L.pushLString(buf);
             return 1;
@@ -208,22 +208,22 @@ fn stdio_reset(L: *Luau) i32 {
     return 1;
 }
 
-fn stdio_cursorMove(L: *Luau) i32 {
+fn stdio_cursorMove(L: *Luau) !i32 {
     const allocator = L.allocator();
     const action = L.checkString(1);
 
     const kind = CursorActionMap.get(action) orelse L.raiseErrorStr("UnknownKind", .{});
 
     const buf = switch (kind) {
-        .Home => std.fmt.allocPrint(allocator, "\x1b[H", .{}) catch |err| L.raiseErrorStr("%s", .{@errorName(err).ptr}),
-        .Goto => std.fmt.allocPrint(allocator, "\x1b[{d};{d}H", .{ L.checkInteger(2), L.checkInteger(3) }) catch |err| L.raiseErrorStr("%s", .{@errorName(err).ptr}),
-        .Up => std.fmt.allocPrint(allocator, "\x1b[{d}A", .{L.checkInteger(2)}) catch |err| L.raiseErrorStr("%s", .{@errorName(err).ptr}),
-        .Down => std.fmt.allocPrint(allocator, "\x1b[{d}B", .{L.checkInteger(2)}) catch |err| L.raiseErrorStr("%s", .{@errorName(err).ptr}),
-        .Right => std.fmt.allocPrint(allocator, "\x1b[{d}C", .{L.checkInteger(2)}) catch |err| L.raiseErrorStr("%s", .{@errorName(err).ptr}),
-        .Left => std.fmt.allocPrint(allocator, "\x1b[{d}D", .{L.checkInteger(2)}) catch |err| L.raiseErrorStr("%s", .{@errorName(err).ptr}),
-        .Nextline => std.fmt.allocPrint(allocator, "\x1b[{d}E", .{L.checkInteger(2)}) catch |err| L.raiseErrorStr("%s", .{@errorName(err).ptr}),
-        .PreviousLine => std.fmt.allocPrint(allocator, "\x1b[{d}F", .{L.checkInteger(2)}) catch |err| L.raiseErrorStr("%s", .{@errorName(err).ptr}),
-        .GotoColumn => std.fmt.allocPrint(allocator, "\x1b[{d}G", .{L.checkInteger(2)}) catch |err| L.raiseErrorStr("%s", .{@errorName(err).ptr}),
+        .Home => try std.fmt.allocPrint(allocator, "\x1b[H", .{}),
+        .Goto => try std.fmt.allocPrint(allocator, "\x1b[{d};{d}H", .{ L.checkInteger(2), L.checkInteger(3) }),
+        .Up => try std.fmt.allocPrint(allocator, "\x1b[{d}A", .{L.checkInteger(2)}),
+        .Down => try std.fmt.allocPrint(allocator, "\x1b[{d}B", .{L.checkInteger(2)}),
+        .Right => try std.fmt.allocPrint(allocator, "\x1b[{d}C", .{L.checkInteger(2)}),
+        .Left => try std.fmt.allocPrint(allocator, "\x1b[{d}D", .{L.checkInteger(2)}),
+        .Nextline => try std.fmt.allocPrint(allocator, "\x1b[{d}E", .{L.checkInteger(2)}),
+        .PreviousLine => try std.fmt.allocPrint(allocator, "\x1b[{d}F", .{L.checkInteger(2)}),
+        .GotoColumn => try std.fmt.allocPrint(allocator, "\x1b[{d}G", .{L.checkInteger(2)}),
     };
     defer allocator.free(buf);
 
@@ -232,7 +232,7 @@ fn stdio_cursorMove(L: *Luau) i32 {
     return 1;
 }
 
-fn stdio_erase(L: *Luau) i32 {
+fn stdio_erase(L: *Luau) !i32 {
     const allocator = L.allocator();
     const action = L.checkString(1);
 
@@ -248,7 +248,7 @@ fn stdio_erase(L: *Luau) i32 {
         .EntireLine => "2K",
     };
 
-    const buf = std.fmt.allocPrint(allocator, "\x1b[{s}", .{str}) catch |err| L.raiseErrorStr("%s", .{@errorName(err).ptr});
+    const buf = try std.fmt.allocPrint(allocator, "\x1b[{s}", .{str});
     defer allocator.free(buf);
 
     L.pushLString(buf);
@@ -256,23 +256,23 @@ fn stdio_erase(L: *Luau) i32 {
     return 1;
 }
 
-fn stdio_writeOut(L: *Luau) i32 {
+fn stdio_writeOut(L: *Luau) !i32 {
     const string = L.checkString(1);
 
-    std.io.getStdOut().writeAll(string) catch |err| L.raiseErrorStr("%s", .{@errorName(err).ptr});
+    try std.io.getStdOut().writeAll(string);
 
     return 0;
 }
 
-fn stdio_writeErr(L: *Luau) i32 {
+fn stdio_writeErr(L: *Luau) !i32 {
     const string = L.checkString(1);
 
-    std.io.getStdErr().writeAll(string) catch |err| L.raiseErrorStr("%s", .{@errorName(err).ptr});
+    try std.io.getStdErr().writeAll(string);
 
     return 0;
 }
 
-fn stdio_readIn(L: *Luau) i32 {
+fn stdio_readIn(L: *Luau) !i32 {
     const allocator = L.allocator();
 
     const maxBytes = L.optUnsigned(1) orelse MAX_LUAU_SIZE;
@@ -280,10 +280,7 @@ fn stdio_readIn(L: *Luau) i32 {
     var buffer = allocator.alloc(u8, maxBytes) catch L.raiseErrorStr("OutOfMemory", .{});
     defer allocator.free(buffer);
 
-    const amount = std.io.getStdIn().readAll(buffer) catch |err| {
-        allocator.free(buffer);
-        L.raiseErrorStr("%s", .{@errorName(err).ptr});
-    };
+    const amount = try std.io.getStdIn().readAll(buffer);
 
     L.pushLString(buffer[0..amount]);
 

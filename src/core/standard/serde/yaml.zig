@@ -101,7 +101,7 @@ fn encodeValue(L: *Luau, allocator: std.mem.Allocator, tracked: *std.ArrayList(*
     }
 }
 
-pub fn lua_encode(L: *Luau) i32 {
+pub fn lua_encode(L: *Luau) !i32 {
     const allocator = L.allocator();
 
     var arena = std.heap.ArenaAllocator.init(allocator);
@@ -110,18 +110,10 @@ pub fn lua_encode(L: *Luau) i32 {
     var tracked = std.ArrayList(*const anyopaque).init(allocator);
     defer tracked.deinit();
 
-    const value = encodeValue(L, arena.allocator(), &tracked) catch |err| {
-        tracked.deinit();
-        arena.deinit();
-        L.raiseErrorStr("%s", .{@errorName(err).ptr});
-    };
+    const value = try encodeValue(L, arena.allocator(), &tracked);
 
     var buf = std.ArrayList(u8).init(arena.allocator());
-    value.stringify(buf.writer(), .{}) catch |err| {
-        tracked.deinit();
-        arena.deinit();
-        L.raiseErrorStr("%s", .{@errorName(err).ptr});
-    };
+    try value.stringify(buf.writer(), .{});
 
     L.pushLString(buf.items);
 
@@ -168,7 +160,7 @@ fn decodeMap(L: *Luau, map: yaml.Map) void {
     }
 }
 
-pub fn lua_decode(L: *Luau) i32 {
+pub fn lua_decode(L: *Luau) !i32 {
     const allocator = L.allocator();
     const string = L.checkString(1);
     if (string.len == 0) {
@@ -176,7 +168,7 @@ pub fn lua_decode(L: *Luau) i32 {
         return 1;
     }
 
-    var raw = yaml.Yaml.load(allocator, string) catch |err| L.raiseErrorStr("%s", .{@errorName(err).ptr});
+    var raw = try yaml.Yaml.load(allocator, string);
     defer raw.deinit();
 
     if (raw.docs.items.len == 0) {

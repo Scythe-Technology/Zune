@@ -9,7 +9,7 @@ const Luau = luau.Luau;
 
 // Lune compatibility
 
-pub fn lua_compress(L: *Luau) i32 {
+pub fn lua_compress(L: *Luau) !i32 {
     const allocator = L.allocator();
 
     const string = L.checkString(1);
@@ -29,7 +29,7 @@ pub fn lua_compress(L: *Luau) i32 {
         L.pop(1);
     }
 
-    var encoder = lz4.Encoder.init(allocator) catch |err| L.raiseErrorStr("%s", .{@errorName(err).ptr});
+    var encoder = try lz4.Encoder.init(allocator);
     _ = encoder.setLevel(level)
         .setContentChecksum(lz4.Frame.ContentChecksum.Enabled)
         .setBlockMode(lz4.Frame.BlockMode.Independent);
@@ -38,17 +38,9 @@ pub fn lua_compress(L: *Luau) i32 {
     var buf = std.ArrayList(u8).init(allocator);
     defer buf.deinit();
 
-    encoder.compressStream(buf.writer().any(), string) catch |err| {
-        buf.deinit();
-        encoder.deinit();
-        L.raiseErrorStr("%s :(", .{@errorName(err).ptr});
-    };
+    try encoder.compressStream(buf.writer().any(), string);
 
-    const out = allocator.alloc(u8, buf.items.len + 4) catch |err| {
-        buf.deinit();
-        encoder.deinit();
-        L.raiseErrorStr("%s", .{@errorName(err).ptr});
-    };
+    const out = try allocator.alloc(u8, buf.items.len + 4);
     defer allocator.free(out);
 
     const header: [4]u8 = @bitCast(@as(u32, @intCast(string.len)));
@@ -60,22 +52,19 @@ pub fn lua_compress(L: *Luau) i32 {
     return 1;
 }
 
-pub fn lua_decompress(L: *Luau) i32 {
+pub fn lua_decompress(L: *Luau) !i32 {
     const allocator = L.allocator();
 
     const string = L.checkString(1);
 
     if (string.len < 4) L.raiseErrorStr("InvalidHeader", .{});
 
-    var decoder = lz4.Decoder.init(allocator) catch |err| L.raiseErrorStr("%s", .{@errorName(err).ptr});
+    var decoder = try lz4.Decoder.init(allocator);
     defer decoder.deinit();
 
     const sizeHint = std.mem.bytesAsSlice(u32, string[0..4])[0];
 
-    const decompressed = decoder.decompress(string[4..], sizeHint) catch |err| {
-        decoder.deinit();
-        L.raiseErrorStr("%s", .{@errorName(err).ptr});
-    };
+    const decompressed = try decoder.decompress(string[4..], sizeHint);
     defer allocator.free(decompressed);
 
     L.pushLString(decompressed);

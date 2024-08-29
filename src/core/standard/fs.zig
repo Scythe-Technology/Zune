@@ -2,27 +2,25 @@ const std = @import("std");
 const builtin = @import("builtin");
 const luau = @import("luau");
 
+const luaHelper = @import("../utils/luahelper.zig");
+
 const Luau = luau.Luau;
 
 const fs = std.fs;
 
-fn outputStatus(L: *Luau, status: [:0]const u8) i32 {
-    L.pushBoolean(false);
-    L.pushString(status);
-    return 2;
-}
+const BufferError = error{FailedToCreateBuffer};
+const HardwareError = error{NotSupported};
+const UnhandledError = error{UnknownError};
 
-fn fs_readFile(L: *Luau) i32 {
+fn fs_readFile(L: *Luau) !i32 {
     const allocator = L.allocator();
     const path = L.checkString(1);
     const useBuffer = L.optBoolean(2) orelse false;
-    const data = fs.cwd().readFileAlloc(allocator, path, std.math.maxInt(usize)) catch |err| return outputStatus(L, @errorName(err));
+    const data = try fs.cwd().readFileAlloc(allocator, path, std.math.maxInt(usize));
     defer allocator.free(data);
     L.pushBoolean(true);
     if (useBuffer) {
-        const buf: []u8 = L.newBuffer(data.len) catch {
-            return outputStatus(L, "FailedToCreateBuffer");
-        };
+        const buf: []u8 = L.newBuffer(data.len) catch return BufferError.FailedToCreateBuffer;
         @memcpy(buf, data);
     } else {
         L.pushLString(data);
@@ -30,24 +28,20 @@ fn fs_readFile(L: *Luau) i32 {
     return 2;
 }
 
-fn fs_readDir(L: *Luau) i32 {
+fn fs_readDir(L: *Luau) !i32 {
     const path = L.checkString(1);
-    var dir = fs.cwd().openDir(path, fs.Dir.OpenDirOptions{
+    var dir = try fs.cwd().openDir(path, fs.Dir.OpenDirOptions{
         .iterate = true,
-    }) catch |err| return outputStatus(L, @errorName(err));
+    });
     defer dir.close();
     var iter = dir.iterate();
     L.pushBoolean(true);
     L.newTable();
     var i: i32 = 1;
     while (true) {
-        const entry = iter.next() catch |err| {
-            L.pop(2); // Drop: table, boolean
-            return outputStatus(L, @errorName(err));
-        };
-        if (entry == null) {
-            break;
-        }
+        errdefer L.pop(2); // Drop: table, boolean
+        const entry = try iter.next();
+        if (entry == null) break;
         L.pushInteger(i);
         L.pushLString(entry.?.name);
         L.setTable(-3);
@@ -56,38 +50,38 @@ fn fs_readDir(L: *Luau) i32 {
     return 2;
 }
 
-fn fs_writeFile(L: *Luau) i32 {
+fn fs_writeFile(L: *Luau) !i32 {
     const path = L.checkString(1);
     const data = if (L.isBuffer(2)) L.checkBuffer(2) else L.checkString(2);
-    fs.cwd().writeFile(fs.Dir.WriteFileOptions{
+    try fs.cwd().writeFile(fs.Dir.WriteFileOptions{
         .sub_path = path,
         .data = data,
-    }) catch |err| return outputStatus(L, @errorName(err));
+    });
     L.pushBoolean(true);
     return 1;
 }
 
-fn fs_writeDir(L: *Luau) i32 {
+fn fs_writeDir(L: *Luau) !i32 {
     const path = L.checkString(1);
     const recursive = L.optBoolean(2) orelse false;
     const cwd = std.fs.cwd();
-    (if (recursive) cwd.makePath(path) else cwd.makeDir(path)) catch |err| return outputStatus(L, @errorName(err));
+    try (if (recursive) cwd.makePath(path) else cwd.makeDir(path));
     L.pushBoolean(true);
     return 1;
 }
 
-fn fs_removeFile(L: *Luau) i32 {
+fn fs_removeFile(L: *Luau) !i32 {
     const path = L.checkString(1);
-    fs.cwd().deleteFile(path) catch |err| return outputStatus(L, @errorName(err));
+    try fs.cwd().deleteFile(path);
     L.pushBoolean(true);
     return 1;
 }
 
-fn fs_removeDir(L: *Luau) i32 {
+fn fs_removeDir(L: *Luau) !i32 {
     const path = L.checkString(1);
     const recursive = L.optBoolean(2) orelse false;
     const cwd = std.fs.cwd();
-    (if (recursive) cwd.deleteTree(path) else cwd.deleteDir(path)) catch |err| return outputStatus(L, @errorName(err));
+    try (if (recursive) cwd.deleteTree(path) else cwd.deleteDir(path));
     L.pushBoolean(true);
     return 1;
 }
@@ -150,17 +144,15 @@ fn internal_metadata_table(L: *Luau, metadata: fs.File.Metadata, isSymlink: bool
     L.setField(-2, "permissions");
 }
 
-fn fs_metadata(L: *Luau) i32 {
+fn fs_metadata(L: *Luau) !i32 {
     const path = L.checkString(1);
     const allocator = L.allocator();
-    const buf = allocator.alloc(u8, 4096) catch |err| switch (err) {
-        error.OutOfMemory => return outputStatus(L, "OutOfMemory"),
-    };
+    const buf = try allocator.alloc(u8, 4096);
     const cwd = std.fs.cwd();
     if (internal_isDir(cwd, path)) {
-        var dir = cwd.openDir(path, fs.Dir.OpenDirOptions{}) catch |err| return outputStatus(L, @errorName(err));
+        var dir = try cwd.openDir(path, fs.Dir.OpenDirOptions{});
         defer dir.close();
-        const metadata = dir.metadata() catch |err| return outputStatus(L, @errorName(err));
+        const metadata = try dir.metadata();
         var isLink = true;
         _ = cwd.readLink(path, buf) catch |err| switch (err) {
             else => {
@@ -171,11 +163,11 @@ fn fs_metadata(L: *Luau) i32 {
         L.pushBoolean(true);
         internal_metadata_table(L, metadata, isLink);
     } else if (internal_isFile(cwd, path)) {
-        var file = cwd.openFile(path, fs.File.OpenFlags{
+        var file = try cwd.openFile(path, fs.File.OpenFlags{
             .mode = .read_only,
-        }) catch |err| return outputStatus(L, @errorName(err));
+        });
         defer file.close();
-        const metadata = file.metadata() catch |err| return outputStatus(L, @errorName(err));
+        const metadata = try file.metadata();
         var isLink = true;
         _ = cwd.readLink(path, buf) catch |err| switch (err) {
             else => {
@@ -187,22 +179,21 @@ fn fs_metadata(L: *Luau) i32 {
         internal_metadata_table(L, metadata, isLink);
     } else {
         allocator.free(buf);
-        return outputStatus(L, "FileNotFound");
+
+        return std.fs.File.OpenError.FileNotFound;
     }
     return 2;
 }
 
-fn fs_move(L: *Luau) i32 {
+fn fs_move(L: *Luau) !i32 {
     const fromPath = L.checkString(1);
     const toPath = L.checkString(2);
     const overwrite = L.optBoolean(3) orelse false;
     const cwd = std.fs.cwd();
     if (overwrite == false) {
-        if (internal_isFile(cwd, toPath) or internal_isDir(cwd, toPath)) {
-            return outputStatus(L, "PathAlreadyExists");
-        }
+        if (internal_isFile(cwd, toPath) or internal_isDir(cwd, toPath)) return std.fs.Dir.MakeError.PathAlreadyExists;
     }
-    cwd.rename(fromPath, toPath) catch |err| return outputStatus(L, @errorName(err));
+    try cwd.rename(fromPath, toPath);
     L.pushBoolean(true);
     return 1;
 }
@@ -211,11 +202,7 @@ fn copyDir(fromDir: fs.Dir, toDir: fs.Dir, overwrite: bool) !void {
     var iter = fromDir.iterate();
     while (try iter.next()) |entry| switch (entry.kind) {
         .file => {
-            if (overwrite == false) {
-                if (internal_isFile(toDir, entry.name)) {
-                    return error.PathAlreadyExists;
-                }
-            }
+            if (overwrite == false and internal_isFile(toDir, entry.name)) return error.PathAlreadyExists;
             try fromDir.copyFile(entry.name, toDir, entry.name, fs.Dir.CopyFileOptions{});
         },
         .directory => {
@@ -233,88 +220,83 @@ fn copyDir(fromDir: fs.Dir, toDir: fs.Dir, overwrite: bool) !void {
     };
 }
 
-fn fs_copy(L: *Luau) i32 {
+fn fs_copy(L: *Luau) !i32 {
     const fromPath = L.checkString(1);
     const toPath = L.checkString(2);
     const overrite = L.optBoolean(3) orelse false;
     const cwd = std.fs.cwd();
     if (internal_isFile(cwd, fromPath)) {
-        if (overrite == false) {
-            if (internal_isFile(cwd, toPath)) {
-                return outputStatus(L, "PathAlreadyExists");
-            }
-        }
-        cwd.copyFile(fromPath, cwd, toPath, fs.Dir.CopyFileOptions{}) catch |err| switch (err) {
-            else => return outputStatus(L, "UnknownError"),
-        };
+        if (overrite == false and internal_isFile(cwd, toPath)) return std.fs.Dir.MakeError.PathAlreadyExists;
+
+        cwd.copyFile(fromPath, cwd, toPath, fs.Dir.CopyFileOptions{}) catch return UnhandledError.UnknownError;
     } else {
-        var fromDir = cwd.openDir(fromPath, fs.Dir.OpenDirOptions{
+        var fromDir = try cwd.openDir(fromPath, fs.Dir.OpenDirOptions{
             .iterate = true,
             .access_sub_paths = true,
             .no_follow = true,
-        }) catch |err| return outputStatus(L, @errorName(err));
+        });
         defer fromDir.close();
-        if (overrite == false and internal_isDir(cwd, toPath)) {
-            return outputStatus(L, "PathAlreadyExists");
-        } else {
+        if (overrite == false and internal_isDir(cwd, toPath)) return std.fs.Dir.MakeError.PathAlreadyExists else {
             cwd.makeDir(toPath) catch |err| switch (err) {
                 error.PathAlreadyExists => {},
-                else => return outputStatus(L, "UnknownError"),
+                else => return UnhandledError.UnknownError,
             };
         }
-        var toDir = cwd.openDir(toPath, fs.Dir.OpenDirOptions{
+        var toDir = try cwd.openDir(toPath, fs.Dir.OpenDirOptions{
             .iterate = true,
             .access_sub_paths = true,
             .no_follow = true,
-        }) catch |err| return outputStatus(L, @errorName(err));
+        });
         defer toDir.close();
-        copyDir(fromDir, toDir, overrite) catch |err| return outputStatus(L, @errorName(err));
+        try copyDir(fromDir, toDir, overrite);
     }
     L.pushBoolean(true);
     return 1;
 }
 
-fn fs_symlink(L: *Luau) i32 {
-    if (builtin.os.tag == .windows) {
-        return outputStatus(L, "NotSupported");
-    }
+fn fs_symlink(L: *Luau) !i32 {
+    if (builtin.os.tag == .windows) return HardwareError.NotSupported;
+
     const fromPath = L.checkString(1);
     const toPath = L.checkString(2);
     const cwd = std.fs.cwd();
+
     const isDir = internal_isDir(cwd, fromPath);
-    if (!isDir and !internal_isFile(cwd, fromPath)) {
-        return outputStatus(L, "FileNotFound");
-    }
+    if (!isDir and !internal_isFile(cwd, fromPath)) return error.FileNotFound;
+
     const allocator = L.allocator();
-    const fullPath = cwd.realpathAlloc(allocator, fromPath) catch |err| return outputStatus(L, @errorName(err));
+
+    const fullPath = try cwd.realpathAlloc(allocator, fromPath);
     defer allocator.free(fullPath);
-    cwd.symLink(fullPath, toPath, fs.Dir.SymLinkFlags{ .is_directory = isDir }) catch |err| return outputStatus(L, @errorName(err));
+
+    try cwd.symLink(fullPath, toPath, fs.Dir.SymLinkFlags{ .is_directory = isDir });
     L.pushBoolean(true);
+
     return 1;
 }
 
 pub fn loadLib(L: *Luau) void {
     L.newTable();
 
-    L.setFieldFn(-1, "readFile", fs_readFile);
-    L.setFieldFn(-1, "readDir", fs_readDir);
+    L.setFieldFn(-1, "readFile", luaHelper.toSafeZigFunction(fs_readFile));
+    L.setFieldFn(-1, "readDir", luaHelper.toSafeZigFunction(fs_readDir));
 
-    L.setFieldFn(-1, "writeFile", fs_writeFile);
-    L.setFieldFn(-1, "writeDir", fs_writeDir);
+    L.setFieldFn(-1, "writeFile", luaHelper.toSafeZigFunction(fs_writeFile));
+    L.setFieldFn(-1, "writeDir", luaHelper.toSafeZigFunction(fs_writeDir));
 
-    L.setFieldFn(-1, "removeFile", fs_removeFile);
-    L.setFieldFn(-1, "removeDir", fs_removeDir);
+    L.setFieldFn(-1, "removeFile", luaHelper.toSafeZigFunction(fs_removeFile));
+    L.setFieldFn(-1, "removeDir", luaHelper.toSafeZigFunction(fs_removeDir));
 
     L.setFieldFn(-1, "isFile", fs_isFile);
     L.setFieldFn(-1, "isDir", fs_isDir);
 
-    L.setFieldFn(-1, "metadata", fs_metadata);
+    L.setFieldFn(-1, "metadata", luaHelper.toSafeZigFunction(fs_metadata));
 
-    L.setFieldFn(-1, "move", fs_move);
+    L.setFieldFn(-1, "move", luaHelper.toSafeZigFunction(fs_move));
 
-    L.setFieldFn(-1, "copy", fs_copy);
+    L.setFieldFn(-1, "copy", luaHelper.toSafeZigFunction(fs_copy));
 
-    L.setFieldFn(-1, "symlink", fs_symlink);
+    L.setFieldFn(-1, "symlink", luaHelper.toSafeZigFunction(fs_symlink));
 
     _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
     if (L.getField(-1, "@zcore/fs") != .table) {

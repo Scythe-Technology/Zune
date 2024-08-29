@@ -6,7 +6,7 @@ const Scheduler = @import("../../runtime/scheduler.zig");
 
 const Luau = luau.Luau;
 
-pub fn lua_compress(L: *Luau) i32 {
+pub fn lua_compress(L: *Luau) !i32 {
     const allocator = L.allocator();
 
     const string = L.checkString(1);
@@ -32,19 +32,16 @@ pub fn lua_compress(L: *Luau) i32 {
 
     var stream = std.io.fixedBufferStream(string);
 
-    std.compress.gzip.compress(stream.reader(), buf.writer(), .{
+    try std.compress.gzip.compress(stream.reader(), buf.writer(), .{
         .level = @enumFromInt(level),
-    }) catch |err| {
-        buf.deinit();
-        L.raiseErrorStr("%s", .{@errorName(err).ptr});
-    };
+    });
 
     L.pushLString(buf.items);
 
     return 1;
 }
 
-pub fn lua_decompress(L: *Luau) i32 {
+pub fn lua_decompress(L: *Luau) !i32 {
     const allocator = L.allocator();
 
     const string = L.checkString(1);
@@ -54,10 +51,7 @@ pub fn lua_decompress(L: *Luau) i32 {
 
     var stream = std.io.fixedBufferStream(string);
 
-    std.compress.gzip.decompress(stream.reader(), buf.writer()) catch |err| {
-        buf.deinit();
-        L.raiseErrorStr("%s", .{@errorName(err).ptr});
-    };
+    try std.compress.gzip.decompress(stream.reader(), buf.writer());
 
     L.pushLString(buf.items);
 

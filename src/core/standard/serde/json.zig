@@ -271,7 +271,7 @@ pub fn lua_encode(L: *Luau) i32 {
     return 1;
 }
 
-pub fn lua_decode(L: *Luau) i32 {
+pub fn lua_decode(L: *Luau) !i32 {
     const string = L.checkString(1);
     if (string.len == 0) {
         L.pushNil();
@@ -282,7 +282,7 @@ pub fn lua_decode(L: *Luau) i32 {
     pos += decode(L, string) catch |err| switch (err) {
         Error.InvalidNumber => L.raiseErrorStr("InvalidNumber (Cannot be inf or nan)", .{}),
         Error.UnsupportedType => L.raiseErrorStr("Unsupported type %s", .{@tagName(L.typeOf(-1)).ptr}),
-        else => L.raiseErrorStr("%s", .{@errorName(err).ptr}),
+        else => return err,
     };
 
     if (string.len != pos + Parser.nextNonCharacter(string[pos..], &WHITESPACE_LINE)) L.raiseErrorStr("TrailingData", .{});

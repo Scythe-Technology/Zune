@@ -18,7 +18,7 @@ pub const RunMode = enum {
 };
 
 // TODO: change luau version to the package options, when it exists.
-const VERSION = "Zune " ++ zune_info.version ++ "+638";
+const VERSION = "Zune " ++ zune_info.version ++ "+" ++ std.fmt.comptimePrint("{d}.{d}", .{ luau.LUAU_VERSION.major, luau.LUAU_VERSION.minor });
 
 pub fn openZune(L: *luau.Luau, args: []const []const u8, mode: RunMode) !void {
     L.openLibs();

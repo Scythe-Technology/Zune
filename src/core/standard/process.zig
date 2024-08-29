@@ -5,6 +5,8 @@ const luau = @import("luau");
 const Scheduler = @import("../runtime/scheduler.zig");
 const Parser = @import("../utils/parser.zig");
 
+const luaHelper = @import("../utils/luahelper.zig");
+
 const Luau = luau.Luau;
 
 const process = std.process;
@@ -22,12 +24,6 @@ const ProcessEnvError = error{
     InvalidKeyType,
     InvalidValueType,
 };
-
-fn outputStatus(L: *Luau, status: [:0]const u8) i32 {
-    L.pushBoolean(false);
-    L.pushString(status);
-    return 2;
-}
 
 fn outputError(L: *Luau, status: [:0]const u8, args: anytype) noreturn {
     L.raiseErrorStr(status, args);
@@ -280,18 +276,18 @@ const ProcessChildOptions = struct {
     }
 };
 
-fn process_run(L: *Luau) i32 {
+fn process_run(L: *Luau) !i32 {
     const allocator = L.allocator();
 
-    var childOptions = ProcessChildOptions.init(L) catch |err| return outputStatus(L, @errorName(err));
+    var childOptions = try ProcessChildOptions.init(L);
     defer childOptions.deinit();
 
-    const proc = process.Child.run(.{
+    const proc = try process.Child.run(.{
         .allocator = allocator,
         .argv = childOptions.argArray.items,
         .env_map = if (childOptions.env) |env| &env else null,
         .cwd = childOptions.cwd,
-    }) catch |err| return outputStatus(L, @errorName(err));
+    });
     defer allocator.free(proc.stdout);
     defer allocator.free(proc.stderr);
 
@@ -306,10 +302,10 @@ fn process_run(L: *Luau) i32 {
     return 2;
 }
 
-fn process_create(L: *Luau) i32 {
+fn process_create(L: *Luau) !i32 {
     const allocator = L.allocator();
 
-    const childOptions = ProcessChildOptions.init(L) catch |err| return outputStatus(L, @errorName(err));
+    const childOptions = try ProcessChildOptions.init(L);
 
     L.pushBoolean(true);
     const handlePtr = L.newUserdataDtor(ProcessChildHandle, ProcessChildOptions.__dtor);
@@ -337,21 +333,16 @@ fn process_create(L: *Luau) i32 {
         .child = childProcess,
     };
 
-    childProcess.spawn() catch |err| {
-        L.pop(2);
-        std.debug.print("Error: {}\n", .{err});
-        return outputStatus(L, @errorName(err));
-    };
+    {
+        errdefer L.pop(2);
+        try childProcess.spawn();
+    }
 
     handlePtr.child = childProcess;
 
     if (L.getMetatableRegistry("process_child_instance") == .table) {
         L.setMetatable(-2);
-    } else {
-        L.pop(2);
-        L.pushBoolean(false);
-        return outputStatus(L, "InternalError (Missing ProcessChild metatable)");
-    }
+    } else std.debug.panic("InternalError (ProcessChild Metatable not initialized)", .{});
 
     return 2;
 }
@@ -550,9 +541,9 @@ pub fn loadLib(L: *Luau, args: []const []const u8) !void {
         L.setFieldLString(-1, "cwd", path);
     }
 
-    L.setFieldFn(-1, "run", process_run);
     L.setFieldFn(-1, "exit", process_exit);
-    L.setFieldFn(-1, "create", process_create);
+    L.setFieldFn(-1, "run", luaHelper.toSafeZigFunction(process_run));
+    L.setFieldFn(-1, "create", luaHelper.toSafeZigFunction(process_create));
 
     _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
     if (L.getField(-1, "@zcore/process") != .table) {
