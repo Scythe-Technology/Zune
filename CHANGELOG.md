@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## `0.0.5` - August 29, 2024
+
+### Changed
+- `--version` & `-V` will now display the version of luau.
+  - format: `<name>: <version...>\n`
+- Updated `luau` to `0.640`.
+- `_VERSION` now includes major and minor version of `luau`.
+  - format: `Zune <major>.<minor>.<patch>+<major>.<minor>`
+- Partial backend code has been changed for `stdio`, `process`, `fs` and `serde` to use new C-Call handler.
+  - Behavior should not change.
+  - Performance should not change.
+
 ## `0.0.4` - August 28, 2024
 
 ### Added
