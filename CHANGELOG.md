@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## `0.0.3` - August 28, 2024
+
+### Added
+- Builds for Linux-Riscv64.
+
 ## `0.0.2` - August 28, 2024
 
 ### Added
