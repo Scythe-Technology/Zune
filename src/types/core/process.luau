@@ -6,7 +6,7 @@ export type CPUArchitecture =
 	-- | "aarch64_be"
 	-- | "aarch64_32"
 	-- | "riscv32"
-	-- | "riscv64"
+	| "riscv64"
 	-- | "wasm32"
 	-- | "wasm64"
 	-- | "armeb"

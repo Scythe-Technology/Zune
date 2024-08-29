@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## `0.0.4` - August 28, 2024
+
+### Added
+- Added type for `riscv64` architecture in process.
+
 ## `0.0.3` - August 28, 2024
 
 ### Added
