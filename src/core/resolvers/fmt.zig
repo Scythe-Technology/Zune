@@ -36,28 +36,17 @@ pub fn fmt_print_value(L: *Luau, idx: i32, depth: usize, asKey: bool) void {
         std.debug.print("{s}", .{"{...}"});
         return;
     } else {
-        switch (L.typeOf(idx)) {
-            .nil => {
-                std.debug.print("nil", .{});
-            },
-            .boolean => {
-                std.debug.print("\x1b[1;33m{s}\x1b[0m", .{if (L.toBoolean(idx)) "true" else "false"});
-            },
-            .number => {
-                std.debug.print("\x1b[96m{d}\x1b[0m", .{L.toNumber(idx) catch 0});
-            },
-            .string => {
-                const str = L.toString(idx) catch "!ERR!";
+        switch (L.typeOfObjConsumed(idx) catch @panic("Failed LuaObject")) {
+            .nil => std.debug.print("nil", .{}),
+            .boolean => |b| std.debug.print("\x1b[1;33m{s}\x1b[0m", .{if (b) "true" else "false"}),
+            .number => |n| std.debug.print("\x1b[96m{d}\x1b[0m", .{n}),
+            .string => |s| {
                 if (asKey) {
-                    if (Parser.isPlainText(str)) {
-                        std.debug.print("{s}", .{str});
-                    } else {
-                        std.debug.print("\x1b[2m[\x1b[0m\x1b[32m\"{s}\"\x1b[0m\x1b[2m]\x1b[0m", .{str});
+                    if (Parser.isPlainText(s)) std.debug.print("{s}", .{s}) else {
+                        std.debug.print("\x1b[2m[\x1b[0m\x1b[32m\"{s}\"\x1b[0m\x1b[2m]\x1b[0m", .{s});
                         return;
                     }
-                } else {
-                    std.debug.print("\x1b[32m\"{s}\"\x1b[0m", .{str});
-                }
+                } else std.debug.print("\x1b[32m\"{s}\"\x1b[0m", .{s});
             },
             .table => {
                 if (asKey) {
@@ -65,9 +54,7 @@ pub fn fmt_print_value(L: *Luau, idx: i32, depth: usize, asKey: bool) void {
                     if (str) |String| {
                         defer allocator.free(String);
                         std.debug.print("\x1b[95m<{s}>\x1b[0m", .{String});
-                    } else {
-                        std.debug.print("\x1b[95m<table>\x1b[0m", .{});
-                    }
+                    } else std.debug.print("\x1b[95m<table>\x1b[0m", .{});
                     return;
                 }
                 {
@@ -75,15 +62,11 @@ pub fn fmt_print_value(L: *Luau, idx: i32, depth: usize, asKey: bool) void {
                     if (tableString) |String| {
                         defer allocator.free(String);
                         std.debug.print("\x1b[2m<{s}> {s}\x1b[0m\n", .{ String, "{" });
-                    } else {
-                        std.debug.print("\x1b[2m<table> {s}\x1b[0m\n", .{"{"});
-                    }
+                    } else std.debug.print("\x1b[2m<table> {s}\x1b[0m\n", .{"{"});
                 }
                 L.pushNil();
                 while (L.next(idx)) {
-                    for (0..depth + 1) |_| {
-                        std.debug.print("    ", .{});
-                    }
+                    for (0..depth + 1) |_| std.debug.print("    ", .{});
                     const n = L.getTop();
                     if (L.typeOf(n - 1) == .string) {
                         fmt_print_value(L, n - 1, depth + 1, true);
@@ -97,9 +80,7 @@ pub fn fmt_print_value(L: *Luau, idx: i32, depth: usize, asKey: bool) void {
                     std.debug.print("\x1b[2m,\x1b[0m \n", .{});
                     L.pop(1);
                 }
-                for (0..depth) |_| {
-                    std.debug.print("    ", .{});
-                }
+                for (0..depth) |_| std.debug.print("    ", .{});
                 std.debug.print("\x1b[2m{s}\x1b[0m", .{"}"});
             },
             else => {
@@ -126,24 +107,16 @@ pub fn fmt_print(L: *Luau) i32 {
         }
         const idx: i32 = @intCast(i);
         switch (L.typeOf(idx)) {
-            .nil => {
-                std.debug.print("nil", .{});
-            },
-            .string => {
-                std.debug.print("{s}", .{L.toString(idx) catch "!ERR!"});
-            },
+            .nil => std.debug.print("nil", .{}),
+            .string => std.debug.print("{s}", .{L.toString(idx) catch @panic("Failed Conversion")}),
             .function, .userdata, .thread => |t| {
                 const str = fmt_tostring(allocator, L, idx) catch "!ERR!";
                 if (str) |String| {
                     defer allocator.free(String);
                     std.debug.print("\x1b[95m<{s}>\x1b[0m", .{String});
-                } else {
-                    std.debug.print("\x1b[95m<{s}>\x1b[0m", .{L.typeName(t)});
-                }
+                } else std.debug.print("\x1b[95m<{s}>\x1b[0m", .{L.typeName(t)});
             },
-            else => {
-                fmt_print_value(L, idx, 0, false);
-            },
+            else => fmt_print_value(L, idx, 0, false),
         }
     }
     std.debug.print("\n", .{});
