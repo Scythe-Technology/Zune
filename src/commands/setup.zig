@@ -18,6 +18,7 @@ const typedefs = &[_]typedef{
     typedef{ .name = "core/luau", .content = @embedFile("../types/core/luau.luau.gz") },
     typedef{ .name = "core/serde", .content = @embedFile("../types/core/serde.luau.gz") },
     typedef{ .name = "core/stdio", .content = @embedFile("../types/core/stdio.luau.gz") },
+    typedef{ .name = "core/crypto", .content = @embedFile("../types/core/crypto.luau.gz") },
     typedef{ .name = "core/process", .content = @embedFile("../types/core/process.luau.gz") },
     typedef{ .name = "core/testing", .content = @embedFile("../types/core/testing.luau.gz") },
 };
