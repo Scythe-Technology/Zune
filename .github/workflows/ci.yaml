@@ -44,10 +44,10 @@ jobs:
             name: Linux Arm64
             target: aarch64-linux
             qemu-platform: arm64
-          # - os: ubuntu-latest
-          #   name: Linux Risc-v64
-          #   target: riscv64-linux
-          #   qemu-platform: riscv64
+          - os: ubuntu-latest
+            name: Linux Risc-v64
+            target: riscv64-linux
+            qemu-platform: riscv64
 
     name: ${{ matrix.name }}
     timeout-minutes: 20
