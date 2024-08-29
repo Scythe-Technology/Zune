@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+- Added `@zcore/crypto` built-in library. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/crypto)
+
+  Example:
+  ```luau
+  local crypto = require("@zcore/crypto")
+  local hash = crypto.hash.sha2.sha256("Hello World!")
+  local hmac = crypto.hmac.sha2.sha256("Hello World!", "private key")
+  local pass_hash = crypto.password.hash("pass")
+
+  print(crypto.password.verify("pass", pass_hash))
+  ```
+
+### Changed
+- Partial backend code for print formating.
+- Internal package.
+
 ## `0.0.5` - August 29, 2024
 
 ### Changed

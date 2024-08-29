@@ -36,6 +36,7 @@ pub fn openZune(L: *luau.Luau, args: []const []const u8, mode: RunMode) !void {
     corelib.luau.loadLib(L);
     corelib.serde.loadLib(L);
     corelib.stdio.loadLib(L);
+    corelib.crypto.loadLib(L);
     try corelib.net.loadLib(L);
     try corelib.process.loadLib(L, args);
 
