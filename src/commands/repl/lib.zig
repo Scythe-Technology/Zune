@@ -58,10 +58,11 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     var stdin = std.io.getStdIn();
     var in_reader = stdin.reader();
-    var stdout = std.io.getStdOut();
-    const out = stdout.writer();
+    const stdout = std.io.getStdOut();
 
     var terminal = try Terminal.init(stdin, stdout);
+
+    const out = terminal.stdout_writer;
 
     try terminal.setNoncanonicalMode();
 
@@ -73,7 +74,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
     try out.writeAll("> ");
     while (true) {
         const byte = try in_reader.readByte();
-        if (REPL_STATE == 2) {
+        if (byte != 3 and REPL_STATE == 2) {
             buffer.clearAndFree();
             position = 0;
             REPL_STATE = 1;
@@ -118,8 +119,8 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
                 },
                 else => {},
             }
-        } else if (byte == '\n') {
-            try out.writeAll("\n");
+        } else if (byte == Terminal.NEW_LINE) {
+            try terminal.newLine();
 
             history.save(buffer.items);
 
@@ -150,6 +151,9 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
                 try terminal.clearEndToCursor();
                 if (append) try terminal.writeAllRetainCursor(buffer.items[position..]);
             }
+        } else if (byte == 3 or byte == 4) {
+            if (REPL_STATE > 0 and SigInt()) continue;
+            break;
         } else {
             if (buffer.items.len > 256) @panic("Buffer Maximized");
             const append = position < buffer.items.len;
