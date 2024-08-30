@@ -5,6 +5,8 @@ const zune = @import("zune.zig");
 
 const Scheduler = @import("core/runtime/scheduler.zig");
 
+const Repl = @import("commands/repl/lib.zig");
+
 const luau = zune.luau;
 
 pub fn main() !void {
@@ -39,6 +41,7 @@ pub fn main() !void {
 }
 
 fn shutdown() void {
+    if (Repl.REPL_STATE > 0 and Repl.SigInt()) return;
     Scheduler.KillSchedulers();
     std.process.exit(0);
 }
