@@ -1,14 +1,12 @@
 const std = @import("std");
 const luau = @import("luau");
 
-const zune = @import("../zune.zig");
 const command = @import("lib.zig");
 
 const Engine = @import("../core/runtime/engine.zig");
 const Scheduler = @import("../core/runtime/scheduler.zig");
 
 const file = @import("../core/resolvers/file.zig");
-const require = @import("../core/resolvers/require.zig");
 
 const Luau = luau.Luau;
 
@@ -26,8 +24,8 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
     defer allocator.free(fileModuleName);
 
     const fileContent = try file.readFile(allocator, std.fs.cwd(), fileModuleName);
-
     defer allocator.free(fileContent);
+
     if (fileContent.len == 0) {
         std.debug.print("File is empty: {s}\n", .{args[0]});
         return;
