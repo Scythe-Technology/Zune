@@ -11,8 +11,9 @@ fn Execute(_: std.mem.Allocator, _: []const []const u8) !void {
         "\n" ++
         "\x1b[1mCommands:\x1b[0m\n" ++
         "  \x1b[1;32mrun      \x1b[0;2m./script.luau    \x1b[0mExecute lua/luau file.\n" ++
-        "  \x1b[1;32mtest     \x1b[0;2m./test.luau      \x1b[0mRun tests \n" ++
+        "  \x1b[1;32mtest     \x1b[0;2m./test.luau      \x1b[0mRun tests in lua/luau file, similar to run.\n" ++
         "  \x1b[1;32msetup    \x1b[0;2m[editor]         \x1b[0mSetup environment for luau-lsp with editor of your choice.\n" ++
+        "  \x1b[1;32mrepl                      \x1b[0mStart REPL session.\n" ++
         "\n" ++
         "  \x1b[1;34mhelp                      \x1b[0mDisplay help message.\n" ++
         "\n" ++

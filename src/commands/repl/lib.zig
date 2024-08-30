@@ -71,7 +71,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     var position: usize = 0;
 
-    switch (L.getGlobalObjConsumed("_VERSION")) {
+    switch (try L.getGlobalObjConsumed("_VERSION")) {
         .string => |s| try out.print("{s}\n", .{s}),
         else => try out.writeAll("Unknown Zune version\n"),
     }
