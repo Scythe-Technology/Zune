@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## `0.2.0` - August 30, 2024
+
 ### Added
 - Added `repl` command.
   - Starts a REPL session.
@@ -17,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     ```
 ### Changed
 - Updated `help` command to display the new `repl` command & updated `test` command description.
+
 ## `0.1.0` - August 29, 2024
 
 ### Added
