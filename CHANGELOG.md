@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     zune repl
     > print("Hello World!")
     ```
-
+### Changed
+- Updated `help` command to display the new `repl` command & updated `test` command description.
 ## `0.1.0` - August 29, 2024
 
 ### Added
