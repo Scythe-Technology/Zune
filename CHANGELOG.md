@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Changed
+- Switched from build optimization from ReleaseSafe to ReleaseFast to improve performance.
+
+  Luau should be faster now.
+
 ## `0.2.1` - August 31, 2024
 
 ### Added
