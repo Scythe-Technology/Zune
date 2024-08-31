@@ -46,6 +46,7 @@ pub const LuaMeta = struct {
 
         const data = L.toUserdata(LuaWebSocket, 1) catch return 0;
 
+        // TODO: prob should switch to static string map
         if (std.mem.eql(u8, arg, "connected")) {
             L.pushBoolean(data.ptr != null);
             return 1;
@@ -61,6 +62,7 @@ pub const LuaMeta = struct {
         const id = data.id orelse return 0;
         const ctx = data.ptr orelse return 0;
 
+        // TODO: prob should switch to static string map
         if (std.mem.eql(u8, namecall, "close")) {
             if (ctx.connections[id]) |connection| {
                 const closeCode: u16 = @intCast(L.optInteger(2) orelse 1000);
@@ -89,6 +91,8 @@ pub const LuaMeta = struct {
         const data = L.toUserdata(LuaServer, 1) catch return 0;
 
         const arg = L.checkString(2);
+
+        // TODO: prob should switch to static string map
         if (std.mem.eql(u8, arg, "stopped")) {
             L.pushBoolean(data.ptr == null);
             return 1;
@@ -103,6 +107,7 @@ pub const LuaMeta = struct {
 
         var scheduler = Scheduler.getScheduler(L);
 
+        // TODO: prob should switch to static string map
         if (std.mem.eql(u8, namecall, "stop")) {
             const ctx = data.ptr orelse return 0;
             ctx.alive = false;

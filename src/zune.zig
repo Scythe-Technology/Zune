@@ -17,7 +17,6 @@ pub const RunMode = enum {
     Test,
 };
 
-// TODO: change luau version to the package options, when it exists.
 const VERSION = "Zune " ++ zune_info.version ++ "+" ++ std.fmt.comptimePrint("{d}.{d}", .{ luau.LUAU_VERSION.major, luau.LUAU_VERSION.minor });
 
 pub fn openZune(L: *luau.Luau, args: []const []const u8, mode: RunMode) !void {
@@ -35,7 +34,7 @@ pub fn openZune(L: *luau.Luau, args: []const []const u8, mode: RunMode) !void {
     corelib.task.loadLib(L);
     corelib.luau.loadLib(L);
     corelib.serde.loadLib(L);
-    corelib.stdio.loadLib(L);
+    try corelib.stdio.loadLib(L);
     corelib.crypto.loadLib(L);
     try corelib.net.loadLib(L);
     try corelib.process.loadLib(L, args);

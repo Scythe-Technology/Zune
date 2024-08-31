@@ -585,10 +585,12 @@ fn decodeValue(L: *Luau, string: []const u8, info: *DecodeInfo) !usize {
             return end;
         },
         't' => {
+            // TODO: static eql u32 == u32 [0..4] "true"
             if (string.len > 3 and std.mem.eql(u8, string[0..4], "true")) L.pushBoolean(true) else return Error.InvalidLiteral;
             return 4;
         },
         'f' => {
+            // TODO: static eql u32 == u32 [1..5] "alse"
             if (string.len > 4 and std.mem.eql(u8, string[0..5], "false")) L.pushBoolean(false) else return Error.InvalidLiteral;
             return 5;
         },

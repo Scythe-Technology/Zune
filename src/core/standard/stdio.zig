@@ -4,6 +4,8 @@ const luau = @import("luau");
 const Engine = @import("../runtime/engine.zig");
 const Scheduler = @import("../runtime/scheduler.zig");
 
+const Terminal = @import("../../commands/repl/Terminal.zig");
+
 const Luau = luau.Luau;
 
 const MAX_LUAU_SIZE = 1073741824; // 1 GB
@@ -256,39 +258,158 @@ fn stdio_erase(L: *Luau) !i32 {
     return 1;
 }
 
-fn stdio_writeOut(L: *Luau) !i32 {
-    const string = L.checkString(1);
+const LuaStdIn = struct {
+    pub const META = "stdio_stdout_instance";
 
-    try std.io.getStdOut().writeAll(string);
+    // Placeholder
+    pub fn __index(L: *Luau) i32 {
+        L.checkType(1, .userdata);
+        return 0;
+    }
 
-    return 0;
-}
+    pub fn __namecall(L: *Luau) !i32 {
+        L.checkType(1, .userdata);
+        const namecall = L.nameCallAtom() catch return 0;
+        var file_ptr = L.toUserdata(std.fs.File, 1) catch return 0;
 
-fn stdio_writeErr(L: *Luau) !i32 {
-    const string = L.checkString(1);
+        // TODO: prob should switch to static string map
+        if (std.mem.eql(u8, namecall, "read")) {
+            const allocator = L.allocator();
+            const maxBytes = L.optUnsigned(2) orelse 1;
 
-    try std.io.getStdErr().writeAll(string);
+            var buffer = try allocator.alloc(u8, maxBytes);
+            defer allocator.free(buffer);
 
-    return 0;
-}
+            const amount = try file_ptr.read(buffer);
 
-fn stdio_readIn(L: *Luau) !i32 {
-    const allocator = L.allocator();
+            L.pushLString(buffer[0..amount]);
 
-    const maxBytes = L.optUnsigned(1) orelse MAX_LUAU_SIZE;
+            return 1;
+        }
 
-    var buffer = allocator.alloc(u8, maxBytes) catch L.raiseErrorStr("OutOfMemory", .{});
-    defer allocator.free(buffer);
+        return 0;
+    }
+};
 
-    const amount = try std.io.getStdIn().readAll(buffer);
+const LuaStdOut = struct {
+    pub const META = "stdio_stdin_instance";
 
-    L.pushLString(buffer[0..amount]);
+    // Placeholder
+    pub fn __index(L: *Luau) i32 {
+        L.checkType(1, .userdata);
+        return 0;
+    }
 
-    return 0;
-}
+    pub fn __namecall(L: *Luau) !i32 {
+        L.checkType(1, .userdata);
+        const namecall = L.nameCallAtom() catch return 0;
+        var file_ptr = L.toUserdata(std.fs.File, 1) catch return 0;
 
-pub fn loadLib(L: *Luau) void {
+        // TODO: prob should switch to static string map
+        if (std.mem.eql(u8, namecall, "write")) {
+            const string = if (L.typeOf(2) == .buffer) L.checkBuffer(2) else L.checkString(2);
+
+            try file_ptr.writeAll(string);
+        }
+
+        return 0;
+    }
+};
+
+const LuaTerminal = struct {
+    pub const META = "stdio_terminal_instance";
+
+    pub fn __index(L: *Luau) i32 {
+        L.checkType(1, .userdata);
+        const arg = L.checkString(2);
+        const data = L.toUserdata(Terminal, 1) catch return 0;
+
+        // TODO: prob should switch to static string map
+        if (std.mem.eql(u8, arg, "isTTY")) {
+            L.pushBoolean(data.stdin_istty and data.stdout_istty);
+            return 1;
+        }
+
+        return 0;
+    }
+
+    pub fn __namecall(L: *Luau) !i32 {
+        L.checkType(1, .userdata);
+        const namecall = L.nameCallAtom() catch return 0;
+        var term_ptr = L.toUserdata(Terminal, 1) catch return 0;
+
+        // TODO: prob should switch to static string map
+        if (std.mem.eql(u8, namecall, "enableRawMode")) {
+            L.pushBoolean(if (term_ptr.setRawMode()) true else |_| false);
+            return 1;
+        } else if (std.mem.eql(u8, namecall, "restoreMode")) {
+            L.pushBoolean(if (term_ptr.restoreSettings()) true else |_| false);
+            return 1;
+        }
+        return 0;
+    }
+};
+
+pub fn loadLib(L: *Luau) !void {
+    {
+        try L.newMetatable(LuaTerminal.META);
+
+        L.setFieldFn(-1, luau.Metamethods.index, LuaTerminal.__index); // metatable.__namecall
+        L.setFieldFn(-1, luau.Metamethods.namecall, LuaTerminal.__namecall); // metatable.__namecall
+
+        L.setFieldString(-1, luau.Metamethods.metatable, "Metatable is locked");
+        L.pop(1);
+    }
+    {
+        try L.newMetatable(LuaStdIn.META);
+
+        L.setFieldFn(-1, luau.Metamethods.index, LuaStdIn.__index); // metatable.__namecall
+        L.setFieldFn(-1, luau.Metamethods.namecall, LuaStdIn.__namecall); // metatable.__namecall
+
+        L.setFieldString(-1, luau.Metamethods.metatable, "Metatable is locked");
+        L.pop(1);
+    }
+    {
+        try L.newMetatable(LuaStdOut.META);
+
+        L.setFieldFn(-1, luau.Metamethods.index, LuaStdOut.__index); // metatable.__namecall
+        L.setFieldFn(-1, luau.Metamethods.namecall, LuaStdOut.__namecall); // metatable.__namecall
+
+        L.setFieldString(-1, luau.Metamethods.metatable, "Metatable is locked");
+        L.pop(1);
+    }
+
     L.newTable();
+
+    L.setFieldInteger(-1, "MAX_READ", MAX_LUAU_SIZE);
+
+    const stdIn = std.io.getStdIn();
+    const stdOut = std.io.getStdOut();
+    const stdErr = std.io.getStdErr();
+
+    // StdIn
+    const stdin_ptr = L.newUserdata(std.fs.File);
+    stdin_ptr.* = stdIn;
+    if (L.getMetatableRegistry(LuaStdIn.META) == .table) L.setMetatable(-2) else std.debug.panic("InternalError (Stdin Metatable not initialized)", .{});
+    L.setFieldAhead(-1, "stdin");
+
+    // StdOut
+    const stdout_ptr = L.newUserdata(std.fs.File);
+    stdout_ptr.* = stdOut;
+    if (L.getMetatableRegistry(LuaStdOut.META) == .table) L.setMetatable(-2) else std.debug.panic("InternalError (StdOut Metatable not initialized)", .{});
+    L.setFieldAhead(-1, "stdout");
+
+    // StdErr
+    const stderr_ptr = L.newUserdata(std.fs.File);
+    stderr_ptr.* = stdErr;
+    if (L.getMetatableRegistry(LuaStdOut.META) == .table) L.setMetatable(-2) else std.debug.panic("InternalError (StdOut Metatable not initialized)", .{});
+    L.setFieldAhead(-1, "stderr");
+
+    // Terminal
+    const term_ptr = L.newUserdata(Terminal);
+    term_ptr.* = Terminal.init(stdIn, stdOut);
+    if (L.getMetatableRegistry(LuaTerminal.META) == .table) L.setMetatable(-2) else std.debug.panic("InternalError (Terminal Metatable not initialized)", .{});
+    L.setFieldAhead(-1, "terminal");
 
     L.setFieldFn(-1, "color", stdio_color);
     L.setFieldFn(-1, "style", stdio_style);
@@ -299,10 +420,6 @@ pub fn loadLib(L: *Luau) void {
     L.setFieldFn(-1, "bgcolor256", stdio_bgColor256);
     L.setFieldFn(-1, "trueColor", stdio_trueColor);
     L.setFieldFn(-1, "bgtrueColor", stdio_bgTrueColor);
-
-    L.setFieldFn(-1, "writeOut", stdio_writeOut);
-    L.setFieldFn(-1, "writeErr", stdio_writeErr);
-    L.setFieldFn(-1, "readIn", stdio_readIn);
 
     L.setFieldFn(-1, "cursorMove", stdio_cursorMove);
 

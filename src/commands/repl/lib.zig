@@ -56,16 +56,19 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var in_reader = stdin.reader();
     const stdout = std.io.getStdOut();
 
-    var terminal = try Terminal.init(stdin, stdout);
+    var terminal = Terminal.init(stdin, stdout);
+    try terminal.validateInteractive();
+
+    try terminal.saveSettings();
 
     const out = terminal.stdout_writer;
-
-    try terminal.setNoncanonicalMode();
 
     var buffer = std.ArrayList(u8).init(allocator);
     defer buffer.deinit();
 
     var position: usize = 0;
+
+    try terminal.setRawMode();
 
     switch (try L.getGlobalObjConsumed("_VERSION")) {
         .string => |s| try out.print("{s}\n", .{s}),
@@ -127,7 +130,11 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
             const ML = L.newThread();
 
             if (Engine.loadModule(ML, "CLI", buffer.items, null)) {
+                try terminal.restoreSettings();
+
                 Engine.runAsync(ML, &scheduler) catch ML.pop(1);
+
+                try terminal.setRawMode();
             } else |err| switch (err) {
                 error.Syntax => {
                     try out.print("SyntaxError: {s}\n", .{ML.toString(-1) catch "UnknownError"});

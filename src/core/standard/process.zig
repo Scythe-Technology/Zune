@@ -150,6 +150,8 @@ const ProcessChildOptions = struct {
             if (!luau.isNoneOrNil(shellType)) {
                 if (shellType == .string) {
                     const shellOption = L.toString(-1) catch unreachable;
+
+                    // TODO: prob should switch to static string map
                     if (std.mem.eql(u8, shellOption, "sh") or std.mem.eql(u8, shellOption, "/bin/sh")) {
                         childOptions.shell = "/bin/sh";
                     } else if (std.mem.eql(u8, shellOption, "bash")) {
@@ -202,6 +204,7 @@ const ProcessChildOptions = struct {
         var handlePtr = L.toUserdata(ProcessChildHandle, 1) catch return 0;
         var childProcess = &handlePtr.child;
 
+        // TODO: prob should switch to static string map
         if (std.mem.eql(u8, namecall, "kill")) {
             const term = childProcess.kill() catch |err| {
                 std.debug.print("Error: {}\n", .{err});

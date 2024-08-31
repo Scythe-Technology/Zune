@@ -39,6 +39,8 @@ pub const LuaMeta = struct {
         L.checkType(1, .userdata);
         const data = L.toUserdata(LuaWebSocketClient, 1) catch return 0;
         const arg = L.checkString(2);
+
+        // TODO: prob should switch to static string map
         if (std.mem.eql(u8, arg, "connected")) {
             L.pushBoolean(data.ptr != null and data.ptr.?.connected);
             return 1;
@@ -56,6 +58,7 @@ pub const LuaMeta = struct {
 
         if (!ctx.connected) return 0;
 
+        // TODO: prob should switch to static string map
         if (std.mem.eql(u8, namecall, "close")) {
             const closeCode: u16 = @intCast(L.optInteger(2) orelse 1000);
             var socket = WebSocket.init(L.allocator(), stream);

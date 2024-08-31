@@ -93,28 +93,69 @@ stdio.trueColor = (nil :: any) :: (r: number, g: number, b: number) -> string;
 ]]
 stdio.bgtrueColor = (nil :: any) :: (r: number, g: number, b: number) -> string;
 
+export type Terminal = {
+    --[[
+        Whether the terminal is a TTY.
+    ]]
+    isTTY: boolean;
+
+    --[[
+        Enable raw mode.
+
+        On unix: Will attempt to change terminal mode.
+        On windows: Will attempt to change console mode.
+
+        @return boolean Whether the mode was successfully changed.
+    ]]
+    enableRawMode: () -> boolean;
+
+    --[[
+        Restore terminal mode.
+
+        On unix: Will attempt to restore the original terminal mode.
+        On windows: Will attempt to restore the original console mode.
+
+        @return boolean Whether the mode was successfully restored.
+    ]]
+    restoreMode: () -> boolean;
+};
+
+export type StdWriter = {
+    --[[
+        Write text to the writer.
+
+        @param text The text to write.
+    ]]
+    write: (text: string | buffer) -> ();
+};
+
+export type StdReader = {
+    --[[
+        Read text from the reader.
+
+        Optional `amount`, defaults to `1`.
+        
+        @param amount The amount of characters to read.
+        @return string
+    ]]
+    read: (amount: number?) -> string;
+};
+
 --[[
-    Writes to stdout.
-
-    @param text The text to write.
-    @return string
+    Terminal.
 ]]
-stdio.writeOut = (nil :: any) :: (text: string) -> ();
+stdio.terminal = (nil :: any) :: Terminal;
 --[[
-    Writes to stderr.
-
-    @param text The text to write.
-    @return string
+    stdout writer.
 ]]
-stdio.writeErr = (nil :: any) :: (text: string) -> ();
+stdio.stdout = (nil :: any) :: StdWriter;
 --[[
-    Reads from stdin.
-
-    Optional amount parameter to read a specific amount of bytes. Nil to read all.
-
-    @param amount The amount of text to read.
-    @return string
+    stderr writer.
 ]]
-stdio.readIn = (nil :: any) :: (amount: number?) -> string;
+stdio.stderr = (nil :: any) :: StdWriter;
+--[[
+    stdin reader.
+]]
+stdio.stdin = (nil :: any) :: StdReader;
 
 return stdio;

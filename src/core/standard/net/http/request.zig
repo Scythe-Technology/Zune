@@ -435,6 +435,7 @@ pub fn canUpgradeWebSocket(self: *Self) !?UpgradeInfo {
         var key: ?[]const u8 = null;
         var protocols: ?[]const u8 = null;
         for (headers) |header| {
+            // TODO: prob should switch to static string map (performance improvement?)
             if (std.mem.eql(u8, header.key, "upgrade")) {
                 websocket = std.ascii.eqlIgnoreCase(header.value, "websocket");
             } else if (std.mem.eql(u8, header.key, "connection")) {

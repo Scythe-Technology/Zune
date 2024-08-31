@@ -7,10 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+- Added `stdin`, `stdout`, and `stderr` to `@zcore/stdio`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/stdio)
+
+  Example:
+    ```lua
+    local stdio = require("@zcore/stdio")
+
+    stdio.stdin:read() -- read byte
+    stdio.stdin:read(10) -- read 10 bytes
+    stdio.stdout:write("Hello World!")
+    stdio.stderr:write("Error!")
+    ```
+- Added `terminal` to `@zcore/stdio`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/stdio)
+
+  This should allow you to write more interactive terminal applications.
+  
+  *note*: If you have weird terminal output in windows, we recommend you to use `enableRawMode` to enable windows console `Virtual Terminal Processing`.
+
+  Example:
+    ```lua
+    local stdio = require("@zcore/stdio")
+
+    if (stdio.terminal.isTTY) then -- check if terminal is a TTY
+      stdio.terminal.enableRawMode() -- enable raw mode
+      stdio.stdin:read() -- read next input without waiting for newline
+      stdio.terminal.restoreMode() -- return back to original mode before changes.
+    end
+    ``` 
+
 ### Changed
 - Switched from build optimization from ReleaseSafe to ReleaseFast to improve performance.
 
   Luau should be faster now.
+
+- REPL should now restore the terminal mode while executing lua code and return back to raw mode after execution.
+
+- Removed `readIn`, `writeOut`, and `writeErr` functions in `@zcore/stdio`.
 
 ## `0.2.1` - August 31, 2024
 
