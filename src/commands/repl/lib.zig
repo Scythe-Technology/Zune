@@ -47,14 +47,10 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         .mode = .Run,
     });
 
-    const ML = L.newThread();
-
-    ML.sandboxThread();
-
     const path = try std.fs.cwd().realpathAlloc(allocator, ".");
     defer allocator.free(path);
 
-    Engine.setLuaFileContext(ML, path);
+    Engine.setLuaFileContext(L, path);
 
     var stdin = std.io.getStdIn();
     var in_reader = stdin.reader();
@@ -128,6 +124,8 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
             history.save(buffer.items);
 
+            const ML = L.newThread();
+
             if (Engine.loadModule(ML, "CLI", buffer.items, null)) {
                 Engine.runAsync(ML, &scheduler) catch ML.pop(1);
             } else |err| switch (err) {
@@ -137,6 +135,8 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
                 },
                 else => return err,
             }
+
+            L.pop(1); // drop: thread
 
             history.reset();
 

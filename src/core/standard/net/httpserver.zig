@@ -342,20 +342,32 @@ pub fn responseResumed(responsePtr: *NetStreamData, L: *Luau, scheduler: *Schedu
                 }
             }
 
-            if (L.getField(-3, "body") != .string) {
+            const bodyType = L.getField(-3, "body");
+            if (bodyType != .string and bodyType != .buffer) {
                 std.debug.print("Field 'body' must be a string", .{});
                 stream.writeAll(HTTP_500) catch return;
                 return;
             }
-            const body = L.checkString(-1);
+            const body = if (bodyType == .buffer) L.checkBuffer(-1) else L.checkString(-1);
 
             const response = if (headersString.items.len > 0)
-                std.fmt.allocPrint(allocator, "HTTP/1.1 {d} {s}\r\n{s}Content-Length: {d}\r\n\r\n{s}", .{ statusCode, std.http.Status.phrase(@enumFromInt(statusCode)).?, headersString.items, body.len, body }) catch |err| {
+                std.fmt.allocPrint(allocator, "HTTP/1.1 {d} {s}\r\n{s}Content-Length: {d}\r\n\r\n{s}", .{
+                    statusCode,
+                    std.http.Status.phrase(@enumFromInt(statusCode)).?,
+                    headersString.items,
+                    body.len,
+                    body,
+                }) catch |err| {
                     std.debug.print("Error formatting response: {}\n", .{err});
                     return;
                 }
             else
-                std.fmt.allocPrint(allocator, "HTTP/1.1 {d} {s}\r\nContent-Length: {d}\r\n\r\n{s}", .{ statusCode, std.http.Status.phrase(@enumFromInt(statusCode)).?, body.len, body }) catch |err| {
+                std.fmt.allocPrint(allocator, "HTTP/1.1 {d} {s}\r\nContent-Length: {d}\r\n\r\n{s}", .{
+                    statusCode,
+                    std.http.Status.phrase(@enumFromInt(statusCode)).?,
+                    body.len,
+                    body,
+                }) catch |err| {
                     std.debug.print("Error formatting response: {}\n", .{err});
                     return;
                 };
@@ -366,8 +378,8 @@ pub fn responseResumed(responsePtr: *NetStreamData, L: *Luau, scheduler: *Schedu
                 return;
             };
         },
-        .string => {
-            const content = L.checkString(-1);
+        .string, .buffer => |t| {
+            const content = if (t == .buffer) L.checkBuffer(-1) else L.checkString(-1);
             const response = std.fmt.allocPrint(allocator, "HTTP/1.1 200 OK\r\nContent-Length: {d}\r\n\r\n{s}", .{ content.len, content }) catch |err| {
                 std.debug.print("Error formatting response: {}\n", .{err});
                 return;
@@ -380,7 +392,7 @@ pub fn responseResumed(responsePtr: *NetStreamData, L: *Luau, scheduler: *Schedu
         },
         else => {
             L.pop(1);
-            std.debug.print("Serve response must be a table", .{});
+            std.debug.print("Serve response must be a table or string", .{});
             stream.writeAll(HTTP_500) catch return;
             return;
         },

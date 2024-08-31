@@ -17,6 +17,11 @@ describe("Lz4", function()
         test("Default", function()
             expect(serde.lz4.compress(sample)).toBe(compressed_sample_default);
         end)
+        test("Buffer (Default)", function()
+            local buf = serde.lz4.compress(buffer.fromstring(sample));
+            expect(buf).toBe(expect.type("buffer"));
+            expect(buffer.tostring(buf)).toBe(compressed_sample_default);
+        end)
         test("Level 0", function()
             expect(serde.lz4.compress(sample, {level = 0})).toBe(compressed_sample_level0);
         end)
@@ -37,12 +42,18 @@ describe("Lz4", function()
         end)
         test("Fail", function()
             expect(function() serde.lz4.compress(sample, {level = -1}) end).toThrow("Options 'level' must not be less than 0");
+            expect(function() serde.gzip.compress(true) end).toThrow("invalid argument #1 to 'compress' (string expected, got boolean)");
         end)
     end)
 
     describe("Decompression", function()
         test("Default", function()
             expect(serde.lz4.decompress(compressed_sample_default)).toBe(sample);
+        end)
+        test("Buffer (Default)", function()
+            local buf = serde.lz4.decompress(buffer.fromstring(compressed_sample_default));
+            expect(buf).toBe(expect.type("buffer"));
+            expect(buffer.tostring(buf)).toBe(sample);
         end)
         test("Level 0", function()
             expect(serde.lz4.decompress(compressed_sample_level0)).toBe(sample);

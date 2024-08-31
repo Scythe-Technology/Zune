@@ -9,7 +9,9 @@ const Luau = luau.Luau;
 pub fn lua_compress(L: *Luau) !i32 {
     const allocator = L.allocator();
 
-    const string = L.checkString(1);
+    const is_buffer = L.typeOf(1) == .buffer;
+
+    const string = if (is_buffer) L.checkBuffer(1) else L.checkString(1);
     const options = L.typeOf(2);
 
     var level: u4 = 12;
@@ -36,7 +38,7 @@ pub fn lua_compress(L: *Luau) !i32 {
         .level = @enumFromInt(level),
     });
 
-    L.pushLString(buf.items);
+    if (is_buffer) try L.pushBuffer(buf.items) else L.pushLString(buf.items);
 
     return 1;
 }
@@ -44,7 +46,8 @@ pub fn lua_compress(L: *Luau) !i32 {
 pub fn lua_decompress(L: *Luau) !i32 {
     const allocator = L.allocator();
 
-    const string = L.checkString(1);
+    const is_buffer = L.typeOf(1) == .buffer;
+    const string = if (is_buffer) L.checkBuffer(1) else L.checkString(1);
 
     var buf = std.ArrayList(u8).init(allocator);
     defer buf.deinit();
@@ -53,7 +56,7 @@ pub fn lua_decompress(L: *Luau) !i32 {
 
     try std.compress.gzip.decompress(stream.reader(), buf.writer());
 
-    L.pushLString(buf.items);
+    if (is_buffer) try L.pushBuffer(buf.items) else L.pushLString(buf.items);
 
     return 1;
 }

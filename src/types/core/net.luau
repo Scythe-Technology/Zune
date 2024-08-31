@@ -1,3 +1,7 @@
+export type WebSocket = NetWebSocket;
+export type ServerHandle = NetServerHandle;
+export type ClientWebSocket = NetClientWebSocket;
+
 export type ServerRequest = {
     method : string,
     path : string,
@@ -5,10 +9,10 @@ export type ServerRequest = {
     body : string,
 };
 
-export type ServerResponse = string | {
-    status : number,
-    headers : {[string] : string},
-    body : string,
+export type ServerResponse = {
+    statusCode : number,
+    headers : {[string] : string}?,
+    body : buffer | string,
 }
 
 export type ServerWebSocketHandlers = {
@@ -24,19 +28,19 @@ export type ServerWebSocketHandlers = {
         
         *`WebSocket` class will keep the same reference per connection*.
     ]]
-    open : ((websocket: NetWebSocket) -> ())?,
+    open : ((websocket: WebSocket) -> ())?,
     --[[
         A function event for when a websocket receives a message.
 
         *`WebSocket` class will keep the same reference per connection*.
     ]]
-    message : ((websocket: NetWebSocket, message: string) -> ())?,
+    message : ((websocket: WebSocket, message: string) -> ())?,
     --[[
         A function event for when a websocket is closed.
 
         *`WebSocket` class will keep the same reference per connection*.
     ]]
-    close : ((websocket: NetWebSocket) -> ())?,
+    close : ((websocket: WebSocket) -> ())?,
 };
 
 export type ServeOptions = {
@@ -62,7 +66,7 @@ export type ServeOptions = {
     --[[
         The function to handle requests.
     ]]
-    request : (request: ServerRequest) -> ServerResponse,
+    request : (request: ServerRequest) -> buffer | string | ServerResponse,
 
     --[[
         Functions to handle websockets.
@@ -104,9 +108,9 @@ local network = {};
 
     @param options The options for the server.
     @return boolean Whether the server started successfully.
-    @return string | NetServerHandle The error message, or the server handle.
+    @return string | ServerHandle The error message, or the server handle.
 ]]
-network.serve = (nil :: any) :: (options: ServeOptions) -> (boolean, string | NetServerHandle);
+network.serve = (nil :: any) :: (options: ServeOptions) -> (boolean, string | ServerHandle);
 
 --[[
     Makes a request to the specified host.
@@ -130,8 +134,8 @@ network.request = (nil :: any) :: (host: string, options: RequestOptions?) -> (b
     @param host The host to connect to.
     @param protocols The protocols to use.
     @return boolean Whether the connection was successful.
-    @return NetClientWebSocket
+    @return ClientWebSocket
 ]]
-network.websocket = (nil :: any) :: (host: string, protocols: {string}?) -> (boolean, string | NetClientWebSocket);
+network.websocket = (nil :: any) :: (host: string, protocols: {string}?) -> (boolean, string | ClientWebSocket);
 
 return network;

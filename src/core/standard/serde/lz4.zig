@@ -12,7 +12,9 @@ const Luau = luau.Luau;
 pub fn lua_compress(L: *Luau) !i32 {
     const allocator = L.allocator();
 
-    const string = L.checkString(1);
+    const is_buffer = L.typeOf(1) == .buffer;
+
+    const string = if (is_buffer) L.checkBuffer(1) else L.checkString(1);
     const options = L.typeOf(2);
 
     var level: u32 = 4;
@@ -47,7 +49,7 @@ pub fn lua_compress(L: *Luau) !i32 {
     @memcpy(out[0..4], header[0..4]);
     @memcpy(out[4..][0..buf.items.len], buf.items[0..]);
 
-    L.pushLString(out);
+    if (is_buffer) try L.pushBuffer(out) else L.pushLString(out);
 
     return 1;
 }
@@ -55,7 +57,9 @@ pub fn lua_compress(L: *Luau) !i32 {
 pub fn lua_decompress(L: *Luau) !i32 {
     const allocator = L.allocator();
 
-    const string = L.checkString(1);
+    const is_buffer = L.typeOf(1) == .buffer;
+
+    const string = if (is_buffer) L.checkBuffer(1) else L.checkString(1);
 
     if (string.len < 4) L.raiseErrorStr("InvalidHeader", .{});
 
@@ -67,7 +71,7 @@ pub fn lua_decompress(L: *Luau) !i32 {
     const decompressed = try decoder.decompress(string[4..], sizeHint);
     defer allocator.free(decompressed);
 
-    L.pushLString(decompressed);
+    if (is_buffer) try L.pushBuffer(decompressed) else L.pushLString(decompressed);
 
     return 1;
 }

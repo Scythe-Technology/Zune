@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+- Added buffer support for `@net/server` body response. If a buffer is returned, it will be sent as the response body, works with `{ body = buffer, statusCode = 200 }`.
+  
+  Example:
+    ```lua
+    local net = require("@net/net")
+
+    net.serve({
+      port = 8080,
+      request = function(req)
+        return buffer.fromstring("Hello World!")
+      end
+    })
+    ```
+- Added buffer support for `@net/serde` in compress/decompress. If a buffer is passed, it will return a new buffer.
+  
+  Example:
+    ```lua
+    local serde = require("@net/serde")
+
+    local compressed_buffer = serde.gzip.compress(buffer.fromstring("Zune"))
+    print(compressed_buffer) -- <buffer: 0x12343567>
+    ```
+
+### Changed
+- Updated backend luau module.
+
+### Fixed
+- Fixed Inaccurate luau types for `@zcore/net`.
+- Fixed REPL not working after an error is thrown.
+
 ## `0.2.0` - August 30, 2024
 
 ### Added

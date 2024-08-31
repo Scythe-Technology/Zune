@@ -39,11 +39,15 @@ export type GenericCompressor = {
     --[[
         Compresses a string.
     ]]
-    compress : (raw: string, options: GenericCompressionOptions?) -> string,
+    compress :
+        & ((raw: string, options: GenericCompressionOptions?) -> string)
+        & ((raw: buffer, options: GenericCompressionOptions?) -> buffer),
     --[[
         Decompresses a string.
     ]]
-    decompress : (compressed: string) -> string,
+    decompress :
+        & (compressed: string) -> string
+        & (compressed: buffer) -> buffer,
 };
 
 local serde = {}

@@ -17,6 +17,11 @@ describe("Zlib", function()
         test("Default", function()
             expect(serde.zlib.compress(sample)).toBe(compressed_sample_default);
         end)
+        test("Buffer (Default)", function()
+            local buf = serde.zlib.compress(buffer.fromstring(sample));
+            expect(buf).toBe(expect.type("buffer"));
+            expect(buffer.tostring(buf)).toBe(compressed_sample_default);
+        end)
         test("Level 4", function()
             expect(serde.zlib.compress(sample, {level = 4})).toBe(compressed_sample_fast);
         end)
@@ -33,12 +38,18 @@ describe("Zlib", function()
             expect(function() serde.zlib.compress(sample, {level = 10}) end).toThrow("Options 'level' cannot be 10, level does not exist");
             expect(function() serde.zlib.compress(sample, {level = 3}) end).toThrow("Options 'level' must not be over 13 or less than 4 or equal to 10");
             expect(function() serde.zlib.compress(sample, {level = 14}) end).toThrow("Options 'level' must not be over 13 or less than 4 or equal to 10");
+            expect(function() serde.gzip.compress(true) end).toThrow("invalid argument #1 to 'compress' (string expected, got boolean)");
         end)
     end)
 
     describe("Decompression", function()
         test("Default", function()
             expect(serde.zlib.decompress(compressed_sample_default)).toBe(sample);
+        end)
+        test("Buffer (Default)", function()
+            local buf = serde.zlib.decompress(buffer.fromstring(compressed_sample_default));
+            expect(buf).toBe(expect.type("buffer"));
+            expect(buffer.tostring(buf)).toBe(sample);
         end)
         test("Fast", function()
             expect(serde.zlib.decompress(compressed_sample_fast)).toBe(sample);

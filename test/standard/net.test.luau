@@ -10,7 +10,7 @@ local version = _VERSION:match("%d+%.%d+%.%d+");
 assert(version and #version > 0, "No version");
 
 describe("Server", function()
-    test("Temporary", function()
+    test("Basic", function()
         local requests = {};
         local ok, server = net.serve({
             port = 8080,
@@ -67,6 +67,85 @@ describe("Server", function()
         expect(rRes3).toBe("ConnectionRefused");
 
         expect(requests).toHaveLength(1);
+    end)
+
+    test("Basic Table Buffer", function()
+        local requests = {};
+        local ok, server = net.serve({
+            port = 8080,
+            request = function(req)
+                table.insert(requests, req);
+                return {
+                    statusCode = 200,
+                    body = buffer.fromstring("Hello Table Buffer"),
+                }
+            end,
+        });
+        
+        expect(ok).toBe(true);
+        expect(server).toBe(expect.type("userdata"));
+
+        local rOk, rRes = net.request("http://localhost:8080");
+        expect(rOk).toBe(true);
+        expect(rRes).toBe(expect.type("table"));
+        expect(rRes.ok).toBe(true);
+        expect(rRes.statusCode).toBe(200);
+        expect(rRes.body).toBe("Hello Table Buffer");
+        expect(rRes.headers).toBe(expect.type("table"));
+        expect(rRes.headers["content-length"]).toBe("18");
+        expect(rRes.statusReason).toBe("OK");
+
+        expect(requests).toHaveLength(1);
+
+        local request = requests[1];
+        expect(request).toBe(expect.type("table"));
+        expect(request.method).toBe("GET");
+        expect(request.path).toBe("/");
+        expect(request.headers).toBe(expect.type("table"));
+        expect(request.headers["host"]).toBe("localhost:8080");
+        expect(request.headers["user-agent"]).toBe("Zune/" .. version);
+
+        expect(server.stopped).toBe(false);
+        server:stop();
+        expect(server.stopped).toBe(true);
+    end)
+
+    test("Basic Buffer", function()
+        local requests = {};
+        local ok, server = net.serve({
+            port = 8080,
+            request = function(req)
+                table.insert(requests, req);
+                return buffer.fromstring("Hello Buffer");
+            end,
+        });
+        
+        expect(ok).toBe(true);
+        expect(server).toBe(expect.type("userdata"));
+
+        local rOk, rRes = net.request("http://localhost:8080");
+        expect(rOk).toBe(true);
+        expect(rRes).toBe(expect.type("table"));
+        expect(rRes.ok).toBe(true);
+        expect(rRes.statusCode).toBe(200);
+        expect(rRes.body).toBe("Hello Buffer");
+        expect(rRes.headers).toBe(expect.type("table"));
+        expect(rRes.headers["content-length"]).toBe("12");
+        expect(rRes.statusReason).toBe("OK");
+
+        expect(requests).toHaveLength(1);
+
+        local request = requests[1];
+        expect(request).toBe(expect.type("table"));
+        expect(request.method).toBe("GET");
+        expect(request.path).toBe("/");
+        expect(request.headers).toBe(expect.type("table"));
+        expect(request.headers["host"]).toBe("localhost:8080");
+        expect(request.headers["user-agent"]).toBe("Zune/" .. version);
+
+        expect(server.stopped).toBe(false);
+        server:stop();
+        expect(server.stopped).toBe(true);
     end)
 
     test("Long Term", function()
