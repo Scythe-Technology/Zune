@@ -14,6 +14,7 @@ const Luau = luau.Luau;
 pub var REPL_STATE: u2 = 0;
 
 var HISTORY: ?*History = null;
+var TERMINAL: ?*Terminal = null;
 
 pub fn SigInt() bool {
     if (REPL_STATE == 1) {
@@ -23,6 +24,7 @@ pub fn SigInt() bool {
     }
     std.debug.print("\n", .{});
     if (HISTORY) |history| history.deinit();
+    if (TERMINAL) |terminal| terminal.restoreSettings() catch {};
     return false;
 }
 
@@ -57,9 +59,12 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const stdout = std.io.getStdOut();
 
     var terminal = Terminal.init(stdin, stdout);
+    errdefer terminal.restoreSettings() catch {};
     try terminal.validateInteractive();
 
     try terminal.saveSettings();
+
+    TERMINAL = &terminal;
 
     const out = terminal.stdout_writer;
 
@@ -130,7 +135,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
             const ML = L.newThread();
 
             if (Engine.loadModule(ML, "CLI", buffer.items, null)) {
-                try terminal.restoreSettings();
+                try terminal.setNormalMode();
 
                 Engine.runAsync(ML, &scheduler) catch ML.pop(1);
 

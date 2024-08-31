@@ -4,8 +4,8 @@ const builtin = @import("builtin");
 const Terminal = @This();
 
 const WindowsSettings = struct {
-    virtual_terminal_input: bool,
-    virtual_terminal_processing: bool,
+    stdin_mode: std.os.windows.DWORD,
+    stdout_mode: std.os.windows.DWORD,
 };
 
 const Modes = enum {
@@ -21,8 +21,8 @@ stdout_file: std.fs.File,
 stdout_writer: std.fs.File.Writer,
 settings: ?if (builtin.os.tag == .windows) WindowsSettings else std.posix.termios = null,
 current_settings: if (builtin.os.tag == .windows) WindowsSettings else void = if (builtin.os.tag == .windows) .{
-    .virtual_terminal_input = false,
-    .virtual_terminal_processing = false,
+    .stdin_mode = 0,
+    .stdout_mode = 0,
 },
 
 mode: Modes,
@@ -57,21 +57,15 @@ pub fn saveSettings(self: *Terminal) !void {
         self.settings = try std.posix.tcgetattr(self.stdin_file.handle);
     } else {
         var settings = WindowsSettings{
-            .virtual_terminal_input = false,
-            .virtual_terminal_processing = false,
+            .stdin_mode = 0,
+            .stdout_mode = 0,
         };
-        // ENABLE_VIRTUAL_TERMINAL_INPUT
-        var stdin_mode: std.os.windows.DWORD = 0;
-        if (std.os.windows.kernel32.GetConsoleMode(self.stdin_file.handle, &stdin_mode) != std.os.windows.FALSE) {
-            if (stdin_mode & 0x0200 != 0) settings.virtual_terminal_input = true;
-        } else return error.Fail;
-        self.current_settings.virtual_terminal_input = settings.virtual_terminal_input;
-        // ENABLE_VIRTUAL_TERMINAL_PROCESSING
-        var stdout_mode: std.os.windows.DWORD = 0;
-        if (std.os.windows.kernel32.GetConsoleMode(self.stdout_file.handle, &stdout_mode) != std.os.windows.FALSE) {
-            if (stdout_mode & 0x0004 == 0) settings.virtual_terminal_processing = false;
-        } else return error.Fail;
-        self.current_settings.virtual_terminal_processing = settings.virtual_terminal_processing;
+        // stdin modes
+        if (std.os.windows.kernel32.GetConsoleMode(self.stdin_file.handle, &settings.stdin_mode) == std.os.windows.FALSE) return error.Fail;
+        self.current_settings.stdin_mode = settings.stdin_mode;
+        // stdout modes
+        if (std.os.windows.kernel32.GetConsoleMode(self.stdout_file.handle, &settings.stdout_mode) == std.os.windows.FALSE) return error.Fail;
+        self.current_settings.stdout_mode = settings.stdout_mode;
 
         self.settings = settings;
     }
@@ -104,33 +98,87 @@ pub fn moveCursor(self: *Terminal, action: MoveCursorAction) !void {
 pub fn setRawMode(self: *Terminal) !void {
     try self.validateInteractive();
     try self.saveSettings();
-    const settings = self.settings orelse return;
     self.mode = .Virtual;
     errdefer self.mode = .Plain;
     if (builtin.os.tag == .windows) {
         // https://learn.microsoft.com/en-us/windows/console/setconsolemode
+        const before_stdin_mode = self.current_settings.stdin_mode;
+        // ENABLE_PROCESSED_INPUT
+        if (self.current_settings.stdin_mode & 0x0001 != 0) self.current_settings.stdin_mode &= ~@as(u32, 0x0001);
+        // ENABLE_ECHO_INPUT
+        if (self.current_settings.stdin_mode & 0x0004 != 0) self.current_settings.stdin_mode &= ~@as(u32, 0x0004);
+        // ENABLE_LINE_INPUT
+        if (self.current_settings.stdin_mode & 0x0002 != 0) self.current_settings.stdin_mode &= ~@as(u32, 0x0002);
         // ENABLE_VIRTUAL_TERMINAL_INPUT
-        if (!settings.virtual_terminal_input) {
-            if (std.os.windows.kernel32.SetConsoleMode(self.stdin_file.handle, 0x0200) == std.os.windows.FALSE) {
+        if (self.current_settings.stdin_mode & 0x0200 == 0) self.current_settings.stdin_mode |= 0x0200;
+        if (self.current_settings.stdin_mode != before_stdin_mode) {
+            // ENABLE_PROCESSED_INPUT
+            if (std.os.windows.kernel32.SetConsoleMode(self.stdin_file.handle, self.current_settings.stdin_mode) == std.os.windows.FALSE) {
                 switch (std.os.windows.kernel32.GetLastError()) {
                     else => |err| return std.os.windows.unexpectedError(err),
                 }
             }
-            self.current_settings.virtual_terminal_input = true;
         }
+        const before_stdout_mode = self.current_settings.stdout_mode;
+        // ENABLE_PROCESSED_OUTPUT
+        if (self.current_settings.stdout_mode & 0x0001 == 0) self.current_settings.stdout_mode |= 0x0001;
         // ENABLE_VIRTUAL_TERMINAL_PROCESSING
-        if (!settings.virtual_terminal_processing) {
-            if (std.os.windows.kernel32.SetConsoleMode(self.stdout_file.handle, 0x0004) == std.os.windows.FALSE) {
+        if (self.current_settings.stdout_mode & 0x0004 == 0) self.current_settings.stdout_mode |= 0x0004;
+        if (self.current_settings.stdout_mode != before_stdout_mode) {
+            if (std.os.windows.kernel32.SetConsoleMode(self.stdout_file.handle, self.current_settings.stdout_mode) == std.os.windows.FALSE) {
                 switch (std.os.windows.kernel32.GetLastError()) {
                     else => |err| return std.os.windows.unexpectedError(err),
                 }
             }
-            self.current_settings.virtual_terminal_processing = true;
         }
     } else {
         var newSettings = try std.posix.tcgetattr(self.stdin_file.handle);
         newSettings.lflag.ICANON = false;
         newSettings.lflag.ECHO = false;
+        try std.posix.tcsetattr(self.stdin_file.handle, std.posix.TCSA.NOW, newSettings);
+    }
+}
+
+pub fn setNormalMode(self: *Terminal) !void {
+    try self.validateInteractive();
+    try self.saveSettings();
+    self.mode = .Virtual;
+    errdefer self.mode = .Plain;
+    if (builtin.os.tag == .windows) {
+        // https://learn.microsoft.com/en-us/windows/console/setconsolemode
+        const before_stdin_mode = self.current_settings.stdin_mode;
+        // ENABLE_PROCESSED_INPUT
+        if (self.current_settings.stdin_mode & 0x0001 == 0) self.current_settings.stdin_mode |= 0x0001;
+        // ENABLE_ECHO_INPUT
+        if (self.current_settings.stdin_mode & 0x0004 == 0) self.current_settings.stdin_mode |= 0x0004;
+        // ENABLE_LINE_INPUT
+        if (self.current_settings.stdin_mode & 0x0002 == 0) self.current_settings.stdin_mode |= 0x0002;
+        // ENABLE_VIRTUAL_TERMINAL_INPUT
+        if (self.current_settings.stdin_mode & 0x0200 != 0) self.current_settings.stdin_mode &= ~@as(u32, 0x0200);
+        if (self.current_settings.stdin_mode != before_stdin_mode) {
+            // ENABLE_PROCESSED_INPUT
+            if (std.os.windows.kernel32.SetConsoleMode(self.stdin_file.handle, self.current_settings.stdin_mode) == std.os.windows.FALSE) {
+                switch (std.os.windows.kernel32.GetLastError()) {
+                    else => |err| return std.os.windows.unexpectedError(err),
+                }
+            }
+        }
+        const before_stdout_mode = self.current_settings.stdout_mode;
+        // ENABLE_PROCESSED_OUTPUT
+        if (self.current_settings.stdout_mode & 0x0001 == 0) self.current_settings.stdout_mode |= 0x0001;
+        // ENABLE_VIRTUAL_TERMINAL_PROCESSING
+        if (self.current_settings.stdout_mode & 0x0004 != 0) self.current_settings.stdout_mode &= ~@as(u32, 0x0004);
+        if (self.current_settings.stdout_mode != before_stdout_mode) {
+            if (std.os.windows.kernel32.SetConsoleMode(self.stdout_file.handle, self.current_settings.stdout_mode) == std.os.windows.FALSE) {
+                switch (std.os.windows.kernel32.GetLastError()) {
+                    else => |err| return std.os.windows.unexpectedError(err),
+                }
+            }
+        }
+    } else {
+        var newSettings = try std.posix.tcgetattr(self.stdin_file.handle);
+        newSettings.lflag.ICANON = true;
+        newSettings.lflag.ECHO = true;
         try std.posix.tcsetattr(self.stdin_file.handle, std.posix.TCSA.NOW, newSettings);
     }
 }
@@ -143,23 +191,19 @@ pub fn restoreSettings(self: *Terminal) !void {
     if (builtin.os.tag == .windows) {
         // https://learn.microsoft.com/en-us/windows/console/setconsolemode
         // ENABLE_VIRTUAL_TERMINAL_INPUT
-        if (settings.virtual_terminal_input != self.current_settings.virtual_terminal_input) {
-            if (std.os.windows.kernel32.SetConsoleMode(self.stdin_file.handle, 0x0200) == std.os.windows.FALSE) {
-                switch (std.os.windows.kernel32.GetLastError()) {
-                    else => |err| return std.os.windows.unexpectedError(err),
-                }
+        if (std.os.windows.kernel32.SetConsoleMode(self.stdin_file.handle, settings.stdin_mode) == std.os.windows.FALSE) {
+            switch (std.os.windows.kernel32.GetLastError()) {
+                else => |err| return std.os.windows.unexpectedError(err),
             }
-            self.current_settings.virtual_terminal_input = settings.virtual_terminal_input;
         }
+        self.current_settings.stdin_mode = settings.stdin_mode;
         // ENABLE_VIRTUAL_TERMINAL_PROCESSING
-        if (!settings.virtual_terminal_processing != self.current_settings.virtual_terminal_processing) {
-            if (std.os.windows.kernel32.SetConsoleMode(self.stdout_file.handle, 0x0004) == std.os.windows.FALSE) {
-                switch (std.os.windows.kernel32.GetLastError()) {
-                    else => |err| return std.os.windows.unexpectedError(err),
-                }
+        if (std.os.windows.kernel32.SetConsoleMode(self.stdout_file.handle, settings.stdout_mode) == std.os.windows.FALSE) {
+            switch (std.os.windows.kernel32.GetLastError()) {
+                else => |err| return std.os.windows.unexpectedError(err),
             }
-            self.current_settings.virtual_terminal_processing = settings.virtual_terminal_processing;
         }
+        self.current_settings.stdout_mode = settings.stdout_mode;
     } else {
         if (self.settings) |old_settings| try std.posix.tcsetattr(self.stdin_file.handle, std.posix.TCSA.NOW, old_settings);
     }
