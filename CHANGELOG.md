@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## `0.3.0` - September 1, 2024
+
 ### Added
 - Added `stdin`, `stdout`, and `stderr` to `@zcore/stdio`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/stdio)
 
