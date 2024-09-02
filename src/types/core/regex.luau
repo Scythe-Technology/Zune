@@ -25,7 +25,7 @@ export type Regex = {
     --[[
         Format a string.
     ]]
-    format : (self: Regex, str: string, replacement: string) -> string;
+    format : (self: Regex, str: string, format: string) -> string;
     --[[
         Replace the first occurrence of a string.
     ]]
