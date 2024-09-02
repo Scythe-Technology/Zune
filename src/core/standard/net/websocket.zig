@@ -84,7 +84,7 @@ pub const LuaMeta = struct {
             L.checkType(2, .function);
             const fnRef = L.ref(2) catch return 0;
             ctx.handlers.close = fnRef;
-        }
+        } else L.raiseErrorStr("Unknown method: %s\n", .{namecall.ptr});
         return 0;
     }
 };

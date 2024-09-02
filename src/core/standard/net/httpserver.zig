@@ -81,7 +81,7 @@ pub const LuaMeta = struct {
                 defer socket.deinit();
                 _ = socket.writeText(message) catch |err| L.raiseErrorStr("Failed to write to websocket (%s)", .{@errorName(err).ptr});
             }
-        }
+        } else L.raiseErrorStr("Unknown method: %s\n", .{namecall.ptr});
         return 0;
     }
 
@@ -114,7 +114,7 @@ pub const LuaMeta = struct {
             data.ptr = null;
             scheduler.deferThread(L, null, 0); // resume on next task
             return L.yield(0);
-        }
+        } else L.raiseErrorStr("Unknown method: %s\n", .{namecall.ptr});
         return 0;
     }
 };

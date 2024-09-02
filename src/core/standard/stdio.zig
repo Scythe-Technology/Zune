@@ -285,8 +285,7 @@ const LuaStdIn = struct {
             L.pushLString(buffer[0..amount]);
 
             return 1;
-        }
-
+        } else L.raiseErrorStr("Unknown method: %s\n", .{namecall.ptr});
         return 0;
     }
 };
@@ -310,8 +309,7 @@ const LuaStdOut = struct {
             const string = if (L.typeOf(2) == .buffer) L.checkBuffer(2) else L.checkString(2);
 
             try file_ptr.writeAll(string);
-        }
-
+        } else L.raiseErrorStr("Unknown method: %s\n", .{namecall.ptr});
         return 0;
     }
 };
@@ -345,7 +343,7 @@ const LuaTerminal = struct {
         } else if (std.mem.eql(u8, namecall, "restoreMode")) {
             L.pushBoolean(if (term_ptr.restoreSettings()) true else |_| false);
             return 1;
-        }
+        } else L.raiseErrorStr("Unknown method: %s\n", .{namecall.ptr});
         return 0;
     }
 };

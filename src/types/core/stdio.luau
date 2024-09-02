@@ -1,5 +1,7 @@
 local stdio = {};
 
+stdio.MAX_READ = (nil :: any) :: number;
+
 --[[
     Generates escape sequence to move the cursor.
 
