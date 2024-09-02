@@ -96,6 +96,7 @@ pub fn build(b: *std.Build) !void {
     const dep_yaml = b.dependency("yaml", .{ .target = target, .optimize = optimize });
     const dep_luau = b.dependency("luau", .{ .target = target, .optimize = optimize });
     const dep_lz4 = b.dependency("lz4", .{ .target = target, .optimize = optimize });
+    const dep_czrex = b.dependency("czrex", .{ .target = target, .optimize = optimize });
 
     const prebuild_step = b.step("prebuild", "Setup project for build");
 
@@ -121,6 +122,7 @@ pub fn build(b: *std.Build) !void {
     exe.root_module.addImport("lz4", dep_lz4.module("zig-lz4"));
     exe.root_module.addImport("json", dep_json.module("zig-json"));
     exe.root_module.addImport("luau", dep_luau.module("zig-luau"));
+    exe.root_module.addImport("regex", dep_czrex.module("czrex"));
 
     b.installArtifact(exe);
 
@@ -152,6 +154,7 @@ pub fn build(b: *std.Build) !void {
     exe_unit_tests.root_module.addImport("lz4", dep_lz4.module("zig-lz4"));
     exe_unit_tests.root_module.addImport("json", dep_json.module("zig-json"));
     exe_unit_tests.root_module.addImport("luau", dep_luau.module("zig-luau"));
+    exe_unit_tests.root_module.addImport("regex", dep_czrex.module("czrex"));
 
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
 

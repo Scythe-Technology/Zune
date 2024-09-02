@@ -34,7 +34,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       stdio.stdin:read() -- read next input without waiting for newline
       stdio.terminal.restoreMode() -- return back to original mode before changes.
     end
-    ``` 
+    ```
+- Added `@zcore/regex`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/regex)
+
+  Example:
+    ```lua
+    local regex = require("@zcore/regex")
+
+    local pattern = regex.new("([A-Za-z\\s!])+")
+    local match = pattern:match("Hello World!")
+    print(match) --[[<table: 0x12345678> {
+        [1] = <table: 0x2ccee88> {
+            index = 0, 
+            string = "Hello World!", 
+        }, 
+        [2] = <table: 0x2ccee58> {
+            index = 11, 
+            string = "!", 
+        }, 
+    }]]
+    ```
 
 ### Changed
 - Switched from build optimization from ReleaseSafe to ReleaseFast to improve performance.
