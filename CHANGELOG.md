@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Fixed
+- Fixed `@zcore/net` with serve using `reuseAddress` option not working.
+
 ## `0.3.0` - September 1, 2024
 
 ### Added

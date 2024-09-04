@@ -1,4 +1,4 @@
-<img align="right" height="296px" src="https://github.com/user-attachments/assets/b127f53f-c1f8-43dc-9a2e-36e42562f17c" alt="Zoooooom!" />
+<img align="right" height="296px" src="https://raw.githubusercontent.com/Scythe-Technology/zune-docs/master/public/logo-dark.svg" alt="Zoooooom!" />
 <h1 align="left">Zune</h1>
 <div align="left">
     <a href="https://github.com/Scythe-Technology/Zune/releases" target="_blank"><img src="https://img.shields.io/badge/x64,_arm64-Linux?style=flat-square&logo=linux&logoColor=white&label=Linux&color=orange"/>

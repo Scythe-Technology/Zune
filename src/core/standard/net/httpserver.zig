@@ -754,7 +754,7 @@ pub fn lua_serve(L: *Luau, scheduler: *Scheduler) i32 {
 
     const reuseAddressType = L.getField(1, "reuseAddress");
     if (!luau.isNoneOrNil(reuseAddressType)) {
-        if (addressType != .boolean) L.raiseErrorStr("Expected field 'reuseAddress' to be a boolean", .{});
+        if (reuseAddressType != .boolean) L.raiseErrorStr("Expected field 'reuseAddress' to be a boolean", .{});
         reuseAddress = L.toBoolean(-1);
     }
     L.pop(1);
