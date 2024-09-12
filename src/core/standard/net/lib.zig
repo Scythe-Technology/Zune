@@ -9,9 +9,9 @@ const HttpServer = @import("httpserver.zig");
 const HttpClient = @import("httpclient.zig");
 const WebSocketClient = @import("websocket.zig");
 
-pub fn loadLib(L: *Luau) !void {
-    try HttpServer.lua_load(L);
-    try WebSocketClient.lua_load(L);
+pub fn loadLib(L: *Luau) void {
+    HttpServer.lua_load(L);
+    WebSocketClient.lua_load(L);
 
     L.newTable();
 

@@ -95,9 +95,9 @@ fn regex_new(L: *Luau) !i32 {
     return 1;
 }
 
-pub fn loadLib(L: *Luau) !void {
+pub fn loadLib(L: *Luau) void {
     {
-        try L.newMetatable(LuaRegex.META);
+        L.newMetatable(LuaRegex.META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
 
         L.setFieldFn(-1, luau.Metamethods.namecall, LuaRegex.__namecall); // metatable.__namecall
 

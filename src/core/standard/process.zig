@@ -13,8 +13,6 @@ const process = std.process;
 
 const native_os = builtin.os.tag;
 
-const MAX_LUAU_SIZE = 1073741824; // 1 GB
-
 const ProcessArgsError = error{
     InvalidArgType,
     NotArray,
@@ -225,7 +223,7 @@ const ProcessChildOptions = struct {
             if (childProcess.stdout == null) return outputError(L, "InternalError (No stdout stream found, did you spawn?)", .{});
             if (childProcess.stdout_behavior != .Pipe) return outputError(L, "InternalError (stdout stream is not a pipe)", .{});
             const allocator = L.allocator();
-            const maxBytes = L.optUnsigned(2) orelse MAX_LUAU_SIZE;
+            const maxBytes = L.optUnsigned(2) orelse luaHelper.MAX_LUAU_SIZE;
 
             var buffer = allocator.alloc(u8, maxBytes) catch outputError(L, "OutOfMemory", .{});
             defer allocator.free(buffer);
@@ -241,7 +239,7 @@ const ProcessChildOptions = struct {
             if (childProcess.stderr == null) return outputError(L, "InternalError (No stdout stream found, did you spawn?)", .{});
             if (childProcess.stderr_behavior != .Pipe) return outputError(L, "InternalError (stderr stream is not a pipe)", .{});
             const allocator = L.allocator();
-            const maxBytes = L.optUnsigned(2) orelse MAX_LUAU_SIZE;
+            const maxBytes = L.optUnsigned(2) orelse luaHelper.MAX_LUAU_SIZE;
 
             var buffer = allocator.alloc(u8, maxBytes) catch outputError(L, "OutOfMemory", .{});
             defer allocator.free(buffer);
@@ -505,7 +503,7 @@ pub fn loadLib(L: *Luau, args: []const []const u8) !void {
     const allocator = L.allocator();
 
     {
-        try L.newMetatable("process_child_instance");
+        L.newMetatable("process_child_instance") catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
         L.pushValue(-1);
         L.setField(-2, luau.Metamethods.index); // metatable.__index = metatable
 

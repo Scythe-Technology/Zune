@@ -34,10 +34,10 @@ pub fn openZune(L: *luau.Luau, args: []const []const u8, mode: RunMode) !void {
     corelib.task.loadLib(L);
     corelib.luau.loadLib(L);
     corelib.serde.loadLib(L);
-    try corelib.stdio.loadLib(L);
+    corelib.stdio.loadLib(L);
     corelib.crypto.loadLib(L);
-    try corelib.regex.loadLib(L);
-    try corelib.net.loadLib(L);
+    corelib.regex.loadLib(L);
+    corelib.net.loadLib(L);
     try corelib.process.loadLib(L, args);
 
     corelib.testing.loadLib(L, mode == .Test);

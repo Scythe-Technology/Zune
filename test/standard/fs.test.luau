@@ -345,3 +345,98 @@ test("Symlink", function()
         expect(fs.isDir(TEMP_DIR .. "/metadata2")).toBeFalsy();
     end
 end)
+
+describe("File Object/Handle", function()
+    local textData = "Some text\n";
+    test("Open Unknown File", function()
+        local success, result = fs.openFile(TEMP_DIR .. "/sample.txt");
+        expect(success).toBeFalsy();
+        expect(result).toBe("FileNotFound");
+    end)
+    
+    test("Create File", function()
+        local success, result = fs.createFile(TEMP_DIR .. "/sample.txt");
+        expect(success).toBeTruthy();
+        expect(result).toBe(expect.type("userdata"));
+
+        expect(result:read()).toBe(""); -- Should have no data
+
+        expect(result:getSize()).toBe(0);
+
+        result:write(textData); -- Write data
+
+        expect(result:getSize()).toBe(#textData);
+
+        result:seekFromEnd(-#textData); -- Go back to amount of textData
+        expect(result:getSize()).toBe(#textData); -- Confirm size
+        expect(result:read()).toBe(textData); -- Confirm data
+
+        result:sync(); -- Sync data to disk
+
+        result:close(); -- Close file (also syncs data)
+
+        expect(function()
+            result:read();
+        end).toThrow("NotOpenForReading");
+    end)
+
+    test("Create File Execlusive", function()
+        local success, result = fs.createFile(TEMP_DIR .. "/sample.txt", {
+            exclusive = true,
+        });
+        expect(success).toBeFalsy();
+        expect(result).toBe("PathAlreadyExists");
+    end)
+
+    test("Open File Read Mode", function()
+        local success, result = fs.openFile(TEMP_DIR .. "/sample.txt", {
+            mode = "r",
+        });
+        expect(success).toBeTruthy();
+        expect(result).toBe(expect.type("userdata"));
+
+        expect(result:getSize()).toBe(#textData);
+        expect(result:read()).toBe(textData);
+        result:seekTo(0);
+        local b = result:read(nil, true);
+        expect(b).toBe(expect.type("buffer"));
+        expect(buffer.tostring(b)).toBe(textData);
+
+        expect(function()
+            result:write("Some text");
+        end).toThrow("NotOpenForWriting");
+    end)
+
+    test("Open File Write Mode", function()
+        local success, result = fs.openFile(TEMP_DIR .. "/sample.txt", {
+            mode = "w",
+        });
+        expect(success).toBeTruthy();
+        expect(result).toBe(expect.type("userdata"));
+
+        expect(result:getSize()).toBe(#textData);
+        result:seekFromEnd();
+        result:write("Append text");
+        expect(result:getSize()).toBe(#textData + #("Append text"));
+        
+        expect(function()
+            result:read();
+        end).toThrow("NotOpenForReading");
+        
+        result:close();
+    end)
+
+    test("Open File Both Mode", function()
+        local success, result = fs.openFile(TEMP_DIR .. "/sample.txt", {
+            mode = "rw",
+        });
+        expect(success).toBeTruthy();
+        expect(result).toBe(expect.type("userdata"));
+
+        expect(result:read()).toBe(textData .. "Append text");
+
+        result:write("Some text");
+
+        result:close();
+    end)
+end)

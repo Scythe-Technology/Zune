@@ -348,9 +348,9 @@ const LuaTerminal = struct {
     }
 };
 
-pub fn loadLib(L: *Luau) !void {
+pub fn loadLib(L: *Luau) void {
     {
-        try L.newMetatable(LuaTerminal.META);
+        L.newMetatable(LuaTerminal.META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
 
         L.setFieldFn(-1, luau.Metamethods.index, LuaTerminal.__index); // metatable.__namecall
         L.setFieldFn(-1, luau.Metamethods.namecall, LuaTerminal.__namecall); // metatable.__namecall
@@ -359,7 +359,7 @@ pub fn loadLib(L: *Luau) !void {
         L.pop(1);
     }
     {
-        try L.newMetatable(LuaStdIn.META);
+        L.newMetatable(LuaStdIn.META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
 
         L.setFieldFn(-1, luau.Metamethods.index, LuaStdIn.__index); // metatable.__namecall
         L.setFieldFn(-1, luau.Metamethods.namecall, LuaStdIn.__namecall); // metatable.__namecall
@@ -368,7 +368,7 @@ pub fn loadLib(L: *Luau) !void {
         L.pop(1);
     }
     {
-        try L.newMetatable(LuaStdOut.META);
+        L.newMetatable(LuaStdOut.META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
 
         L.setFieldFn(-1, luau.Metamethods.index, LuaStdOut.__index); // metatable.__namecall
         L.setFieldFn(-1, luau.Metamethods.namecall, LuaStdOut.__namecall); // metatable.__namecall

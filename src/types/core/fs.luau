@@ -10,18 +10,6 @@ export type MetadataKind = "file"
 	| "whiteout"
 	| "unknown"
 
-export type Metadata = {
-	kind : MetadataKind,
-	symlink : boolean,
-	createdAt : number,
-	modifiedAt : number,
-	accessedAt : number,
-	size : number,
-	permissions : {
-		readOnly : boolean,
-	},
-}
-
 type IOError = "AccessDenied"
 	| "FileNotFound"
 	| "UnknownError"
@@ -109,7 +97,156 @@ export type SymlinkError = IOError
 	| "NotFile"
 	| "NotSupported"
 
+export type Metadata = {
+	kind : MetadataKind,
+	symlink : boolean,
+	createdAt : number,
+	modifiedAt : number,
+	accessedAt : number,
+	size : number,
+	permissions : {
+		readOnly : boolean,
+	},
+}
+
+export type FileHandle = {
+	--[[
+		Reads the contents of a file.
+
+		*Optional: The amount of bytes to read, if nil, reads the whole till EOF or Luau limit.*
+
+		@param amount The amount of bytes to read.
+	]]
+	read :
+		& ((self: FileHandle, amount: number?, useBuffer: false?) -> string)
+		& ((self: FileHandle, amount: number?, useBuffer: true) -> buffer),
+
+
+	--[[
+		Writes to a file.
+
+		@param contents The contents to write to the file.
+	]]
+	write : (self: FileHandle, contents: buffer | string) -> (),
+
+	--[[
+		Appends to a file.
+		
+		@param contents The contents to append to the file.
+	]]
+	append : (self: FileHandle, contents: buffer | string) -> (),
+
+	--[[
+		Returns the size of the file. Based on current state of the file object.
+	]]
+	getSize : (self: FileHandle) -> number,
+
+	--[[
+		Returns the current position of the file.
+	]]
+	getSeekPosition : (self: FileHandle) -> number,
+
+	--[[
+		Seeks to a position in the file relative to the end.
+
+		*Optional: The amount of bytes to seek, if nil, seeks to the end*
+
+		@param amount The amount of bytes to seek.
+	]]
+	seekFromEnd : (self: FileHandle, amount: number?) -> (),
+
+	--[[
+		Seeks to a position in the file absolute to the start.
+
+		*Optional: The amount of bytes to seek, if nil, seeks to the start, 0*
+
+		@param amount The amount of bytes to seek.
+	]]
+	seekTo : (self: FileHandle, amount: number?) -> (),
+
+	--[[
+		Seeks to a position in the file relative to the current position.
+
+		*Optional: The amount of bytes to seek, if nil, seeks to the next position, 1*
+
+		*If `0` is provided, seek will not move.*
+
+		@param amount The amount of bytes to seek.
+	]]
+	seekBy : (self: FileHandle, amount: number?) -> (),
+
+	--[[
+		Locks the file.
+
+		*Optional: The mode to lock the file, if nil, locks the file in exclusive mode.*
+
+		@param lockMode The mode to lock the file.
+	]]
+	lock : (self: FileHandle, lockMode: ("shared" | "exclusive" | "none")?) -> boolean,
+
+	--[[
+		Unlocks the file.
+	]]
+	unlock : (self: FileHandle) -> (),
+
+	--[[
+		Flushes the file. Writes the contents to the disk.
+
+		Does not yield, **blocks** process.
+	]]
+	sync : (self: FileHandle) -> (),
+
+	--[[
+		Closes the file. (Will flush the file)
+	]]
+	close : (self: FileHandle) -> (),
+}
+
+type CreateFileOptions = {
+	--[[
+		Whether to create the file in exclusive mode.
+
+		*Default: false*
+	]]
+	exclusive : boolean?,
+};
+
+type OpenFileOptions = {
+	--[[
+		The mode to open the file in.
+
+		Available modes: `r`, `w`
+
+		*Default: `rw`*
+	]]
+	mode : string?,
+};
+
 local fs = {};
+
+--[[
+	Creates a file.
+
+	If exclusive is true, the operation will fail if the file already exists.
+
+	@param path The path to the file.
+	@param opts The options to create the file.
+	@return boolean Whether the operation was successful.
+	@return FileHandle | FileReadError An error if the operation failed.
+]]
+fs.createFile = (nil :: any) :: (path: string, opts: CreateFileOptions?) -> (boolean, FileHandle | FileReadError);
+
+--[[
+	Opens a file.
+
+	*The file must exist*
+
+	@param path The path to the file.
+	@param opts The options to open the file.
+	@return boolean Whether the operation was successful.
+	@return FileHandle | FileReadError An error if the operation failed.
+]]
+fs.openFile = (nil :: any) :: (path: string, opts: OpenFileOptions?) -> (boolean, FileHandle | FileReadError);
 
 --[[
 	Reads the contents of a file.
