@@ -358,6 +358,7 @@ describe("File Object/Handle", function()
         local success, result = fs.createFile(TEMP_DIR .. "/sample.txt");
         expect(success).toBeTruthy();
         expect(result).toBe(expect.type("userdata"));
+        --[[Type Refinement]] assert(type(result) ~= "string");
 
         expect(result:read()).toBe(""); -- Should have no data
 
@@ -394,6 +395,7 @@ describe("File Object/Handle", function()
         });
         expect(success).toBeTruthy();
         expect(result).toBe(expect.type("userdata"));
+        --[[Type Refinement]] assert(type(result) ~= "string");
 
         expect(result:getSize()).toBe(#textData);
         expect(result:read()).toBe(textData);
@@ -413,6 +415,7 @@ describe("File Object/Handle", function()
         });
         expect(success).toBeTruthy();
         expect(result).toBe(expect.type("userdata"));
+        --[[Type Refinement]] assert(type(result) ~= "string");
 
         expect(result:getSize()).toBe(#textData);
         result:seekFromEnd();
@@ -432,6 +435,7 @@ describe("File Object/Handle", function()
         });
         expect(success).toBeTruthy();
         expect(result).toBe(expect.type("userdata"));
+        --[[Type Refinement]] assert(type(result) ~= "string");
 
         expect(result:read()).toBe(textData .. "Append text");
 
