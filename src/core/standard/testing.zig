@@ -79,14 +79,11 @@ pub fn loadLib(L: *Luau, enabled: bool) void {
 
         std.compress.gzip.decompress(bytecode_gz_buf_stream.reader(), bytecode_buf_stream.writer()) catch |err| std.debug.panic("Failed to decompress testing framework: {}", .{err});
 
-        ML.loadBytecode("test_framework", bytecode_buf) catch |err| {
-            std.debug.print("Error: {}\n", .{err});
-            unreachable;
-        };
+        ML.loadBytecode("test_framework", bytecode_buf) catch |err| std.debug.panic("Error loading test framework: {}\n", .{err});
         ML.pcall(0, 1, 0) catch |err| {
-            std.debug.print("Error: {}\n", .{err});
+            std.debug.print("Error loading test framework (2): {}\n", .{err});
             Engine.logError(ML, err);
-            unreachable;
+            std.debug.panic("Test Framework (2)\n", .{});
         };
         ML.xMove(L, 1);
 

@@ -65,7 +65,7 @@ fn luau_compile(L: *Luau) i32 {
 }
 
 fn luau_load(L: *Luau) i32 {
-    const bytecode = L.toString(1) catch unreachable;
+    const bytecode = L.checkString(1);
 
     var useCodeGen = false;
     var chunkName: [:0]const u8 = "(load)";
@@ -96,7 +96,7 @@ fn luau_load(L: *Luau) i32 {
                 L.pop(1); // drop metatable
             }
             if (useCodeGen) L.setSafeEnv(-1, true);
-            L.setfenv(-2) catch unreachable;
+            L.setfenv(-2) catch L.raiseErrorStr("Luau Error (Bad Env)", .{});
         } else L.pop(1);
     }
 

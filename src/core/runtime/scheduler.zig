@@ -91,19 +91,13 @@ pub fn spawnThread(self: *Self, thread: *Luau, args: i32) !void {
 }
 
 pub fn deferThread(self: *Self, thread: *Luau, from: ?*Luau, args: i32) void {
-    self.deferred.insert(0, .{ .from = from, .thread = thread, .args = args }) catch |err| {
-        std.debug.print("Error: {}\n", .{err});
-        unreachable;
-    };
+    self.deferred.insert(0, .{ .from = from, .thread = thread, .args = args }) catch |err| std.debug.panic("Error: {}\n", .{err});
 }
 
 pub fn sleepThread(self: *Self, thread: *Luau, time: f64, args: i32, waited: bool) void {
     const start = luau.clock();
     const wake = start + time;
-    self.sleeping.insert(0, .{ .thread = thread, .start = start, .wake = wake, .args = args, .waited = waited }) catch |err| {
-        std.debug.print("Error: {}\n", .{err});
-        unreachable;
-    };
+    self.sleeping.insert(0, .{ .thread = thread, .start = start, .wake = wake, .args = args, .waited = waited }) catch |err| std.debug.panic("Error: {}\n", .{err});
 }
 
 pub fn addTask(self: *Self, comptime T: type, data: *T, L: *Luau, comptime handler: *const fn (ctx: *T, L: *Luau, scheduler: *Self) TaskResult, comptime destructor: *const fn (ctx: *T, L: *Luau, scheduler: *Self) void) void {
@@ -122,10 +116,7 @@ pub fn addTask(self: *Self, comptime T: type, data: *T, L: *Luau, comptime handl
         .state = L,
         .virtualFn = virtualFn,
         .virtualDtor = virtualDtor,
-    }) catch |err| {
-        std.debug.print("Error: {}\n", .{err});
-        unreachable;
-    };
+    }) catch |err| std.debug.panic("Error: {}\n", .{err});
 }
 
 pub fn awaitCall(self: *Self, comptime T: type, data: *T, L: *Luau, args: i32, comptime handler: *const fn (ctx: *T, L: *Luau, scheduler: *Self) void, from: ?*Luau) !void {
@@ -145,10 +136,7 @@ pub fn awaitCall(self: *Self, comptime T: type, data: *T, L: *Luau, args: i32, c
         .data = @ptrCast(data),
         .state = L,
         .resumeFn = resumeFn,
-    }) catch |err| {
-        std.debug.print("Error: {}\n", .{err});
-        unreachable;
-    };
+    }) catch |err| std.debug.panic("Error: {}\n", .{err});
 }
 
 pub fn resumeState(state: *Luau, from: ?*Luau, args: i32) void {
@@ -212,7 +200,7 @@ pub fn run(self: *Self) void {
                     const status = thread.status();
                     if (status != .ok and status != .yield) {
                         std.debug.print("Cannot resume thread error status: {}\n", .{status});
-                        unreachable;
+                        continue;
                     }
                     if (slept.waited) {
                         thread.pushNumber(now - slept.start);
@@ -223,10 +211,7 @@ pub fn run(self: *Self) void {
             }
         }
         {
-            var deferredArray = self.deferred.clone() catch |err| {
-                std.debug.print("Error: {}\n", .{err});
-                unreachable;
-            };
+            var deferredArray = self.deferred.clone() catch |err| std.debug.panic("Error: {}\n", .{err});
             defer deferredArray.deinit();
             self.deferred.clearAndFree();
             var i = deferredArray.items.len;

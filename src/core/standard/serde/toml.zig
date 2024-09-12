@@ -106,7 +106,7 @@ fn encodeArrayPartial(L: *Luau, allocator: std.mem.Allocator, arraySize: i32, bu
                 size += 1;
                 const num = L.checkNumber(-1);
                 if (std.math.isNan(num) or std.math.isInf(num)) return Error.InvalidNumber;
-                const value = L.toString(-1) catch unreachable;
+                const value = L.toString(-1) catch std.debug.panic("Number failed to convert to string\n", .{});
                 try buf.appendSlice(value);
                 if (size != arraySize) try buf.appendSlice(", ");
             },
@@ -195,7 +195,7 @@ fn encodeTable(L: *Luau, allocator: std.mem.Allocator, buf: *std.ArrayList(u8), 
                 defer allocator.free(name);
                 try buf.appendSlice(name);
                 try buf.appendSlice(" = ");
-                const value = L.toString(-1) catch unreachable;
+                const value = L.toString(-1) catch std.debug.panic("Number failed to convert to string\n", .{});
                 try buf.appendSlice(value);
                 if (!info.root) try buf.appendSlice(",\n") else try buf.append('\n');
             },

@@ -445,7 +445,11 @@ pub fn lua_request(L: *Luau, scheduler: *Scheduler) i32 {
         }
     }
 
-    const uri = std.Uri.parse(uriString) catch unreachable;
+    const uri = std.Uri.parse(uriString) catch |err| {
+        L.pushBoolean(false);
+        L.pushString(@errorName(err));
+        return 2;
+    };
 
     prep(allocator, L, scheduler, .{
         .redirect_behavior = redirectBehavior,

@@ -247,7 +247,7 @@ test "url: unescape" {
 
 pub fn getRandom() std.Random.DefaultPrng {
     var seed: u64 = undefined;
-    std.posix.getrandom(std.mem.asBytes(&seed)) catch unreachable;
+    std.posix.getrandom(std.mem.asBytes(&seed)) catch std.debug.panic("getrandom failed\n", .{});
     return std.Random.DefaultPrng.init(seed);
 }
 

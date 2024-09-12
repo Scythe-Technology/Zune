@@ -209,7 +209,6 @@ const ProcessChildOptions = struct {
             const term = childProcess.kill() catch |err| {
                 std.debug.print("Error: {}\n", .{err});
                 outputError(L, "Error killing process", .{});
-                unreachable;
             };
             L.newTable();
             internal_process_term(L, term);
@@ -218,7 +217,6 @@ const ProcessChildOptions = struct {
             const term = childProcess.wait() catch |err| {
                 std.debug.print("Error: {}\n", .{err});
                 outputError(L, "Error waiting for process", .{});
-                unreachable;
             };
             L.newTable();
             internal_process_term(L, term);
