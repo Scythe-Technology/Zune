@@ -231,8 +231,8 @@ local fs = {};
 
 	@param path The path to the file.
 	@param opts The options to create the file.
-	@return boolean Whether the operation was successful.
-	@return FileHandle | FileReadError An error if the operation failed.
+	@return `boolean` Whether the operation was successful.
+	@return `FileHandle | FileReadError` An error if the operation failed.
 ]]
 fs.createFile = (nil :: any) :: (path: string, opts: CreateFileOptions?) -> (boolean, FileHandle | FileReadError);
 
@@ -243,8 +243,8 @@ fs.createFile = (nil :: any) :: (path: string, opts: CreateFileOptions?) -> (boo
 
 	@param path The path to the file.
 	@param opts The options to open the file.
-	@return boolean Whether the operation was successful.
-	@return FileHandle | FileReadError An error if the operation failed.
+	@return `boolean `Whether the operation was successful.
+	@return `FileHandle | FileReadError` An error if the operation failed.
 ]]
 fs.openFile = (nil :: any) :: (path: string, opts: OpenFileOptions?) -> (boolean, FileHandle | FileReadError);
 
@@ -255,8 +255,8 @@ fs.openFile = (nil :: any) :: (path: string, opts: OpenFileOptions?) -> (boolean
 	
 	@param path The path to the file.
 	@param useBuffer Whether to read the file as a buffer.
-	@return boolean Whether the operation was successful.
-	@return string | buffer | FileReadError The contents of the file, or an error.
+	@return `boolean` Whether the operation was successful.
+	@return `string | buffer | FileReadError` The contents of the file, or an error.
 ]]
 fs.readFile = (nil :: any) :: (path: string, useBuffer: boolean?) -> (boolean, string | buffer | FileReadError);
 
@@ -264,8 +264,8 @@ fs.readFile = (nil :: any) :: (path: string, useBuffer: boolean?) -> (boolean, s
 	Reads the contents of a directory.
 
 	@param path The path to the directory.
-	@return boolean Whether the operation was successful.
-	@return {string} | string The contents of the directory, or an error.
+	@return `boolean` Whether the operation was successful.
+	@return `{string} | string` The contents of the directory, or an error.
 ]]
 fs.readDir = (nil :: any) :: (path: string) -> (boolean, { string } | string);
 
@@ -276,8 +276,8 @@ fs.readDir = (nil :: any) :: (path: string) -> (boolean, { string } | string);
 
 	@param path The path to the file.
 	@param contents The contents to write to the file.
-	@return boolean Whether the operation was successful.
-	@return FileWriteError An error if the operation failed.
+	@return `boolean` Whether the operation was successful.
+	@return `FileWriteError` An error if the operation failed.
 ]]
 fs.writeFile = (nil :: any) :: (path: string, contents: buffer | string) -> (boolean, FileWriteError?);
 
@@ -286,8 +286,8 @@ fs.writeFile = (nil :: any) :: (path: string, contents: buffer | string) -> (boo
 
 	@param path The path to the directory.
 	@param recursive Whether to write recursively.
-	@return boolean Whether the operation was successful.
-	@return DirWriteError An error if the operation failed.
+	@return `boolean` Whether the operation was successful.
+	@return `DirWriteError` An error if the operation failed.
 ]]
 fs.writeDir = (nil :: any) ::  (path: string, recursive: boolean?) -> (boolean, DirWriteError?);
 
@@ -295,8 +295,8 @@ fs.writeDir = (nil :: any) ::  (path: string, recursive: boolean?) -> (boolean, 
 	Deletes a file.
 
 	@param path The path to the file.
-	@return boolean Whether the operation was successful.
-	@return FileRemoveError An error if the operation failed.
+	@return `boolean` Whether the operation was successful.
+	@return `FileRemoveError` An error if the operation failed.
 ]]
 fs.removeFile = (nil :: any) :: (path: string) -> (boolean, FileRemoveError?);
 
@@ -305,8 +305,8 @@ fs.removeFile = (nil :: any) :: (path: string) -> (boolean, FileRemoveError?);
 
 	@param path The path to the directory.
 	@param recursive Whether to delete recursively.
-	@return boolean Whether the operation was successful.
-	@return DirRemoveError An error if the operation failed.
+	@return `boolean` Whether the operation was successful.
+	@return `DirRemoveError` An error if the operation failed.
 ]]
 fs.removeDir = (nil :: any) :: (path: string, recursive: boolean?) -> (boolean, DirRemoveError?);
 
@@ -314,8 +314,8 @@ fs.removeDir = (nil :: any) :: (path: string, recursive: boolean?) -> (boolean, 
 	Returns the metadata of a file or directory.
 
 	@param path The path to the file or directory.
-	@return boolean Whether the operation was successful.
-	@return Metadata | MetadataError The metadata of the file or directory, or an error.
+	@return `boolean` Whether the operation was successful.
+	@return `Metadata | MetadataError` The metadata of the file or directory, or an error.
 ]]
 fs.metadata = (nil :: any) :: (path: string) -> (boolean, Metadata? | MetadataError);
 
@@ -323,7 +323,7 @@ fs.metadata = (nil :: any) :: (path: string) -> (boolean, Metadata? | MetadataEr
 	Checks if a file exists.
 
 	@param path The path to the file.
-	@return boolean Whether the file exists.
+	@return `boolean` Whether the file exists.
 ]]
 fs.isFile = (nil :: any) :: (path: string) -> boolean;
 
@@ -331,7 +331,7 @@ fs.isFile = (nil :: any) :: (path: string) -> boolean;
 	Checks if a directory exists.
 
 	@param path The path to the directory.
-	@return boolean Whether the directory exists.
+	@return `boolean` Whether the directory exists.
 ]]
 fs.isDir = (nil :: any) :: (path: string) -> boolean;
 
@@ -341,8 +341,8 @@ fs.isDir = (nil :: any) :: (path: string) -> boolean;
 	@param from The path to the file or directory.
 	@param to The path to rename the file or directory to.
 	@param overwrite Whether to overwrite the file or directory if it exists.
-	@return boolean Whether the operation was successful.
-	@return MoveError An error if the operation failed.
+	@return `boolean` Whether the operation was successful.
+	@return `MoveError` An error if the operation failed.
 ]]
 fs.move = (nil :: any) :: (from: string, to: string, overwrite: boolean?) -> (boolean, MoveError?);
 
@@ -352,8 +352,8 @@ fs.move = (nil :: any) :: (from: string, to: string, overwrite: boolean?) -> (bo
 	@param from The path to the file or directory.
 	@param to The path to copy the file or directory to.
 	@param overwrite Whether to overwrite the file or directory if it exists.
-	@return boolean Whether the operation was successful.
-	@return CopyError An error if the operation failed.
+	@return `boolean` Whether the operation was successful.
+	@return `CopyError` An error if the operation failed.
 ]]
 fs.copy = (nil :: any) :: (from: string, to: string, overwrite: boolean?) -> (boolean, CopyError?);
 
@@ -364,8 +364,8 @@ fs.copy = (nil :: any) :: (from: string, to: string, overwrite: boolean?) -> (bo
 
 	@param from The path to the file or directory.
 	@param to The path to create the symbolic link to.
-	@return boolean Whether the operation was successful.
-	@return SymlinkError An error if the operation failed.
+	@return `boolean` Whether the operation was successful.
+	@return `SymlinkError` An error if the operation failed.
 ]]
 fs.symlink = (nil :: any) :: (from: string, to: string) -> (boolean, SymlinkError?);
 

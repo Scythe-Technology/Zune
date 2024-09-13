@@ -345,6 +345,14 @@ const LuaTerminal = struct {
         } else if (std.mem.eql(u8, namecall, "restoreMode")) {
             L.pushBoolean(if (term_ptr.restoreSettings()) true else |_| false);
             return 1;
+        } else if (std.mem.eql(u8, namecall, "getSize")) {
+            const x, const y = term_ptr.getSize() catch |err| {
+                if (err == error.NotATerminal) return 0;
+                return err;
+            };
+            L.pushInteger(x);
+            L.pushInteger(y);
+            return 2;
         } else L.raiseErrorStr("Unknown method: %s\n", .{namecall.ptr});
         return 0;
     }
