@@ -35,7 +35,7 @@ pub fn runTest(allocator: std.mem.Allocator, comptime testFile: zune_test_files.
     try Engine.prepAsync(L, &scheduler, .{
         .args = args,
         .mode = .Test,
-    });
+    }, .{});
 
     const ML = L.newThread();
 

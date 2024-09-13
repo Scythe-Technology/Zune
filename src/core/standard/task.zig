@@ -6,6 +6,8 @@ const Scheduler = @import("../runtime/scheduler.zig");
 
 const Luau = luau.Luau;
 
+pub const LIB_NAME = "@zcore/task";
+
 fn task_wait(L: *Luau, scheduler: *Scheduler) i32 {
     const time = L.optNumber(1) orelse 0;
     scheduler.sleepThread(L, time, 0, true);
@@ -154,10 +156,10 @@ pub fn loadLib(L: *Luau) void {
     L.setFieldFn(-1, "count", Scheduler.toSchedulerFn(task_count));
 
     _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
-    if (L.getField(-1, "@zcore/task") != .table) {
+    if (L.getField(-1, LIB_NAME) != .table) {
         L.pop(1);
         L.pushValue(-2);
-        L.setField(-2, "@zcore/task");
+        L.setField(-2, LIB_NAME);
     } else L.pop(1);
     L.pop(2);
 }

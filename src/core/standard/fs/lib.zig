@@ -13,6 +13,8 @@ const HardwareError = error{NotSupported};
 const UnhandledError = error{UnknownError};
 const OpenError = error{ InvalidMode, BadExclusive };
 
+pub const LIB_NAME = "@zcore/fs";
+
 fn fs_readFile(L: *Luau) !i32 {
     const allocator = L.allocator();
     const path = L.checkString(1);
@@ -467,10 +469,10 @@ pub fn loadLib(L: *Luau) void {
     L.setFieldFn(-1, "symlink", luaHelper.toSafeZigFunction(fs_symlink));
 
     _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
-    if (L.getField(-1, "@zcore/fs") != .table) {
+    if (L.getField(-1, LIB_NAME) != .table) {
         L.pop(1);
         L.pushValue(-2);
-        L.setField(-2, "@zcore/fs");
+        L.setField(-2, LIB_NAME);
     } else L.pop(1);
     L.pop(2);
 }

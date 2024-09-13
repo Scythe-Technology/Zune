@@ -13,6 +13,8 @@ const lz4 = @import("lz4.zig");
 
 const Luau = luau.Luau;
 
+pub const LIB_NAME = "@zcore/serde";
+
 pub fn loadLib(L: *Luau) void {
     L.newTable();
 
@@ -71,10 +73,10 @@ pub fn loadLib(L: *Luau) void {
     }
 
     _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
-    if (L.getField(-1, "@zcore/serde") != .table) {
+    if (L.getField(-1, LIB_NAME) != .table) {
         L.pop(1);
         L.pushValue(-2);
-        L.setField(-2, "@zcore/serde");
+        L.setField(-2, LIB_NAME);
     } else L.pop(1);
     L.pop(2);
 }

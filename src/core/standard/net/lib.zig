@@ -9,6 +9,8 @@ const HttpServer = @import("httpserver.zig");
 const HttpClient = @import("httpclient.zig");
 const WebSocketClient = @import("websocket.zig");
 
+pub const LIB_NAME = "@zcore/net";
+
 pub fn loadLib(L: *Luau) void {
     HttpServer.lua_load(L);
     WebSocketClient.lua_load(L);
@@ -20,10 +22,10 @@ pub fn loadLib(L: *Luau) void {
     L.setFieldFn(-1, "websocket", Scheduler.toSchedulerFn(WebSocketClient.lua_websocket));
 
     _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
-    if (L.getField(-1, "@zcore/net") != .table) {
+    if (L.getField(-1, LIB_NAME) != .table) {
         L.pop(1);
         L.pushValue(-2);
-        L.setField(-2, "@zcore/net");
+        L.setField(-2, LIB_NAME);
     } else L.pop(1);
     L.pop(2);
 }

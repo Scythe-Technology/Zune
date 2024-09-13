@@ -10,6 +10,8 @@ const Luau = luau.Luau;
 
 const MAX_LUAU_SIZE = 1073741824; // 1 GB
 
+pub const LIB_NAME = "@zcore/stdio";
+
 const CursorMoveKind = enum(u4) {
     Home,
     Goto,
@@ -422,10 +424,10 @@ pub fn loadLib(L: *Luau) void {
     L.setFieldFn(-1, "cursorMove", stdio_cursorMove);
 
     _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
-    if (L.getField(-1, "@zcore/stdio") != .table) {
+    if (L.getField(-1, LIB_NAME) != .table) {
         L.pop(1);
         L.pushValue(-2);
-        L.setField(-2, "@zcore/stdio");
+        L.setField(-2, LIB_NAME);
     } else L.pop(1);
     L.pop(2);
 }

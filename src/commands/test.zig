@@ -44,7 +44,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
     try Engine.prepAsync(L, &scheduler, .{
         .args = args,
         .mode = .Test,
-    });
+    }, .{});
 
     const ML = L.newThread();
 

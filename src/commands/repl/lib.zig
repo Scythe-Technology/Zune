@@ -44,10 +44,19 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     try Scheduler.SCHEDULERS.append(&scheduler);
 
+    var fargs = args;
+    var load_globals = false;
+    if (args.len > 0) {
+        if (std.mem.eql(u8, args[0], "--globals")) {
+            fargs = args[1..];
+            load_globals = true;
+        }
+    }
+
     try Engine.prepAsync(L, &scheduler, .{
-        .args = args,
+        .args = fargs,
         .mode = .Run,
-    });
+    }, .{ .load_as_global = load_globals });
 
     const path = try std.fs.cwd().realpathAlloc(allocator, ".");
     defer allocator.free(path);
