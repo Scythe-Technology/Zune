@@ -1,4 +1,5 @@
 local utilA = require("Utils/utilA");
+local constant = require("anyvalue");
 
 local testing = require("@zcore/testing");
 
@@ -13,6 +14,11 @@ describe("utilA", function()
 		expect(i).toBeNil();
 		expect(v).toBeNil();
 	end)
+end)
+
+test("Constant", function()
+	expect(constant).toBe(expect.type("string"));
+	expect(constant).toBe("Zune");
 end)
 
 describe("simpleLib", function()

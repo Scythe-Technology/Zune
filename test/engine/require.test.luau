@@ -36,3 +36,31 @@ test("Validating Require Context", function()
     expect(_FILE).never.toBeNil();
     expect(_FILE:find("require%.test%.luau")).never.toBeNil();
 end)
+
+test("Require Buffer", function()
+    expect(require(("generated/v1"))).toBe(expect.type("buffer"));
+end)
+
+test("Require Number", function()
+    expect(require(("generated/v2"))).toBe(1);
+end)
+
+test("Require String", function()
+    expect(require(("generated/v3"))).toBe("Hello, World!");
+end)
+
+test("Require Boolean", function()
+    expect(require(("generated/v4"))).toBe(true);
+end)
+
+test("Require Blank", function()
+    local ok, err = pcall(require, ("generated/blank"));
+    expect(ok).toBeFalsy();
+    assert((string.find(err, "module must return one value")) ~= nil);
+end)
+
+test("Require TooMany", function()
+    local ok, err = pcall(require, ("generated/toomany"));
+    expect(ok).toBeFalsy();
+    assert((string.find(err, "module must return one value")) ~= nil);
+end)

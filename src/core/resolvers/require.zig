@@ -6,6 +6,10 @@ const file = @import("file.zig");
 
 const Luau = luau.Luau;
 
+const RequireError = error{
+    ModuleNotFound,
+};
+
 pub const POSSIBLE_EXTENSIONS = [_][]const u8{
     ".luau",
     ".lua",
@@ -13,63 +17,57 @@ pub const POSSIBLE_EXTENSIONS = [_][]const u8{
     "/init.lua",
 };
 
-pub fn finishRequire(L: *Luau) i32 {
-    if (L.isString(-1)) {
-        L.raiseError();
-    }
-    return 1;
-}
-
-pub fn finishError(L: *Luau, errMsg: [:0]const u8) i32 {
+pub fn finishError(L: *Luau, errMsg: [:0]const u8) noreturn {
     L.pushString(errMsg);
-    return finishRequire(L);
+    L.raiseError();
 }
 
 const safeLuauGPA = std.heap.GeneralPurposeAllocator(.{});
 
-pub fn zune_require(L: *Luau) i32 {
+pub fn zune_require(L: *Luau) !i32 {
     const allocator = L.allocator();
     const moduleName = L.checkString(1);
     _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
+    var outErr: ?[]const u8 = null;
     if (moduleName[0] == '@') {
         if (L.getField(-1, moduleName) == .nil) {
             L.remove(-2); // drop: _MODULES
-            L.pushString("ModuleNotFound");
+            return RequireError.ModuleNotFound;
         }
-    } else {
+    } else jmp: {
         if (L.getField(luau.GLOBALSINDEX, "_FILE") != .string) return finishError(L, "InternalError (_FILE is invalid)");
         const moduleFilePath = L.toString(-1) catch unreachable;
         L.pop(1); // drop: _FILE
         if (!std.fs.path.isAbsolute(moduleFilePath)) return finishError(L, "InternalError (_FILE is not absolute)");
 
-        const relativeDirPath = std.fs.path.dirname(moduleFilePath) orelse return finishError(L, "FileNotFound");
+        const relativeDirPath = std.fs.path.dirname(moduleFilePath) orelse return error.FileNotFound;
 
-        const moduleAbsolutePath = Engine.findLuauFileFromPathZ(allocator, relativeDirPath, moduleName) catch return finishError(L, "FileNotFound");
+        const moduleAbsolutePath = Engine.findLuauFileFromPathZ(allocator, relativeDirPath, moduleName) catch return error.FileNotFound;
         defer allocator.free(moduleAbsolutePath);
 
         const moduleType = L.getField(-1, moduleAbsolutePath);
         if (moduleType != .nil) {
             L.remove(-2); // drop: _MODULES
-            return finishRequire(L);
+            return 1;
         }
         L.pop(1); // drop: nil
 
         var relativeDir = std.fs.openDirAbsolute(relativeDirPath, std.fs.Dir.OpenDirOptions{}) catch |err| switch (err) {
-            error.AccessDenied => return finishError(L, "AccessDenied"),
-            error.FileNotFound => return finishError(L, "FileNotFound"),
+            error.AccessDenied, error.FileNotFound => return err,
             else => {
                 std.debug.print("error: {}\n", .{err});
-                return finishError(L, "InternalError (Could not open directory)");
+                outErr = "InternalError (Could not open directory)";
+                break :jmp;
             },
         };
         defer relativeDir.close();
 
         const fileContent = file.readFile(allocator, relativeDir, moduleAbsolutePath) catch |err| switch (err) {
-            error.FileNotFound => return finishError(L, "FileNotFound"),
-            error.AccessDenied => return finishError(L, "AccessDenied"),
+            error.AccessDenied, error.FileNotFound => return err,
             else => {
                 std.debug.print("error: {}\n", .{err});
-                return finishError(L, "InternalError (Could not read file)");
+                outErr = "InternalError (Could not read file)";
+                break :jmp;
             },
         };
         defer allocator.free(fileContent);
@@ -82,46 +80,49 @@ pub fn zune_require(L: *Luau) i32 {
 
         Engine.setLuaFileContext(ML, moduleAbsolutePath);
 
-        const moduleRelativeName = std.fs.path.relative(allocator, relativeDirPath, moduleAbsolutePath) catch return finishError(L, "InternalError (Cannot resolve)");
+        const moduleRelativeName = try std.fs.path.relative(allocator, relativeDirPath, moduleAbsolutePath);
         defer allocator.free(moduleRelativeName);
 
-        const moduleRelativeNameZ = allocator.dupeZ(u8, moduleRelativeName) catch return finishError(L, "OutOfMemory");
+        const moduleRelativeNameZ = try allocator.dupeZ(u8, moduleRelativeName);
         defer allocator.free(moduleRelativeNameZ);
 
         Engine.loadModule(ML, moduleRelativeNameZ, fileContent, null) catch |err| switch (err) {
-            error.Memory, error.OutOfMemory => return finishError(L, "OutOfMemory"),
-            error.Syntax => return finishError(L, ML.toString(-1) catch "UnknownError"),
+            error.Memory, error.OutOfMemory => return error.OutOfMemory,
+            error.Syntax => {
+                outErr = ML.toString(-1) catch "UnknownError";
+                break :jmp;
+            },
         };
 
         const resumeStatus: ?luau.ResumeStatus = ML.resumeThread(L, 0) catch |err| switch (err) {
             error.Runtime, error.MsgHandler => res: {
-                if (!ML.isString(-1)) ML.pushString("Unknown Runtime Error");
+                if (!ML.isString(-1)) outErr = "Unknown Runtime Error" else outErr = ML.toString(-1) catch "ErrorNotString";
                 break :res null;
             },
             error.Memory => res: {
-                ML.pushString("OutOfMemory");
+                outErr = "OutOfMemory";
                 break :res null;
             },
         };
         if (resumeStatus) |status| {
             if (status == .ok) {
-                if (ML.getTop() == 0) {
-                    ML.pushString("module must return a value");
-                } else if (!ML.isTable(-1) and !ML.isFunction(-1) and !ML.isNil(-1)) {
-                    ML.pushString("module must return a table, function or nil");
-                } else if (ML.isString(-1)) {
-                    ML.pushString("unknown error while running module");
-                }
-            } else if (status == .yield) {
-                ML.pushString("module must not yield");
-            }
+                if (ML.getTop() != 1) outErr = "module must return one value";
+            } else if (status == .yield) outErr = "module must not yield";
         }
+
+        if (outErr != null) break :jmp;
 
         ML.xMove(L, 1);
         L.pushValue(-1);
         L.setField(-4, moduleAbsolutePath); // SET: _MODULES[moduleName] = module
     }
-    return finishRequire(L);
+
+    if (outErr) |err| {
+        L.pushLString(err);
+        L.raiseError();
+    }
+
+    return 1;
 }
 
 test "Require" {
