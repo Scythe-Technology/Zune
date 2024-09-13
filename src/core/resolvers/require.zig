@@ -44,7 +44,7 @@ pub fn zune_require(L: *Luau) i32 {
 
         const relativeDirPath = std.fs.path.dirname(moduleFilePath) orelse return finishError(L, "FileNotFound");
 
-        const moduleAbsolutePath = Engine.findLuauFileFromPath(allocator, relativeDirPath, moduleName) catch return finishError(L, "FileNotFound");
+        const moduleAbsolutePath = Engine.findLuauFileFromPathZ(allocator, relativeDirPath, moduleName) catch return finishError(L, "FileNotFound");
         defer allocator.free(moduleAbsolutePath);
 
         const moduleType = L.getField(-1, moduleAbsolutePath);
