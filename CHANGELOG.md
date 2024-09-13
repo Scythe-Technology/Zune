@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+- Added `openFile`, and `createFile` to `@zcore/fs`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/fs)
+
+  Example:
+    ```lua
+    local fs = require("@zcore/fs")
+
+    local file = fs.openFile("file.txt", {
+      mode = "r" -- "rw" by default
+    })
+    file:close()
+    local file = fs.createFile("file.txt", {
+      exclusive = true -- false by default
+    })
+    ```
+
+### Changed
+- Updated `luau` to `0.642`.
+- Updated `@zcore/process` to lock changing variables & allowed changing `cwd`.
+  - Changing cwd would affect the global process cwd (even `fs` library).
+  - Supports Relative and Absolute paths. `../` or `/`.
+    - Relative paths are relative to the current working directory.
+
 ### Fixed
 - Fixed `@zcore/net` with serve using `reuseAddress` option not working.
 

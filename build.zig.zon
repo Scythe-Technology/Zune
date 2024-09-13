@@ -1,6 +1,6 @@
 .{
     .name = "Zune",
-    .version = "0.3.0",
+    .version = "0.4.0",
     .minimum_zig_version = "0.13.0",
     .dependencies = .{
         .json = .{
@@ -16,8 +16,8 @@
             .hash = "1220d6bbca59a59f16bda33b69e140d90bad313d11c07c0e2ab16076c59355845112",
         },
         .luau = .{
-            .url = "https://codeload.github.com/SnorlaxAssist/zig-luau/tar.gz/a5168544a2f32ad281a7594143c7fd13cb57f6d0",
-            .hash = "1220fb671beaead95894ebbd2fee934cf5473f7d2ebe91cf8e784235c93d1f19d2a7",
+            .url = "https://codeload.github.com/SnorlaxAssist/zig-luau/tar.gz/ba3e30b128d0bdcfa86c54b07eda058806356323",
+            .hash = "1220695e7721e1bca0cd08ce47b167a76f964dfc8128d2b7302abe21774f9517df46",
         },
         .czrex = .{
             .url = "https://codeload.github.com/Scythe-Technology/czrex/tar.gz/9fad3dd1f7263f300f7941b7bc342737fcf9bc34",
