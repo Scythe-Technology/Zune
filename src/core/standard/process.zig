@@ -499,6 +499,28 @@ fn process_loadEnv(L: *Luau) i32 {
     return 1;
 }
 
+fn lib__newindex(L: *Luau) !i32 {
+    L.checkType(1, .table);
+    const index = L.checkString(2);
+    const process_lib = Luau.upvalueIndex(1);
+
+    if (std.mem.eql(u8, index, "cwd")) {
+        const allocator = L.allocator();
+
+        const value = L.checkString(3);
+        const dir = try std.fs.cwd().openDir(value, .{});
+        const path = try dir.realpathAlloc(allocator, "./");
+        defer allocator.free(path);
+
+        try dir.setAsCwd();
+
+        L.pushLString(path);
+        L.setField(process_lib, "cwd");
+    } else L.raiseErrorStr("Cannot change field (%s)", .{index.ptr});
+
+    return 0;
+}
+
 pub fn loadLib(L: *Luau, args: []const []const u8) !void {
     const allocator = L.allocator();
 
@@ -543,6 +565,24 @@ pub fn loadLib(L: *Luau, args: []const []const u8) !void {
     L.setFieldFn(-1, "exit", process_exit);
     L.setFieldFn(-1, "run", luaHelper.toSafeZigFunction(process_run));
     L.setFieldFn(-1, "create", luaHelper.toSafeZigFunction(process_create));
+
+    L.newTable();
+    {
+        L.newTable();
+
+        L.pushValue(-3);
+        L.setFieldAhead(-1, luau.Metamethods.index); // metatable.__index
+
+        L.pushValue(-3);
+        L.pushClosure(luau.EFntoZigFn(lib__newindex), luau.Metamethods.newindex, 1);
+        L.setFieldAhead(-1, luau.Metamethods.newindex); // metatable.__newindex
+
+        L.setFieldString(-1, luau.Metamethods.metatable, "Metatable is locked");
+
+        L.setMetatable(-2);
+    }
+
+    L.remove(-2);
 
     _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
     if (L.getField(-1, "@zcore/process") != .table) {
