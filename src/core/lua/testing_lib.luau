@@ -264,6 +264,7 @@ local READABLE_CONTROL = {
     ['\a'] = "\\a";
     ['\\'] = "\\\\";
     ['"'] = "\\\"";
+    ['%'] = string.format("\\x%02X", 37);
 };
 
 local function readable(value : any)
@@ -275,10 +276,12 @@ local function readable(value : any)
                 if (READABLE_CONTROL[char]) then
                     return READABLE_CONTROL[char];
                 else
-                    return string.format("\\x%02X", char:byte());
+                    return string.format("\\x%02X", b);
                 end
             elseif (char == "\\") then
                 return "\\\\";
+            elseif (READABLE_CONTROL[char]) then
+                return READABLE_CONTROL[char];
             end
             return char;
         end)
