@@ -32,7 +32,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         maybeFileName = try dir.realpathAlloc(allocator, module);
     } else {
         maybeFileName = try Engine.findLuauFile(allocator, dir, module);
-        maybeFileContent = try file.readFile(allocator, std.fs.cwd(), maybeFileName.?);
+        maybeFileContent = try std.fs.cwd().readFileAlloc(allocator, maybeFileName.?, std.math.maxInt(usize));
     }
 
     const fileContent = maybeFileContent orelse std.debug.panic("FileNotFound", .{});

@@ -76,4 +76,6 @@ pub fn openZune(L: *luau.Luau, args: []const []const u8, mode: RunMode, flags: F
             }
         }
     }
+
+    try resolvers_require.loadAliases(DEFAULT_ALLOCATOR);
 }
