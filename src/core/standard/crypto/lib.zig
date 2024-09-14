@@ -10,6 +10,8 @@ const Luau = luau.Luau;
 
 const hash = std.crypto.hash;
 
+const aes = @import("aes.zig");
+const random = @import("random.zig");
 const password = @import("password.zig");
 
 pub const LIB_NAME = "@zcore/crypto";
@@ -128,6 +130,41 @@ pub fn loadLib(L: *Luau) void {
         L.setFieldFn(-1, "verify", password.lua_verify);
 
         L.setFieldAhead(-1, "password");
+    }
+
+    { // random
+        L.newTable();
+
+        L.setFieldFn(-1, "nextNumber", random.lua_nextnumber);
+        L.setFieldFn(-1, "nextInteger", random.lua_nextinteger);
+        L.setFieldFn(-1, "nextBoolean", random.lua_boolean);
+        L.setFieldFn(-1, "fill", random.lua_fill);
+
+        L.setFieldAhead(-1, "random");
+    }
+
+    { // AES
+        L.newTable();
+
+        { // aes128
+            L.newTable();
+
+            L.setFieldFn(-1, "encrypt", aes.lua_aes128_encrypt);
+            L.setFieldFn(-1, "decrypt", aes.lua_aes128_decrypt);
+
+            L.setFieldAhead(-1, "aes128");
+        }
+
+        { // aes256
+            L.newTable();
+
+            L.setFieldFn(-1, "encrypt", aes.lua_aes256_encrypt);
+            L.setFieldFn(-1, "decrypt", aes.lua_aes256_decrypt);
+
+            L.setFieldAhead(-1, "aes256");
+        }
+
+        L.setFieldAhead(-1, "aes");
     }
 
     _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
