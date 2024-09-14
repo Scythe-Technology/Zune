@@ -2,9 +2,6 @@ const std = @import("std");
 const yaml = @import("yaml");
 const luau = @import("luau");
 
-const Engine = @import("../../runtime/engine.zig");
-const Scheduler = @import("../../runtime/scheduler.zig");
-
 const Luau = luau.Luau;
 
 const Error = error{

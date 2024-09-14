@@ -2,9 +2,6 @@ const std = @import("std");
 const luau = @import("luau");
 const lz4 = @import("lz4");
 
-const Engine = @import("../../runtime/engine.zig");
-const Scheduler = @import("../../runtime/scheduler.zig");
-
 const Luau = luau.Luau;
 
 // Lune compatibility

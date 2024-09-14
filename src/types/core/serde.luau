@@ -28,6 +28,16 @@ export type YamlEncoder = {
     ]]
     decode : (yaml: string) -> {[string]: any},
 };
+export type Base64Encoder = {
+    --[[
+        Encodes table to BASE64
+    ]]
+    encode : (value: string) -> string,
+    --[[
+        Decodes BASE64
+    ]]
+    decode : (base64: string) -> string,
+};
 
 export type GenericCompressionOptions = {
     --[[
@@ -66,6 +76,11 @@ serde.toml = (nil :: any) :: TomlEncoder;
     YAML encoder and decoder.
 ]]
 serde.yaml = (nil :: any) :: YamlEncoder;
+
+--[[
+    BASE64 encoder and decoder.
+]]
+serde.base64 = (nil :: any) :: Base64Encoder;
 
 --[[
     GZIP compressor and decompressor.

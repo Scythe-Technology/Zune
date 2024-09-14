@@ -7,6 +7,8 @@ const Scheduler = @import("../../runtime/scheduler.zig");
 const json = @import("json.zig");
 const toml = @import("toml.zig");
 const yaml = @import("yaml.zig");
+const base64 = @import("base64.zig");
+
 const gzip = @import("gzip.zig");
 const zlib = @import("zlib.zig");
 const lz4 = @import("lz4.zig");
@@ -43,6 +45,15 @@ pub fn loadLib(L: *Luau) void {
         L.setFieldFn(-1, "decode", yaml.lua_decode);
 
         L.setFieldAhead(-1, "yaml");
+    }
+
+    { // Base64
+        L.newTable();
+
+        L.setFieldFn(-1, "encode", base64.lua_encode);
+        L.setFieldFn(-1, "decode", base64.lua_decode);
+
+        L.setFieldAhead(-1, "base64");
     }
 
     { // Gzip

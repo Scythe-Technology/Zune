@@ -1,9 +1,6 @@
 const std = @import("std");
 const luau = @import("luau");
 
-const Engine = @import("../../runtime/engine.zig");
-const Scheduler = @import("../../runtime/scheduler.zig");
-
 const Luau = luau.Luau;
 
 pub fn lua_compress(L: *Luau) !i32 {
