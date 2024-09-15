@@ -99,6 +99,7 @@ const LuaRegex = struct {
                 while (iter.next()) |line| {
                     try lua_regexCaptureSearch(L, r_ptr, line, &index, &captures, global);
                     index += 1;
+                    if (!global) break;
                 }
             } else try lua_regexCaptureSearch(L, r_ptr, input, &index, &captures, global);
 

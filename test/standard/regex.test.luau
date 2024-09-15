@@ -85,10 +85,6 @@ describe("Regex", function()
                 {
                     { string = "abbc", index = 1 },
                     { string = "bb", index = 2 },
-                },
-                {
-                    { string = "abbc", index = 12 },
-                    { string = "bb", index = 13 },
                 }
             }));
         end)
