@@ -10,6 +10,18 @@ const Luau = luau.Luau;
 const zune_test_files = @import("zune-test-files");
 
 pub fn runTest(allocator: std.mem.Allocator, comptime testFile: zune_test_files.File, args: []const []const u8, comptime stdOutEnabled: bool) !zune.corelib.testing.TestResult {
+    const cwd_path = try std.fs.cwd().realpathAlloc(allocator, ".");
+    defer allocator.free(cwd_path);
+
+    const cwd_dir = try std.fs.cwd().openDir(cwd_path, .{});
+    defer cwd_dir.setAsCwd() catch std.debug.panic("Failed to set directory as cwd", .{});
+
+    const path_name = std.fs.path.dirname(testFile.path) orelse return error.Fail;
+    var path_dir = try cwd_dir.openDir(path_name, .{});
+    defer path_dir.close();
+
+    try path_dir.setAsCwd();
+
     var L = try Luau.init(&allocator);
     defer L.deinit();
 
@@ -29,7 +41,7 @@ pub fn runTest(allocator: std.mem.Allocator, comptime testFile: zune_test_files.
     defer allocator.free(tempPath);
     L.setGlobalString("__test_tempdir", tempPath);
 
-    const testFileAbsolute = try std.fs.cwd().realpathAlloc(allocator, testFile.path);
+    const testFileAbsolute = try cwd_dir.realpathAlloc(allocator, testFile.path);
     defer allocator.free(testFileAbsolute);
 
     try Engine.prepAsync(L, &scheduler, .{

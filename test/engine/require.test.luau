@@ -82,3 +82,31 @@ describe("Require Many Value", function()
         assert((string.find(err, "module must return one value")) ~= nil);
     end)
 end)
+
+describe("Aliases", function()
+    test("@Dev", function()
+        local dev = require("@dev");
+        expect(dev).toBe(expect.similar({
+            Boolean = true,
+            Number = 1,
+            String = "string",
+        }));
+    end)
+    
+    test("@Module", function()
+        local module = require("@module");
+        expect(module).toBe(expect.type("string"));
+        expect(module).toBe("FullModule");
+    end)
+
+    test("@Module/sub", function()
+        local module = require("@module/sub");
+        expect(module).toBe(expect.similar({
+            foo = expect.type("function"),
+            bar = expect.type("function"),
+        }));
+        expect(module.foo()).toBe("foo");
+        expect(module.bar()).toBe("bar");
+    end)
+    
+end)
