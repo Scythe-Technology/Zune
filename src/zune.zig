@@ -49,6 +49,7 @@ pub fn openZune(L: *luau.Luau, args: []const []const u8, mode: RunMode, flags: F
     corelib.crypto.loadLib(L);
     corelib.regex.loadLib(L);
     corelib.net.loadLib(L);
+    corelib.datetime.loadLib(L);
     try corelib.process.loadLib(L, args);
 
     corelib.testing.loadLib(L, mode == .Test);
@@ -65,6 +66,7 @@ pub fn openZune(L: *luau.Luau, args: []const []const u8, mode: RunMode, flags: F
             corelib.regex.LIB_NAME,
             corelib.net.LIB_NAME,
             corelib.process.LIB_NAME,
+            corelib.datetime.LIB_NAME,
         }) |lib| {
             const t = L.getField(-1, lib);
             defer L.pop(1);

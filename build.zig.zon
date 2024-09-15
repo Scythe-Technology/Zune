@@ -23,6 +23,10 @@
             .url = "https://codeload.github.com/Scythe-Technology/czrex/tar.gz/9fad3dd1f7263f300f7941b7bc342737fcf9bc34",
             .hash = "1220a4c3266c39a4cc561710e950fc389551db09b1caa75c3e1b1a54bc3065e1ad03",
         },
+        .datetime = .{
+            .url = "https://codeload.github.com/FObersteiner/zdt/tar.gz/eb49813879c49413661601822c7b466d8daf5055",
+            .hash = "122000990924dc7a78c5c440db4006b7e962e700fbe5cf983e99bf8de2c3daf14791",
+        },
     },
     .paths = .{
         "build.zig",
