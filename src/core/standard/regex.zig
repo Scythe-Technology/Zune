@@ -9,6 +9,32 @@ const Luau = luau.Luau;
 
 pub const LIB_NAME = "@zcore/regex";
 
+fn lua_regexCaptureSearch(L: *Luau, re: *Regex, input: []const u8, index: *usize, captures: *i32, global: bool) !void {
+    var relative_index: usize = 0;
+    while (true) {
+        if (relative_index >= input.len) break;
+        if (try re.search(input[relative_index..])) |match| {
+            L.newTable();
+            defer match.deinit();
+            const groups = match.groups;
+            if (groups.len == 0) break;
+            var i: i32 = 1;
+            for (groups) |str| {
+                L.newTable();
+                L.setFieldInteger(-1, "index", @intCast(1 + index.* + relative_index + str.index));
+                L.setFieldLString(-1, "string", str.slice);
+                L.rawSetIndex(-2, i);
+                i += 1;
+            }
+            relative_index += match.groups[0].index + match.groups[0].slice.len + 1;
+            L.rawSetIndex(-2, captures.*);
+            captures.* += 1;
+        } else break;
+        if (!global) break;
+    }
+    index.* += input.len;
+}
+
 const LuaRegex = struct {
     pub const META = "regex_instance";
 
@@ -25,7 +51,7 @@ const LuaRegex = struct {
                 const groups = match.groups;
                 for (groups) |str| {
                     L.newTable();
-                    L.setFieldInteger(-1, "index", @intCast(str.index));
+                    L.setFieldInteger(-1, "index", @intCast(1 + str.index));
                     L.setFieldLString(-1, "string", str.slice);
                     L.rawSetIndex(-2, i);
                     i += 1;
@@ -41,13 +67,42 @@ const LuaRegex = struct {
                 const groups = match.groups;
                 for (groups) |str| {
                     L.newTable();
-                    L.setFieldInteger(-1, "index", @intCast(str.index));
+                    L.setFieldInteger(-1, "index", @intCast(1 + str.index));
                     L.setFieldLString(-1, "string", str.slice);
                     L.rawSetIndex(-2, i);
                     i += 1;
                 }
                 return 1;
             }
+        } else if (std.mem.eql(u8, namecall, "captures")) {
+            const input = L.checkString(2);
+            const flags = L.optString(3) orelse "";
+
+            if (flags.len > 2) L.raiseErrorStr("Too many flags\n", .{});
+
+            var global = false;
+            var multiline = false;
+            for (flags) |flag| {
+                switch (flag) {
+                    'g' => global = true,
+                    'm' => multiline = true,
+                    else => L.raiseErrorStr("Unknown flag: %c\n", .{flag}),
+                }
+            }
+
+            var index: usize = 0;
+            var captures: i32 = 1;
+            L.newTable();
+
+            if (multiline) {
+                var iter = std.mem.split(u8, input, "\n");
+                while (iter.next()) |line| {
+                    try lua_regexCaptureSearch(L, r_ptr, line, &index, &captures, global);
+                    index += 1;
+                }
+            } else try lua_regexCaptureSearch(L, r_ptr, input, &index, &captures, global);
+
+            return 1;
         } else if (std.mem.eql(u8, namecall, "isMatch")) {
             const input = L.checkString(2);
             L.pushBoolean(r_ptr.isMatch(input));

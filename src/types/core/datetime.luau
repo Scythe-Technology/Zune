@@ -9,18 +9,26 @@ export type TimeDictionary = {
 };
 
 export type DateTime = {
+    unixTimestamp : number,
+    unixTimestampMillis : number,
+    
     UnixTimestamp : number,
     UnixTimestampMillis : number,
 
     toLocalTime : (self: DateTime) -> TimeDictionary;
+    ToLocalTime : (self: DateTime) -> TimeDictionary;
 
     toUniversalTime : (self: DateTime) -> TimeDictionary;
+    ToUniversalTime : (self: DateTime) -> TimeDictionary;
 
     toIsoDate : (self: DateTime) -> string;
+    ToIsoDate : (self: DateTime) -> string;
 
     formatLocalTime : (self: DateTime, format: string) -> string;
+    FormatLocalTime : (self: DateTime, format: string) -> string;
 
     formatUniversalTime : (self: DateTime, format: string) -> string;
+    FormatUniversalTime : (self: DateTime, format: string) -> string;
 };
 
 local datetime = {};
