@@ -15,6 +15,13 @@ const native_os = builtin.os.tag;
 
 pub const LIB_NAME = "@zcore/process";
 
+pub var SIGINT_LUA: ?LuaSigHandler = null;
+
+const LuaSigHandler = struct {
+    state: *Luau,
+    ref: i32,
+};
+
 const ProcessArgsError = error{
     InvalidArgType,
     NotArray,
@@ -501,6 +508,27 @@ fn process_loadEnv(L: *Luau) i32 {
     return 1;
 }
 
+fn process_onsignal(L: *Luau) !i32 {
+    const sig = L.checkString(1);
+    L.checkType(2, .function);
+
+    if (std.mem.eql(u8, sig, "Interrupt")) {
+        const GL = L.getMainThread();
+        if (GL != L) L.xPush(GL, 2);
+        const ref = GL.ref(if (GL != L) -1 else 2) catch L.raiseErrorStr("Failed to create reference", .{});
+        if (GL != L) GL.pop(1);
+
+        if (SIGINT_LUA) |handler| handler.state.unref(handler.ref);
+
+        SIGINT_LUA = .{
+            .state = GL,
+            .ref = ref,
+        };
+    } else L.raiseErrorStr("Unknown signal: %s", .{sig.ptr});
+
+    return 0;
+}
+
 fn lib__newindex(L: *Luau) !i32 {
     L.checkType(1, .table);
     const index = L.checkString(2);
@@ -567,6 +595,7 @@ pub fn loadLib(L: *Luau, args: []const []const u8) !void {
     L.setFieldFn(-1, "exit", process_exit);
     L.setFieldFn(-1, "run", luaHelper.toSafeZigFunction(process_run));
     L.setFieldFn(-1, "create", luaHelper.toSafeZigFunction(process_create));
+    L.setFieldFn(-1, "onSignal", process_onsignal);
 
     L.newTable();
     {

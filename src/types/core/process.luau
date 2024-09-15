@@ -252,4 +252,12 @@ process.run = (nil :: any) :: (exec: string, args: {string}?, procOpts: ProcessO
 ]]
 process.exit = (nil :: any) :: (code: number) -> never;
 
+--[[
+	Registers a signal handler.
+
+	@param signal The signal to handle.
+	@param callback The callback to run when the signal is received.
+]]
+process.onSignal = (nil :: any) :: (signal: "Interrupt", callback: () -> ()) -> ();
+
 return process;
