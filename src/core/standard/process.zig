@@ -512,7 +512,7 @@ fn process_onsignal(L: *Luau) !i32 {
     const sig = L.checkString(1);
     L.checkType(2, .function);
 
-    if (std.mem.eql(u8, sig, "Interrupt")) {
+    if (std.mem.eql(u8, sig, "INT")) {
         const GL = L.getMainThread();
         if (GL != L) L.xPush(GL, 2);
         const ref = GL.ref(if (GL != L) -1 else 2) catch L.raiseErrorStr("Failed to create reference", .{});
