@@ -83,6 +83,17 @@ describe("Require Many Value", function()
     end)
 end)
 
+describe("Require .lua", function()
+    test("Require Module", function()
+        expect(require(("legacy"))).toBe(expect.similar({
+            "Legacy"
+        }));
+    end)
+    test("Require A", function()
+        expect(require(("legacy/A"))).toBe("A-Legacy");
+    end)
+end)
+
 describe("Aliases", function()
     test("@Dev", function()
         local dev = require("@dev");
@@ -108,5 +119,4 @@ describe("Aliases", function()
         expect(module.foo()).toBe("foo");
         expect(module.bar()).toBe("bar");
     end)
-    
 end)
