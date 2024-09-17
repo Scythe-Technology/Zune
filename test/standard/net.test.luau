@@ -14,6 +14,7 @@ describe("Server", function()
         local requests = {};
         local ok, server = net.serve({
             port = 8080,
+            reuseAddress = true,
             request = function(req)
                 table.insert(requests, req);
                 return {
@@ -73,6 +74,7 @@ describe("Server", function()
         local requests = {};
         local ok, server = net.serve({
             port = 8080,
+            reuseAddress = true,
             request = function(req)
                 table.insert(requests, req);
                 return {
@@ -114,6 +116,7 @@ describe("Server", function()
         local requests = {};
         local ok, server = net.serve({
             port = 8080,
+            reuseAddress = true,
             request = function(req)
                 table.insert(requests, req);
                 return buffer.fromstring("Hello Buffer");
@@ -152,6 +155,7 @@ describe("Server", function()
         local requests = {};
         local ok, server = net.serve({
             port = 8080,
+            reuseAddress = true,
             request = function(req)
                 table.insert(requests, req);
                 return "Hello: " .. #requests;
@@ -213,6 +217,7 @@ describe("Server", function()
         test("Immediate", function()
             local ok, server = net.serve({
                 port = 8080,
+                reuseAddress = true,
                 request = function(req)
                     error("Server Error");
                 end,
@@ -239,6 +244,7 @@ describe("Server", function()
         test("Yielded", function()
             local ok, server = net.serve({
                 port = 8080,
+                reuseAddress = true,
                 request = function(req)
                     task.wait();
                     error("Server Error");
@@ -276,6 +282,7 @@ describe("Websockets", function()
         local reqCalled = false;
         local ok, server = net.serve({
             port = 8080,
+            reuseAddress = true,
             request = function(req)
                 reqCalled = true;
                 return "";
