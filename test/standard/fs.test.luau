@@ -465,9 +465,9 @@ test("Watch", function()
         watcher:stop();
     end)
 
-    fs.writeFile(TEMP_DIR .. "/sample.txt", "Some text\n");
+    fs.writeFile(TEMP_DIR .. "/sample2.txt", "Some text\n");
     task.wait(0.5);
-    fs.removeFile(TEMP_DIR .. "/sample.txt");
+    fs.removeFile(TEMP_DIR .. "/sample2.txt");
     task.wait(0.5);
     fs.writeDir(TEMP_DIR .. "/foo");
     task.wait(0.5);
@@ -476,14 +476,14 @@ test("Watch", function()
 
     -- TODO: Check tests for windows, tests for windows are inconsistent
     expect(changes).toBe(expect.similar(if (process.os ~= "windows") then {
-        {path = "sample.txt", events = {"created"}},
-        {path = "sample.txt", events = {"modified"}},
-        {path = "sample.txt", events = {"deleted"}},
+        {path = "sample2.txt", events = {"created"}},
+        {path = "sample2.txt", events = {"modified"}},
+        {path = "sample2.txt", events = {"deleted"}},
         {path = "foo", events = {"created"}},
         {path = "foo", events = {"deleted"}},
     } else {
-        {path = "sample.txt", events = {"modified"}},
-        {path = "sample.txt", events = {"deleted"}},
+        {path = "sample2.txt", events = {"modified"}},
+        {path = "sample2.txt", events = {"deleted"}},
         {path = "foo", events = {"created"}},
         {path = "foo", events = {"deleted"}},
     }));
