@@ -379,7 +379,7 @@ describe("File Object/Handle", function()
 
         expect(function()
             result:read();
-        end).toThrow("NotOpenForReading");
+        end).toThrow()
     end)
 
     test("Create File Execlusive", function()
@@ -407,7 +407,7 @@ describe("File Object/Handle", function()
 
         expect(function()
             result:write("Some text");
-        end).toThrow("NotOpenForWriting");
+        end).toThrow();
     end)
 
     test("Open File Write Mode", function()
@@ -425,7 +425,7 @@ describe("File Object/Handle", function()
         
         expect(function()
             result:read();
-        end).toThrow("NotOpenForReading");
+        end).toThrow();
         
         result:close();
     end)

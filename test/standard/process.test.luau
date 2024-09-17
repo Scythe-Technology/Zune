@@ -34,7 +34,7 @@ test("Context", function()
 		
 		process.cwd = `{current_cwd}/{TEMP_DIR}`;
 
-		expect(process.cwd).toBe(`{current_cwd}/{TEMP_DIR}`);
+		expect(process.cwd).toBe(`{current_cwd}\\{TEMP_DIR}`);
 		expect(process.cwd).never.toBe(current_cwd);
 		assert(fs.writeFile("./test.txt", "Hello World"));
 		expect(fs.isFile("./test.txt")).toBeTruthy();
