@@ -202,6 +202,13 @@ export type FileHandle = {
 	close : (self: FileHandle) -> (),
 }
 
+export type FileWatcher = {
+	--[[
+		Stops watching the file.
+	]]
+	stop : (self: FileWatcher) -> (),
+}
+
 type CreateFileOptions = {
 	--[[
 		Whether to create the file in exclusive mode.
@@ -368,5 +375,7 @@ fs.copy = (nil :: any) :: (from: string, to: string, overwrite: boolean?) -> (bo
 	@return `SymlinkError` An error if the operation failed.
 ]]
 fs.symlink = (nil :: any) :: (from: string, to: string) -> (boolean, SymlinkError?);
+
+fs.watch = (nil :: any) :: (path: string, callback: (path: string, events: {"created" | "modified" | "moved" | "renamed" | "deleted" | "metadata"}) -> ()) -> FileWatcher;
 
 return fs;

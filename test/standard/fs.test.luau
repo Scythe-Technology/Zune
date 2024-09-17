@@ -2,6 +2,7 @@
 local TEMP_DIR = _G.__test_tempdir::string;
 
 local fs = require("@zcore/fs");
+local task = require("@zcore/task");
 local process = require("@zcore/process");
 local testing = require("@zcore/testing");
 
@@ -443,4 +444,41 @@ describe("File Object/Handle", function()
 
         result:close();
     end)
+
+    fs.removeFile(TEMP_DIR .. "/sample.txt");
+end)
+
+test("Watch", function()
+    if (process.os == "macos") then
+        warn("Skipping 'Watch' test on macOS.");
+        return; -- Skip on macOS
+    end
+    local changes = {};
+    local watcher = fs.watch(TEMP_DIR, function(path, events)
+        table.insert(changes, {
+            path = path,
+            events = events,
+        });
+    end);
+
+    testing.defer(function()
+        watcher:stop();
+    end)
+
+    fs.writeFile(TEMP_DIR .. "/sample.txt", "Some text\n");
+    task.wait();
+    fs.removeFile(TEMP_DIR .. "/sample.txt");
+    task.wait();
+    fs.writeDir(TEMP_DIR .. "/foo");
+    task.wait();
+    fs.removeDir(TEMP_DIR .. "/foo");
+    task.wait();
+
+    expect(changes).toBe(expect.similar({
+        {path = "sample.txt", events = {"created"}},
+        {path = "sample.txt", events = {"modified"}},
+        {path = "sample.txt", events = {"deleted"}},
+        {path = "foo", events = {"created"}},
+        {path = "foo", events = {"deleted"}},
+    }));
 end)

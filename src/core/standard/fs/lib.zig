@@ -4,6 +4,10 @@ const luau = @import("luau");
 
 const luaHelper = @import("../../utils/luahelper.zig");
 
+const Scheduler = @import("../../runtime/scheduler.zig");
+
+const Watch = @import("./watch.zig");
+
 const Luau = luau.Luau;
 
 const fs = std.fs;
@@ -276,6 +280,113 @@ fn fs_symlink(L: *Luau) !i32 {
     return 1;
 }
 
+pub fn prepRefType(comptime luaType: luau.LuaType, L: *luau.Luau, ref: i32) bool {
+    if (L.rawGetIndex(luau.REGISTRYINDEX, ref) == luaType) {
+        return true;
+    }
+    L.pop(1);
+    return false;
+}
+
+const WatchObject = struct {
+    instance: Watch.FileSystemWatcher,
+    active: bool = true,
+    callback: ?i32,
+
+    pub const Lua = struct {
+        ptr: ?*WatchObject,
+    };
+};
+
+const LuaWatch = struct {
+    pub const META = "fs_watch_instance";
+
+    pub fn __index(L: *Luau) i32 {
+        L.checkType(1, .userdata);
+        return 0;
+    }
+
+    pub fn __namecall(L: *Luau) !i32 {
+        L.checkType(1, .userdata);
+        const namecall = L.nameCallAtom() catch return 0;
+        const obj = L.toUserdata(WatchObject.Lua, 1) catch return 0;
+
+        // TODO: prob should switch to static string map
+        if (std.mem.eql(u8, namecall, "stop")) {
+            if (obj.ptr) |ptr| ptr.active = false;
+            obj.ptr = null;
+        } else L.raiseErrorStr("Unknown method: %s\n", .{namecall.ptr});
+        return 0;
+    }
+
+    pub fn update(ctx: *WatchObject, L: *Luau, _: *Scheduler) Scheduler.TaskResult {
+        if (!ctx.active) return .Stop;
+        const watch = &ctx.instance;
+
+        const callback = ctx.callback orelse return .Stop;
+
+        if (watch.next() catch |err| {
+            std.debug.print("LuaWatch error: {}\n", .{err});
+            return .Stop;
+        }) |info| {
+            defer info.deinit();
+            for (info.list.items) |item| {
+                if (prepRefType(.function, L, callback)) {
+                    const thread = L.newThread();
+                    L.xPush(thread, -2); // push: function
+                    thread.pushLString(item.name);
+                    thread.newTable();
+                    var i: i32 = 1;
+                    if (item.event.created) {
+                        thread.pushString("created");
+                        thread.rawSetIndex(-2, i);
+                        i += 1;
+                    }
+                    if (item.event.modify) {
+                        thread.pushString("modified");
+                        thread.rawSetIndex(-2, i);
+                        i += 1;
+                    }
+                    if (item.event.delete) {
+                        thread.pushString("deleted");
+                        thread.rawSetIndex(-2, i);
+                        i += 1;
+                    }
+                    if (item.event.rename) {
+                        thread.pushString("renamed");
+                        thread.rawSetIndex(-2, i);
+                        i += 1;
+                    }
+                    if (item.event.metadata) {
+                        thread.pushString("metadata");
+                        thread.rawSetIndex(-2, i);
+                        i += 1;
+                    }
+                    if (item.event.move_from or item.event.move_to) {
+                        thread.pushString("moved");
+                        thread.rawSetIndex(-2, i);
+                        i += 1;
+                    }
+                    L.pop(2); // drop thread, function
+
+                    Scheduler.resumeState(thread, L, 2);
+                }
+            }
+        }
+
+        return .Continue;
+    }
+
+    pub fn dtor(ctx: *WatchObject, L: *Luau, _: *Scheduler) void {
+        const allocator = L.allocator();
+
+        defer allocator.destroy(ctx);
+
+        ctx.instance.deinit();
+        if (ctx.callback) |ref| L.unref(ref);
+    }
+};
+
 const FileObject = struct {
     handle: fs.File,
     open: bool = true,
@@ -336,7 +447,32 @@ const LuaFile = struct {
                     lockOpt = .none;
                 }
             }
-            L.pushBoolean(try file_ptr.handle.tryLock(lockOpt));
+            if (builtin.os.tag == .windows) {
+                switch (lockOpt) {
+                    .none => {},
+                    .shared, .exclusive => {
+                        var io_status_block: std.os.windows.IO_STATUS_BLOCK = undefined;
+                        const range_off: std.os.windows.LARGE_INTEGER = 0;
+                        const range_len: std.os.windows.LARGE_INTEGER = 1;
+                        std.os.windows.LockFile(
+                            file_ptr.handle.handle,
+                            null,
+                            null,
+                            null,
+                            &io_status_block,
+                            &range_off,
+                            &range_len,
+                            null,
+                            std.os.windows.FALSE, // non-blocking=false
+                            @intFromBool(lockOpt == .exclusive),
+                        ) catch |err| switch (err) {
+                            error.WouldBlock => unreachable, // non-blocking=false
+                            else => |e| return e,
+                        };
+                    },
+                }
+                L.pushBoolean(true);
+            } else L.pushBoolean(try file_ptr.handle.tryLock(lockOpt));
             return 1;
         } else if (std.mem.eql(u8, namecall, "unlock")) {
             file_ptr.handle.unlock();
@@ -433,12 +569,58 @@ fn fs_createFile(L: *Luau) !i32 {
     return 2;
 }
 
+fn fs_watch(L: *Luau, scheduler: *Scheduler) !i32 {
+    const path = L.checkString(1);
+    L.checkType(2, .function);
+
+    const allocator = L.allocator();
+
+    const ref = L.ref(2) catch L.raiseErrorStr("InternalError (Failed to create reference)", .{});
+
+    var dir = fs.cwd().openDir(path, .{}) catch |err| switch (err) {
+        error.FileNotFound => return error.FileNotFound,
+        else => return error.PathNotFound,
+    };
+    dir.close();
+
+    var watch = Watch.FileSystemWatcher.init(allocator, path);
+    errdefer watch.deinit();
+    try watch.start();
+
+    const data = try allocator.create(WatchObject);
+    errdefer allocator.destroy(data);
+
+    const luaObj = L.newUserdata(WatchObject.Lua);
+    luaObj.ptr = data;
+
+    if (L.getMetatableRegistry(LuaWatch.META) == .table) L.setMetatable(-2) else std.debug.panic("InternalError (Watch Metatable not initialized)", .{});
+
+    data.* = .{
+        .instance = watch,
+        .active = true,
+        .callback = ref,
+    };
+
+    scheduler.addTask(WatchObject, data, L, LuaWatch.update, LuaWatch.dtor);
+
+    return 1;
+}
+
 pub fn loadLib(L: *Luau) void {
     {
         L.newMetatable(LuaFile.META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
 
         L.setFieldFn(-1, luau.Metamethods.index, LuaFile.__index); // metatable.__namecall
         L.setFieldFn(-1, luau.Metamethods.namecall, LuaFile.__namecall); // metatable.__namecall
+
+        L.setFieldString(-1, luau.Metamethods.metatable, "Metatable is locked");
+        L.pop(1);
+    }
+    {
+        L.newMetatable(LuaWatch.META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
+
+        L.setFieldFn(-1, luau.Metamethods.index, LuaWatch.__index); // metatable.__namecall
+        L.setFieldFn(-1, luau.Metamethods.namecall, LuaWatch.__namecall); // metatable.__namecall
 
         L.setFieldString(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.pop(1);
@@ -468,6 +650,8 @@ pub fn loadLib(L: *Luau) void {
 
     L.setFieldFn(-1, "symlink", luaHelper.toSafeZigFunction(fs_symlink));
 
+    L.setFieldFn(-1, "watch", Scheduler.toSchedulerEFn(fs_watch));
+
     _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
     if (L.getField(-1, LIB_NAME) != .table) {
         L.pop(1);
@@ -475,6 +659,10 @@ pub fn loadLib(L: *Luau) void {
         L.setField(-2, LIB_NAME);
     } else L.pop(1);
     L.pop(2);
+}
+
+test {
+    _ = Watch;
 }
 
 test "Filesystem" {
