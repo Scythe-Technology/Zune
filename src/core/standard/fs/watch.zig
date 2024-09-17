@@ -118,7 +118,10 @@ const DarwinAttributes = struct {
                             .kind = .file,
                             .modified = stat.ctime,
                         });
-                    } else try temp_files.put(copy_path, exists.?);
+                    } else {
+                        try temp_files.put(copy_path, exists.?);
+                        try names.put(exists.?.id, copy_path);
+                    }
                 } else if (entry.kind == .directory) {
                     const copy_path = try allocator.dupe(u8, entry.name);
                     errdefer allocator.free(copy_path);
@@ -140,7 +143,10 @@ const DarwinAttributes = struct {
                             .kind = .directory,
                             .modified = 0,
                         });
-                    } else try temp_files.put(copy_path, exists.?);
+                    } else {
+                        try temp_files.put(copy_path, exists.?);
+                        try names.put(exists.?.id, copy_path);
+                    }
                 }
             }
 
