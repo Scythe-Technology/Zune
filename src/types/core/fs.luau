@@ -204,7 +204,7 @@ export type FileHandle = {
 
 export type FileWatcher = {
 	--[[
-		Stops watching the file.
+		Stops the watcher.
 	]]
 	stop : (self: FileWatcher) -> (),
 }
