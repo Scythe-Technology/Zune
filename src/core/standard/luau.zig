@@ -6,6 +6,8 @@ const Scheduler = @import("../runtime/scheduler.zig");
 
 const Luau = luau.Luau;
 
+pub const LIB_NAME = "@zcore/luau";
+
 fn luau_compile(L: *Luau) i32 {
     const source = L.checkString(1);
 
@@ -112,10 +114,10 @@ pub fn loadLib(L: *Luau) void {
     L.setFieldFn(-1, "load", luau_load);
 
     _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
-    if (L.getField(-1, "@zcore/luau") != .table) {
+    if (L.getField(-1, LIB_NAME) != .table) {
         L.pop(1);
         L.pushValue(-2);
-        L.setField(-2, "@zcore/luau");
+        L.setField(-2, LIB_NAME);
     } else L.pop(1);
     L.pop(2);
 }

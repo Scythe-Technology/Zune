@@ -26,7 +26,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     defer allocator.free(fileModuleName);
 
-    const fileContent = try file.readFile(allocator, std.fs.cwd(), fileModuleName);
+    const fileContent = try std.fs.cwd().readFileAlloc(allocator, fileModuleName, std.math.maxInt(usize));
 
     defer allocator.free(fileContent);
     if (fileContent.len == 0) {
@@ -44,7 +44,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
     try Engine.prepAsync(L, &scheduler, .{
         .args = args,
         .mode = .Test,
-    });
+    }, .{});
 
     const ML = L.newThread();
 

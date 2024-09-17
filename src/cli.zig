@@ -7,6 +7,7 @@ const Commands = @import("commands/lib.zig");
 const CommandMap = Commands.initCommands(&.{
     @import("commands/run.zig").Command,
     @import("commands/test.zig").Command,
+    @import("commands/eval.zig").Command,
     @import("commands/repl/lib.zig").Command,
 
     @import("commands/setup.zig").Command,
@@ -26,7 +27,7 @@ pub fn start() !void {
 
     if (CommandMap.get(args[1])) |command| return command.execute(zune.DEFAULT_ALLOCATOR, args[2..]);
 
-    std.debug.print("Unknown command\n", .{});
+    std.debug.print("Unknown command, try 'help' or '-h'\n", .{});
 
     return;
 }

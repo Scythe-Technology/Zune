@@ -51,6 +51,23 @@ pub fn validateInteractive(self: *Terminal) !void {
     if (!self.stdout_istty) return std.posix.TIOCError.NotATerminal;
 }
 
+pub fn getSize(self: *Terminal) !struct { u16, u16 } {
+    if (!self.stdout_istty) return std.posix.TIOCError.NotATerminal;
+    if (builtin.os.tag == .windows) {
+        var buf: std.os.windows.CONSOLE_SCREEN_BUFFER_INFO = undefined;
+        switch (std.os.windows.kernel32.GetConsoleScreenBufferInfo(self.stdout_file.handle, &buf)) {
+            std.os.windows.TRUE => return .{ @intCast(buf.srWindow.Right - buf.srWindow.Left + 1), @intCast(buf.srWindow.Bottom - buf.srWindow.Top + 1) },
+            else => return error.Unexpected,
+        }
+    } else {
+        var buf: std.posix.system.winsize = undefined;
+        switch (std.posix.errno(std.posix.system.ioctl(self.stdout_file.handle, std.posix.T.IOCGWINSZ, @intFromPtr(&buf)))) {
+            .SUCCESS => return .{ buf.ws_col, buf.ws_row },
+            else => return error.IoctlError,
+        }
+    }
+}
+
 pub fn saveSettings(self: *Terminal) !void {
     if (self.settings != null) return;
     if (builtin.os.tag != .windows) {

@@ -14,7 +14,7 @@ describe("Compile", function()
     test("Basic", function()
         local ok, bytecode = luau.compile("print('Hello, World!')");
         expect(ok).toBe(true);
-        expect(bytecode).toBe("\5\2\2\5\112\114\105\110\116\13\72\101\108\108\111\44\32\87\111\114\108\100\33\1\2\0\0\1\2\0\6\65\0\0\0\12\0\1\0\0\0\0\64\5\1\2\0\21\0\2\1\22\0\1\0\3\3\1\4\0\0\0\64\3\2\0\1\0\1\24\0\0\0\0\0\0\1\0\0\0\0\0");
+        expect(bytecode).toBe("\x06\x03\x02\x05print\rHello, World!\x00\x01\x02\x00\x00\x01\x02\x00\x06A\x00\x00\x00\f\x00\x01\x00\x00\x00\x00@\x05\x01\x02\x00\x15\x00\x02\x01\x16\x00\x01\x00\x03\x03\x01\x04\x00\x00\x00@\x03\x02\x00\x01\x00\x01\x18\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00");
     end)
 
     test("Options", function()
@@ -30,8 +30,8 @@ describe("Compile", function()
         });
         expect(ok).toBe(true);
         expect(ok2).toBe(true);
-        expect(bytecode).toBe("\5\2\2\5\112\114\105\110\116\6\72\101\108\108\111\33\1\2\0\0\1\2\0\9\65\0\0\0\69\0\0\0\69\0\0\0\7\0\0\70\0\0\0\0\69\0\0\0\5\1\1\0\21\0\2\1\22\0\1\0\2\3\1\3\2\0\1\0\0\0\0");
-        expect(bytecode2).toBe("\5\2\2\5\112\114\105\110\116\6\72\101\108\108\111\33\1\2\0\0\1\2\0\6\65\0\0\0\12\0\1\0\0\0\0\64\5\1\2\0\21\0\2\1\22\0\1\0\3\3\1\4\0\0\0\64\3\2\0\1\0\1\24\0\0\0\0\0\0\1\0\0\0\0\0");
+        expect(bytecode).toBe("\x06\x03\x02\x05print\x06Hello!\x00\x01\x02\x00\x00\x01\x02\x00\tA\x00\x00\x00E\x00\x00\x00E\x00\x00\x00\a\x00\x00F\x00\x00\x00\x00E\x00\x00\x00\x05\x01\x01\x00\x15\x00\x02\x01\x16\x00\x01\x00\x02\x03\x01\x03\x02\x00\x01\x00\x00\x00\x00");
+        expect(bytecode2).toBe("\x06\x03\x02\x05print\x06Hello!\x00\x01\x02\x00\x00\x01\x02\x00\x06A\x00\x00\x00\f\x00\x01\x00\x00\x00\x00@\x05\x01\x02\x00\x15\x00\x02\x01\x16\x00\x01\x00\x03\x03\x01\x04\x00\x00\x00@\x03\x02\x00\x01\x00\x01\x18\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00");
         expect(bytecode).never.toBe(bytecode2);
     end)
 
@@ -51,7 +51,7 @@ describe("Compile", function()
 end)
 
 local function returnStringBytecode(str : string)
-    return `\5\2\1{string.char(#str)}{str}\1\1\0\0\1\2\0\3\65\0\0\0\5\0\0\0\22\0\2\0\1\3\1\0\1\0\1\24\0\0\0\1\0\0\0\0\0`
+    return `\x06\x03\x01{string.char(#str)}{str}\x00\x01\x01\x00\x00\x01\x02\x00\x03A\x00\x00\x00\x05\x00\x00\x00\x16\x00\x02\x00\x01\x03\x01\x00\x01\x00\x01\x18\x00\x00\x00\x01\x00\x00\x00\x00\x00`
 end
 
 local function timeFunction(f: () -> ())
@@ -80,7 +80,7 @@ describe("Load", function()
     test("Options", function()
         local bOk, bCode = luau.compile("return a");
         expect(bOk).toBe(true);
-        expect(bCode).toBe("\5\2\1\1\97\1\1\0\0\1\2\0\4\65\0\0\0\12\0\1\0\0\0\0\64\22\0\2\0\2\3\1\4\0\0\0\64\0\1\0\1\24\0\0\0\0\1\0\0\0\0\0");
+        expect(bCode).toBe("\x06\x03\x01\x01a\x00\x01\x01\x00\x00\x01\x02\x00\x04A\x00\x00\x00\f\x00\x01\x00\x00\x00\x00@\x16\x00\x02\x00\x02\x03\x01\x04\x00\x00\x00@\x00\x01\x00\x01\x18\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00");
         local func = luau.load(bCode, {
             env = {
                 a = "Foo",
@@ -93,7 +93,7 @@ describe("Load", function()
     test("Options (2)", function()
         local bOk, bCode = luau.compile("return a()");
         expect(bOk).toBe(true);
-        expect(bCode).toBe("\5\2\1\1\97\1\1\0\0\1\2\0\5\65\0\0\0\12\0\1\0\0\0\0\64\21\0\1\0\22\0\0\0\2\3\1\4\0\0\0\64\0\1\0\1\24\0\0\0\0\0\1\0\0\0\0\0");
+        expect(bCode).toBe("\x06\x03\x01\x01a\x00\x01\x01\x00\x00\x01\x02\x00\x05A\x00\x00\x00\f\x00\x01\x00\x00\x00\x00@\x15\x00\x01\x00\x16\x00\x00\x00\x02\x03\x01\x04\x00\x00\x00@\x00\x01\x00\x01\x18\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00");
         local func = luau.load(bCode, {
             chunkName = "test",
         });
@@ -185,7 +185,7 @@ describe("Load", function()
     test("Environment", function()
         local bOk, bCode = luau.compile("return require");
         expect(bOk).toBe(true);
-        expect(bCode).toBe("\5\2\1\7\114\101\113\117\105\114\101\1\1\0\0\1\2\0\4\65\0\0\0\12\0\1\0\0\0\0\64\22\0\2\0\2\3\1\4\0\0\0\64\0\1\0\1\24\0\0\0\0\1\0\0\0\0\0");
+        expect(bCode).toBe("\x06\x03\x01\arequire\x00\x01\x01\x00\x00\x01\x02\x00\x04A\x00\x00\x00\f\x00\x01\x00\x00\x00\x00@\x16\x00\x02\x00\x02\x03\x01\x04\x00\x00\x00@\x00\x01\x00\x01\x18\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00");
         local func = luau.load(bCode, {
             chunkName = "test",
         });
@@ -197,7 +197,7 @@ describe("Load", function()
     test("Environment (2)", function()
         local bOk, bCode = luau.compile("return require");
         expect(bOk).toBe(true);
-        expect(bCode).toBe("\5\2\1\7\114\101\113\117\105\114\101\1\1\0\0\1\2\0\4\65\0\0\0\12\0\1\0\0\0\0\64\22\0\2\0\2\3\1\4\0\0\0\64\0\1\0\1\24\0\0\0\0\1\0\0\0\0\0");
+        expect(bCode).toBe("\x06\x03\x01\arequire\x00\x01\x01\x00\x00\x01\x02\x00\x04A\x00\x00\x00\f\x00\x01\x00\x00\x00\x00@\x16\x00\x02\x00\x02\x03\x01\x04\x00\x00\x00@\x00\x01\x00\x01\x18\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00");
         local env = {};
         local func = luau.load(bCode, {
             chunkName = "test",

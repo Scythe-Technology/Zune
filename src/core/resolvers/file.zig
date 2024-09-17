@@ -4,18 +4,18 @@ const zune = @import("../../zune.zig");
 
 const fs = std.fs;
 
-pub fn doesFileExist(path: []const u8) std.fs.File.OpenError!bool {
-    const file = fs.openFileAbsolute(path, .{}) catch |err| switch (err) {
-        error.FileNotFound => return false,
+const FileError = error{
+    NotAbsolute,
+};
+
+pub fn doesFileExist(path: []const u8) !bool {
+    if (!fs.path.isAbsolute(path)) return FileError.NotAbsolute;
+    var buf: [1]u8 = undefined;
+    _ = fs.cwd().readFile(path, &buf) catch |err| switch (err) {
+        error.FileNotFound, error.IsDir => return false,
         else => return err,
     };
-    file.close();
     return true;
-}
-
-pub fn readFile(allocator: std.mem.Allocator, dir: fs.Dir, path: []const u8) ![]const u8 {
-    const fileContent = try dir.readFileAlloc(allocator, path, std.math.maxInt(usize));
-    return fileContent;
 }
 
 pub const AbsoluteResolveError = error{
@@ -32,7 +32,20 @@ pub fn getAbsolutePathFromCwd(allocator: std.mem.Allocator, path: []const u8) Ab
 pub const FileSearchError = error{
     NoFileNameFound,
 };
-pub fn searchForExtensions(allocator: std.mem.Allocator, fileName: []const u8, extensions: []const []const u8) ![:0]const u8 {
+pub fn searchForExtensions(allocator: std.mem.Allocator, fileName: []const u8, extensions: []const []const u8) ![]const u8 {
+    const fileExists = try doesFileExist(fileName);
+    if (!fileExists) {
+        for (extensions) |ext| {
+            const result = std.mem.join(allocator, "", &.{ fileName, ext }) catch continue;
+            defer allocator.free(result);
+            if (try doesFileExist(result)) return allocator.dupe(u8, result) catch continue;
+        }
+        return FileSearchError.NoFileNameFound;
+    }
+    return allocator.dupe(u8, fileName) catch return FileSearchError.NoFileNameFound;
+}
+
+pub fn searchForExtensionsZ(allocator: std.mem.Allocator, fileName: []const u8, extensions: []const []const u8) ![:0]const u8 {
     const fileExists = try doesFileExist(fileName);
     if (!fileExists) {
         for (extensions) |ext| {

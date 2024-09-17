@@ -7,8 +7,151 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+- Added `watch`, `openFile`, and `createFile` to `@zcore/fs`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/fs)
+
+  Example:
+    ```lua
+    local fs = require("@zcore/fs")
+
+    local watcher = fs.watch("file.txt", function(filename, events)
+      print(filename, events)
+    end)
+
+    local ok, file = fs.createFile("file.txt", {
+      exclusive = true -- false by default
+    })
+    assert(ok, file);
+    file:close();
+    local ok, file = fs.openFile("file.txt", {
+      mode = "r" -- "rw" by default
+    })
+    assert(ok, file);
+    file:close();
+
+    watcher:stop();
+    ```
+- Added `eval` command. Evaluates the first argument as luau code.
+
+  Example:
+    ```shell
+    zune --eval "print('Hello World!')"
+    -- OR --
+    zune -e "print('Hello World!')"
+    ```
+- Added stdin input to `run` command if the first argument is `-`.
+
+  Example:
+    ```shell
+    echo "print('Hello World!')" | zune run -
+    ```
+- Added `--globals` flag to `repl` to load all zune libraries as globals too.
+- Added `warn` global, similar to print but with a warning prefix.
+- Added `random` and `aes` to `@zcore/crypto`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/crypto)
+
+  Example:
+    ```lua
+    local crypto = require("@zcore/crypto")
+
+    -- Random
+    print(crypto.random.nextNumber()) -- 0.0 <= x < 1.0
+    print(crypto.random.nextNumber(-100, 100)) -- -100.0 <= x < 100.0
+    print(crypto.random.nextInteger(1, 10)) -- 1 <= x <= 10
+    print(crypto.random.nextBoolean()) -- true or false
+
+    local buf = buffer.create(2)
+    crypto.random.fill(buf, 0, 2)
+    print(buffer.readi16(buf, 0))-- random 16-bit integer
+
+    -- AES
+    local message = "Hello World!"
+    local key = "1234567890123456" -- 16 bytes
+    local nonce = "123456789012" -- 12 bytes
+    local encrypted = crypto.aes.aes128.encrypt(message, key, nonce)
+    local decrypted = crypto.aes.aes128.decrypt(encrypted.cipher, encrypted.tag, key, nonce)
+    print(decrypted) -- "Hello World!"
+    ```
+- Added `getSize` method to `terminal` in `@zcore/stdio`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/serde)
+
+  Example:
+    ```lua
+    local stdio = require("@zcore/stdio")
+    
+    if (stdio.terminal.isTTY) then
+      local cols, rows = stdio.terminal:getSize()
+      print(cols, rows) -- 80   24
+    end
+    ```
+- Added `base64` to `@zcore/serde`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/serde)
+
+  Example:
+    ```lua
+    local serde = require("@zcore/serde")
+
+    local encoded = serde.base64.encode("Hello World!")
+    local decoded = serde.base64.decode(encoded)
+    print(decoded) -- "Hello World!"
+    ```
+- Added `.luaurc` support. Alias requires should work.
+
+  Example:
+    ```json
+    {
+      "aliases": {
+        "dev": "/path/to/dev",
+        "globals": "/path/to/globals.luau"
+      }
+    }
+    ```
+    ```lua
+    local module = require("@dev/module")
+    local globals = require("@globals")
+    ```
+- Added `captures` method to `Regex` in `@zcore/regex`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/regex)
+
+  Flags
+  - `g` - Global
+  - `m` - Multiline
+
+  Example:
+    ```lua
+    local regex = require("@zcore/regex")
+
+    local pattern = regex.new("[A-Za-z!]+")
+    print(pattern:captures("Hello World!", 'g')) -- {{RegexMatch}, {RegexMatch}}
+    ```
+- Added `@zcore/datetime`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/datetime)
+
+  Example:
+    ```lua
+    local datetime = require("@zcore/datetime")
+
+    print(datetime.now().unixTimestamp) -- Timestamp
+    print(datetime.now():toIsoDate()) -- ISO Date
+    ```
+- Added `onSignal` to `@zcore/process`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/process)
+
+  Example:
+    ```lua
+    local process = require("@zcore/process")
+
+    process.onSignal("INT", function()
+      print("Received SIGINT")
+    end)
+    ```
+
+
+### Changed
+- Updated `luau` to `0.642`.
+- Updated `@zcore/process` to lock changing variables & allowed changing `cwd`.
+  - Changing cwd would affect the global process cwd (even `fs` library).
+  - Supports Relative and Absolute paths. `../` or `/`.
+    - Relative paths are relative to the current working directory.
+- Updated `require` function to be able to require modules that return exactly 1 value, instead of only functions, tables, or nil.
+
 ### Fixed
 - Fixed `@zcore/net` with serve using `reuseAddress` option not working.
+- Fixed `REPL` requiring modules relative to the parent of the current working directory, instead of the current working directory.
 
 ## `0.3.0` - September 1, 2024
 

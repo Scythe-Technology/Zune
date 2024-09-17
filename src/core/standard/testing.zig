@@ -9,6 +9,8 @@ const test_lib_size = @embedFile("../lua/testing_lib.luac").len;
 
 const Luau = luau.Luau;
 
+pub const LIB_NAME = "@zcore/testing";
+
 fn testing_debug(L: *Luau) i32 {
     const str = L.checkString(1);
     std.debug.print("{s}\n", .{str});
@@ -97,10 +99,10 @@ pub fn loadLib(L: *Luau, enabled: bool) void {
     }
 
     _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
-    if (L.getField(-1, "@zcore/testing") != .table) {
+    if (L.getField(-1, LIB_NAME) != .table) {
         L.pop(1);
         L.pushValue(-2);
-        L.setField(-2, "@zcore/testing");
+        L.setField(-2, LIB_NAME);
     } else L.pop(1);
     L.pop(2);
 }

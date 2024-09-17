@@ -13,7 +13,14 @@ const process = std.process;
 
 const native_os = builtin.os.tag;
 
-const MAX_LUAU_SIZE = 1073741824; // 1 GB
+pub const LIB_NAME = "@zcore/process";
+
+pub var SIGINT_LUA: ?LuaSigHandler = null;
+
+const LuaSigHandler = struct {
+    state: *Luau,
+    ref: i32,
+};
 
 const ProcessArgsError = error{
     InvalidArgType,
@@ -225,7 +232,7 @@ const ProcessChildOptions = struct {
             if (childProcess.stdout == null) return outputError(L, "InternalError (No stdout stream found, did you spawn?)", .{});
             if (childProcess.stdout_behavior != .Pipe) return outputError(L, "InternalError (stdout stream is not a pipe)", .{});
             const allocator = L.allocator();
-            const maxBytes = L.optUnsigned(2) orelse MAX_LUAU_SIZE;
+            const maxBytes = L.optUnsigned(2) orelse luaHelper.MAX_LUAU_SIZE;
 
             var buffer = allocator.alloc(u8, maxBytes) catch outputError(L, "OutOfMemory", .{});
             defer allocator.free(buffer);
@@ -241,7 +248,7 @@ const ProcessChildOptions = struct {
             if (childProcess.stderr == null) return outputError(L, "InternalError (No stdout stream found, did you spawn?)", .{});
             if (childProcess.stderr_behavior != .Pipe) return outputError(L, "InternalError (stderr stream is not a pipe)", .{});
             const allocator = L.allocator();
-            const maxBytes = L.optUnsigned(2) orelse MAX_LUAU_SIZE;
+            const maxBytes = L.optUnsigned(2) orelse luaHelper.MAX_LUAU_SIZE;
 
             var buffer = allocator.alloc(u8, maxBytes) catch outputError(L, "OutOfMemory", .{});
             defer allocator.free(buffer);
@@ -501,11 +508,54 @@ fn process_loadEnv(L: *Luau) i32 {
     return 1;
 }
 
+fn process_onsignal(L: *Luau) !i32 {
+    const sig = L.checkString(1);
+    L.checkType(2, .function);
+
+    if (std.mem.eql(u8, sig, "INT")) {
+        const GL = L.getMainThread();
+        if (GL != L) L.xPush(GL, 2);
+        const ref = GL.ref(if (GL != L) -1 else 2) catch L.raiseErrorStr("Failed to create reference", .{});
+        if (GL != L) GL.pop(1);
+
+        if (SIGINT_LUA) |handler| handler.state.unref(handler.ref);
+
+        SIGINT_LUA = .{
+            .state = GL,
+            .ref = ref,
+        };
+    } else L.raiseErrorStr("Unknown signal: %s", .{sig.ptr});
+
+    return 0;
+}
+
+fn lib__newindex(L: *Luau) !i32 {
+    L.checkType(1, .table);
+    const index = L.checkString(2);
+    const process_lib = Luau.upvalueIndex(1);
+
+    if (std.mem.eql(u8, index, "cwd")) {
+        const allocator = L.allocator();
+
+        const value = L.checkString(3);
+        const dir = try std.fs.cwd().openDir(value, .{});
+        const path = try dir.realpathAlloc(allocator, "./");
+        defer allocator.free(path);
+
+        try dir.setAsCwd();
+
+        L.pushLString(path);
+        L.setField(process_lib, "cwd");
+    } else L.raiseErrorStr("Cannot change field (%s)", .{index.ptr});
+
+    return 0;
+}
+
 pub fn loadLib(L: *Luau, args: []const []const u8) !void {
     const allocator = L.allocator();
 
     {
-        try L.newMetatable("process_child_instance");
+        L.newMetatable("process_child_instance") catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
         L.pushValue(-1);
         L.setField(-2, luau.Metamethods.index); // metatable.__index = metatable
 
@@ -545,12 +595,31 @@ pub fn loadLib(L: *Luau, args: []const []const u8) !void {
     L.setFieldFn(-1, "exit", process_exit);
     L.setFieldFn(-1, "run", luaHelper.toSafeZigFunction(process_run));
     L.setFieldFn(-1, "create", luaHelper.toSafeZigFunction(process_create));
+    L.setFieldFn(-1, "onSignal", process_onsignal);
+
+    L.newTable();
+    {
+        L.newTable();
+
+        L.pushValue(-3);
+        L.setFieldAhead(-1, luau.Metamethods.index); // metatable.__index
+
+        L.pushValue(-3);
+        L.pushClosure(luau.EFntoZigFn(lib__newindex), luau.Metamethods.newindex, 1);
+        L.setFieldAhead(-1, luau.Metamethods.newindex); // metatable.__newindex
+
+        L.setFieldString(-1, luau.Metamethods.metatable, "Metatable is locked");
+
+        L.setMetatable(-2);
+    }
+
+    L.remove(-2);
 
     _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
-    if (L.getField(-1, "@zcore/process") != .table) {
+    if (L.getField(-1, LIB_NAME) != .table) {
         L.pop(1);
         L.pushValue(-2);
-        L.setField(-2, "@zcore/process");
+        L.setField(-2, LIB_NAME);
     } else L.pop(1);
     L.pop(2);
 }

@@ -22,6 +22,7 @@ const typedefs = &[_]typedef{
     typedef{ .name = "core/crypto", .content = @embedFile("../types/core/crypto.luau.gz") },
     typedef{ .name = "core/process", .content = @embedFile("../types/core/process.luau.gz") },
     typedef{ .name = "core/testing", .content = @embedFile("../types/core/testing.luau.gz") },
+    typedef{ .name = "core/datetime", .content = @embedFile("../types/core/datetime.luau.gz") },
 };
 const luaudefs = &[_]typedef{
     typedef{ .name = "global/zune", .content = @embedFile("../types/global/zune.d.luau.gz") },

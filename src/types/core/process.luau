@@ -137,17 +137,17 @@ export type ProcessChild = {
 
 		Does not yield, **blocks** process.
 
-		@return ProcessResult
+		@return `ProcessResult`
 	]]
-	wait: (self: ProcessChild) -> ProcessResult,
+	wait : (self: ProcessChild) -> ProcessResult,
 	--[[
 		Kills process. Calls system function.
 
 		Does not yield, **blocks** process.
 
-		@return ProcessResult
+		@return `ProcessResult`
 	]]
-	kill: (self: ProcessChild) -> ProcessResult,
+	kill : (self: ProcessChild) -> ProcessResult,
 
 	--[[
 		Reads the output of the process. Stdout.
@@ -156,15 +156,15 @@ export type ProcessChild = {
 		Nil to read all.
 
 		@param size The size of the output to read.
-		@return string
+		@return `string`
 	]]
-	readOut: (self: ProcessChild, size: number?) -> string,
+	readOut : (self: ProcessChild, size: number?) -> string,
 	--[[
 		Writes to the input of the process. Stdin.
 
 		@param data The data to write to the process.
 	]]
-	writeIn: (self: ProcessChild, data: string) -> (),
+	writeIn : (self: ProcessChild, data: string) -> (),
 	--[[
 		Reads the error output of the process. Stderr.
 
@@ -172,9 +172,9 @@ export type ProcessChild = {
 		Nil to read all.
 
 		@param size The size of the output to read.
-		@return string
+		@return `string`
 	]]
-	readErr: (self: ProcessChild, size: number?) -> string,
+	readErr : (self: ProcessChild, size: number?) -> string,
 }
 
 local process = {};
@@ -217,7 +217,7 @@ process.env = (nil :: any) :: { [string]: string }
 	- Includes `.env.test` file in the current working directory. When LUAU_ENV is set to `TEST`.
 	- Includes `.env.local` file in the current working directory.
 
-	@return EnvironmentMap
+	@return `EnvironmentMap`
 ]]
 process.loadEnv = (nil :: any) :: () -> { [string]: string };
 
@@ -227,7 +227,7 @@ process.loadEnv = (nil :: any) :: () -> { [string]: string };
 	@param exec The executable to run.
 	@param args The arguments to pass to the executable.
 	@param procOpts The options for the process.
-	@return ProcessChild
+	@return `ProcessChild`
 ]]
 process.create = (nil :: any) :: (exec: string, args: {string}?, procOpts: ProcessOptions?) -> (boolean, ProcessChild | string);
 
@@ -241,7 +241,7 @@ process.create = (nil :: any) :: (exec: string, args: {string}?, procOpts: Proce
 	@param exec The executable to run.
 	@param args The arguments to pass to the executable.
 	@param procOpts The options for the process.
-	@return ProcessRunResult
+	@return `ProcessRunResult`
 ]]
 process.run = (nil :: any) :: (exec: string, args: {string}?, procOpts: ProcessOptions?) -> (boolean, ProcessRunResult | string);
 
@@ -251,5 +251,13 @@ process.run = (nil :: any) :: (exec: string, args: {string}?, procOpts: ProcessO
 	@param code
 ]]
 process.exit = (nil :: any) :: (code: number) -> never;
+
+--[[
+	Registers a signal handler.
+
+	@param signal The signal to handle.
+	@param callback The callback to run when the signal is received.
+]]
+process.onSignal = (nil :: any) :: (signal: "Interrupt", callback: () -> ()) -> ();
 
 return process;

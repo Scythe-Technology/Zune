@@ -17,8 +17,8 @@ local luau = {}
     
     @param source The source code to compile.
     @param options The options for the compilation.
-    @return boolean Whether the operation was successful.
-    @return string The compiled code, or an error.
+    @return `boolean` Whether the operation was successful.
+    @return `string` The compiled code, or an error.
 ]]
 luau.compile = (nil :: any) :: (source: string, options: CompileOptions?) -> (boolean, string);
 
@@ -33,7 +33,7 @@ luau.compile = (nil :: any) :: (source: string, options: CompileOptions?) -> (bo
 
     @param bytecode The bytecode to load.
     @param options The options for the load.
-    @return (...any) -> ...any The loaded function.
+    @return `(...any) -> ...any` The loaded function.
 ]]
 luau.load = (nil :: any) :: (bytecode: string, options: LoadOptions?) -> ((...any) -> ...any);
 

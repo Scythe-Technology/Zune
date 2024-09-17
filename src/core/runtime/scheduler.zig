@@ -249,3 +249,11 @@ pub fn toSchedulerFn(comptime f: *const fn (state: *Luau, scheduler: *Self) i32)
         }
     }.inner;
 }
+
+pub fn toSchedulerEFn(comptime f: *const fn (state: *Luau, scheduler: *Self) anyerror!i32) luau.ZigEFn {
+    return struct {
+        fn inner(L: *Luau) !i32 {
+            return @call(.always_inline, f, .{ L, getScheduler(L) });
+        }
+    }.inner;
+}

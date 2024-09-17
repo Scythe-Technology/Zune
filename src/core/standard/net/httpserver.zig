@@ -816,8 +816,8 @@ pub fn lua_serve(L: *Luau, scheduler: *Scheduler) i32 {
     return 2;
 }
 
-pub fn lua_load(L: *Luau) !void {
-    try L.newMetatable(LuaMeta.SERVER_META);
+pub fn lua_load(L: *Luau) void {
+    L.newMetatable(LuaMeta.SERVER_META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
 
     L.setFieldFn(-1, luau.Metamethods.index, LuaMeta.server__index); // metatable.__index
     L.setFieldFn(-1, luau.Metamethods.namecall, LuaMeta.server__namecall); // metatable.__namecall
@@ -825,7 +825,7 @@ pub fn lua_load(L: *Luau) !void {
     L.setFieldString(-1, luau.Metamethods.metatable, "Metatable is locked");
     L.pop(1);
 
-    try L.newMetatable(LuaMeta.WEBSOCKET_META);
+    L.newMetatable(LuaMeta.WEBSOCKET_META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
 
     L.setFieldFn(-1, luau.Metamethods.index, LuaMeta.websocket__index); // metatable.__index
     L.setFieldFn(-1, luau.Metamethods.namecall, LuaMeta.websocket__namecall); // metatable.__namecall

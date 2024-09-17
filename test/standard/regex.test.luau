@@ -11,14 +11,8 @@ describe("Regex", function()
         local re = regex.new("a(b+)c");
 
         expect(re:match("abbc")).toBe(expect.similar({
-            {
-                string = "abbc",
-                index = 0,
-            },
-            {
-                string = "bb",
-                index = 1,
-            },
+            { string = "abbc", index = 1 },
+            { string = "bb", index = 2 },
         }));
 
         expect(re:match("  abbc")).toBeNil();
@@ -28,26 +22,101 @@ describe("Regex", function()
         local re = regex.new("a(b+)c");
 
         expect(re:search("abbc")).toBe(expect.similar({
-            {
-                string = "abbc",
-                index = 0,
-            },
-            {
-                string = "bb",
-                index = 1,
-            },
+            { string = "abbc", index = 1 },
+            { string = "bb", index = 2 },
         }));
 
         expect(re:search("  abbc")).toBe(expect.similar({
-            {
-                string = "abbc",
-                index = 2,
-            },
-            {
-                string = "bb",
-                index = 3,
-            },
+            { string = "abbc", index = 3 },
+            { string = "bb", index = 4 },
         }));
+    end)
+
+    describe("Captures", function()
+        test("Basic", function()
+            local re = regex.new("a(b+)c");
+
+            expect(re:captures("abbc")).toBe(expect.similar({
+                {
+                    { string = "abbc", index = 1 },
+                    { string = "bb", index = 2 },
+                }
+            }));
+
+            expect(re:captures("abbc abbbc")).toBe(expect.similar({
+                {
+                    { string = "abbc", index = 1 },
+                    { string = "bb", index = 2 },
+                }
+            }));
+        end)
+        test("Global Flag", function()
+            local re = regex.new("a(b+)c");
+
+            expect(re:captures("abbc", "g")).toBe(expect.similar({
+                {
+                    { string = "abbc", index = 1 },
+                    { string = "bb", index = 2 },
+                }
+            }));
+
+            expect(re:captures("abbc abbbc", "g")).toBe(expect.similar({
+                {
+                    { string = "abbc", index = 1 },
+                    { string = "bb", index = 2 },
+                },
+                {
+                    { string = "abbbc", index = 6 },
+                    { string = "bbb", index = 7 },
+                }
+            }));
+        end)
+        test("Multiline Flag", function()
+            local re = regex.new("a(b+)c");
+
+            expect(re:captures("abbc", "m")).toBe(expect.similar({
+                {
+                    { string = "abbc", index = 1 },
+                    { string = "bb", index = 2 },
+                }
+            }));
+
+            expect(re:captures("abbc abbbc\nabbc abbbc\n", "m")).toBe(expect.similar({
+                {
+                    { string = "abbc", index = 1 },
+                    { string = "bb", index = 2 },
+                }
+            }));
+        end)
+        test("Global/Multiline Flag", function()
+            local re = regex.new("a(b+)c");
+
+            expect(re:captures("abbc", "gm")).toBe(expect.similar({
+                {
+                    { string = "abbc", index = 1 },
+                    { string = "bb", index = 2 },
+                }
+            }));
+
+            expect(re:captures("abbc abbbc\nabbc abbbc\n", "gm")).toBe(expect.similar({
+                {
+                    { string = "abbc", index = 1 },
+                    { string = "bb", index = 2 },
+                },
+                {
+                    { string = "abbbc", index = 6 },
+                    { string = "bbb", index = 7 },
+                },
+                {
+                    { string = "abbc", index = 12 },
+                    { string = "bb", index = 13 },
+                },
+                {
+                    { string = "abbbc", index = 17 },
+                    { string = "bbb", index = 18 },
+                }
+            }));
+        end)
     end)
 
     test("isMatch", function()

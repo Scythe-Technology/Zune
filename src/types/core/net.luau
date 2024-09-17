@@ -19,7 +19,7 @@ export type ServerWebSocketHandlers = {
     --[[
         Function to check if the request should be upgraded to a websocket.
         Should return true if the request should be upgraded.
-        @return boolean
+        @return `boolean`
     ]]
     upgrade : ((request: ServerRequest) -> boolean)?,
 
@@ -107,8 +107,8 @@ local network = {};
     Starts a server on the specified port.
 
     @param options The options for the server.
-    @return boolean Whether the server started successfully.
-    @return string | ServerHandle The error message, or the server handle.
+    @return `boolean` Whether the server started successfully.
+    @return `string | ServerHandle` The error message, or the server handle.
 ]]
 network.serve = (nil :: any) :: (options: ServeOptions) -> (boolean, string | ServerHandle);
 
@@ -121,8 +121,8 @@ network.serve = (nil :: any) :: (options: ServeOptions) -> (boolean, string | Se
 
     @param host The host to make the request to.
     @param options The options for the request.
-    @return boolean Whether the request was successful.
-    @return Response
+    @return `boolean` Whether the request was successful.
+    @return `Response`
 ]]
 network.request = (nil :: any) :: (host: string, options: RequestOptions?) -> (boolean, string | Response);
 
@@ -133,8 +133,8 @@ network.request = (nil :: any) :: (host: string, options: RequestOptions?) -> (b
 
     @param host The host to connect to.
     @param protocols The protocols to use.
-    @return boolean Whether the connection was successful.
-    @return ClientWebSocket
+    @return `boolean` Whether the connection was successful.
+    @return `ClientWebSocket`
 ]]
 network.websocket = (nil :: any) :: (host: string, protocols: {string}?) -> (boolean, string | ClientWebSocket);
 

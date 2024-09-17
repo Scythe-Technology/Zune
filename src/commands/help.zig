@@ -18,6 +18,7 @@ fn Execute(_: std.mem.Allocator, _: []const []const u8) !void {
         "  \x1b[1;34mhelp                      \x1b[0mDisplay help message.\n" ++
         "\n" ++
         "\x1b[1mFlags:\x1b[0m\n" ++
+        "  -e, --eval     \x1b[0;2m[luau]     \x1b[0mEvaluate luau code.\n" ++
         "  -V, --version             \x1b[0mDisplay version.\n" ++
         "  -h, --help                \x1b[0mDisplay help message.\n" ++
         "", .{});

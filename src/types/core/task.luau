@@ -13,7 +13,7 @@ task.cancel = (nil :: any) :: (thread: thread) -> ();
     Runs on next frame.
 
     @param f The function to defer.
-    @return thread
+    @return `thread`
 ]]
 task.defer = (nil :: any) :: <A..., R...>(f: ((A...) -> R...) | thread, A...) -> thread;
 
@@ -24,7 +24,7 @@ task.defer = (nil :: any) :: <A..., R...>(f: ((A...) -> R...) | thread, A...) ->
 
     @param sec The time to delay.
     @param f The function to delay.
-    @return thread
+    @return `thread`
 ]]
 task.delay = (nil :: any) :: <A..., R...>(sec: number, f: ((A...) -> (R...)) | thread, A...) -> thread;
 
@@ -34,7 +34,7 @@ task.delay = (nil :: any) :: <A..., R...>(sec: number, f: ((A...) -> (R...)) | t
     Runs immediately.
 
     @param f The function to spawn.
-    @return thread
+    @return `thread`
 ]]
 task.spawn = (nil :: any) :: <A..., R...>(f: ((A...) -> (R...)) | thread, A...) -> thread;
 
@@ -45,7 +45,7 @@ task.spawn = (nil :: any) :: <A..., R...>(f: ((A...) -> (R...)) | thread, A...) 
     Resumes after a certain amount of time.
 
     @param sec The time to wait.
-    @return number
+    @return `number`
 ]]
 task.wait = (nil :: any) :: (sec: number?) -> number;
 
@@ -71,7 +71,7 @@ task.wait = (nil :: any) :: (sec: number?) -> number;
     ```
 
     @param kinds The kinds of tasks to count.
-    @return number
+    @return `number` | `...number`
 ]]
 task.count = (nil :: any) :: (() -> number) & ((kinds: string?) -> ...number);
 

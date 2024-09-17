@@ -2,6 +2,7 @@
 local TEMP_DIR = _G.__test_tempdir::string;
 
 local fs = require("@zcore/fs");
+local task = require("@zcore/task");
 local process = require("@zcore/process");
 local testing = require("@zcore/testing");
 
@@ -344,4 +345,146 @@ test("Symlink", function()
         expect(fs.isDir(TEMP_DIR .. "/metadata")).toBeFalsy();
         expect(fs.isDir(TEMP_DIR .. "/metadata2")).toBeFalsy();
     end
+end)
+
+describe("File Object/Handle", function()
+    local textData = "Some text\n";
+    test("Open Unknown File", function()
+        local success, result = fs.openFile(TEMP_DIR .. "/sample.txt");
+        expect(success).toBeFalsy();
+        expect(result).toBe("FileNotFound");
+    end)
+    
+    test("Create File", function()
+        local success, result = fs.createFile(TEMP_DIR .. "/sample.txt");
+        expect(success).toBeTruthy();
+        expect(result).toBe(expect.type("userdata"));
+        --[[Type Refinement]] assert(type(result) ~= "string");
+
+        expect(result:read()).toBe(""); -- Should have no data
+
+        expect(result:getSize()).toBe(0);
+
+        result:write(textData); -- Write data
+
+        expect(result:getSize()).toBe(#textData);
+
+        result:seekFromEnd(-#textData); -- Go back to amount of textData
+        expect(result:getSize()).toBe(#textData); -- Confirm size
+        expect(result:read()).toBe(textData); -- Confirm data
+
+        result:sync(); -- Sync data to disk
+
+        result:close(); -- Close file (also syncs data)
+
+        expect(function()
+            result:read();
+        end).toThrow()
+    end)
+
+    test("Create File Execlusive", function()
+        local success, result = fs.createFile(TEMP_DIR .. "/sample.txt", {
+            exclusive = true,
+        });
+        expect(success).toBeFalsy();
+        expect(result).toBe("PathAlreadyExists");
+    end)
+
+    test("Open File Read Mode", function()
+        local success, result = fs.openFile(TEMP_DIR .. "/sample.txt", {
+            mode = "r",
+        });
+        expect(success).toBeTruthy();
+        expect(result).toBe(expect.type("userdata"));
+        --[[Type Refinement]] assert(type(result) ~= "string");
+
+        expect(result:getSize()).toBe(#textData);
+        expect(result:read()).toBe(textData);
+        result:seekTo(0);
+        local b = result:read(nil, true);
+        expect(b).toBe(expect.type("buffer"));
+        expect(buffer.tostring(b)).toBe(textData);
+
+        expect(function()
+            result:write("Some text");
+        end).toThrow();
+    end)
+
+    test("Open File Write Mode", function()
+        local success, result = fs.openFile(TEMP_DIR .. "/sample.txt", {
+            mode = "w",
+        });
+        expect(success).toBeTruthy();
+        expect(result).toBe(expect.type("userdata"));
+        --[[Type Refinement]] assert(type(result) ~= "string");
+
+        expect(result:getSize()).toBe(#textData);
+        result:seekFromEnd();
+        result:write("Append text");
+        expect(result:getSize()).toBe(#textData + #("Append text"));
+        
+        expect(function()
+            result:read();
+        end).toThrow();
+        
+        result:close();
+    end)
+
+    test("Open File Both Mode", function()
+        local success, result = fs.openFile(TEMP_DIR .. "/sample.txt", {
+            mode = "rw",
+        });
+        expect(success).toBeTruthy();
+        expect(result).toBe(expect.type("userdata"));
+        --[[Type Refinement]] assert(type(result) ~= "string");
+
+        expect(result:read()).toBe(textData .. "Append text");
+
+        result:write("Some text");
+
+        result:close();
+    end)
+
+    fs.removeFile(TEMP_DIR .. "/sample.txt");
+end)
+
+test("Watch", function()
+    if (process.os == "macos") then
+        warn("Skipping 'Watch' test on macOS.");
+        return; -- Skip on macOS
+    end
+    local changes = {};
+    local watcher = fs.watch(TEMP_DIR, function(path, events)
+        table.insert(changes, {
+            path = path,
+            events = events,
+        });
+    end);
+
+    testing.defer(function()
+        watcher:stop();
+    end)
+
+    fs.writeFile(TEMP_DIR .. "/sample2.txt", "Some text\n");
+    task.wait(0.5);
+    fs.removeFile(TEMP_DIR .. "/sample2.txt");
+    task.wait(0.5);
+    fs.writeDir(TEMP_DIR .. "/foo");
+    task.wait(0.5);
+    fs.removeDir(TEMP_DIR .. "/foo");
+    task.wait(0.5);
+
+    -- TODO: Check tests for windows, tests for windows are inconsistent
+    expect(changes).toBe(expect.similar(if (process.os ~= "windows") then {
+        {path = "sample2.txt", events = {"created"}},
+        {path = "sample2.txt", events = {"modified"}},
+        {path = "sample2.txt", events = {"deleted"}},
+        {path = "foo", events = {"created"}},
+        {path = "foo", events = {"deleted"}},
+    } else {
+        {path = "sample2.txt", events = {"modified"}},
+        {path = "sample2.txt", events = {"deleted"}},
+        {path = "foo", events = {"created"}},
+        {path = "foo", events = {"deleted"}},
+    }));
 end)

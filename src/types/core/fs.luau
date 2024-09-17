@@ -10,18 +10,6 @@ export type MetadataKind = "file"
 	| "whiteout"
 	| "unknown"
 
-export type Metadata = {
-	kind : MetadataKind,
-	symlink : boolean,
-	createdAt : number,
-	modifiedAt : number,
-	accessedAt : number,
-	size : number,
-	permissions : {
-		readOnly : boolean,
-	},
-}
-
 type IOError = "AccessDenied"
 	| "FileNotFound"
 	| "UnknownError"
@@ -109,7 +97,163 @@ export type SymlinkError = IOError
 	| "NotFile"
 	| "NotSupported"
 
+export type Metadata = {
+	kind : MetadataKind,
+	symlink : boolean,
+	createdAt : number,
+	modifiedAt : number,
+	accessedAt : number,
+	size : number,
+	permissions : {
+		readOnly : boolean,
+	},
+}
+
+export type FileHandle = {
+	--[[
+		Reads the contents of a file.
+
+		*Optional: The amount of bytes to read, if nil, reads the whole till EOF or Luau limit.*
+
+		@param amount The amount of bytes to read.
+	]]
+	read :
+		& ((self: FileHandle, amount: number?, useBuffer: false?) -> string)
+		& ((self: FileHandle, amount: number?, useBuffer: true) -> buffer),
+
+
+	--[[
+		Writes to a file.
+
+		@param contents The contents to write to the file.
+	]]
+	write : (self: FileHandle, contents: buffer | string) -> (),
+
+	--[[
+		Appends to a file.
+		
+		@param contents The contents to append to the file.
+	]]
+	append : (self: FileHandle, contents: buffer | string) -> (),
+
+	--[[
+		Returns the size of the file. Based on current state of the file object.
+	]]
+	getSize : (self: FileHandle) -> number,
+
+	--[[
+		Returns the current position of the file.
+	]]
+	getSeekPosition : (self: FileHandle) -> number,
+
+	--[[
+		Seeks to a position in the file relative to the end.
+
+		*Optional: The amount of bytes to seek, if nil, seeks to the end*
+
+		@param amount The amount of bytes to seek.
+	]]
+	seekFromEnd : (self: FileHandle, amount: number?) -> (),
+
+	--[[
+		Seeks to a position in the file absolute to the start.
+
+		*Optional: The amount of bytes to seek, if nil, seeks to the start, 0*
+
+		@param amount The amount of bytes to seek.
+	]]
+	seekTo : (self: FileHandle, amount: number?) -> (),
+
+	--[[
+		Seeks to a position in the file relative to the current position.
+
+		*Optional: The amount of bytes to seek, if nil, seeks to the next position, 1*
+
+		*If `0` is provided, seek will not move.*
+
+		@param amount The amount of bytes to seek.
+	]]
+	seekBy : (self: FileHandle, amount: number?) -> (),
+
+	--[[
+		Locks the file.
+
+		*Optional: The mode to lock the file, if nil, locks the file in exclusive mode.*
+
+		@param lockMode The mode to lock the file.
+	]]
+	lock : (self: FileHandle, lockMode: ("shared" | "exclusive" | "none")?) -> boolean,
+
+	--[[
+		Unlocks the file.
+	]]
+	unlock : (self: FileHandle) -> (),
+
+	--[[
+		Flushes the file. Writes the contents to the disk.
+
+		Does not yield, **blocks** process.
+	]]
+	sync : (self: FileHandle) -> (),
+
+	--[[
+		Closes the file. (Will flush the file)
+	]]
+	close : (self: FileHandle) -> (),
+}
+
+export type FileWatcher = {
+	--[[
+		Stops the watcher.
+	]]
+	stop : (self: FileWatcher) -> (),
+}
+
+type CreateFileOptions = {
+	--[[
+		Whether to create the file in exclusive mode.
+
+		*Default: false*
+	]]
+	exclusive : boolean?,
+};
+
+type OpenFileOptions = {
+	--[[
+		The mode to open the file in.
+
+		Available modes: `r`, `w`
+
+		*Default: `rw`*
+	]]
+	mode : string?,
+};
+
 local fs = {};
+
+--[[
+	Creates a file.
+
+	If exclusive is true, the operation will fail if the file already exists.
+
+	@param path The path to the file.
+	@param opts The options to create the file.
+	@return `boolean` Whether the operation was successful.
+	@return `FileHandle | FileReadError` An error if the operation failed.
+]]
+fs.createFile = (nil :: any) :: (path: string, opts: CreateFileOptions?) -> (boolean, FileHandle | FileReadError);
+
+--[[
+	Opens a file.
+
+	*The file must exist*
+
+	@param path The path to the file.
+	@param opts The options to open the file.
+	@return `boolean `Whether the operation was successful.
+	@return `FileHandle | FileReadError` An error if the operation failed.
+]]
+fs.openFile = (nil :: any) :: (path: string, opts: OpenFileOptions?) -> (boolean, FileHandle | FileReadError);
 
 --[[
 	Reads the contents of a file.
@@ -118,8 +262,8 @@ local fs = {};
 	
 	@param path The path to the file.
 	@param useBuffer Whether to read the file as a buffer.
-	@return boolean Whether the operation was successful.
-	@return string | buffer | FileReadError The contents of the file, or an error.
+	@return `boolean` Whether the operation was successful.
+	@return `string | buffer | FileReadError` The contents of the file, or an error.
 ]]
 fs.readFile = (nil :: any) :: (path: string, useBuffer: boolean?) -> (boolean, string | buffer | FileReadError);
 
@@ -127,8 +271,8 @@ fs.readFile = (nil :: any) :: (path: string, useBuffer: boolean?) -> (boolean, s
 	Reads the contents of a directory.
 
 	@param path The path to the directory.
-	@return boolean Whether the operation was successful.
-	@return {string} | string The contents of the directory, or an error.
+	@return `boolean` Whether the operation was successful.
+	@return `{string} | string` The contents of the directory, or an error.
 ]]
 fs.readDir = (nil :: any) :: (path: string) -> (boolean, { string } | string);
 
@@ -139,8 +283,8 @@ fs.readDir = (nil :: any) :: (path: string) -> (boolean, { string } | string);
 
 	@param path The path to the file.
 	@param contents The contents to write to the file.
-	@return boolean Whether the operation was successful.
-	@return FileWriteError An error if the operation failed.
+	@return `boolean` Whether the operation was successful.
+	@return `FileWriteError` An error if the operation failed.
 ]]
 fs.writeFile = (nil :: any) :: (path: string, contents: buffer | string) -> (boolean, FileWriteError?);
 
@@ -149,8 +293,8 @@ fs.writeFile = (nil :: any) :: (path: string, contents: buffer | string) -> (boo
 
 	@param path The path to the directory.
 	@param recursive Whether to write recursively.
-	@return boolean Whether the operation was successful.
-	@return DirWriteError An error if the operation failed.
+	@return `boolean` Whether the operation was successful.
+	@return `DirWriteError` An error if the operation failed.
 ]]
 fs.writeDir = (nil :: any) ::  (path: string, recursive: boolean?) -> (boolean, DirWriteError?);
 
@@ -158,8 +302,8 @@ fs.writeDir = (nil :: any) ::  (path: string, recursive: boolean?) -> (boolean, 
 	Deletes a file.
 
 	@param path The path to the file.
-	@return boolean Whether the operation was successful.
-	@return FileRemoveError An error if the operation failed.
+	@return `boolean` Whether the operation was successful.
+	@return `FileRemoveError` An error if the operation failed.
 ]]
 fs.removeFile = (nil :: any) :: (path: string) -> (boolean, FileRemoveError?);
 
@@ -168,8 +312,8 @@ fs.removeFile = (nil :: any) :: (path: string) -> (boolean, FileRemoveError?);
 
 	@param path The path to the directory.
 	@param recursive Whether to delete recursively.
-	@return boolean Whether the operation was successful.
-	@return DirRemoveError An error if the operation failed.
+	@return `boolean` Whether the operation was successful.
+	@return `DirRemoveError` An error if the operation failed.
 ]]
 fs.removeDir = (nil :: any) :: (path: string, recursive: boolean?) -> (boolean, DirRemoveError?);
 
@@ -177,8 +321,8 @@ fs.removeDir = (nil :: any) :: (path: string, recursive: boolean?) -> (boolean, 
 	Returns the metadata of a file or directory.
 
 	@param path The path to the file or directory.
-	@return boolean Whether the operation was successful.
-	@return Metadata | MetadataError The metadata of the file or directory, or an error.
+	@return `boolean` Whether the operation was successful.
+	@return `Metadata | MetadataError` The metadata of the file or directory, or an error.
 ]]
 fs.metadata = (nil :: any) :: (path: string) -> (boolean, Metadata? | MetadataError);
 
@@ -186,7 +330,7 @@ fs.metadata = (nil :: any) :: (path: string) -> (boolean, Metadata? | MetadataEr
 	Checks if a file exists.
 
 	@param path The path to the file.
-	@return boolean Whether the file exists.
+	@return `boolean` Whether the file exists.
 ]]
 fs.isFile = (nil :: any) :: (path: string) -> boolean;
 
@@ -194,7 +338,7 @@ fs.isFile = (nil :: any) :: (path: string) -> boolean;
 	Checks if a directory exists.
 
 	@param path The path to the directory.
-	@return boolean Whether the directory exists.
+	@return `boolean` Whether the directory exists.
 ]]
 fs.isDir = (nil :: any) :: (path: string) -> boolean;
 
@@ -204,8 +348,8 @@ fs.isDir = (nil :: any) :: (path: string) -> boolean;
 	@param from The path to the file or directory.
 	@param to The path to rename the file or directory to.
 	@param overwrite Whether to overwrite the file or directory if it exists.
-	@return boolean Whether the operation was successful.
-	@return MoveError An error if the operation failed.
+	@return `boolean` Whether the operation was successful.
+	@return `MoveError` An error if the operation failed.
 ]]
 fs.move = (nil :: any) :: (from: string, to: string, overwrite: boolean?) -> (boolean, MoveError?);
 
@@ -215,8 +359,8 @@ fs.move = (nil :: any) :: (from: string, to: string, overwrite: boolean?) -> (bo
 	@param from The path to the file or directory.
 	@param to The path to copy the file or directory to.
 	@param overwrite Whether to overwrite the file or directory if it exists.
-	@return boolean Whether the operation was successful.
-	@return CopyError An error if the operation failed.
+	@return `boolean` Whether the operation was successful.
+	@return `CopyError` An error if the operation failed.
 ]]
 fs.copy = (nil :: any) :: (from: string, to: string, overwrite: boolean?) -> (boolean, CopyError?);
 
@@ -227,9 +371,11 @@ fs.copy = (nil :: any) :: (from: string, to: string, overwrite: boolean?) -> (bo
 
 	@param from The path to the file or directory.
 	@param to The path to create the symbolic link to.
-	@return boolean Whether the operation was successful.
-	@return SymlinkError An error if the operation failed.
+	@return `boolean` Whether the operation was successful.
+	@return `SymlinkError` An error if the operation failed.
 ]]
 fs.symlink = (nil :: any) :: (from: string, to: string) -> (boolean, SymlinkError?);
+
+fs.watch = (nil :: any) :: (path: string, callback: (path: string, events: {"created" | "modified" | "moved" | "renamed" | "deleted" | "metadata"}) -> ()) -> FileWatcher;
 
 return fs;

@@ -7,11 +7,15 @@ const Scheduler = @import("../../runtime/scheduler.zig");
 const json = @import("json.zig");
 const toml = @import("toml.zig");
 const yaml = @import("yaml.zig");
+const base64 = @import("base64.zig");
+
 const gzip = @import("gzip.zig");
 const zlib = @import("zlib.zig");
 const lz4 = @import("lz4.zig");
 
 const Luau = luau.Luau;
+
+pub const LIB_NAME = "@zcore/serde";
 
 pub fn loadLib(L: *Luau) void {
     L.newTable();
@@ -43,6 +47,15 @@ pub fn loadLib(L: *Luau) void {
         L.setFieldAhead(-1, "yaml");
     }
 
+    { // Base64
+        L.newTable();
+
+        L.setFieldFn(-1, "encode", base64.lua_encode);
+        L.setFieldFn(-1, "decode", base64.lua_decode);
+
+        L.setFieldAhead(-1, "base64");
+    }
+
     { // Gzip
         L.newTable();
 
@@ -71,10 +84,10 @@ pub fn loadLib(L: *Luau) void {
     }
 
     _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
-    if (L.getField(-1, "@zcore/serde") != .table) {
+    if (L.getField(-1, LIB_NAME) != .table) {
         L.pop(1);
         L.pushValue(-2);
-        L.setField(-2, "@zcore/serde");
+        L.setField(-2, LIB_NAME);
     } else L.pop(1);
     L.pop(2);
 }

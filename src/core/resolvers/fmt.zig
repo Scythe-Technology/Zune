@@ -8,7 +8,7 @@ const Parser = @import("../utils/parser.zig");
 
 const Luau = luau.Luau;
 
-const MAX_DEPTH = 4;
+pub var MAX_DEPTH: u8 = 4;
 
 pub fn finishRequire(L: *Luau) i32 {
     if (L.isString(-1)) L.raiseError();
@@ -49,6 +49,22 @@ pub fn fmt_print_value(L: *Luau, idx: i32, depth: usize, asKey: bool) void {
                 } else std.debug.print("\x1b[32m\"{s}\"\x1b[0m", .{s});
             },
             .table => {
+                if (L.getMetatable(-1)) {
+                    const metaType = L.getField(-1, "__tostring");
+                    if (!luau.isNoneOrNil(metaType)) {
+                        if (metaType != .string) {
+                            L.pushValue(idx);
+                            L.call(1, 1);
+                        }
+                        if (L.typeOf(-1) != .string) L.raiseErrorStr("'__tostring' must return a string", .{});
+                        const s = L.toString(-1) catch "";
+                        if (depth == 0 and Parser.isPlainText(s)) {
+                            std.debug.print("{s}", .{s});
+                        } else fmt_print_value(L, -1, 0, false);
+                        L.pop(2); // drop string, metatable
+                        return;
+                    }
+                }
                 if (asKey) {
                     const str = fmt_tostring(allocator, L, idx) catch "!ERR!";
                     if (str) |String| {

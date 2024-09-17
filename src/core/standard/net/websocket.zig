@@ -421,8 +421,8 @@ pub fn lua_websocket(L: *Luau, scheduler: *Scheduler) i32 {
     return if (created) L.yield(0) else 0;
 }
 
-pub fn lua_load(L: *Luau) !void {
-    try L.newMetatable(LuaMeta.WEBSOCKET_META);
+pub fn lua_load(L: *Luau) void {
+    L.newMetatable(LuaMeta.WEBSOCKET_META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
 
     L.setFieldFn(-1, luau.Metamethods.index, LuaMeta.__index); // metatable.__index
     L.setFieldFn(-1, luau.Metamethods.namecall, LuaMeta.__namecall); // metatable.__namecall

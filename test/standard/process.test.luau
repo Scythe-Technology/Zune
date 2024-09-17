@@ -1,4 +1,7 @@
 --!strict
+
+local TEMP_DIR = _G.__test_tempdir::string;
+
 local fs = require("@zcore/fs");
 local process = require("@zcore/process");
 local testing = require("@zcore/testing");
@@ -21,10 +24,43 @@ test("Context", function()
 	expect(process.cwd).toBe(expect.any("string"));
 	expect(#process.cwd).toBeGreaterThan(0);
 
+	expect(function()
+		process.args = {};
+	end).toThrow("Cannot change field (args)");
+	
+	local current_cwd = process.cwd;
 	if (IS_WINDOWS) then
-		expect(process.cwd:sub(2, 3) == ":\\").toBeTruthy();
+		expect(current_cwd:sub(2, 3) == ":\\").toBeTruthy();
+		
+		process.cwd = `{current_cwd}/{TEMP_DIR}`;
+
+		expect(process.cwd).toBe(`{current_cwd}\\{TEMP_DIR:gsub("/", "\\")}`);
+		expect(process.cwd).never.toBe(current_cwd);
+		assert(fs.writeFile("./test.txt", "Hello World"));
+		expect(fs.isFile("./test.txt")).toBeTruthy();
+		expect(select(2, fs.readFile("./test.txt"))).toBe("Hello World");
+		assert(fs.removeFile("./test.txt"));
+		expect(fs.isFile("./test.txt")).toBeFalsy();
+
+		process.cwd = current_cwd;
+
+		expect(process.cwd).toBe(current_cwd);
 	else
-		expect(process.cwd:sub(1, 1) == "/").toBeTruthy();
+		expect(current_cwd:sub(1, 1) == "/").toBeTruthy();
+		
+		process.cwd = `{current_cwd}/{TEMP_DIR}`;
+
+		expect(process.cwd).toBe(`{current_cwd}/{TEMP_DIR}`);
+		expect(process.cwd).never.toBe(current_cwd);
+		assert(fs.writeFile("./test.txt", "Hello World"));
+		expect(fs.isFile("./test.txt")).toBeTruthy();
+		expect(select(2, fs.readFile("./test.txt"))).toBe("Hello World");
+		assert(fs.removeFile("./test.txt"));
+		expect(fs.isFile("./test.txt")).toBeFalsy();
+	
+		process.cwd = current_cwd;
+	
+		expect(process.cwd).toBe(current_cwd);
 	end
 end)
 

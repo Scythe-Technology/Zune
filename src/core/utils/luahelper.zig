@@ -2,6 +2,8 @@ const luau = @import("luau");
 
 const Luau = luau.Luau;
 
+pub const MAX_LUAU_SIZE = 1073741824; // 1 GB
+
 fn outputSafeResult(L: *Luau, err_result: [:0]const u8) i32 {
     L.pushBoolean(false);
     L.pushString(err_result);

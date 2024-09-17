@@ -1,5 +1,6 @@
 const std = @import("std");
 const luau = @import("luau");
+
 const zune = @import("../../zune.zig");
 const file = @import("../resolvers/file.zig");
 const require = @import("../resolvers/require.zig");
@@ -68,30 +69,42 @@ const PrepOptions = struct {
     mode: zune.RunMode,
 };
 
-pub fn prep(L: *Luau, pOpts: PrepOptions) !void {
+pub fn prep(L: *Luau, pOpts: PrepOptions, flags: zune.Flags) !void {
     if (luau.CodeGen.Supported()) luau.CodeGen.Create(L);
 
     L.openLibs();
-    try zune.openZune(L, pOpts.args, pOpts.mode);
+    try zune.openZune(L, pOpts.args, pOpts.mode, flags);
 }
 
-pub fn prepAsync(L: *Luau, sched: *Scheduler, pOpts: PrepOptions) !void {
-    try prep(L, pOpts);
+pub fn prepAsync(L: *Luau, sched: *Scheduler, pOpts: PrepOptions, flags: zune.Flags) !void {
+    try prep(L, pOpts, flags);
 
     L.pushLightUserdata(sched);
     L.setField(luau.REGISTRYINDEX, "_SCHEDULER");
 }
 
-pub fn findLuauFile(allocator: std.mem.Allocator, dir: std.fs.Dir, fileName: []const u8) ![:0]const u8 {
+pub fn findLuauFile(allocator: std.mem.Allocator, dir: std.fs.Dir, fileName: []const u8) ![]const u8 {
     const absPath = try dir.realpathAlloc(allocator, ".");
     defer allocator.free(absPath);
     return findLuauFileFromPath(allocator, absPath, fileName);
 }
 
-pub fn findLuauFileFromPath(allocator: std.mem.Allocator, absPath: []const u8, fileName: []const u8) ![:0]const u8 {
+pub fn findLuauFileZ(allocator: std.mem.Allocator, dir: std.fs.Dir, fileName: []const u8) ![:0]const u8 {
+    const absPath = try dir.realpathAlloc(allocator, ".");
+    defer allocator.free(absPath);
+    return findLuauFileFromPathZ(allocator, absPath, fileName);
+}
+
+pub fn findLuauFileFromPath(allocator: std.mem.Allocator, absPath: []const u8, fileName: []const u8) ![]const u8 {
     const absF = try std.fs.path.resolve(allocator, &.{ absPath, fileName });
     defer allocator.free(absF);
     return try file.searchForExtensions(allocator, absF, &require.POSSIBLE_EXTENSIONS);
+}
+
+pub fn findLuauFileFromPathZ(allocator: std.mem.Allocator, absPath: []const u8, fileName: []const u8) ![:0]const u8 {
+    const absF = try std.fs.path.resolve(allocator, &.{ absPath, fileName });
+    defer allocator.free(absF);
+    return try file.searchForExtensionsZ(allocator, absF, &require.POSSIBLE_EXTENSIONS);
 }
 
 pub fn runAsync(L: *Luau, sched: *Scheduler) !void {

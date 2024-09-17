@@ -10,6 +10,8 @@ const Luau = luau.Luau;
 
 const MAX_LUAU_SIZE = 1073741824; // 1 GB
 
+pub const LIB_NAME = "@zcore/stdio";
+
 const CursorMoveKind = enum(u4) {
     Home,
     Goto,
@@ -343,14 +345,22 @@ const LuaTerminal = struct {
         } else if (std.mem.eql(u8, namecall, "restoreMode")) {
             L.pushBoolean(if (term_ptr.restoreSettings()) true else |_| false);
             return 1;
+        } else if (std.mem.eql(u8, namecall, "getSize")) {
+            const x, const y = term_ptr.getSize() catch |err| {
+                if (err == error.NotATerminal) return 0;
+                return err;
+            };
+            L.pushInteger(x);
+            L.pushInteger(y);
+            return 2;
         } else L.raiseErrorStr("Unknown method: %s\n", .{namecall.ptr});
         return 0;
     }
 };
 
-pub fn loadLib(L: *Luau) !void {
+pub fn loadLib(L: *Luau) void {
     {
-        try L.newMetatable(LuaTerminal.META);
+        L.newMetatable(LuaTerminal.META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
 
         L.setFieldFn(-1, luau.Metamethods.index, LuaTerminal.__index); // metatable.__namecall
         L.setFieldFn(-1, luau.Metamethods.namecall, LuaTerminal.__namecall); // metatable.__namecall
@@ -359,7 +369,7 @@ pub fn loadLib(L: *Luau) !void {
         L.pop(1);
     }
     {
-        try L.newMetatable(LuaStdIn.META);
+        L.newMetatable(LuaStdIn.META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
 
         L.setFieldFn(-1, luau.Metamethods.index, LuaStdIn.__index); // metatable.__namecall
         L.setFieldFn(-1, luau.Metamethods.namecall, LuaStdIn.__namecall); // metatable.__namecall
@@ -368,7 +378,7 @@ pub fn loadLib(L: *Luau) !void {
         L.pop(1);
     }
     {
-        try L.newMetatable(LuaStdOut.META);
+        L.newMetatable(LuaStdOut.META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
 
         L.setFieldFn(-1, luau.Metamethods.index, LuaStdOut.__index); // metatable.__namecall
         L.setFieldFn(-1, luau.Metamethods.namecall, LuaStdOut.__namecall); // metatable.__namecall
@@ -422,10 +432,10 @@ pub fn loadLib(L: *Luau) !void {
     L.setFieldFn(-1, "cursorMove", stdio_cursorMove);
 
     _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
-    if (L.getField(-1, "@zcore/stdio") != .table) {
+    if (L.getField(-1, LIB_NAME) != .table) {
         L.pop(1);
         L.pushValue(-2);
-        L.setField(-2, "@zcore/stdio");
+        L.setField(-2, LIB_NAME);
     } else L.pop(1);
     L.pop(2);
 }
