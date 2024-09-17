@@ -475,8 +475,8 @@ pub fn pushToStack(self: *Self, L: *Luau) !void {
         L.setFieldLString(-1, "path", url.path);
     }
 
+    L.newTable();
     if (self.query) |queries| {
-        L.newTable();
         errdefer L.pop(1);
         var order: i32 = 1;
         for (queries) |query| {
@@ -493,11 +493,11 @@ pub fn pushToStack(self: *Self, L: *Luau) !void {
                 order += 1;
             }
         }
-        L.setField(-2, "query");
     }
+    L.setField(-2, "query");
 
+    L.newTable();
     if (self.headers) |headers| {
-        L.newTable();
         errdefer L.pop(1);
         for (headers) |header| {
             const zkey = try allocator.dupeZ(u8, header.key);
@@ -510,8 +510,8 @@ pub fn pushToStack(self: *Self, L: *Luau) !void {
             L.pushString(zvalue);
             L.rawSetTable(-3);
         }
-        L.setField(-2, "headers");
     }
+    L.setField(-2, "headers");
 
     if (self.body) |body| {
         L.setFieldLString(-1, "body", body);

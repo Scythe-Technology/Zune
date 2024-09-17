@@ -5,6 +5,7 @@ export type ClientWebSocket = NetClientWebSocket;
 export type ServerRequest = {
     method : string,
     path : string,
+    query : {[string] : string},
     headers : {[string] : string},
     body : string,
 };
