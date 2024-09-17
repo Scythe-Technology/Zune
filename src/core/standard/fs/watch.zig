@@ -631,7 +631,7 @@ test "Platform Watch" {
     }
 
     // TODO: Renable test for macOs, cannot detect file modification in tests.
-    if (builtin.os.tag != .macos) return;
+    if (builtin.os.tag == .macos) return;
 
     { // Create file
         const file = try std.fs.cwd().createFile(tempFile, .{});
