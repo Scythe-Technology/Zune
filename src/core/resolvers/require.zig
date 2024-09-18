@@ -130,6 +130,7 @@ pub fn zune_require(L: *Luau) !i32 {
         }
         L.pop(1); // drop: nil
 
+        const cwdDirPath = std.fs.cwd().realpathAlloc(allocator, ".") catch return error.FileNotFound;
         const relativeDirPath = std.fs.path.dirname(moduleAbsolutePath) orelse return error.FileNotFound;
 
         var relativeDir = std.fs.openDirAbsolute(relativeDirPath, std.fs.Dir.OpenDirOptions{}) catch |err| switch (err) {
@@ -160,7 +161,7 @@ pub fn zune_require(L: *Luau) !i32 {
 
         Engine.setLuaFileContext(ML, moduleAbsolutePath);
 
-        const moduleRelativeName = try std.fs.path.relative(allocator, relativeDirPath, moduleAbsolutePath);
+        const moduleRelativeName = try std.fs.path.relative(allocator, cwdDirPath, moduleAbsolutePath);
         defer allocator.free(moduleRelativeName);
 
         const moduleRelativeNameZ = try allocator.dupeZ(u8, moduleRelativeName);
