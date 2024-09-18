@@ -19,7 +19,7 @@ pub const LuauRunError = enum {
 pub fn compileModule(allocator: std.mem.Allocator, content: []const u8, cOpts: ?luau.CompileOptions) ![]const u8 {
     const compileOptions = cOpts orelse luau.CompileOptions{
         .debug_level = 2,
-        .optimization_level = 2,
+        .optimization_level = 1,
     };
     return try luau.compile(allocator, content, compileOptions);
 }
