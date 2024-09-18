@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed `captures` in regex to accept boolean instead of flags.
   - Boolean `true` is equivalent to `g` flag.
 - Errors in required modules should now display their path relative to the current working directory.
+- Updated required or ranned luau files to use optimization level 1, instead of 2.
+- Updated `test` command to be like `run`.
+  - If the first argument is `-`, it will read from stdin.
+  - Fast search for file directly.
 
 ### `0.4.0` - September 17, 2024
 
