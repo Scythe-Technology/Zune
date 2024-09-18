@@ -61,9 +61,10 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     Engine.setLuaFileContext(ML, fileName);
 
-    const relativeDirPath = std.fs.path.dirname(fileName) orelse std.debug.panic("FileNotFound", .{});
+    const cwdDirPath = dir.realpathAlloc(allocator, ".") catch return error.FileNotFound;
+    defer allocator.free(cwdDirPath);
 
-    const moduleRelativeName = try std.fs.path.relative(allocator, relativeDirPath, fileName);
+    const moduleRelativeName = try std.fs.path.relative(allocator, cwdDirPath, fileName);
     defer allocator.free(moduleRelativeName);
 
     const moduleRelativeNameZ = try allocator.dupeZ(u8, moduleRelativeName);

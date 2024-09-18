@@ -22,13 +22,25 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const dir = std.fs.cwd();
     const module = args[0];
 
-    const fileModuleName = try Engine.findLuauFile(allocator, dir, module);
+    var maybeFileName: ?[]const u8 = null;
+    defer if (maybeFileName) |f| allocator.free(f);
+    var maybeFileContent: ?[]const u8 = null;
+    defer if (maybeFileContent) |c| allocator.free(c);
 
-    defer allocator.free(fileModuleName);
+    if (module.len == 1 and module[0] == '-') {
+        maybeFileContent = try std.io.getStdIn().readToEndAlloc(allocator, std.math.maxInt(usize));
+        maybeFileName = try dir.realpathAlloc(allocator, "./");
+    } else if (dir.readFileAlloc(allocator, module, std.math.maxInt(usize)) catch null) |content| {
+        maybeFileContent = content;
+        maybeFileName = try dir.realpathAlloc(allocator, module);
+    } else {
+        maybeFileName = try Engine.findLuauFile(allocator, dir, module);
+        maybeFileContent = try std.fs.cwd().readFileAlloc(allocator, maybeFileName.?, std.math.maxInt(usize));
+    }
 
-    const fileContent = try std.fs.cwd().readFileAlloc(allocator, fileModuleName, std.math.maxInt(usize));
+    const fileContent = maybeFileContent orelse std.debug.panic("FileNotFound", .{});
+    const fileName = maybeFileName orelse std.debug.panic("FileNotFound", .{});
 
-    defer allocator.free(fileContent);
     if (fileContent.len == 0) {
         std.debug.print("File is empty: {s}\n", .{args[0]});
         return;
@@ -50,11 +62,12 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     ML.sandboxThread();
 
-    Engine.setLuaFileContext(ML, fileModuleName);
+    Engine.setLuaFileContext(ML, fileName);
 
-    const relativeDirPath = std.fs.path.dirname(fileModuleName) orelse std.debug.panic("FileNotFound", .{});
+    const cwdDirPath = dir.realpathAlloc(allocator, ".") catch return error.FileNotFound;
+    defer allocator.free(cwdDirPath);
 
-    const moduleRelativeName = try std.fs.path.relative(allocator, relativeDirPath, fileModuleName);
+    const moduleRelativeName = try std.fs.path.relative(allocator, cwdDirPath, fileName);
     defer allocator.free(moduleRelativeName);
 
     const moduleRelativeNameZ = try allocator.dupeZ(u8, moduleRelativeName);
