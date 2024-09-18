@@ -131,6 +131,8 @@ pub fn zune_require(L: *Luau) !i32 {
         L.pop(1); // drop: nil
 
         const cwdDirPath = std.fs.cwd().realpathAlloc(allocator, ".") catch return error.FileNotFound;
+        defer allocator.free(cwdDirPath);
+
         const relativeDirPath = std.fs.path.dirname(moduleAbsolutePath) orelse return error.FileNotFound;
 
         var relativeDir = std.fs.openDirAbsolute(relativeDirPath, std.fs.Dir.OpenDirOptions{}) catch |err| switch (err) {
