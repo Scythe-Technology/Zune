@@ -53,14 +53,14 @@ describe("Regex", function()
         test("Global Flag", function()
             local re = regex.new("a(b+)c");
 
-            expect(re:captures("abbc", "g")).toBe(expect.similar({
+            expect(re:captures("abbc", true)).toBe(expect.similar({
                 {
                     { string = "abbc", index = 1 },
                     { string = "bb", index = 2 },
                 }
             }));
 
-            expect(re:captures("abbc abbbc", "g")).toBe(expect.similar({
+            expect(re:captures("abbc abbbc", true)).toBe(expect.similar({
                 {
                     { string = "abbc", index = 1 },
                     { string = "bb", index = 2 },
@@ -72,33 +72,82 @@ describe("Regex", function()
             }));
         end)
         test("Multiline Flag", function()
-            local re = regex.new("a(b+)c");
+            local re = regex.new("a(b+)c", 'm');
 
-            expect(re:captures("abbc", "m")).toBe(expect.similar({
+            expect(re:captures("abbc")).toBe(expect.similar({
                 {
                     { string = "abbc", index = 1 },
                     { string = "bb", index = 2 },
                 }
             }));
 
-            expect(re:captures("abbc abbbc\nabbc abbbc\n", "m")).toBe(expect.similar({
+            expect(re:captures("abbc abbbc\nabbc abbbc\n")).toBe(expect.similar({
                 {
                     { string = "abbc", index = 1 },
                     { string = "bb", index = 2 },
                 }
             }));
         end)
-        test("Global/Multiline Flag", function()
-            local re = regex.new("a(b+)c");
+        test("CaseInsensitive Flag", function()
+            local re = regex.new("a(b+)c", 'i');
 
-            expect(re:captures("abbc", "gm")).toBe(expect.similar({
+            expect(re:captures("abbc")).toBe(expect.similar({
                 {
                     { string = "abbc", index = 1 },
                     { string = "bb", index = 2 },
                 }
             }));
 
-            expect(re:captures("abbc abbbc\nabbc abbbc\n", "gm")).toBe(expect.similar({
+            expect(re:captures("ABBC")).toBe(expect.similar({
+                {
+                    { string = "ABBC", index = 1 },
+                    { string = "BB", index = 2 },
+                }
+            }));
+        end)
+        test("Global/CaseInsensitive Flag", function()
+            local re = regex.new("a(b+)c", 'i');
+
+            expect(re:captures("abbc", true)).toBe(expect.similar({
+                {
+                    { string = "abbc", index = 1 },
+                    { string = "bb", index = 2 },
+                }
+            }));
+
+            expect(re:captures("abbc abbbc", true)).toBe(expect.similar({
+                {
+                    { string = "abbc", index = 1 },
+                    { string = "bb", index = 2 },
+                },
+                {
+                    { string = "abbbc", index = 6 },
+                    { string = "bbb", index = 7 },
+                }
+            }));
+
+            expect(re:captures("ABBC ABBBC", true)).toBe(expect.similar({
+                {
+                    { string = "ABBC", index = 1 },
+                    { string = "BB", index = 2 },
+                },
+                {
+                    { string = "ABBBC", index = 6 },
+                    { string = "BBB", index = 7 },
+                }
+            }));
+        end)
+        test("Global/Multiline Flag", function()
+            local re = regex.new("a(b+)c", 'm');
+
+            expect(re:captures("abbc", true)).toBe(expect.similar({
+                {
+                    { string = "abbc", index = 1 },
+                    { string = "bb", index = 2 },
+                }
+            }));
+
+            expect(re:captures("abbc abbbc\nabbc abbbc\n", true)).toBe(expect.similar({
                 {
                     { string = "abbc", index = 1 },
                     { string = "bb", index = 2 },
@@ -114,6 +163,54 @@ describe("Regex", function()
                 {
                     { string = "abbbc", index = 17 },
                     { string = "bbb", index = 18 },
+                }
+            }));
+        end)
+        test("Global/Multiline/CaseInsensitive Flag", function()
+            local re = regex.new("a(b+)c", 'mi');
+
+            expect(re:captures("abbc", true)).toBe(expect.similar({
+                {
+                    { string = "abbc", index = 1 },
+                    { string = "bb", index = 2 },
+                }
+            }));
+
+            expect(re:captures("abbc abbbc\nabbc abbbc\n", true)).toBe(expect.similar({
+                {
+                    { string = "abbc", index = 1 },
+                    { string = "bb", index = 2 },
+                },
+                {
+                    { string = "abbbc", index = 6 },
+                    { string = "bbb", index = 7 },
+                },
+                {
+                    { string = "abbc", index = 12 },
+                    { string = "bb", index = 13 },
+                },
+                {
+                    { string = "abbbc", index = 17 },
+                    { string = "bbb", index = 18 },
+                }
+            }));
+
+            expect(re:captures("ABBC ABBBC\nABBC ABBBC\n", true)).toBe(expect.similar({
+                {
+                    { string = "ABBC", index = 1 },
+                    { string = "BB", index = 2 },
+                },
+                {
+                    { string = "ABBBC", index = 6 },
+                    { string = "BBB", index = 7 },
+                },
+                {
+                    { string = "ABBC", index = 12 },
+                    { string = "BB", index = 13 },
+                },
+                {
+                    { string = "ABBBC", index = 17 },
+                    { string = "BBB", index = 18 },
                 }
             }));
         end)
@@ -149,5 +246,23 @@ describe("Regex", function()
         expect(re:replaceAll("  abbc", "")).toBe("  ac");
         expect(re:replaceAll("abc", "bb")).toBe("abbc");
         expect(re:replaceAll("abc abc", "bb")).toBe("abbc abbc");
+    end)
+
+    test("Replace CaseInsensitive", function()
+        local re = regex.new("b+", 'i');
+
+        expect(re:replace("ABBC", "")).toBe("AC");
+        expect(re:replace("  ABBC", "")).toBe("  AC");
+        expect(re:replace("ABC", "bb")).toBe("AbbC");
+        expect(re:replace("ABC ABC", "bb")).toBe("AbbC ABC");
+    end)
+
+    test("ReplaceAll CaseInsensitive", function()
+        local re = regex.new("b+", 'i');
+
+        expect(re:replaceAll("ABBC", "")).toBe("AC");
+        expect(re:replaceAll("  ABBC", "")).toBe("  AC");
+        expect(re:replaceAll("ABC", "bb")).toBe("AbbC");
+        expect(re:replaceAll("ABC ABC", "bb")).toBe("AbbC AbbC");
     end)
 end)

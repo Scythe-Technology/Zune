@@ -20,8 +20,8 @@
             .hash = "1220695e7721e1bca0cd08ce47b167a76f964dfc8128d2b7302abe21774f9517df46",
         },
         .czrex = .{
-            .url = "https://codeload.github.com/Scythe-Technology/czrex/tar.gz/9fad3dd1f7263f300f7941b7bc342737fcf9bc34",
-            .hash = "1220a4c3266c39a4cc561710e950fc389551db09b1caa75c3e1b1a54bc3065e1ad03",
+            .url = "https://codeload.github.com/Scythe-Technology/czrex/tar.gz/099db43b9074001329dfb04aef92b7589a00f983",
+            .hash = "1220c4004e77aa9880e02cc11d90d7eb92ddbc3ea2b4f2ebe5220ef53763173fe491",
         },
         .datetime = .{
             .url = "https://codeload.github.com/FObersteiner/zdt/tar.gz/eb49813879c49413661601822c7b466d8daf5055",

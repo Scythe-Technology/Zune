@@ -76,32 +76,13 @@ const LuaRegex = struct {
             }
         } else if (std.mem.eql(u8, namecall, "captures")) {
             const input = L.checkString(2);
-            const flags = L.optString(3) orelse "";
-
-            if (flags.len > 2) L.raiseErrorStr("Too many flags\n", .{});
-
-            var global = false;
-            var multiline = false;
-            for (flags) |flag| {
-                switch (flag) {
-                    'g' => global = true,
-                    'm' => multiline = true,
-                    else => L.raiseErrorStr("Unknown flag: %c\n", .{flag}),
-                }
-            }
+            const global = L.optBoolean(3) orelse false;
 
             var index: usize = 0;
             var captures: i32 = 1;
             L.newTable();
 
-            if (multiline) {
-                var iter = std.mem.split(u8, input, "\n");
-                while (iter.next()) |line| {
-                    try lua_regexCaptureSearch(L, r_ptr, line, &index, &captures, global);
-                    index += 1;
-                    if (!global) break;
-                }
-            } else try lua_regexCaptureSearch(L, r_ptr, input, &index, &captures, global);
+            try lua_regexCaptureSearch(L, r_ptr, input, &index, &captures, global);
 
             return 1;
         } else if (std.mem.eql(u8, namecall, "isMatch")) {
@@ -142,10 +123,21 @@ const LuaRegex = struct {
 };
 
 fn regex_new(L: *Luau) !i32 {
-    const r_ptr = L.newUserdataDtor(Regex, LuaRegex.__dtor);
-    errdefer L.pop(1);
+    const flags = L.optString(2) orelse "";
 
-    const r = try Regex.compile(L.allocator(), L.checkString(1));
+    if (flags.len > 2) L.raiseErrorStr("Too many flags provided", .{});
+
+    var flag: c_int = 0;
+    for (flags) |f| switch (f) {
+        'i' => flag |= regex.FLAG_IGNORECASE,
+        'm' => flag |= regex.FLAG_MULTILINE,
+        else => L.raiseErrorStr("Unknown flag: %c", .{f}),
+    };
+
+    const r = try Regex.compile(L.allocator(), L.checkString(1), if (flag == 0) null else flag);
+
+    const r_ptr = L.newUserdataDtor(Regex, LuaRegex.__dtor);
+
     r_ptr.* = r;
 
     if (L.getMetatableRegistry(LuaRegex.META) == .table) L.setMetatable(-2) else std.debug.panic("InternalError (Regex Metatable not initialized)", .{});

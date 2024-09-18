@@ -25,15 +25,13 @@ export type Regex = {
     --[[
         Capture a string.
 
-        Flags:
-          - `g`: Global
-          - `m`: Multiline
+        *If global is nil, it will default to false.*
 
         @param str String to capture
-        @param flags Flags to use
+        @param global Whether to capture globally
         @return `{{RegexMatch}}`
     ]]
-    captures : (self: Regex, str: string, flags: string?) -> {{RegexMatch}};
+    captures : (self: Regex, str: string, global: boolean?) -> {{RegexMatch}};
     --[[
         Check if a string matches the pattern.
 
@@ -65,6 +63,16 @@ export type Regex = {
 
 local regex = {};
 
-regex.new = (nil :: any) :: (pattern: string) -> Regex;
+--[[
+    Create a new regex object.
+
+    Flags:
+      - `i`: Case insensitive
+      - `m`: Multiline
+
+    @param pattern Pattern to use
+    @param flags Flags to use
+]]
+regex.new = (nil :: any) :: (pattern: string, flags: string?) -> Regex;
 
 return regex;
