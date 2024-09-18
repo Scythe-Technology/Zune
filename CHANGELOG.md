@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+- Added flags to `new` in regex. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/regex)
+  - `i` - Case Insensitive
+  - `m` - Multiline
+
+### Changed
+- Changed `captures` in regex to accept boolean instead of flags.
+  - Boolean `true` is equivalent to `g` flag.
+- Errors in required modules should now display their path relative to the current working directory.
+
 ### `0.4.0` - September 17, 2024
 
 ### Added
