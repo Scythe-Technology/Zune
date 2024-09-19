@@ -5,6 +5,7 @@ const Engine = @import("../runtime/engine.zig");
 const Scheduler = @import("../runtime/scheduler.zig");
 
 const Terminal = @import("../../commands/repl/Terminal.zig");
+const sysfd = @import("../utils/sysfd.zig");
 
 const Luau = luau.Luau;
 
@@ -273,9 +274,13 @@ const LuaStdIn = struct {
         L.checkType(1, .userdata);
         const namecall = L.nameCallAtom() catch return 0;
         var file_ptr = L.toUserdata(std.fs.File, 1) catch return 0;
-
         // TODO: prob should switch to static string map
         if (std.mem.eql(u8, namecall, "read")) {
+            var fds = [_]sysfd.context.pollfd{.{ .events = sysfd.context.POLLIN, .fd = file_ptr.handle, .revents = 0 }};
+            const poll = try sysfd.context.poll(&fds, 0);
+            if (poll < 0) std.debug.panic("InternalError (Bad Poll)", .{});
+            if (poll == 0) return 0;
+
             const allocator = L.allocator();
             const maxBytes = L.optUnsigned(2) orelse 1;
 

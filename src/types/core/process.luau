@@ -258,6 +258,6 @@ process.exit = (nil :: any) :: (code: number) -> never;
 	@param signal The signal to handle.
 	@param callback The callback to run when the signal is received.
 ]]
-process.onSignal = (nil :: any) :: (signal: "Interrupt", callback: () -> ()) -> ();
+process.onSignal = (nil :: any) :: (signal: "INT", callback: () -> ()) -> ();
 
 return process;
