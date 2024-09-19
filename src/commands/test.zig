@@ -2,7 +2,7 @@ const std = @import("std");
 const luau = @import("luau");
 const builtin = @import("builtin");
 
-const zune = @import("../zune.zig");
+const Zune = @import("../zune.zig");
 const command = @import("lib.zig");
 
 const Engine = @import("../core/runtime/engine.zig");
@@ -18,6 +18,8 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         std.debug.print("Usage: test <luau file>\n", .{});
         return;
     }
+
+    Zune.loadConfiguration();
 
     const dir = std.fs.cwd();
     const module = args[0];
@@ -85,7 +87,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     try Engine.runAsync(ML, &scheduler);
 
-    _ = zune.corelib.testing.finish_testing(L, start);
+    _ = Zune.corelib.testing.finish_testing(L, start);
 }
 
 pub const Command = command.Command{ .name = "test", .execute = Execute };

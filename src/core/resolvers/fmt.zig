@@ -9,6 +9,7 @@ const Parser = @import("../utils/parser.zig");
 const Luau = luau.Luau;
 
 pub var MAX_DEPTH: u8 = 4;
+pub var SHOW_TABLE_ADDRESS: bool = true;
 
 pub fn finishRequire(L: *Luau) i32 {
     if (L.isString(-1)) L.raiseError();
@@ -73,12 +74,14 @@ pub fn fmt_print_value(L: *Luau, idx: i32, depth: usize, asKey: bool) void {
                     } else std.debug.print("\x1b[95m<table>\x1b[0m", .{});
                     return;
                 }
-                {
+                if (SHOW_TABLE_ADDRESS) {
                     const tableString = fmt_tostring(allocator, L, idx) catch "!ERR!";
                     if (tableString) |String| {
                         defer allocator.free(String);
-                        std.debug.print("\x1b[2m<{s}> {s}\x1b[0m\n", .{ String, "{" });
-                    } else std.debug.print("\x1b[2m<table> {s}\x1b[0m\n", .{"{"});
+                        std.debug.print("\x1b[2m<{s}> {{\x1b[0m\n", .{String});
+                    } else std.debug.print("\x1b[2m<table> {{\x1b[0m\n", .{});
+                } else {
+                    std.debug.print("\x1b[2m{{\x1b[0m\n", .{});
                 }
                 L.pushNil();
                 while (L.next(idx)) {

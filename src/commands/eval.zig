@@ -3,6 +3,8 @@ const luau = @import("luau");
 
 const command = @import("lib.zig");
 
+const Zune = @import("../zune.zig");
+
 const Engine = @import("../core/runtime/engine.zig");
 const Scheduler = @import("../core/runtime/scheduler.zig");
 
@@ -16,11 +18,16 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         return;
     }
 
+    Zune.loadConfiguration();
+
     const dir = std.fs.cwd();
     const fileContent = args[0];
 
-    const fileName: []const u8 = try dir.realpathAlloc(allocator, "./");
-    defer allocator.free(fileName);
+    const path: []const u8 = try dir.realpathAlloc(allocator, ".");
+    defer allocator.free(path);
+
+    const virtual_path = try std.fs.path.join(allocator, &.{ path, "EVAL" });
+    defer allocator.free(virtual_path);
 
     if (fileContent.len == 0) {
         std.debug.print("Eval is empty\n", .{});
@@ -43,11 +50,11 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     ML.sandboxThread();
 
-    Engine.setLuaFileContext(ML, fileName);
+    Engine.setLuaFileContext(ML, virtual_path);
 
-    const relativeDirPath = std.fs.path.dirname(fileName) orelse std.debug.panic("FileNotFound", .{});
+    const relativeDirPath = std.fs.path.dirname(virtual_path) orelse std.debug.panic("FileNotFound", .{});
 
-    const moduleRelativeName = try std.fs.path.relative(allocator, relativeDirPath, fileName);
+    const moduleRelativeName = try std.fs.path.relative(allocator, relativeDirPath, virtual_path);
     defer allocator.free(moduleRelativeName);
 
     const moduleRelativeNameZ = try allocator.dupeZ(u8, moduleRelativeName);

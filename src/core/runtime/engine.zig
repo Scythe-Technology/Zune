@@ -8,6 +8,10 @@ const Scheduler = @import("../runtime/scheduler.zig");
 
 const Luau = luau.Luau;
 
+pub var DEBUG_LEVEL: u2 = 2;
+pub var OPTIMIZATION_LEVEL: u2 = 1;
+pub var CODEGEN: bool = true;
+
 pub const LuauCompileError = error{
     Syntax,
 };
@@ -18,8 +22,8 @@ pub const LuauRunError = enum {
 
 pub fn compileModule(allocator: std.mem.Allocator, content: []const u8, cOpts: ?luau.CompileOptions) ![]const u8 {
     const compileOptions = cOpts orelse luau.CompileOptions{
-        .debug_level = 2,
-        .optimization_level = 1,
+        .debug_level = DEBUG_LEVEL,
+        .optimization_level = OPTIMIZATION_LEVEL,
     };
     return try luau.compile(allocator, content, compileOptions);
 }
@@ -28,7 +32,7 @@ pub fn loadModuleBytecode(L: *Luau, moduleName: [:0]const u8, bytecode: []const 
     L.loadBytecode(moduleName, bytecode) catch {
         return LuauCompileError.Syntax;
     };
-    if (luau.CodeGen.Supported()) luau.CodeGen.Compile(L, -1);
+    if (luau.CodeGen.Supported() and CODEGEN) luau.CodeGen.Compile(L, -1);
 }
 
 pub fn loadModule(L: *Luau, name: [:0]const u8, content: []const u8, cOpts: ?luau.CompileOptions) !void {
