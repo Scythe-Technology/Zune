@@ -19,10 +19,11 @@ local declare_safeEnv = GLOBAL.declare_safeEnv :: () -> ();
 
 declare_safeEnv();
 
-local IS_WINDOWS = process.os == "windows";
-local L = if (IS_WINDOWS) then "|" else "│";
-local CL = if (IS_WINDOWS) then "--" else "└─";
-local CL2 = if (IS_WINDOWS) then "|-" else "└─";
+-- TODO: probably should make this configurable
+local USE_PLAIN = false;
+local L = if (USE_PLAIN) then "|" else "│";
+local CL = if (USE_PLAIN) then "--" else "└─";
+local CL2 = if (USE_PLAIN) then "|-" else "└─";
 
 function testing.describe(name, fn)
     table.insert(scope_stack, name);

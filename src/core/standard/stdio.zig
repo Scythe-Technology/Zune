@@ -281,6 +281,7 @@ const LuaStdIn = struct {
             const poll = try sysfd.context.poll(&fds, 0);
             if (poll < 0) std.debug.panic("InternalError (Bad Poll)", .{});
             if (poll == 0) return 0;
+            std.debug.print("Poll: {}", .{poll});
 
             const allocator = L.allocator();
             const maxBytes = L.optUnsigned(2) orelse 1;
@@ -427,6 +428,8 @@ pub fn loadLib(L: *Luau) void {
     L.pushLightUserdata(&TERMINAL);
     if (L.getMetatableRegistry(LuaTerminal.META) == .table) L.setMetatable(-2) else std.debug.panic("InternalError (Terminal Metatable not initialized)", .{});
     L.setFieldAhead(-1, "terminal");
+
+    TERMINAL.?.setOutputMode() catch std.debug.print("[Win32] Failed to set output codepoint\n", .{});
 
     L.setFieldFn(-1, "color", stdio_color);
     L.setFieldFn(-1, "style", stdio_style);

@@ -6,6 +6,7 @@ const Terminal = @This();
 const WindowsSettings = struct {
     stdin_mode: std.os.windows.DWORD,
     stdout_mode: std.os.windows.DWORD,
+    codepoint: std.os.windows.UINT,
 };
 
 const Modes = enum {
@@ -23,6 +24,7 @@ settings: ?if (builtin.os.tag == .windows) WindowsSettings else std.posix.termio
 current_settings: if (builtin.os.tag == .windows) WindowsSettings else void = if (builtin.os.tag == .windows) .{
     .stdin_mode = 0,
     .stdout_mode = 0,
+    .codepoint = 0,
 },
 
 mode: Modes,
@@ -76,6 +78,7 @@ pub fn saveSettings(self: *Terminal) !void {
         var settings = WindowsSettings{
             .stdin_mode = 0,
             .stdout_mode = 0,
+            .codepoint = 0,
         };
         // stdin modes
         if (std.os.windows.kernel32.GetConsoleMode(self.stdin_file.handle, &settings.stdin_mode) == std.os.windows.FALSE) return error.Fail;
@@ -83,6 +86,9 @@ pub fn saveSettings(self: *Terminal) !void {
         // stdout modes
         if (std.os.windows.kernel32.GetConsoleMode(self.stdout_file.handle, &settings.stdout_mode) == std.os.windows.FALSE) return error.Fail;
         self.current_settings.stdout_mode = settings.stdout_mode;
+        // stdout codepoint
+        settings.codepoint = std.os.windows.kernel32.GetConsoleOutputCP();
+        self.current_settings.codepoint = settings.codepoint;
 
         self.settings = settings;
     }
@@ -110,6 +116,22 @@ pub fn moveCursor(self: *Terminal, action: MoveCursorAction) !void {
         .Left => "D",
         .Right => "C",
     });
+}
+
+pub fn setOutputMode(self: *Terminal) !void {
+    if (builtin.os.tag == .windows) {
+        const CP_UTF8 = 65001;
+        self.current_settings.codepoint = std.os.windows.kernel32.GetConsoleOutputCP();
+        _ = std.os.windows.kernel32.SetConsoleOutputCP(CP_UTF8);
+    }
+}
+
+pub fn restoreOutputMode(self: *Terminal) !void {
+    if (builtin.os.tag == .windows) {
+        if (self.current_settings.codepoint != 0) {
+            _ = std.os.windows.kernel32.SetConsoleOutputCP(self.current_settings.codepoint);
+        }
+    }
 }
 
 pub fn setRawMode(self: *Terminal) !void {
