@@ -39,8 +39,8 @@ pub fn loadConfiguration() void {
     };
     defer zconfig.deinit(DEFAULT_ALLOCATOR);
 
-    if (zconfig.getTable("Luau")) |luau_config| {
-        if (luau_config.getTable("FFlags")) |fflags_config| {
+    if (zconfig.getTable("luau")) |luau_config| {
+        if (luau_config.getTable("fflags")) |fflags_config| {
             var iter = fflags_config.table.iterator();
             while (iter.next()) |entry| {
                 switch (entry.value_ptr.*) {
@@ -53,64 +53,64 @@ pub fn loadConfiguration() void {
                     else => |t| std.debug.print("[zune.toml] Unsupported type for FFlags: {s}\n", .{@tagName(t)}),
                 }
             }
-        } else if (luau_config.contains("FFlags")) {
-            std.debug.print("[zune.toml] 'FFlags' must be a table\n", .{});
+        } else if (luau_config.contains("fflags")) {
+            std.debug.print("[zune.toml] 'fflags' must be a table\n", .{});
         }
-    } else if (zconfig.contains("Luau")) {
-        std.debug.print("[zune.toml] 'Luau' must be a table\n", .{});
+    } else if (zconfig.contains("luau")) {
+        std.debug.print("[zune.toml] 'luau' must be a table\n", .{});
     }
 
-    if (zconfig.getTable("Compiling")) |compiling_config| {
-        if (compiling_config.getInteger("DebugLevel")) |debug_level| {
+    if (zconfig.getTable("compiling")) |compiling_config| {
+        if (compiling_config.getInteger("debugLevel")) |debug_level| {
             runtime_engine.DEBUG_LEVEL = @max(0, @min(2, @as(u2, @truncate(@as(u64, @intCast(debug_level))))));
-        } else if (compiling_config.contains("DebugLevel")) {
-            std.debug.print("[zune.toml] 'DebugLevel' must be an integer value\n", .{});
+        } else if (compiling_config.contains("debugLevel")) {
+            std.debug.print("[zune.toml] 'debugLevel' must be an integer value\n", .{});
         }
-        if (compiling_config.getInteger("OptimizationLevel")) |opt_level| {
+        if (compiling_config.getInteger("optimizationLevel")) |opt_level| {
             runtime_engine.OPTIMIZATION_LEVEL = @max(0, @min(2, @as(u2, @truncate(@as(u64, @intCast(opt_level))))));
-        } else if (compiling_config.contains("OptimizationLevel")) {
-            std.debug.print("[zune.toml] 'OptimizationLevel' must be an integer value\n", .{});
+        } else if (compiling_config.contains("optimizationLevel")) {
+            std.debug.print("[zune.toml] 'optimizationLevel' must be an integer value\n", .{});
         }
-        if (compiling_config.getBool("NativeCodeGen")) |codegen| {
+        if (compiling_config.getBool("nativeCodeGen")) |codegen| {
             runtime_engine.CODEGEN = codegen;
-        } else if (compiling_config.contains("NativeCodeGen")) {
-            std.debug.print("[zune.toml] 'NativeCodeGen' must be a boolean value\n", .{});
+        } else if (compiling_config.contains("nativeCodeGen")) {
+            std.debug.print("[zune.toml] 'nativeCodeGen' must be a boolean value\n", .{});
         }
-    } else if (zconfig.contains("Compiling")) {
-        std.debug.print("[zune.toml] 'Compiling' must be a table\n", .{});
+    } else if (zconfig.contains("compiling")) {
+        std.debug.print("[zune.toml] 'compiling' must be a table\n", .{});
     }
 
-    if (zconfig.getTable("Resolvers")) |resolvers_config| {
-        if (resolvers_config.getTable("Formatter")) |fmt_config| {
-            if (fmt_config.getInteger("MaxDepth")) |depth| {
+    if (zconfig.getTable("resolvers")) |resolvers_config| {
+        if (resolvers_config.getTable("formatter")) |fmt_config| {
+            if (fmt_config.getInteger("maxDepth")) |depth| {
                 resolvers_fmt.MAX_DEPTH = @truncate(@as(u64, @intCast(depth)));
-            } else if (fmt_config.contains("MaxDepth")) {
-                std.debug.print("[zune.toml] 'MaxDepth' must be an integer value\n", .{});
+            } else if (fmt_config.contains("maxDepth")) {
+                std.debug.print("[zune.toml] 'maxDepth' must be an integer value\n", .{});
             }
-            if (fmt_config.getBool("ShowTableAddress")) |show_addr| {
+            if (fmt_config.getBool("showTableAddress")) |show_addr| {
                 resolvers_fmt.SHOW_TABLE_ADDRESS = show_addr;
-            } else if (fmt_config.contains("ShowTableAddress")) {
-                std.debug.print("[zune.toml] 'ShowTableAddress' must be a boolean value\n", .{});
+            } else if (fmt_config.contains("showTableAddress")) {
+                std.debug.print("[zune.toml] 'showTableAddress' must be a boolean value\n", .{});
             }
-        } else if (resolvers_config.contains("Formatter")) {
-            std.debug.print("[zune.toml] 'Formatter' must be a table\n", .{});
+        } else if (resolvers_config.contains("formatter")) {
+            std.debug.print("[zune.toml] 'formatter' must be a table\n", .{});
         }
 
-        if (resolvers_config.getTable("Require")) |require_config| {
-            if (require_config.getString("Mode")) |mode| {
+        if (resolvers_config.getTable("require")) |require_config| {
+            if (require_config.getString("mode")) |mode| {
                 if (std.mem.eql(u8, mode, "RelativeToProject")) {
                     resolvers_require.MODE = .RelativeToCwd;
                 } else if (!std.mem.eql(u8, mode, "RelativeToFile")) {
                     std.debug.print("[zune.toml] 'Mode' must be 'RelativeToProject' or 'RelativeToFile'\n", .{});
                 }
-            } else if (require_config.contains("Mode")) {
+            } else if (require_config.contains("mode")) {
                 std.debug.print("[zune.toml] 'Mode' must be a string value\n", .{});
             }
-        } else if (resolvers_config.contains("Require")) {
-            std.debug.print("[zune.toml] 'Require' must be a table\n", .{});
+        } else if (resolvers_config.contains("require")) {
+            std.debug.print("[zune.toml] 'require' must be a table\n", .{});
         }
-    } else if (zconfig.contains("Resolvers")) {
-        std.debug.print("[zune.toml] 'Resolvers' must be a table\n", .{});
+    } else if (zconfig.contains("resolvers")) {
+        std.debug.print("[zune.toml] 'resolvers' must be a table\n", .{});
     }
 }
 

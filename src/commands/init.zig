@@ -7,25 +7,25 @@ const INIT_CONFIG_FILE =
     \\
     \\# Require settings for Zune
     \\#  This affects the way Zune loads files.
-    \\[Resolvers.Require]
-    \\Mode="RelativeToFile"
+    \\[resolvers.require]
+    \\mode="RelativeToFile"
     \\
     \\# Formatter settings for Zune
     \\#  This affects the output of the formatter while printing.
-    \\[Resolvers.Formatter]
-    \\MaxDepth=4
-    \\ShowTableAddress=true
+    \\[resolvers.formatter]
+    \\maxDepth=4
+    \\showTableAddress=true
     \\
     \\# Compiling settings for Zune
     \\#  This affects all required files and the main file.
-    \\[Compiling]
-    \\DebugLevel=2
-    \\OptimizationLevel=1
-    \\NativeCodeGen=true
+    \\[compiling]
+    \\debugLevel=2
+    \\optimizationLevel=1
+    \\nativeCodeGen=true
     \\
     \\# FFlag settings for Luau
     \\#  You can use `zune luau list-fflags` to list all available FFlags.
-    \\# [Luau.FFlags]
+    \\# [luau.fflags]
     \\# DebugCodegenOptSize=false
 ;
 
