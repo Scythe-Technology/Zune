@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated `help` command to display new commands.
 - Updated `stdin` in `@zcore/stdio` to return nil if no data is available.
 - Updated `websocket` in `@zcore/net` to properly return a boolean and an error string or userdata.
+- Updated `request` in `@zcore/net` to timeout if request takes too long.
 
 ### Fixed
 - Fixed `eval` requiring modules relative to the parent of the current working directory, instead of the current working directory.

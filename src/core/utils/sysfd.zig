@@ -15,7 +15,7 @@ pub const context = switch (builtin.os.tag) {
         };
         pub const spollfd = std.os.windows.ws2_32.pollfd;
         pub fn spoll(fds: []spollfd, timeout: i32) !usize {
-            const rc = std.os.windows.poll(fds.ptr, 1, timeout);
+            const rc = std.os.windows.poll(fds.ptr, @intCast(fds.len), timeout);
             if (rc == std.os.windows.ws2_32.SOCKET_ERROR) {
                 switch (std.os.windows.ws2_32.WSAGetLastError()) {
                     .WSAENOBUFS => return error.SystemResources,

@@ -23,6 +23,7 @@ const RequestError = error{
 
 const ZUNE_CLIENT_HEADER = "Zune/" ++ zune_info.version;
 
+start: f64,
 client: *std.http.Client,
 req: *std.http.Client.Request,
 options: *std.http.Client.FetchOptions,
@@ -38,7 +39,14 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
     const connection = req.connection.?;
 
     const nums = context.spoll(fds, 0) catch std.debug.panic("Bad poll (1)", .{});
-    if (nums == 0) return .Continue;
+    if (nums == 0) {
+        if (ctx.start < luau.clock()) {
+            ctx.err = error.TimedOut;
+            ctx.success = false;
+            return .Stop;
+        }
+        return .Continue;
+    }
     if (nums < 0) std.debug.panic("Bad poll (2)", .{});
 
     ctx.success = true;
@@ -389,6 +397,7 @@ pub fn prep(allocator: std.mem.Allocator, L: *Luau, scheduler: *Scheduler, optio
     fds[0].events = context.POLLIN;
 
     netClientPtr.* = .{
+        .start = luau.clock() + 30,
         .fds = fds,
         .client = clientPtr,
         .req = requestPtr,
