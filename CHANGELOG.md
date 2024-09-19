@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added zune configuration support as `zune.toml`.
 - Added `init` command to generate config files.
 - Added `luau` command to display luau info.
-
+- Added partial tls support for `websocket` to `@zcore/net`.
 
 ### Changed
 - Changed `captures` in regex to accept boolean instead of flags.
@@ -26,10 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fast search for file directly.
 - Updated `luau` to `0.643`.
 - Updated `help` command to display new commands.
+- Updated `stdin` in `@zcore/stdio` to return nil if no data is available.
+- Updated `websocket` in `@zcore/net` to properly return a boolean and an error string or userdata.
 
 ### Fixed
 - Fixed `eval` requiring modules relative to the parent of the current working directory, instead of the current working directory.
 - Fixed `require` casuing an error when requiring a module that returns nil.
+- Fixed `websockets` yielding forever.
 
 ### `0.4.0` - September 17, 2024
 

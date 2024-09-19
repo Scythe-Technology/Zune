@@ -130,7 +130,7 @@ network.request = (nil :: any) :: (host: string, options: RequestOptions?) -> (b
 --[[
     Creates a websocket client.
 
-    *TLS is not supported, yet.*
+    *TLS is partially supported.*
 
     @param host The host to connect to.
     @param protocols The protocols to use.
