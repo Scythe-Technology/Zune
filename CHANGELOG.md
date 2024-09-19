@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `init` command to generate config files.
 - Added `luau` command to display luau info.
 - Added partial tls support for `websocket` to `@zcore/net`.
+- Added `readonly` method to `FileHandle` in `@zcore/fs`.
+  - Nil to get state, boolean to set state.
 
 ### Changed
 - Changed `captures` in regex to accept boolean instead of flags.
