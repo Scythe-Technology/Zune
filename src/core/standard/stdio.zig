@@ -277,7 +277,7 @@ const LuaStdIn = struct {
         var file_ptr = L.toUserdata(std.fs.File, 1) catch return 0;
         // TODO: prob should switch to static string map
         if (std.mem.eql(u8, namecall, "read")) {
-            var fds = [_]sysfd.context.pollfd{.{ .events = sysfd.context.POLLIN, .fd = if (builtin.os.tag == .windows) @ptrCast(file_ptr.handle) else file_ptr.handle, .revents = 0 }};
+            var fds = [_]sysfd.context.pollfd{.{ .events = sysfd.context.POLLIN, .fd = file_ptr.handle, .revents = 0 }};
             const poll = try sysfd.context.poll(&fds, 0);
             if (poll < 0) std.debug.panic("InternalError (Bad Poll)", .{});
             if (poll == 0) return 0;

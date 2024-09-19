@@ -54,7 +54,7 @@ pub const Config = struct {
     ignoreBody: bool = false,
 };
 
-pub fn init(allocator: std.mem.Allocator, reader: std.io.AnyReader, config: Config) !Self {
+pub fn init(allocator: std.mem.Allocator, reader: anytype, config: Config) !Self {
     var buffer: []u8 = try allocator.alloc(u8, 4096);
     var self = Self{
         .allocator = allocator,
@@ -262,7 +262,7 @@ fn parseHeaders(self: *Self, full: []u8, maxHeaders: usize) !usize {
     return pos;
 }
 
-pub fn parseBody(self: *Self, pos: usize, contentLength: usize, reader: std.io.AnyReader) !usize {
+pub fn parseBody(self: *Self, pos: usize, contentLength: usize, reader: anytype) !usize {
     if (self.bufferLen - pos >= contentLength) {
         self.body = self.buffer[pos .. pos + contentLength];
         return contentLength;

@@ -1,6 +1,7 @@
 const std = @import("std");
 const luau = @import("luau");
 const builtin = @import("builtin");
+const zune_info = @import("zune-info");
 
 const Common = @import("common.zig");
 
@@ -8,20 +9,24 @@ const Scheduler = @import("../../runtime/scheduler.zig");
 const Response = @import("http/response.zig");
 const WebSocket = @import("http/websocket.zig");
 
+const VStream = @import("http/vstream.zig");
+
 const Luau = luau.Luau;
 
 const context = Common.context;
 const prepRefType = Common.prepRefType;
 
+const ZUNE_CLIENT_HEADER = "Zune/" ++ zune_info.version;
+
 const Self = @This();
 
-stream: *?std.net.Stream,
+stream: *?VStream,
 establishedLua: ?i32,
 connected: bool,
 handlers: LuaWebSocketClient.Handlers,
 key: []u8,
 protocols: std.ArrayList([]const u8),
-fds: []if (builtin.os.tag == .windows) std.os.windows.ws2_32.pollfd else std.posix.pollfd,
+fds: []context.spollfd,
 
 const LuaWebSocketClient = struct {
     ptr: ?*Self,
@@ -54,14 +59,14 @@ pub const LuaMeta = struct {
         const data = L.toUserdata(LuaWebSocketClient, 1) catch return 0;
 
         const ctx = data.ptr orelse return 0;
-        const stream = ctx.stream.* orelse return 0;
+        var stream = ctx.stream.* orelse return 0;
 
         if (!ctx.connected) return 0;
 
         // TODO: prob should switch to static string map
         if (std.mem.eql(u8, namecall, "close")) {
             const closeCode: u16 = @intCast(L.optInteger(2) orelse 1000);
-            var socket = WebSocket.init(L.allocator(), stream);
+            var socket = WebSocket.initV(L.allocator(), &stream);
             defer socket.deinit();
             socket.close(closeCode) catch |err| {
                 std.debug.print("Error writing close: {}\n", .{err});
@@ -69,7 +74,7 @@ pub const LuaMeta = struct {
             ctx.closeConnection(L, true, closeCode);
         } else if (std.mem.eql(u8, namecall, "send")) {
             const message = L.checkString(2);
-            var socket = WebSocket.init(L.allocator(), stream);
+            var socket = WebSocket.initV(L.allocator(), &stream);
             defer socket.deinit();
             _ = socket.writeText(message) catch |err| L.raiseErrorStr("Failed to write to websocket (%s)", .{@errorName(err).ptr});
         } else if (std.mem.eql(u8, namecall, "bindOpen")) {
@@ -90,7 +95,7 @@ pub const LuaMeta = struct {
 };
 
 pub fn closeConnection(ctx: *Self, L: *Luau, cleanUp: bool, codeCode: ?u16) void {
-    if (ctx.stream.*) |stream| {
+    if (ctx.stream.*) |*stream| {
         defer {
             stream.close();
             ctx.fds[0].fd = context.INVALID_SOCKET;
@@ -99,7 +104,7 @@ pub fn closeConnection(ctx: *Self, L: *Luau, cleanUp: bool, codeCode: ?u16) void
         if (!cleanUp) {
             // send close frame
             if (ctx.establishedLua != null) {
-                var socket = WebSocket.init(L.allocator(), stream);
+                var socket = WebSocket.initV(L.allocator(), stream);
                 defer socket.deinit();
                 socket.close(1001) catch |err| {
                     std.debug.print("Error closing websocket: {}\n", .{err});
@@ -180,16 +185,16 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
     const allocator = L.allocator();
 
     const fds = ctx.fds;
-    const stream = ctx.stream.* orelse return .Stop;
+    var stream = ctx.stream.* orelse return .Stop;
 
-    const nums = if (builtin.os.tag == .windows) std.os.windows.poll(fds.ptr, 1, 0) else std.posix.poll(fds, 0) catch std.debug.panic("Bad poll (1)", .{});
+    const nums = context.spoll(fds, 0) catch std.debug.panic("Bad poll (1)", .{});
     if (nums == 0) return .Continue;
     if (nums < 0) std.debug.panic("Bad poll (2)", .{});
 
     const sockfd = fds[0];
     if (sockfd.revents & (context.POLLIN) != 0) {
         if (ctx.establishedLua == null) {
-            var response = Response.init(allocator, stream.reader().any(), .{}) catch |err| {
+            var response = Response.init(allocator, &stream, .{}) catch |err| {
                 std.debug.print("Error: {}\n", .{err});
                 return .Stop;
             };
@@ -202,6 +207,7 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
                 }
             } else return .Stop;
 
+            L.pushBoolean(true);
             const data = L.newUserdata(LuaWebSocketClient);
             data.ptr = ctx;
 
@@ -214,7 +220,7 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
             ctx.connected = response.statusCode == 101;
             ctx.establishedLua = L.ref(-1) catch std.debug.panic("InternalError (WebSocketClient bad ref)", .{});
 
-            Scheduler.resumeState(L, null, 1);
+            Scheduler.resumeState(L, null, 2);
 
             if (response.statusCode != 101) {
                 ctx.closeConnection(L, false, null);
@@ -246,13 +252,13 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
                     .pos = 0,
                 };
 
-                var socket = WebSocket.initAny(allocator, leftOverStream.reader().any(), stream.writer());
+                var socket = WebSocket.initAnyV(allocator, leftOverStream.reader().any(), stream.writer());
                 defer socket.deinit();
 
                 return ctx.handleSocket(L, &socket);
             }
         } else {
-            var socket = WebSocket.init(allocator, stream);
+            var socket = WebSocket.initV(allocator, &stream);
             defer socket.deinit();
 
             return ctx.handleSocket(L, &socket);
@@ -289,6 +295,10 @@ pub fn dtor(ctx: *Self, L: *Luau, scheduler: *Scheduler) void {
         }
         L.unref(wsRef);
         ctx.establishedLua = null;
+    } else {
+        L.pushBoolean(false);
+        L.pushString("Websocket not established");
+        Scheduler.resumeState(L, null, 2);
     }
 }
 
@@ -319,16 +329,22 @@ pub fn prep(allocator: std.mem.Allocator, L: *Luau, scheduler: *Scheduler, uri: 
 
     const protocol, const valid_uri = try validateUri(try std.Uri.parse(uri), fixedBuffer.allocator());
 
-    // TODO: Add tls support.
-    if (protocol == .tls) {
-        std.debug.print("TLS not supported\n", .{});
-        return false;
-    }
+    const host = valid_uri.host.?.raw;
 
-    const stream = try std.net.tcpConnectToHost(allocator, valid_uri.host.?.raw, valid_uri.port orelse switch (protocol) {
+    const stream = try std.net.tcpConnectToHost(allocator, host, valid_uri.port orelse switch (protocol) {
         .plain => 80,
         .tls => 443,
     });
+
+    var tls: ?std.crypto.tls.Client = null;
+    if (protocol == .tls) {
+        var bundle = std.crypto.Certificate.Bundle{};
+        try bundle.rescan(allocator);
+        defer bundle.deinit(allocator);
+        tls = try std.crypto.tls.Client.init(stream, bundle, host);
+    }
+
+    var vstream = VStream.init(stream, tls);
 
     const joined_protocols = try std.mem.join(allocator, ", ", protocols.items);
     defer allocator.free(joined_protocols);
@@ -346,10 +362,15 @@ pub fn prep(allocator: std.mem.Allocator, L: *Luau, scheduler: *Scheduler, uri: 
         if (valid_uri.path.percent_encoded.len > 0) valid_uri.path.percent_encoded else "/",
         if (valid_uri.query != null) "?" else "",
         if (valid_uri.query) |query| query.percent_encoded else "",
-        " HTTP/1.1\r\nContent-Length: 0\r\nUpgrade: websocket\r\nConnection: upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: ",
+        " HTTP/1.1",
+        "\r\nHost: ",
+        host,
+        "\r\nContent-Length: 0\r\nUpgrade: websocket\r\nConnection: upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: ",
         encoded_key,
         if (joined_protocols.len > 0) "\r\nSec-WebSocket-Protocol: " else "",
         if (joined_protocols.len > 0) joined_protocols else "",
+        "\r\nUser-Agent: ",
+        ZUNE_CLIENT_HEADER,
         "\r\n\r\n",
     }) catch |err| {
         std.debug.print("Error creating response: {}\n", .{err});
@@ -357,16 +378,16 @@ pub fn prep(allocator: std.mem.Allocator, L: *Luau, scheduler: *Scheduler, uri: 
     };
     defer allocator.free(request);
 
-    try stream.writeAll(request);
+    try vstream.writeAll(request);
 
-    const streamPtr = try allocator.create(?std.net.Stream);
+    const streamPtr = try allocator.create(?VStream);
     errdefer allocator.destroy(streamPtr);
-    streamPtr.* = stream;
+    streamPtr.* = vstream;
 
     const webSocketPtr = try allocator.create(Self);
     errdefer allocator.destroy(webSocketPtr);
 
-    var fds = try allocator.alloc(if (builtin.os.tag == .windows) std.os.windows.ws2_32.pollfd else std.posix.pollfd, 1);
+    var fds = try allocator.alloc(context.spollfd, 1);
     fds[0].fd = stream.handle;
     fds[0].events = context.POLLIN;
 
@@ -415,10 +436,17 @@ pub fn lua_websocket(L: *Luau, scheduler: *Scheduler) i32 {
 
     const created = prep(allocator, L, scheduler, uriString, protocols) catch |err| {
         std.debug.print("Error: {}\n", .{err});
-        return 0;
+        L.pushBoolean(false);
+        L.pushString(@errorName(err));
+        return 2;
     };
 
-    return if (created) L.yield(0) else 0;
+    if (created) return L.yield(0);
+
+    L.pushBoolean(false);
+    L.pushString("Failed to create websocket");
+
+    return 2;
 }
 
 pub fn lua_load(L: *Luau) void {

@@ -2,6 +2,8 @@
 
 const std = @import("std");
 
+const VStream = @import("vstream.zig");
+
 const posix = std.posix;
 
 pub const Opcode = enum(u4) {
@@ -149,7 +151,17 @@ const PipedStream = struct {
     stream_writer: std.net.Stream.Writer,
 };
 
-const StreamProvider = union(enum) { stream: std.net.Stream, piped: PipedStream };
+const VPipedStream = struct {
+    any_reader: std.io.AnyReader,
+    stream_writer: VStream.Writer,
+};
+
+const StreamProvider = union(enum) {
+    stream: std.net.Stream,
+    vstream: *VStream,
+    piped: PipedStream,
+    vpiped: VPipedStream,
+};
 
 stream: StreamProvider,
 allocator: std.mem.Allocator,
@@ -165,11 +177,30 @@ pub fn init(allocator: std.mem.Allocator, stream: std.net.Stream) Self {
     };
 }
 
+pub fn initV(allocator: std.mem.Allocator, vstream: *VStream) Self {
+    return Self{
+        .allocator = allocator,
+        .stream = .{ .vstream = vstream },
+    };
+}
+
 pub fn initAny(allocator: std.mem.Allocator, reader: std.io.AnyReader, writer: std.net.Stream.Writer) Self {
     return Self{
         .allocator = allocator,
         .stream = .{
             .piped = .{
+                .any_reader = reader,
+                .stream_writer = writer,
+            },
+        },
+    };
+}
+
+pub fn initAnyV(allocator: std.mem.Allocator, reader: std.io.AnyReader, writer: VStream.Writer) Self {
+    return Self{
+        .allocator = allocator,
+        .stream = .{
+            .vpiped = .{
                 .any_reader = reader,
                 .stream_writer = writer,
             },
@@ -243,11 +274,15 @@ pub fn writeSplitMessage(self: *Self, opcode: Opcode, final: bool, message: []co
 
 // Write a raw data frame
 pub fn writeDataFrame(self: *Self, dataframe: WebsocketDataFrame) anyerror!usize {
-    var stream = switch (self.stream) {
-        .stream => |s| s.writer(),
-        .piped => |s| s.stream_writer,
-    };
+    switch (self.stream) {
+        .stream => |s| return writeDataFrameAny(dataframe, s.writer()),
+        .vstream => |s| return writeDataFrameAny(dataframe, s.writer()),
+        .piped => |s| return writeDataFrameAny(dataframe, s.stream_writer),
+        .vpiped => |s| return writeDataFrameAny(dataframe, s.stream_writer),
+    }
+}
 
+pub fn writeDataFrameAny(dataframe: WebsocketDataFrame, stream: anytype) anyerror!usize {
     if (!dataframe.isValid()) return error.InvalidMessage;
 
     try stream.writeInt(u16, @as(u16, @bitCast(dataframe.header)), .big);
@@ -285,7 +320,9 @@ pub fn read(self: *Self) !WebsocketDataFrame {
     // Read and retry if we hit the end of the stream buffer
     const start = switch (self.stream) {
         .stream => |s| try s.read(&self.header),
+        .vstream => |s| try s.read(&self.header),
         .piped => |s| try s.any_reader.read(&self.header),
+        .vpiped => |s| try s.any_reader.read(&self.header),
     };
     if (start == 0) {
         return error.ConnectionClosed;
@@ -311,14 +348,15 @@ pub fn readDataFrameInBuffer(
 
     // Decode length
     var length: u64 = header.len;
-
     switch (header.len) {
         126 => {
             const lengthBuf = try self.allocator.alloc(u8, 2);
             self.length = lengthBuf;
             const size = switch (self.stream) {
                 .stream => |s| try s.read(lengthBuf),
+                .vstream => |s| try s.read(lengthBuf),
                 .piped => |s| try s.any_reader.read(lengthBuf),
+                .vpiped => |s| try s.any_reader.read(lengthBuf),
             };
             if (size == 0 or size != 2) return error.ConnectionClosed;
             length = std.mem.readInt(u16, lengthBuf[0..2], .big);
@@ -328,7 +366,9 @@ pub fn readDataFrameInBuffer(
             self.length = lengthBuf;
             const size = switch (self.stream) {
                 .stream => |s| try s.read(lengthBuf),
+                .vstream => |s| try s.read(lengthBuf),
                 .piped => |s| try s.any_reader.read(lengthBuf),
+                .vpiped => |s| try s.any_reader.read(lengthBuf),
             };
             if (size == 0 or size != 8) return error.ConnectionClosed;
             length = std.mem.readInt(u64, lengthBuf[0..8], .big);
@@ -347,7 +387,9 @@ pub fn readDataFrameInBuffer(
 
     const extend_length = switch (self.stream) {
         .stream => |s| try s.read(buf),
+        .vstream => |s| try s.read(buf),
         .piped => |s| try s.any_reader.read(buf),
+        .vpiped => |s| try s.any_reader.read(buf),
     };
     if (extend_length != length) {
         return error.InvalidMessage;

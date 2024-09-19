@@ -326,7 +326,9 @@ describe("Websockets", function()
             server:stop();
         end)
 
-        local socket = net.websocket("ws://localhost:8080", {});
+        local clientOk, socket = net.websocket("ws://localhost:8080", {});
+        expect(clientOk).toBe(true);
+        expect(socket).toBe(expect.type("userdata"));
         testing.defer(function()
             socket:close();
         end)

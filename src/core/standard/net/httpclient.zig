@@ -27,7 +27,7 @@ client: *std.http.Client,
 req: *std.http.Client.Request,
 options: *std.http.Client.FetchOptions,
 success: bool = false,
-fds: []context.pollfd,
+fds: []context.spollfd,
 err: ?anyerror,
 
 pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult {
@@ -37,7 +37,7 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
     const fds = ctx.fds;
     const connection = req.connection.?;
 
-    const nums = context.poll(fds, 0) catch std.debug.panic("Bad poll (1)", .{});
+    const nums = context.spoll(fds, 0) catch std.debug.panic("Bad poll (1)", .{});
     if (nums == 0) return .Continue;
     if (nums < 0) std.debug.panic("Bad poll (2)", .{});
 
@@ -384,7 +384,7 @@ pub fn prep(allocator: std.mem.Allocator, L: *Luau, scheduler: *Scheduler, optio
     const netClientPtr = try allocator.create(Self);
     errdefer allocator.destroy(netClientPtr);
 
-    var fds = try allocator.alloc(context.pollfd, 1);
+    var fds = try allocator.alloc(context.spollfd, 1);
     fds[0].fd = req.connection.?.stream.handle;
     fds[0].events = context.POLLIN;
 

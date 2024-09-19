@@ -141,7 +141,7 @@ server: *std.net.Server,
 connections: []?std.net.Server.Connection,
 responses: []?*NetStreamData,
 websockets: []?NetWebSocket,
-fds: []context.pollfd,
+fds: []context.spollfd,
 
 pub fn closeConnection(ctx: *Self, L: *Luau, id: usize, cleanUp: bool) void {
     if (ctx.responses[id]) |responsePtr| {
@@ -576,7 +576,7 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
     const connections = ctx.connections;
     const websockets = ctx.websockets;
 
-    var nums = context.poll(fds, 0) catch std.debug.panic("Bad poll (1)", .{});
+    var nums = context.spoll(fds, 0) catch std.debug.panic("Bad poll (1)", .{});
     if (nums == 0) return .Continue;
     if (nums < 0) std.debug.panic("Bad poll (2)", .{});
 
@@ -695,7 +695,7 @@ pub fn prep(
     var websockets = try allocator.alloc(?NetWebSocket, MAX_SOCKETS);
     errdefer allocator.free(websockets);
 
-    var fds = try allocator.alloc(context.pollfd, MAX_SOCKETS);
+    var fds = try allocator.alloc(context.spollfd, MAX_SOCKETS);
     errdefer allocator.free(fds);
 
     for (0..MAX_SOCKETS) |i| {
