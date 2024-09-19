@@ -71,9 +71,8 @@ describe("Require Many Value", function()
     end)
     
     test("Require Blank", function()
-        local ok, err = pcall(require, ("generated/blank"));
-        expect(ok).toBeFalsy();
-        assert((string.find(err, "module must return one value")) ~= nil);
+        local res = require("generated/blank");
+        expect(res).toBe(nil);
     end)
     
     test("Require TooMany", function()

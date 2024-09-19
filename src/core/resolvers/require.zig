@@ -8,6 +8,13 @@ const file = @import("file.zig");
 
 const Luau = luau.Luau;
 
+pub var MODE: RequireMode = .RelativeToFile;
+
+const RequireMode = enum {
+    RelativeToFile,
+    RelativeToCwd,
+};
+
 const RequireError = error{
     ModuleNotFound,
     NoAlias,
@@ -117,9 +124,16 @@ pub fn zune_require(L: *Luau) !i32 {
             L.pop(1); // drop: _FILE
             if (!std.fs.path.isAbsolute(moduleFilePath)) return finishError(L, "InternalError (_FILE is not absolute)");
 
-            const relativeDirPath = std.fs.path.dirname(moduleFilePath) orelse return error.FileNotFound;
+            if (MODE == .RelativeToFile) {
+                const relativeDirPath = std.fs.path.dirname(moduleFilePath) orelse return error.FileNotFound;
 
-            moduleAbsolutePath = Engine.findLuauFileFromPathZ(allocator, relativeDirPath, moduleName) catch return error.FileNotFound;
+                moduleAbsolutePath = Engine.findLuauFileFromPathZ(allocator, relativeDirPath, moduleName) catch return error.FileNotFound;
+            } else {
+                const absPath = try std.fs.cwd().realpathAlloc(allocator, ".");
+                defer allocator.free(absPath);
+
+                moduleAbsolutePath = Engine.findLuauFileFromPathZ(allocator, absPath, moduleName) catch return error.FileNotFound;
+            }
         }
         defer allocator.free(moduleAbsolutePath);
 
@@ -189,7 +203,9 @@ pub fn zune_require(L: *Luau) !i32 {
         };
         if (resumeStatus) |status| {
             if (status == .ok) {
-                if (ML.getTop() != 1) outErr = "module must return one value";
+                const t = ML.getTop();
+                if (t > 1 or t < 0) outErr = "module must return one value";
+                if (t == 0) ML.pushNil();
             } else if (status == .yield) outErr = "module must not yield";
         }
 

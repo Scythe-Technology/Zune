@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added flags to `new` in regex. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/regex)
   - `i` - Case Insensitive
   - `m` - Multiline
+- Added zune configuration support as `zune.toml`.
+- Added `init` command to generate config files.
+- Added `luau` command to display luau info.
+
 
 ### Changed
 - Changed `captures` in regex to accept boolean instead of flags.
@@ -20,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated `test` command to be like `run`.
   - If the first argument is `-`, it will read from stdin.
   - Fast search for file directly.
+- Updated `luau` to `0.643`.
+- Updated `help` command to display new commands.
+
+### Fixed
+- Fixed `eval` requiring modules relative to the parent of the current working directory, instead of the current working directory.
+- Fixed `require` casuing an error when requiring a module that returns nil.
 
 ### `0.4.0` - September 17, 2024
 

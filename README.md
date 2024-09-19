@@ -43,7 +43,7 @@ cd zune
 ```
 2. Compile
 ```sh
-zig build -Doptimize=ReleaseSafe
+zig build -Doptimize=ReleaseFast
 ```
 3. Use
 ```sh
@@ -52,7 +52,10 @@ zig build -Doptimize=ReleaseSafe
 From this point, you can add the binary to your path.
 
 # Roadmap
-For more information on the future of Zune, join the discord server and check the `roadmap` post.
+For more information on the future of Zune, check out the milestones
+
+# Help and Support
+To get support or to chat, check out the [Discord](https://discord.gg/zEc7muuYbX). And look for the "zune".
 
 # Contributing
 Read [CONTRIBUTING.md](https://github.com/Scythe-Technology/Zune/blob/master/CONTRIBUTING.md).

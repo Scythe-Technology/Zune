@@ -3,6 +3,8 @@ const luau = @import("luau");
 
 const command = @import("lib.zig");
 
+const Zune = @import("../zune.zig");
+
 const Engine = @import("../core/runtime/engine.zig");
 const Scheduler = @import("../core/runtime/scheduler.zig");
 
@@ -15,6 +17,8 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         std.debug.print("Usage: run <luau file>\n", .{});
         return;
     }
+
+    Zune.loadConfiguration();
 
     const dir = std.fs.cwd();
     const module = args[0];
