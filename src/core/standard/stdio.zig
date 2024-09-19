@@ -326,7 +326,7 @@ const LuaTerminal = struct {
     pub const META = "stdio_terminal_instance";
 
     pub fn __index(L: *Luau) i32 {
-        L.checkType(1, .userdata);
+        L.checkType(1, .light_userdata);
         const arg = L.checkString(2);
         const data = L.toUserdata(Terminal, 1) catch return 0;
 
@@ -340,9 +340,10 @@ const LuaTerminal = struct {
     }
 
     pub fn __namecall(L: *Luau) !i32 {
-        L.checkType(1, .userdata);
+        L.checkType(1, .light_userdata);
         const namecall = L.nameCallAtom() catch return 0;
-        var term_ptr = L.toUserdata(Terminal, 1) catch return 0;
+        const ud_term = L.toUserdata(?Terminal, 1) catch return 0;
+        const term_ptr = &(ud_term.* orelse L.raiseErrorStr("Terminal not initialized", .{}));
 
         // TODO: prob should switch to static string map
         if (std.mem.eql(u8, namecall, "enableRawMode")) {
@@ -363,6 +364,8 @@ const LuaTerminal = struct {
         return 0;
     }
 };
+
+pub var TERMINAL: ?Terminal = null;
 
 pub fn loadLib(L: *Luau) void {
     {
@@ -420,8 +423,8 @@ pub fn loadLib(L: *Luau) void {
     L.setFieldAhead(-1, "stderr");
 
     // Terminal
-    const term_ptr = L.newUserdata(Terminal);
-    term_ptr.* = Terminal.init(stdIn, stdOut);
+    TERMINAL = Terminal.init(stdIn, stdOut);
+    L.pushLightUserdata(&TERMINAL);
     if (L.getMetatableRegistry(LuaTerminal.META) == .table) L.setMetatable(-2) else std.debug.panic("InternalError (Terminal Metatable not initialized)", .{});
     L.setFieldAhead(-1, "terminal");
 
