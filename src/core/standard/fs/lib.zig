@@ -478,6 +478,15 @@ const LuaFile = struct {
             file_ptr.handle.unlock();
         } else if (std.mem.eql(u8, namecall, "sync")) {
             try file_ptr.handle.sync();
+        } else if (std.mem.eql(u8, namecall, "readonly")) {
+            const meta = try file_ptr.handle.metadata();
+            var permissions = meta.permissions();
+            const enabled = L.optBoolean(2) orelse {
+                L.pushBoolean(permissions.readOnly());
+                return 1;
+            };
+            permissions.setReadOnly(enabled);
+            try file_ptr.handle.setPermissions(permissions);
         } else if (std.mem.eql(u8, namecall, "close")) {
             if (file_ptr.open) file_ptr.handle.close();
             file_ptr.open = false;

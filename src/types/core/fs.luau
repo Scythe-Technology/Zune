@@ -197,6 +197,17 @@ export type FileHandle = {
 	sync : (self: FileHandle) -> (),
 
 	--[[
+		Returns whether the file is readonly.
+
+		*Optional: Whether to set the file to readonly, if nil, returns the current state.*
+
+		@param enabled Whether to set the file to readonly.
+	]]
+	readonly :
+		& ((self: FileHandle) -> boolean)
+		& ((self: FileHandle, enabled: boolean) -> ());
+
+	--[[
 		Closes the file. (Will flush the file)
 	]]
 	close : (self: FileHandle) -> (),
