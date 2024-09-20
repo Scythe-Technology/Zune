@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const luau = @import("luau");
 
+const Engine = @import("../runtime/engine.zig");
 const Scheduler = @import("../runtime/scheduler.zig");
 const Parser = @import("../utils/parser.zig");
 
@@ -358,6 +359,7 @@ fn process_create(L: *Luau) !i32 {
 fn process_exit(L: *Luau) i32 {
     const code = L.checkUnsigned(1);
     Scheduler.KillSchedulers();
+    Engine.stateCleanUp();
     std.process.exit(@intCast(code));
     return 0;
 }

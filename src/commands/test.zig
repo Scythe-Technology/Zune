@@ -85,7 +85,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     const start = luau.clock();
 
-    try Engine.runAsync(ML, &scheduler);
+    try Engine.runAsync(ML, &scheduler, true);
 
     _ = Zune.corelib.testing.finish_testing(L, start);
 }

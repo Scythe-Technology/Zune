@@ -68,7 +68,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         else => return err,
     };
 
-    Engine.runAsync(ML, &scheduler) catch return; // Soft exit
+    Engine.runAsync(ML, &scheduler, true) catch return; // Soft exit
 }
 
 pub const Command = command.Command{

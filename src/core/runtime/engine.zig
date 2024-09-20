@@ -1,7 +1,7 @@
 const std = @import("std");
 const luau = @import("luau");
 
-const zune = @import("../../zune.zig");
+const Zune = @import("../../zune.zig");
 const file = @import("../resolvers/file.zig");
 const require = @import("../resolvers/require.zig");
 const Scheduler = @import("../runtime/scheduler.zig");
@@ -70,17 +70,17 @@ pub fn checkStatus(L: *Luau) !luau.Status {
 
 const PrepOptions = struct {
     args: []const []const u8,
-    mode: zune.RunMode,
+    mode: Zune.RunMode,
 };
 
-pub fn prep(L: *Luau, pOpts: PrepOptions, flags: zune.Flags) !void {
+pub fn prep(L: *Luau, pOpts: PrepOptions, flags: Zune.Flags) !void {
     if (luau.CodeGen.Supported()) luau.CodeGen.Create(L);
 
     L.openLibs();
-    try zune.openZune(L, pOpts.args, pOpts.mode, flags);
+    try Zune.openZune(L, pOpts.args, pOpts.mode, flags);
 }
 
-pub fn prepAsync(L: *Luau, sched: *Scheduler, pOpts: PrepOptions, flags: zune.Flags) !void {
+pub fn prepAsync(L: *Luau, sched: *Scheduler, pOpts: PrepOptions, flags: Zune.Flags) !void {
     try prep(L, pOpts, flags);
 
     L.pushLightUserdata(sched);
@@ -111,13 +111,22 @@ pub fn findLuauFileFromPathZ(allocator: std.mem.Allocator, absPath: []const u8, 
     return try file.searchForExtensionsZ(allocator, absF, &require.POSSIBLE_EXTENSIONS);
 }
 
-pub fn runAsync(L: *Luau, sched: *Scheduler) !void {
+pub fn stateCleanUp() void {
+    if (Zune.corelib.stdio.TERMINAL) |*terminal| {
+        terminal.restoreSettings() catch std.debug.print("[Zune] Failed to restore terminal settings\n", .{});
+        terminal.restoreOutputMode() catch std.debug.print("[Zune] Failed to restore terminal output mode\n", .{});
+    }
+}
+
+pub fn runAsync(L: *Luau, sched: *Scheduler, comptime cleanUp: bool) !void {
+    defer if (cleanUp) stateCleanUp();
     sched.deferThread(L, null, 0);
     sched.run();
     _ = try checkStatus(L);
 }
 
 pub fn run(L: *Luau) !void {
+    defer stateCleanUp();
     try L.pcall(0, 0, 0);
 }
 

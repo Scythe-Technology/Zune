@@ -56,6 +56,7 @@ fn shutdown() void {
         L.pop(1); // drop: ?function
     }
     Scheduler.KillSchedulers();
+    Zune.runtime_engine.stateCleanUp();
     std.process.exit(0);
 }
 

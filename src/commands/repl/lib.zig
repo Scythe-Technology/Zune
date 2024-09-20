@@ -3,6 +3,7 @@ const luau = @import("luau");
 
 const command = @import("../lib.zig");
 
+const Zune = @import("../../zune.zig");
 const Engine = @import("../../core/runtime/engine.zig");
 const Scheduler = @import("../../core/runtime/scheduler.zig");
 
@@ -68,15 +69,16 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     var stdin = std.io.getStdIn();
     var in_reader = stdin.reader();
-    const stdout = std.io.getStdOut();
 
-    var terminal = Terminal.init(stdin, stdout);
+    const terminal = &(Zune.corelib.stdio.TERMINAL orelse std.debug.panic("Terminal not initialized", .{}));
     errdefer terminal.restoreSettings() catch {};
+    errdefer terminal.restoreOutputMode() catch {};
+
     try terminal.validateInteractive();
 
     try terminal.saveSettings();
 
-    TERMINAL = &terminal;
+    TERMINAL = terminal;
 
     const out = terminal.stdout_writer;
 
@@ -86,6 +88,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var position: usize = 0;
 
     try terminal.setRawMode();
+    try terminal.setOutputMode();
 
     switch (try L.getGlobalObjConsumed("_VERSION")) {
         .string => |s| try out.print("{s}\n", .{s}),
@@ -149,7 +152,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
             if (Engine.loadModule(ML, "CLI", buffer.items, null)) {
                 try terminal.setNormalMode();
 
-                Engine.runAsync(ML, &scheduler) catch ML.pop(1);
+                Engine.runAsync(ML, &scheduler, false) catch ML.pop(1);
 
                 try terminal.setRawMode();
             } else |err| switch (err) {
