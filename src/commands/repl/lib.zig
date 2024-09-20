@@ -25,7 +25,10 @@ pub fn SigInt() bool {
     }
     std.debug.print("\n", .{});
     if (HISTORY) |history| history.deinit();
-    if (TERMINAL) |terminal| terminal.restoreSettings() catch {};
+    if (TERMINAL) |terminal| {
+        terminal.restoreSettings() catch {};
+        terminal.restoreOutputMode() catch {};
+    }
     return false;
 }
 
