@@ -281,7 +281,6 @@ const LuaStdIn = struct {
             const poll = try sysfd.context.poll(&fds, 0);
             if (poll < 0) std.debug.panic("InternalError (Bad Poll)", .{});
             if (poll == 0) return 0;
-            std.debug.print("Poll: {}", .{poll});
 
             const allocator = L.allocator();
             const maxBytes = L.optUnsigned(2) orelse 1;
