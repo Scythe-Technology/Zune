@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `eval` requiring modules relative to the parent of the current working directory, instead of the current working directory.
 - Fixed `require` casuing an error when requiring a module that returns nil.
 - Fixed `websockets` yielding forever.
+- Fixed threads under scheduler getting garbage collected.
 
 ## `0.4.0` - September 17, 2024
 

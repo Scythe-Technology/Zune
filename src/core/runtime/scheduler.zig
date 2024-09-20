@@ -33,12 +33,14 @@ const SleepingThread = struct {
     start: f64,
     args: i32,
     waited: bool,
+    ref: ?i32,
 };
 
 const DeferredThread = struct {
     from: ?*Luau,
     thread: *Luau,
     args: i32,
+    ref: ?i32,
 };
 
 const Self = @This();
@@ -66,6 +68,7 @@ pub fn AwaitingObject(comptime T: type) type {
         data: *T,
         state: *Luau,
         resumeFn: *const AwaitedFn,
+        ref: ?i32,
     };
 }
 
@@ -85,19 +88,53 @@ pub fn init(allocator: std.mem.Allocator) Self {
     };
 }
 
+fn refThread(L: *luau.Luau) ?i32 {
+    const GL = L.getMainThread();
+    if (GL == L) return null;
+    if (L.pushThread()) {
+        L.pop(1);
+        return null;
+    }
+    L.xMove(GL, 1);
+    const ref = GL.ref(-1) catch std.debug.panic("Tash Scheduler failed to create thread ref\n", .{});
+    GL.pop(1);
+    return ref;
+}
+
+fn derefThread(L: *luau.Luau, ref: ?i32) void {
+    if (ref) |r| {
+        const GL = L.getMainThread();
+        if (GL == L) return;
+        GL.unref(r);
+    }
+}
+
 pub fn spawnThread(self: *Self, thread: *Luau, args: i32) !void {
     _ = self;
     _ = try thread.resumeThread(null, args);
 }
 
 pub fn deferThread(self: *Self, thread: *Luau, from: ?*Luau, args: i32) void {
-    self.deferred.insert(0, .{ .from = from, .thread = thread, .args = args }) catch |err| std.debug.panic("Error: {}\n", .{err});
+    self.deferred.insert(0, .{
+        .from = from,
+        .thread = thread,
+        .args = args,
+        .ref = refThread(thread),
+    }) catch |err| std.debug.panic("Error: {}\n", .{err});
 }
 
 pub fn sleepThread(self: *Self, thread: *Luau, time: f64, args: i32, waited: bool) void {
     const start = luau.clock();
     const wake = start + time;
-    self.sleeping.insert(0, .{ .thread = thread, .start = start, .wake = wake, .args = args, .waited = waited }) catch |err| std.debug.panic("Error: {}\n", .{err});
+
+    self.sleeping.insert(0, .{
+        .thread = thread,
+        .start = start,
+        .wake = wake,
+        .args = args,
+        .waited = waited,
+        .ref = refThread(thread),
+    }) catch |err| std.debug.panic("Error: {}\n", .{err});
 }
 
 pub fn addTask(self: *Self, comptime T: type, data: *T, L: *Luau, comptime handler: *const fn (ctx: *T, L: *Luau, scheduler: *Self) TaskResult, comptime destructor: *const fn (ctx: *T, L: *Luau, scheduler: *Self) void) void {
@@ -136,6 +173,7 @@ pub fn awaitCall(self: *Self, comptime T: type, data: *T, L: *Luau, args: i32, c
         .data = @ptrCast(data),
         .state = L,
         .resumeFn = resumeFn,
+        .ref = refThread(L),
     }) catch |err| std.debug.panic("Error: {}\n", .{err});
 }
 
@@ -174,6 +212,7 @@ pub fn run(self: *Self) void {
                 if (awaiting.state.status() != .yield) {
                     _ = self.awaits.orderedRemove(i);
                     awaiting.resumeFn(awaiting.data, awaiting.state, self);
+                    derefThread(awaiting.state, awaiting.ref);
                 }
             }
         }
@@ -207,6 +246,7 @@ pub fn run(self: *Self) void {
                         args += 1;
                     }
                     resumeState(thread, null, args);
+                    derefThread(thread, slept.ref);
                 }
             }
         }
@@ -222,6 +262,7 @@ pub fn run(self: *Self) void {
                 const status = thread.status();
                 if (status != .ok and status != .yield) continue;
                 resumeState(thread, deferred.from, deferred.args);
+                derefThread(thread, deferred.ref);
             }
         }
     }

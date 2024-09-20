@@ -11,7 +11,7 @@ pub const LIB_NAME = "@zcore/task";
 fn task_wait(L: *Luau, scheduler: *Scheduler) i32 {
     const time = L.optNumber(1) orelse 0;
     scheduler.sleepThread(L, time, 0, true);
-    return L.yield(1);
+    return L.yield(0);
 }
 
 fn task_cancel(L: *Luau, scheduler: *Scheduler) i32 {
