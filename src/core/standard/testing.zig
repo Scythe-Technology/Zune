@@ -147,7 +147,7 @@ pub fn finish_testing(L: *Luau, rawstart: f64) TestResult {
 pub fn runTestAsync(L: *Luau, sched: *Scheduler) !TestResult {
     const start = luau.clock();
 
-    try Engine.runAsync(L, sched);
+    try Engine.runAsync(L, sched, true);
 
     return finish_testing(L, start);
 }
