@@ -113,8 +113,10 @@ pub fn findLuauFileFromPathZ(allocator: std.mem.Allocator, absPath: []const u8, 
 
 pub fn stateCleanUp() void {
     if (Zune.corelib.stdio.TERMINAL) |*terminal| {
-        terminal.restoreSettings() catch std.debug.print("[Zune] Failed to restore terminal settings\n", .{});
-        terminal.restoreOutputMode() catch std.debug.print("[Zune] Failed to restore terminal output mode\n", .{});
+        if (terminal.stdout_istty and terminal.stdin_istty) {
+            terminal.restoreSettings() catch std.debug.print("[Zune] Failed to restore terminal settings\n", .{});
+            terminal.restoreOutputMode() catch std.debug.print("[Zune] Failed to restore terminal output mode\n", .{});
+        }
     }
 }
 

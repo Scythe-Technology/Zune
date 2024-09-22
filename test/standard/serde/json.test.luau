@@ -90,23 +90,23 @@ describe("Json", function()
             expect(serde.json.decode(`\{ "a" :1 , "b"   : 2,       "c"   :    3       \}`)).toBe(expect.similar({a = 1, b = 2, c = 3}));
         end)
         test("Fail", function()
-            expect(function() serde.json.decode("test"); end).toThrow(`InvalidLiteral`);
-            expect(function() serde.json.decode(`"test\\`); end).toThrow(`InvalidString`);
-            expect(function() serde.json.decode(`"test\\"`); end).toThrow(`InvalidString`);
-            expect(function() serde.json.decode("tru"); end).toThrow(`InvalidLiteral`);
-            expect(function() serde.json.decode("fals"); end).toThrow(`InvalidLiteral`);
-            expect(function() serde.json.decode("nul"); end).toThrow(`InvalidLiteral`);
-            expect(function() serde.json.decode("truex"); end).toThrow(`TrailingData`);
-            expect(function() serde.json.decode("falsx"); end).toThrow(`InvalidLiteral`);
-            expect(function() serde.json.decode(`\{`); end).toThrow(`InvalidObject`);
-            expect(function() serde.json.decode(`\{"a":1`); end).toThrow(`InvalidObject`);
-            expect(function() serde.json.decode(`\{"a":1,`); end).toThrow(`InvalidObject`);
-            expect(function() serde.json.decode(`\{"a":1,"b":2`); end).toThrow(`InvalidObject`);
-            expect(function() serde.json.decode(`\{"a":1,"b":2,`); end).toThrow(`InvalidObject`);
-            expect(function() serde.json.decode(`\{"a":1,"b":2,"c":3`); end).toThrow(`InvalidObject`);
-            expect(function() serde.json.decode(`\{"a":1,"b":2,"c":3,`); end).toThrow(`InvalidObject`);
-            expect(function() serde.json.decode(`\{"a":1,"b":2"c":3}`); end).toThrow(`InvalidCharacter`);
-            expect(function() serde.json.decode(`\{ "a" :1 , "b"   : 2,       "c"   :    3       `); end).toThrow(`InvalidObject`);
+            expect(function() serde.json.decode("test"); end).toThrow(`ParseValueError`);
+            expect(function() serde.json.decode(`"test\\`); end).toThrow(`ParseStringError`);
+            expect(function() serde.json.decode(`"test\\"`); end).toThrow(`ParseStringError`);
+            expect(function() serde.json.decode("tru"); end).toThrow(`ParseValueError`);
+            expect(function() serde.json.decode("fals"); end).toThrow(`ParseValueError`);
+            expect(function() serde.json.decode("nul"); end).toThrow(`ParseValueError`);
+            expect(function() serde.json.decode("truex"); end).toThrow(`ParseValueError`);
+            expect(function() serde.json.decode("falsx"); end).toThrow(`ParseValueError`);
+            expect(function() serde.json.decode(`\{`); end).toThrow(`UnexpectedTokenError`);
+            expect(function() serde.json.decode(`\{"a":1`); end).toThrow(`UnexpectedTokenError`);
+            expect(function() serde.json.decode(`\{"a":1,`); end).toThrow(`UnexpectedTokenError`);
+            expect(function() serde.json.decode(`\{"a":1,"b":2`); end).toThrow(`UnexpectedTokenError`);
+            expect(function() serde.json.decode(`\{"a":1,"b":2,`); end).toThrow(`UnexpectedTokenError`);
+            expect(function() serde.json.decode(`\{"a":1,"b":2,"c":3`); end).toThrow(`UnexpectedTokenError`);
+            expect(function() serde.json.decode(`\{"a":1,"b":2,"c":3,`); end).toThrow(`UnexpectedTokenError`);
+            expect(function() serde.json.decode(`\{"a":1,"b":2"c":3}`); end).toThrow(`UnexpectedTokenError`);
+            expect(function() serde.json.decode(`\{ "a" :1 , "b"   : 2,       "c"   :    3       `); end).toThrow(`UnexpectedTokenError`);
         end)
     end)
 end)

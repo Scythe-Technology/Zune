@@ -415,6 +415,7 @@ pub fn lua_request(L: *Luau, scheduler: *Scheduler) i32 {
     var method: std.http.Method = .GET;
     var payload: ?[]const u8 = null;
     var redirectBehavior: ?std.http.Client.Request.RedirectBehavior = null;
+    var maxBodySize: ?usize = null;
 
     var headers = std.ArrayList(std.http.Header).init(allocator);
     defer headers.deinit();
@@ -445,6 +446,11 @@ pub fn lua_request(L: *Luau, scheduler: *Scheduler) i32 {
             if (allowRedirectsType != .boolean) L.raiseErrorStr("Expected field 'allowRedirects' to be a boolean", .{});
             if (!L.toBoolean(-1)) redirectBehavior = .not_allowed;
         }
+        const maxBodySizeType = L.getField(2, "maxBodySize");
+        if (!luau.isNoneOrNil(maxBodySizeType)) {
+            if (maxBodySizeType != .number) L.raiseErrorStr("Expected field 'maxBodySize' to be a number", .{});
+            maxBodySize = @intCast(L.toInteger(-1) catch unreachable);
+        }
         L.pop(1);
         if (std.mem.eql(u8, methodStr, "POST")) {
             method = .POST;
@@ -471,6 +477,7 @@ pub fn lua_request(L: *Luau, scheduler: *Scheduler) i32 {
         .location = .{
             .uri = uri,
         },
+        .max_append_size = maxBodySize,
         .payload = payload,
         .method = method,
     }) catch |err| {

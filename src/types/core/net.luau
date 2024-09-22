@@ -92,6 +92,12 @@ type BareRequestOptions = {
         - Default: `true`
     ]]
     allowRedirects : boolean?,
+
+    --[[
+        The maximum body size to accept.
+        - Default: `2097152`
+    ]]
+    maxBodySize : number?,
 };
 
 type BodyRequestOptions = {
@@ -100,7 +106,7 @@ type BodyRequestOptions = {
     body : string,
 };
 
-export type RequestOptions = BareRequestOptions & BodyRequestOptions;
+export type RequestOptions = BareRequestOptions | BodyRequestOptions;
 
 local network = {};
 

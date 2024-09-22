@@ -47,32 +47,23 @@ pub fn loadAliases(allocator: std.mem.Allocator) !void {
     const rcSafeContent = std.mem.trim(u8, rcContents, " \n\t\r");
     if (rcSafeContent.len == 0) return;
 
-    const rcJson = json.parse(rcSafeContent, allocator) catch |err| {
+    var rcJsonRoot = json.parse(allocator, rcSafeContent) catch |err| {
         std.debug.print("Error: .luaurc must be valid JSON: {}\n", .{err});
         return;
     };
-    defer rcJson.deinit(allocator);
+    defer rcJsonRoot.deinit();
 
-    const root = if (rcJson.type == .object) rcJson.object() else {
-        std.debug.print("Error: .luaurc must be an object\n", .{});
-        return;
-    };
+    const root = rcJsonRoot.value.objectOrNull() orelse return std.debug.print("Error: .luaurc must be an object\n", .{});
 
-    const aliases = root.getOrNull("aliases") orelse {
-        std.debug.print("Error: .luaurc must have an 'aliases' field\n", .{});
-        return;
-    };
+    const aliases = root.get("aliases") orelse return std.debug.print("Error: .luaurc must have an 'aliases' field\n", .{});
 
-    const aliasesObj = if (aliases.type == .object) aliases.object() else {
-        std.debug.print("Error: .luaurc 'aliases' field must be an object\n", .{});
-        return;
-    };
+    const aliasesObj = aliases.objectOrNull() orelse return std.debug.print("Error: .luaurc 'aliases' field must be an object\n", .{});
 
     ALIASES = std.StringArrayHashMap([]const u8).init(allocator);
 
     for (aliasesObj.keys()) |key| {
-        const value = aliasesObj.getOrNull(key) orelse continue;
-        const valueStr = if (value.type == .string) value.string() else {
+        const value = aliasesObj.get(key) orelse continue;
+        const valueStr = if (value == .string) value.asString() else {
             std.debug.print("Warning: .luaurc -> aliases '{s}' field must be a string\n", .{key});
             continue;
         };

@@ -619,7 +619,7 @@ pub fn loadLib(L: *Luau) void {
     {
         L.newMetatable(LuaFile.META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
 
-        L.setFieldFn(-1, luau.Metamethods.index, LuaFile.__index); // metatable.__namecall
+        L.setFieldFn(-1, luau.Metamethods.index, LuaFile.__index); // metatable.__index
         L.setFieldFn(-1, luau.Metamethods.namecall, LuaFile.__namecall); // metatable.__namecall
 
         L.setFieldString(-1, luau.Metamethods.metatable, "Metatable is locked");
@@ -628,7 +628,7 @@ pub fn loadLib(L: *Luau) void {
     {
         L.newMetatable(LuaWatch.META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
 
-        L.setFieldFn(-1, luau.Metamethods.index, LuaWatch.__index); // metatable.__namecall
+        L.setFieldFn(-1, luau.Metamethods.index, LuaWatch.__index); // metatable.__index
         L.setFieldFn(-1, luau.Metamethods.namecall, LuaWatch.__namecall); // metatable.__namecall
 
         L.setFieldString(-1, luau.Metamethods.metatable, "Metatable is locked");

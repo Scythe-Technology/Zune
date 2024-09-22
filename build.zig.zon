@@ -4,8 +4,8 @@
     .minimum_zig_version = "0.13.0",
     .dependencies = .{
         .json = .{
-            .url = "https://codeload.github.com/part1zano/zig-json/tar.gz/7ac4633f24b723bd8ebcdfeb0249d365bc8cb9b9",
-            .hash = "1220aaba53d38fd5689b6a29e496ab8a262c54ae8a52321e61ed8da9f1d968c69e7e",
+            .url = "https://codeload.github.com/Scythe-Technology/zig-json/tar.gz/dc4ef30059a8822193da7cf112bdb71c5778087f",
+            .hash = "12205d6aadb438a9122f2d69cfd4b40b38abcb6ac930118af4d8d9572e0fbfc84fec",
         },
         .yaml = .{
             .url = "https://codeload.github.com/kubkon/zig-yaml/tar.gz/beddd5da24de91d430ca7028b00986f7745b13e9",
@@ -16,8 +16,8 @@
             .hash = "1220d6bbca59a59f16bda33b69e140d90bad313d11c07c0e2ab16076c59355845112",
         },
         .luau = .{
-            .url = "https://codeload.github.com/SnorlaxAssist/zig-luau/tar.gz/cd4fded208f0f051932bd6fa04be3b0bf8cb08ca",
-            .hash = "1220fda417cab7d7903ba8c39bea53c9053a649dc6a32edf32699d5428bfc121cd7b",
+            .url = "https://codeload.github.com/SnorlaxAssist/zig-luau/tar.gz/2031fb0420f25071f961fabf7a5e79dd68f9e734",
+            .hash = "1220eb4a804353931d3a285117e8ade78bdc871fa4ff2ec82403649e7759a080efd7",
         },
         .czrex = .{
             .url = "https://codeload.github.com/Scythe-Technology/czrex/tar.gz/099db43b9074001329dfb04aef92b7589a00f983",
