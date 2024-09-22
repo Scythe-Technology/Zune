@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated `test` command to be like `run`.
   - If the first argument is `-`, it will read from stdin.
   - Fast search for file directly.
-- Updated `luau` to `0.643`.
+- Updated `luau` to `0.644`.
 - Updated `help` command to display new commands.
 - Updated `stdin` in `@zcore/stdio` to return nil if no data is available.
 - Updated `websocket` in `@zcore/net` to properly return a boolean and an error string or userdata.
