@@ -14,20 +14,25 @@ const file = @import("../core/resolvers/file.zig");
 const Luau = luau.Luau;
 
 fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
-    if (args.len < 1) {
+    var run_args: []const []const u8 = args;
+    var flags: ?[]const []const u8 = null;
+    blk: {
+        for (args, 0..) |arg, ap|
+            if (arg.len < 2 or !std.mem.eql(u8, arg[0..2], "--")) {
+                if (ap > 0)
+                    flags = args[0..ap];
+                run_args = args[ap..];
+                break :blk;
+            };
+        flags = args;
+        run_args = &[0][]const u8{};
+        break :blk;
+    }
+
+    if (run_args.len < 1) {
         std.debug.print("Usage: run [OPTIONS] <luau file>\n", .{});
         return;
     }
-
-    var run_args: []const []const u8 = args;
-    var flags: ?[]const []const u8 = null;
-    for (args, 0..) |arg, ap|
-        if (arg.len < 2 or !std.mem.eql(u8, arg[0..2], "--")) {
-            if (ap > 0)
-                flags = args[0..ap];
-            run_args = args[ap..];
-            break;
-        };
 
     Zune.loadConfiguration();
 

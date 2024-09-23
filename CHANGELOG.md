@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added partial tls support for `websocket` to `@zcore/net`.
 - Added `readonly` method to `FileHandle` in `@zcore/fs`.
   - Nil to get state, boolean to set state.
+- Added adjustable response body size to `@zcore/net` while using request.
+- Added profiler to `run` command with `--profile` flag.
+  - Frequency of profiling can be set with `--profile=...` flag.
+  - Default: `10000`.
 
 ### Changed
 - Changed `captures` in regex to accept boolean instead of flags.
