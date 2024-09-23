@@ -6,6 +6,7 @@ const command = @import("lib.zig");
 const Zune = @import("../zune.zig");
 
 const Engine = @import("../core/runtime/engine.zig");
+const Profiler = @import("../core/runtime/profiler.zig");
 const Scheduler = @import("../core/runtime/scheduler.zig");
 
 const file = @import("../core/resolvers/file.zig");
@@ -14,14 +15,35 @@ const Luau = luau.Luau;
 
 fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len < 1) {
-        std.debug.print("Usage: run <luau file>\n", .{});
+        std.debug.print("Usage: run [OPTIONS] <luau file>\n", .{});
         return;
     }
 
+    var run_args: []const []const u8 = args;
+    var flags: ?[]const []const u8 = null;
+    for (args, 0..) |arg, ap|
+        if (arg.len < 2 or !std.mem.eql(u8, arg[0..2], "--")) {
+            if (ap > 0)
+                flags = args[0..ap];
+            run_args = args[ap..];
+            break;
+        };
+
     Zune.loadConfiguration();
 
+    var PROFILER: ?u64 = null;
+    if (flags) |f| for (f) |flag| {
+        if (flag.len >= 9 and std.mem.eql(u8, flag[0..9], "--profile")) {
+            PROFILER = 10000;
+            if (flag.len > 10 and flag[9] == '=') {
+                const level = try std.fmt.parseInt(u64, flag[10..], 10);
+                PROFILER = level;
+            }
+        }
+    };
+
     const dir = std.fs.cwd();
-    const module = args[0];
+    const module = run_args[0];
 
     var maybeFileName: ?[]const u8 = null;
     defer if (maybeFileName) |f| allocator.free(f);
@@ -43,7 +65,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const fileName = maybeFileName orelse std.debug.panic("FileNotFound", .{});
 
     if (fileContent.len == 0) {
-        std.debug.print("File is empty: {s}\n", .{args[0]});
+        std.debug.print("File is empty: {s}\n", .{run_args[0]});
         return;
     }
 
@@ -55,7 +77,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
     try Scheduler.SCHEDULERS.append(&scheduler);
 
     try Engine.prepAsync(L, &scheduler, .{
-        .args = args,
+        .args = run_args,
         .mode = .Run,
     }, .{});
 
@@ -82,6 +104,12 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         else => return err,
     };
 
+    if (PROFILER) |freq|
+        try Profiler.start(L, freq);
+    defer if (PROFILER != null) {
+        Profiler.end();
+        Profiler.dump("profile.out");
+    };
     Engine.runAsync(ML, &scheduler, true) catch return; // Soft exit
 }
 
