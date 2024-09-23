@@ -21,21 +21,24 @@ fn luau_compile(L: *Luau) i32 {
 
         if (L.getField(2, "debug_level") == .number) {
             const value: i32 = @intCast(L.toInteger(-1) catch unreachable);
-            if (value < 0 or value > 2) L.raiseErrorStr("Invalid debug level", .{});
+            if (value < 0 or value > 2)
+                L.raiseErrorStr("Invalid debug level", .{});
             compileOpts.debug_level = value;
         }
         L.pop(1);
 
         if (L.getField(2, "optimization_level") == .number) {
             const value: i32 = @intCast(L.toInteger(-1) catch unreachable);
-            if (value < 0 or value > 2) L.raiseErrorStr("Invalid debug level", .{});
+            if (value < 0 or value > 2)
+                L.raiseErrorStr("Invalid debug level", .{});
             compileOpts.optimization_level = value;
         }
         L.pop(1);
 
         if (L.getField(2, "coverage_level") == .number) {
             const value: i32 = @intCast(L.toInteger(-1) catch unreachable);
-            if (value < 0 or value > 2) L.raiseErrorStr("Invalid debug level", .{});
+            if (value < 0 or value > 2)
+                L.raiseErrorStr("Invalid debug level", .{});
             compileOpts.coverage_level = value;
         }
         L.pop(1);
@@ -76,10 +79,12 @@ fn luau_load(L: *Luau) i32 {
     if (!optsExists) {
         L.checkType(2, .table);
 
-        if (L.getField(2, "nativeCodeGen") == .boolean) useCodeGen = L.toBoolean(-1);
+        if (L.getField(2, "nativeCodeGen") == .boolean)
+            useCodeGen = L.toBoolean(-1);
         L.pop(1);
 
-        if (L.getField(2, "chunkName") == .string) chunkName = L.toString(-1) catch unreachable;
+        if (L.getField(2, "chunkName") == .string)
+            chunkName = L.toString(-1) catch unreachable;
         L.pop(1);
     }
 
@@ -97,7 +102,8 @@ fn luau_load(L: *Luau) i32 {
                 useCodeGen = false; // dynamic env, disable codegen
                 L.pop(1); // drop metatable
             }
-            if (useCodeGen) L.setSafeEnv(-1, true);
+            if (useCodeGen)
+                L.setSafeEnv(-1, true);
             L.setfenv(-2) catch L.raiseErrorStr("Luau Error (Bad Env)", .{});
         } else L.pop(1);
     }

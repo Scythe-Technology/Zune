@@ -120,7 +120,8 @@ fn stdio_color256(L: *Luau) !i32 {
     const allocator = L.allocator();
     const code = L.checkInteger(1);
 
-    if (code < 0 or code > 255) L.raiseErrorStr("Code must be between 0 to 255", .{});
+    if (code < 0 or code > 255)
+        L.raiseErrorStr("Code must be between 0 to 255", .{});
 
     const buf = try std.fmt.allocPrint(allocator, "\x1b[38;5;{d}m", .{code});
     defer allocator.free(buf);
@@ -133,7 +134,8 @@ fn stdio_bgColor256(L: *Luau) !i32 {
     const allocator = L.allocator();
     const code = L.checkInteger(1);
 
-    if (code < 0 or code > 255) L.raiseErrorStr("Code must be between 0 to 255", .{});
+    if (code < 0 or code > 255)
+        L.raiseErrorStr("Code must be between 0 to 255", .{});
 
     const buf = try std.fmt.allocPrint(allocator, "\x1b[48;5;{d}m", .{code});
     defer allocator.free(buf);
@@ -149,9 +151,12 @@ fn stdio_trueColor(L: *Luau) !i32 {
     const g = L.checkInteger(2);
     const b = L.checkInteger(3);
 
-    if (r < 0 or r > 255) L.raiseErrorStr("R must be between 0 to 255", .{});
-    if (g < 0 or g > 255) L.raiseErrorStr("G must be between 0 to 255", .{});
-    if (b < 0 or b > 255) L.raiseErrorStr("B must be between 0 to 255", .{});
+    if (r < 0 or r > 255)
+        L.raiseErrorStr("R must be between 0 to 255", .{});
+    if (g < 0 or g > 255)
+        L.raiseErrorStr("G must be between 0 to 255", .{});
+    if (b < 0 or b > 255)
+        L.raiseErrorStr("B must be between 0 to 255", .{});
 
     const buf = try std.fmt.allocPrint(allocator, "\x1b[38;2;{d};{d};{d}m", .{
         r, g, b,
@@ -168,9 +173,12 @@ fn stdio_bgTrueColor(L: *Luau) !i32 {
     const g = L.checkInteger(2);
     const b = L.checkInteger(3);
 
-    if (r < 0 or r > 255) L.raiseErrorStr("R must be between 0 to 255", .{});
-    if (g < 0 or g > 255) L.raiseErrorStr("G must be between 0 to 255", .{});
-    if (b < 0 or b > 255) L.raiseErrorStr("B must be between 0 to 255", .{});
+    if (r < 0 or r > 255)
+        L.raiseErrorStr("R must be between 0 to 255", .{});
+    if (g < 0 or g > 255)
+        L.raiseErrorStr("G must be between 0 to 255", .{});
+    if (b < 0 or b > 255)
+        L.raiseErrorStr("B must be between 0 to 255", .{});
 
     const buf = try std.fmt.allocPrint(allocator, "\x1b[48;2;{d};{d};{d}m", .{
         r, g, b,
@@ -279,8 +287,10 @@ const LuaStdIn = struct {
         if (std.mem.eql(u8, namecall, "read")) {
             var fds = [_]sysfd.context.pollfd{.{ .events = sysfd.context.POLLIN, .fd = file_ptr.handle, .revents = 0 }};
             const poll = try sysfd.context.poll(&fds, 0);
-            if (poll < 0) std.debug.panic("InternalError (Bad Poll)", .{});
-            if (poll == 0) return 0;
+            if (poll < 0)
+                std.debug.panic("InternalError (Bad Poll)", .{});
+            if (poll == 0)
+                return 0;
 
             const allocator = L.allocator();
             const maxBytes = L.optUnsigned(2) orelse 1;
@@ -407,25 +417,37 @@ pub fn loadLib(L: *Luau) void {
     // StdIn
     const stdin_ptr = L.newUserdata(std.fs.File);
     stdin_ptr.* = stdIn;
-    if (L.getMetatableRegistry(LuaStdIn.META) == .table) L.setMetatable(-2) else std.debug.panic("InternalError (Stdin Metatable not initialized)", .{});
+    if (L.getMetatableRegistry(LuaStdIn.META) == .table)
+        L.setMetatable(-2)
+    else
+        std.debug.panic("InternalError (Stdin Metatable not initialized)", .{});
     L.setFieldAhead(-1, "stdin");
 
     // StdOut
     const stdout_ptr = L.newUserdata(std.fs.File);
     stdout_ptr.* = stdOut;
-    if (L.getMetatableRegistry(LuaStdOut.META) == .table) L.setMetatable(-2) else std.debug.panic("InternalError (StdOut Metatable not initialized)", .{});
+    if (L.getMetatableRegistry(LuaStdOut.META) == .table)
+        L.setMetatable(-2)
+    else
+        std.debug.panic("InternalError (StdOut Metatable not initialized)", .{});
     L.setFieldAhead(-1, "stdout");
 
     // StdErr
     const stderr_ptr = L.newUserdata(std.fs.File);
     stderr_ptr.* = stdErr;
-    if (L.getMetatableRegistry(LuaStdOut.META) == .table) L.setMetatable(-2) else std.debug.panic("InternalError (StdOut Metatable not initialized)", .{});
+    if (L.getMetatableRegistry(LuaStdOut.META) == .table)
+        L.setMetatable(-2)
+    else
+        std.debug.panic("InternalError (StdOut Metatable not initialized)", .{});
     L.setFieldAhead(-1, "stderr");
 
     // Terminal
     TERMINAL = Terminal.init(stdIn, stdOut);
     L.pushLightUserdata(&TERMINAL);
-    if (L.getMetatableRegistry(LuaTerminal.META) == .table) L.setMetatable(-2) else std.debug.panic("InternalError (Terminal Metatable not initialized)", .{});
+    if (L.getMetatableRegistry(LuaTerminal.META) == .table)
+        L.setMetatable(-2)
+    else
+        std.debug.panic("InternalError (Terminal Metatable not initialized)", .{});
     L.setFieldAhead(-1, "terminal");
 
     TERMINAL.?.setOutputMode() catch std.debug.print("[Win32] Failed to set output codepoint\n", .{});

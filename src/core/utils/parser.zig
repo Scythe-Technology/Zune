@@ -9,7 +9,8 @@ pub fn getLineInfo(string: []const u8, pos: usize) LineInfo {
     var line: usize = 1;
     var col: usize = 0;
     for (0..pos) |p| {
-        if (p >= string.len) break;
+        if (p >= string.len)
+            break;
         switch (string[pos]) {
             '\n' => {
                 line += 1;
@@ -23,14 +24,19 @@ pub fn getLineInfo(string: []const u8, pos: usize) LineInfo {
 
 pub fn nextNonCharacter(slice: []const u8, comptime characters: []const u8) usize {
     loop: for (slice, 0..) |c, p| {
-        for (characters) |b| if (b == c) continue :loop;
+        for (characters) |b|
+            if (b == c)
+                continue :loop;
         return p;
     }
     return slice.len;
 }
 
 pub fn nextCharacter(slice: []const u8, comptime characters: []const u8) usize {
-    for (slice, 0..) |c, p| for (characters) |b| if (b == c) return p;
+    for (slice, 0..) |c, p|
+        for (characters) |b|
+            if (b == c)
+                return p;
     return slice.len;
 }
 

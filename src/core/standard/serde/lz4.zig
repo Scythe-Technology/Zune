@@ -20,9 +20,11 @@ pub fn lua_compress(L: *Luau) !i32 {
         L.checkType(2, .table);
         const levelType = L.getField(2, "level");
         if (!luau.isNoneOrNil(levelType)) {
-            if (levelType != .number) L.raiseErrorStr("Options 'level' field must be a number", .{});
+            if (levelType != .number)
+                L.raiseErrorStr("Options 'level' field must be a number", .{});
             const num = L.toInteger(-1) catch unreachable;
-            if (num < 0) L.raiseErrorStr("Options 'level' must not be less than 0", .{});
+            if (num < 0)
+                L.raiseErrorStr("Options 'level' must not be less than 0", .{});
             level = @intCast(num);
         }
         L.pop(1);
@@ -46,7 +48,10 @@ pub fn lua_compress(L: *Luau) !i32 {
     @memcpy(out[0..4], header[0..4]);
     @memcpy(out[4..][0..buf.items.len], buf.items[0..]);
 
-    if (is_buffer) try L.pushBuffer(out) else L.pushLString(out);
+    if (is_buffer)
+        try L.pushBuffer(out)
+    else
+        L.pushLString(out);
 
     return 1;
 }
@@ -58,7 +63,8 @@ pub fn lua_decompress(L: *Luau) !i32 {
 
     const string = if (is_buffer) L.checkBuffer(1) else L.checkString(1);
 
-    if (string.len < 4) L.raiseErrorStr("InvalidHeader", .{});
+    if (string.len < 4)
+        L.raiseErrorStr("InvalidHeader", .{});
 
     var decoder = try lz4.Decoder.init(allocator);
     defer decoder.deinit();
@@ -68,7 +74,10 @@ pub fn lua_decompress(L: *Luau) !i32 {
     const decompressed = try decoder.decompress(string[4..], sizeHint);
     defer allocator.free(decompressed);
 
-    if (is_buffer) try L.pushBuffer(decompressed) else L.pushLString(decompressed);
+    if (is_buffer)
+        try L.pushBuffer(decompressed)
+    else
+        L.pushLString(decompressed);
 
     return 1;
 }

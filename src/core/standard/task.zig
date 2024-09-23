@@ -19,14 +19,16 @@ fn task_cancel(L: *Luau, scheduler: *Scheduler) i32 {
     const thread = L.toThread(1) catch L.raiseErrorStr("Expected thread", .{});
     scheduler.cancelThread(thread);
     const status = L.statusThread(thread);
-    if (status != .finished and status != .err and status != .suspended) L.raiseErrorStr("Cannot close %s coroutine", .{@tagName(status).ptr});
+    if (status != .finished and status != .err and status != .suspended)
+        L.raiseErrorStr("Cannot close %s coroutine", .{@tagName(status).ptr});
     thread.resetThread();
     return 0;
 }
 
 fn task_spawn(L: *Luau, scheduler: *Scheduler) i32 {
     const fnType = L.typeOf(1);
-    if (fnType != luau.LuaType.function and fnType != luau.LuaType.thread) L.raiseErrorStr("Expected function or thread", .{});
+    if (fnType != luau.LuaType.function and fnType != luau.LuaType.thread)
+        L.raiseErrorStr("Expected function or thread", .{});
 
     const top = L.getTop();
     const args = top - 1;
@@ -55,7 +57,8 @@ fn task_spawn(L: *Luau, scheduler: *Scheduler) i32 {
 
 fn task_defer(L: *Luau, scheduler: *Scheduler) i32 {
     const fnType = L.typeOf(1);
-    if (fnType != luau.LuaType.function and fnType != luau.LuaType.thread) L.raiseErrorStr("Expected function or thread", .{});
+    if (fnType != luau.LuaType.function and fnType != luau.LuaType.thread)
+        L.raiseErrorStr("Expected function or thread", .{});
 
     const top = L.getTop();
     const args = top - 1;
@@ -82,7 +85,8 @@ fn task_defer(L: *Luau, scheduler: *Scheduler) i32 {
 fn task_delay(L: *Luau, scheduler: *Scheduler) i32 {
     const time = L.checkNumber(1);
     const fnType = L.typeOf(2);
-    if (fnType != luau.LuaType.function and fnType != luau.LuaType.thread) L.raiseErrorStr("Expected function or thread", .{});
+    if (fnType != luau.LuaType.function and fnType != luau.LuaType.thread)
+        L.raiseErrorStr("Expected function or thread", .{});
 
     const top = L.getTop();
     const args = top - 2;
@@ -120,7 +124,8 @@ fn task_count(L: *Luau, scheduler: *Scheduler) i32 {
     var out: i32 = 0;
 
     for (kind) |c| {
-        if (out > 4) L.raiseErrorStr("Too many kinds", .{});
+        if (out > 4)
+            L.raiseErrorStr("Too many kinds", .{});
         switch (c) {
             's' => {
                 out += 1;

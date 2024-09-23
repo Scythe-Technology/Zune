@@ -41,7 +41,8 @@ pub fn main() !void {
 
 fn shutdown() void {
     if (Repl.REPL_STATE > 0) {
-        if (Repl.SigInt()) return;
+        if (Repl.SigInt())
+            return;
     } else if (Zune.corelib.process.SIGINT_LUA) |handler| {
         const L = handler.state;
         if (L.rawGetIndex(luau.REGISTRYINDEX, handler.ref) == .function) {

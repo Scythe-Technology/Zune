@@ -27,7 +27,8 @@ pub fn start() !void {
         return command.execute(zune.DEFAULT_ALLOCATOR, &.{});
     }
 
-    if (CommandMap.get(args[1])) |command| return command.execute(zune.DEFAULT_ALLOCATOR, args[2..]);
+    if (CommandMap.get(args[1])) |command|
+        return command.execute(zune.DEFAULT_ALLOCATOR, args[2..]);
 
     std.debug.print("Unknown command, try 'help' or '-h'\n", .{});
 

@@ -12,7 +12,8 @@ pub const LIB_NAME = "@zcore/regex";
 fn lua_regexCaptureSearch(L: *Luau, re: *Regex, input: []const u8, index: *usize, captures: *i32, global: bool) !void {
     var relative_index: usize = 0;
     while (true) {
-        if (relative_index >= input.len) break;
+        if (relative_index >= input.len)
+            break;
         if (try re.search(input[relative_index..])) |match| {
             L.newTable();
             defer match.deinit();
@@ -30,7 +31,8 @@ fn lua_regexCaptureSearch(L: *Luau, re: *Regex, input: []const u8, index: *usize
             L.rawSetIndex(-2, captures.*);
             captures.* += 1;
         } else break;
-        if (!global) break;
+        if (!global)
+            break;
     }
     index.* += input.len;
 }
@@ -125,7 +127,8 @@ const LuaRegex = struct {
 fn regex_new(L: *Luau) !i32 {
     const flags = L.optString(2) orelse "";
 
-    if (flags.len > 2) L.raiseErrorStr("Too many flags provided", .{});
+    if (flags.len > 2)
+        L.raiseErrorStr("Too many flags provided", .{});
 
     var flag: c_int = 0;
     for (flags) |f| switch (f) {

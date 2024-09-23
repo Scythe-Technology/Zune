@@ -20,7 +20,10 @@ const LuaDatetime = struct {
         const allocator = L.allocator();
 
         if (std.mem.eql(u8, namecall, "toIsoDate") or std.mem.eql(u8, namecall, "ToIsoDate")) {
-            const utc = if (datetime_ptr.isAware()) try datetime_ptr.tzLocalize(null) else datetime_ptr.*;
+            const utc = if (datetime_ptr.isAware())
+                try datetime_ptr.tzLocalize(null)
+            else
+                datetime_ptr.*;
             const iso = try std.fmt.allocPrint(allocator, "{}Z", .{utc});
             defer allocator.free(iso);
 
@@ -30,7 +33,10 @@ const LuaDatetime = struct {
         } else if (std.mem.eql(u8, namecall, "toLocalTime") or std.mem.eql(u8, namecall, "ToLocalTime")) {
             var tz = try time.Timezone.tzLocal(allocator);
             defer tz.deinit();
-            const date = if (datetime_ptr.isNaive()) try datetime_ptr.tzLocalize(time.Timezone.UTC) else datetime_ptr.*;
+            const date = if (datetime_ptr.isNaive())
+                try datetime_ptr.tzLocalize(time.Timezone.UTC)
+            else
+                datetime_ptr.*;
             const local = try date.tzConvert(tz);
             L.newTable();
 
@@ -44,7 +50,10 @@ const LuaDatetime = struct {
 
             return 1;
         } else if (std.mem.eql(u8, namecall, "toUniversalTime") or std.mem.eql(u8, namecall, "ToUniversalTime")) {
-            const utc = if (datetime_ptr.isAware()) try datetime_ptr.tzConvert(time.Timezone.UTC) else try datetime_ptr.tzLocalize(time.Timezone.UTC);
+            const utc = if (datetime_ptr.isAware())
+                try datetime_ptr.tzConvert(time.Timezone.UTC)
+            else
+                try datetime_ptr.tzLocalize(time.Timezone.UTC);
             L.newTable();
 
             L.setFieldInteger(-1, "year", @intCast(utc.year));
@@ -60,7 +69,10 @@ const LuaDatetime = struct {
             const format_str = L.checkString(2);
             var tz = try time.Timezone.tzLocal(allocator);
             defer tz.deinit();
-            const date = if (datetime_ptr.isNaive()) try datetime_ptr.tzLocalize(time.Timezone.UTC) else datetime_ptr.*;
+            const date = if (datetime_ptr.isNaive())
+                try datetime_ptr.tzLocalize(time.Timezone.UTC)
+            else
+                datetime_ptr.*;
             const local = try date.tzConvert(tz);
 
             var buf = std.ArrayList(u8).init(allocator);
@@ -73,7 +85,10 @@ const LuaDatetime = struct {
             return 1;
         } else if (std.mem.eql(u8, namecall, "formatUniversalTime") or std.mem.eql(u8, namecall, "FormatUniversalTime")) {
             const format_str = L.checkString(2);
-            const utc = if (datetime_ptr.isAware()) try datetime_ptr.tzConvert(time.Timezone.UTC) else try datetime_ptr.tzLocalize(time.Timezone.UTC);
+            const utc = if (datetime_ptr.isAware())
+                try datetime_ptr.tzConvert(time.Timezone.UTC)
+            else
+                try datetime_ptr.tzLocalize(time.Timezone.UTC);
 
             var buf = std.ArrayList(u8).init(allocator);
             defer buf.deinit();
@@ -102,14 +117,18 @@ const LuaDatetime = struct {
     }
 
     pub fn __dtor(datetime_ptr: *Datetime) void {
-        if (datetime_ptr.tzinfo) |*tz| tz.deinit();
+        if (datetime_ptr.tzinfo) |*tz|
+            tz.deinit();
     }
 };
 
 fn datetime_now(L: *Luau) !i32 {
     const datetime_ptr = L.newUserdata(Datetime);
     datetime_ptr.* = Datetime.now(null);
-    if (L.getMetatableRegistry(LuaDatetime.META) == .table) L.setMetatable(-2) else std.debug.panic("InternalError (Datetime Metatable not initialized)", .{});
+    if (L.getMetatableRegistry(LuaDatetime.META) == .table)
+        L.setMetatable(-2)
+    else
+        std.debug.panic("InternalError (Datetime Metatable not initialized)", .{});
     return 1;
 }
 
@@ -117,7 +136,10 @@ fn datetime_fromUnixTimestamp(L: *Luau) !i32 {
     const timestamp = L.checkNumber(1);
     const datetime_ptr = L.newUserdata(Datetime);
     datetime_ptr.* = try Datetime.fromUnix(@intFromFloat(timestamp), .second, null);
-    if (L.getMetatableRegistry(LuaDatetime.META) == .table) L.setMetatable(-2) else std.debug.panic("InternalError (Datetime Metatable not initialized)", .{});
+    if (L.getMetatableRegistry(LuaDatetime.META) == .table)
+        L.setMetatable(-2)
+    else
+        std.debug.panic("InternalError (Datetime Metatable not initialized)", .{});
     return 1;
 }
 
@@ -125,7 +147,10 @@ fn datetime_fromUnixTimestampMillis(L: *Luau) !i32 {
     const timestamp = L.checkNumber(1);
     const datetime_ptr = L.newUserdata(Datetime);
     datetime_ptr.* = try Datetime.fromUnix(@intFromFloat(timestamp), .millisecond, null);
-    if (L.getMetatableRegistry(LuaDatetime.META) == .table) L.setMetatable(-2) else std.debug.panic("InternalError (Datetime Metatable not initialized)", .{});
+    if (L.getMetatableRegistry(LuaDatetime.META) == .table)
+        L.setMetatable(-2)
+    else
+        std.debug.panic("InternalError (Datetime Metatable not initialized)", .{});
     return 1;
 }
 
@@ -148,7 +173,10 @@ fn datetime_fromUniversalTime(L: *Luau) !i32 {
         .second = @intCast(second),
         .nanosecond = @intCast(millisecond * std.time.ns_per_ms),
     });
-    if (L.getMetatableRegistry(LuaDatetime.META) == .table) L.setMetatable(-2) else std.debug.panic("InternalError (Datetime Metatable not initialized)", .{});
+    if (L.getMetatableRegistry(LuaDatetime.META) == .table)
+        L.setMetatable(-2)
+    else
+        std.debug.panic("InternalError (Datetime Metatable not initialized)", .{});
     return 1;
 }
 
@@ -174,7 +202,10 @@ fn datetime_fromLocalTime(L: *Luau) !i32 {
         .nanosecond = @intCast(millisecond * std.time.ns_per_ms),
         .tzinfo = try time.Timezone.tzLocal(allocator),
     });
-    if (L.getMetatableRegistry(LuaDatetime.META) == .table) L.setMetatable(-2) else std.debug.panic("InternalError (Datetime Metatable not initialized)", .{});
+    if (L.getMetatableRegistry(LuaDatetime.META) == .table)
+        L.setMetatable(-2)
+    else
+        std.debug.panic("InternalError (Datetime Metatable not initialized)", .{});
     return 1;
 }
 
@@ -183,7 +214,10 @@ fn datetime_fromIsoDate(L: *Luau) !i32 {
 
     const datetime_ptr = L.newUserdataDtor(Datetime, LuaDatetime.__dtor);
     datetime_ptr.* = try time.parseISO8601(iso_date);
-    if (L.getMetatableRegistry(LuaDatetime.META) == .table) L.setMetatable(-2) else std.debug.panic("InternalError (Datetime Metatable not initialized)", .{});
+    if (L.getMetatableRegistry(LuaDatetime.META) == .table)
+        L.setMetatable(-2)
+    else
+        std.debug.panic("InternalError (Datetime Metatable not initialized)", .{});
     return 1;
 }
 
@@ -193,7 +227,10 @@ fn datetime_parse(L: *Luau) !i32 {
 
     const datetime_ptr = L.newUserdataDtor(Datetime, LuaDatetime.__dtor);
     datetime_ptr.* = try parse.parse(allocator, date_string);
-    if (L.getMetatableRegistry(LuaDatetime.META) == .table) L.setMetatable(-2) else std.debug.panic("InternalError (Datetime Metatable not initialized)", .{});
+    if (L.getMetatableRegistry(LuaDatetime.META) == .table)
+        L.setMetatable(-2)
+    else
+        std.debug.panic("InternalError (Datetime Metatable not initialized)", .{});
     return 1;
 }
 

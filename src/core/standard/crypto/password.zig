@@ -63,7 +63,8 @@ pub fn lua_hash(L: *Luau) !i32 {
                     switch (try L.getFieldObjConsumed(2, "cost")) {
                         .number => |n| {
                             cost = @intFromFloat(n);
-                            if (cost < 4 or cost > 31) L.raiseErrorStr("Invalid 'cost' (Must be between 4 to 31)", .{});
+                            if (cost < 4 or cost > 31)
+                                L.raiseErrorStr("Invalid 'cost' (Must be between 4 to 31)", .{});
                         },
                         .none, .nil => {},
                         else => L.raiseErrorStr("Invalid 'cost' (Number expected)", .{}),
@@ -106,15 +107,18 @@ pub fn lua_verify(L: *Luau) i32 {
 
     if (hash.len < 8) L.raiseErrorStr("InvalidHash (Must be PHC encoded)", .{});
 
-    if (@as(u32, @bitCast(hash[0..4].*)) == TAG_BCRYPT) L.pushBoolean(if (bcrypt.strVerify(
-        hash,
-        password,
-        .{ .allocator = allocator },
-    )) true else |_| false) else L.pushBoolean(if (argon2.strVerify(
-        hash,
-        password,
-        .{ .allocator = allocator },
-    )) true else |_| false);
+    if (@as(u32, @bitCast(hash[0..4].*)) == TAG_BCRYPT)
+        L.pushBoolean(if (bcrypt.strVerify(
+            hash,
+            password,
+            .{ .allocator = allocator },
+        )) true else |_| false)
+    else
+        L.pushBoolean(if (argon2.strVerify(
+            hash,
+            password,
+            .{ .allocator = allocator },
+        )) true else |_| false);
 
     return 1;
 }

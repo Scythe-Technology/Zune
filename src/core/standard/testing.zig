@@ -116,17 +116,31 @@ pub fn finish_testing(L: *Luau, rawstart: f64) TestResult {
     const end = luau.clock();
 
     _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
-    if (L.getField(-1, "@zcore/testing") != .table) std.debug.panic("No test framework loaded", .{});
+    if (L.getField(-1, "@zcore/testing") != .table)
+        std.debug.panic("No test framework loaded", .{});
 
-    const stdOut = if (L.getField(luau.GLOBALSINDEX, "_testing_stdOut") == .boolean) L.toBoolean(-1) else true;
+    const stdOut = if (L.getField(luau.GLOBALSINDEX, "_testing_stdOut") == .boolean)
+        L.toBoolean(-1)
+    else
+        true;
     L.pop(1);
 
-    const start = if (L.getField(luau.REGISTRYINDEX, "_START") == .number) L.toNumber(-1) catch rawstart else rawstart;
+    const start = if (L.getField(luau.REGISTRYINDEX, "_START") == .number)
+        L.toNumber(-1) catch rawstart
+    else
+        rawstart;
+
     const time = end - start;
     L.pop(1);
-    const mainTestCount = if (L.getField(-1, "_COUNT") == .number) L.toInteger(-1) catch 0 else 0;
+    const mainTestCount = if (L.getField(-1, "_COUNT") == .number)
+        L.toInteger(-1) catch unreachable
+    else
+        0;
     L.pop(1);
-    const mainFailedCount = if (L.getField(-1, "_FAILED") == .number) L.toInteger(-1) catch 0 else 0;
+    const mainFailedCount = if (L.getField(-1, "_FAILED") == .number)
+        L.toInteger(-1) catch unreachable
+    else
+        0;
     L.pop(1);
 
     if (stdOut) {

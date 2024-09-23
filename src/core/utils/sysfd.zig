@@ -27,12 +27,14 @@ pub const context = switch (builtin.os.tag) {
         }
         pub fn poll(fds: []pollfd, timeout: i32) !usize {
             var handles: [256]std.os.windows.HANDLE = undefined;
-            if (fds.len > handles.len) return error.TooManyHandles;
+            if (fds.len > handles.len)
+                return error.TooManyHandles;
             for (fds, 0..) |fd, i| handles[i] = fd.fd;
 
             const res = std.os.windows.kernel32.WaitForMultipleObjects(@intCast(fds.len), &handles, std.os.windows.FALSE, @intCast(timeout));
 
-            if (res == std.os.windows.WAIT_TIMEOUT) return 0;
+            if (res == std.os.windows.WAIT_TIMEOUT)
+                return 0;
 
             if (res >= std.os.windows.WAIT_OBJECT_0 and @as(usize, @intCast(res)) < std.os.windows.WAIT_OBJECT_0 + fds.len) {
                 const index = res - std.os.windows.WAIT_OBJECT_0;

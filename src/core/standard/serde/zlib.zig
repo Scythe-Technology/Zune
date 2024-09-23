@@ -17,10 +17,13 @@ pub fn lua_compress(L: *Luau) !i32 {
         L.checkType(2, .table);
         const levelType = L.getField(2, "level");
         if (!luau.isNoneOrNil(levelType)) {
-            if (levelType != .number) L.raiseErrorStr("Options 'level' field must be a number", .{});
+            if (levelType != .number)
+                L.raiseErrorStr("Options 'level' field must be a number", .{});
             const num = L.toInteger(-1) catch unreachable;
-            if (num < 4 or num > 13) L.raiseErrorStr("Options 'level' must not be over 13 or less than 4 or equal to 10", .{});
-            if (num == 10) L.raiseErrorStr("Options 'level' cannot be %d, level does not exist", .{num});
+            if (num < 4 or num > 13)
+                L.raiseErrorStr("Options 'level' must not be over 13 or less than 4 or equal to 10", .{});
+            if (num == 10)
+                L.raiseErrorStr("Options 'level' cannot be %d, level does not exist", .{num});
             level = @intCast(num);
         }
         L.pop(1);
@@ -54,7 +57,10 @@ pub fn lua_decompress(L: *Luau) !i32 {
 
     try std.compress.zlib.decompress(stream.reader(), buf.writer());
 
-    if (is_buffer) try L.pushBuffer(buf.items) else L.pushLString(buf.items);
+    if (is_buffer)
+        try L.pushBuffer(buf.items)
+    else
+        L.pushLString(buf.items);
 
     return 1;
 }

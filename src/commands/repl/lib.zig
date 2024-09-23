@@ -109,8 +109,10 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
             if (try in_reader.readByte() != '[') continue;
             switch (try in_reader.readByte()) {
                 'A' => {
-                    if (history.size() == 0) continue;
-                    if (history.isLatest()) history.saveTemp(buffer.items);
+                    if (history.size() == 0)
+                        continue;
+                    if (history.isLatest())
+                        history.saveTemp(buffer.items);
                     if (history.previous()) |line| {
                         buffer.clearRetainingCapacity();
                         try buffer.appendSlice(line);
@@ -129,7 +131,8 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
                         try terminal.clearLine();
                         try out.print("> {s}", .{buffer.items});
                     }
-                    if (history.isLatest()) history.clearTemp();
+                    if (history.isLatest())
+                        history.clearTemp();
                 },
                 'C' => {
                     if (position < buffer.items.len) {
@@ -183,18 +186,22 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
                 position -= 1;
                 _ = buffer.orderedRemove(position);
                 try terminal.clearEndToCursor();
-                if (append) try terminal.writeAllRetainCursor(buffer.items[position..]);
+                if (append)
+                    try terminal.writeAllRetainCursor(buffer.items[position..]);
             }
         } else if (byte == 3 or byte == 4) {
-            if (REPL_STATE > 0 and SigInt()) continue;
+            if (REPL_STATE > 0 and SigInt())
+                continue;
             break;
         } else {
-            if (buffer.items.len > 256) @panic("Buffer Maximized");
+            if (buffer.items.len > 256)
+                @panic("Buffer Maximized");
             const append = position < buffer.items.len;
             try buffer.insert(position, byte);
             try out.writeByte(byte);
             position += 1;
-            if (append) try terminal.writeAllRetainCursor(buffer.items[position..]);
+            if (append)
+                try terminal.writeAllRetainCursor(buffer.items[position..]);
         }
     }
 }

@@ -143,11 +143,13 @@ pub fn addTask(self: *Self, comptime T: type, data: *T, L: *Luau, comptime handl
             return @call(.always_inline, handler, .{ @as(*T, @alignCast(@ptrCast(ctx))), l, scheduler });
         }
     }.inner;
+
     const virtualDtor = struct {
         fn inner(ctx: *anyopaque, l: *Luau, scheduler: *Self) void {
             return @call(.always_inline, destructor, .{ @as(*T, @alignCast(@ptrCast(ctx))), l, scheduler });
         }
     }.inner;
+
     self.tasks.append(.{
         .data = @ptrCast(data),
         .state = L,

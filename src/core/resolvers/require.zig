@@ -102,7 +102,10 @@ pub fn zune_require(L: *Luau) !i32 {
             const delimiter = std.mem.indexOfScalar(u8, moduleName, '/') orelse moduleName.len;
             const alias = moduleName[1..delimiter];
             const path = aliases.get(alias) orelse return RequireError.NoAlias;
-            const modulePath = if (moduleName.len - delimiter > 1) try std.fs.path.join(allocator, &.{ path, moduleName[delimiter + 1 ..] }) else try allocator.dupe(u8, path);
+            const modulePath = if (moduleName.len - delimiter > 1)
+                try std.fs.path.join(allocator, &.{ path, moduleName[delimiter + 1 ..] })
+            else
+                try allocator.dupe(u8, path);
             defer allocator.free(modulePath);
 
             const absPath = try std.fs.cwd().realpathAlloc(allocator, ".");
@@ -110,10 +113,12 @@ pub fn zune_require(L: *Luau) !i32 {
 
             moduleAbsolutePath = Engine.findLuauFileFromPathZ(allocator, absPath, modulePath) catch return error.FileNotFound;
         } else {
-            if (L.getField(luau.GLOBALSINDEX, "_FILE") != .string) return finishError(L, "InternalError (_FILE is invalid)");
+            if (L.getField(luau.GLOBALSINDEX, "_FILE") != .string)
+                return finishError(L, "InternalError (_FILE is invalid)");
             const moduleFilePath = L.toString(-1) catch unreachable;
             L.pop(1); // drop: _FILE
-            if (!std.fs.path.isAbsolute(moduleFilePath)) return finishError(L, "InternalError (_FILE is not absolute)");
+            if (!std.fs.path.isAbsolute(moduleFilePath))
+                return finishError(L, "InternalError (_FILE is not absolute)");
 
             if (MODE == .RelativeToFile) {
                 const relativeDirPath = std.fs.path.dirname(moduleFilePath) orelse return error.FileNotFound;
@@ -184,7 +189,10 @@ pub fn zune_require(L: *Luau) !i32 {
 
         const resumeStatus: ?luau.ResumeStatus = ML.resumeThread(L, 0) catch |err| switch (err) {
             error.Runtime, error.MsgHandler => res: {
-                if (!ML.isString(-1)) outErr = "Unknown Runtime Error" else outErr = ML.toString(-1) catch "ErrorNotString";
+                if (!ML.isString(-1))
+                    outErr = "Unknown Runtime Error"
+                else
+                    outErr = ML.toString(-1) catch "ErrorNotString";
                 break :res null;
             },
             error.Memory => res: {
@@ -195,12 +203,15 @@ pub fn zune_require(L: *Luau) !i32 {
         if (resumeStatus) |status| {
             if (status == .ok) {
                 const t = ML.getTop();
-                if (t > 1 or t < 0) outErr = "module must return one value";
-                if (t == 0) ML.pushNil();
+                if (t > 1 or t < 0)
+                    outErr = "module must return one value";
+                if (t == 0)
+                    ML.pushNil();
             } else if (status == .yield) outErr = "module must not yield";
         }
 
-        if (outErr != null) break :jmp;
+        if (outErr != null)
+            break :jmp;
 
         ML.xMove(L, 1);
         L.pushValue(-1);

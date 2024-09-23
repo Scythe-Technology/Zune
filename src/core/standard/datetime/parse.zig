@@ -38,7 +38,9 @@ const MonthMap = std.StaticStringMap(Month).initComptime(.{
 // eg, "Wed, 21 Oct 2015 07:28:00 GMT"
 pub fn parseModified(allocator: std.mem.Allocator, timestring: []const u8) !Datetime {
     const value = std.mem.trim(u8, timestring, " ");
-    if (value.len < 29) return error.InvalidFormat;
+    if (value.len < 29)
+        return error.InvalidFormat;
+
     const day = std.fmt.parseInt(u8, value[5..7], 10) catch return error.InvalidFormat;
 
     const lower_month = try std.ascii.allocLowerString(allocator, value[8..11]);
@@ -49,8 +51,11 @@ pub fn parseModified(allocator: std.mem.Allocator, timestring: []const u8) !Date
     const hour = std.fmt.parseInt(u8, value[17..19], 10) catch return error.InvalidFormat;
     const minute = std.fmt.parseInt(u8, value[20..22], 10) catch return error.InvalidFormat;
     const second = std.fmt.parseInt(u8, value[23..25], 10) catch return error.InvalidFormat;
+
     const tz = std.mem.trim(u8, value[26..], " ");
-    if (tz.len != 3) return error.InvalidFormat;
+    if (tz.len != 3)
+        return error.InvalidFormat;
+
     var tzinfo = try time.Timezone.fromTzdata(tz, allocator);
     errdefer tzinfo.deinit();
     return Datetime.fromFields(.{
@@ -68,7 +73,9 @@ pub fn parseModified(allocator: std.mem.Allocator, timestring: []const u8) !Date
 // eg, "21 Oct 2015 07:28:00 GMT"
 pub fn parseModifiedShort(allocator: std.mem.Allocator, timestring: []const u8) !Datetime {
     const value = std.mem.trim(u8, timestring, " ");
-    if (value.len < 24) return error.InvalidFormat;
+    if (value.len < 24)
+        return error.InvalidFormat;
+
     const day = std.fmt.parseInt(u8, value[0..2], 10) catch return error.InvalidFormat;
 
     const lower_month = try std.ascii.allocLowerString(allocator, value[3..6]);
@@ -79,8 +86,11 @@ pub fn parseModifiedShort(allocator: std.mem.Allocator, timestring: []const u8) 
     const hour = std.fmt.parseInt(u8, value[12..14], 10) catch return error.InvalidFormat;
     const minute = std.fmt.parseInt(u8, value[15..17], 10) catch return error.InvalidFormat;
     const second = std.fmt.parseInt(u8, value[18..20], 10) catch return error.InvalidFormat;
+
     const tz = std.mem.trim(u8, value[21..], " ");
-    if (tz.len != 3) return error.InvalidFormat;
+    if (tz.len != 3)
+        return error.InvalidFormat;
+
     var tzinfo = try time.Timezone.fromTzdata(tz, allocator);
     errdefer tzinfo.deinit();
     return Datetime.fromFields(.{
@@ -97,7 +107,8 @@ pub fn parseModifiedShort(allocator: std.mem.Allocator, timestring: []const u8) 
 pub fn parse(allocator: std.mem.Allocator, str: []const u8) !Datetime {
     const trimmed = std.mem.trimLeft(u8, std.mem.trimRight(u8, str, " "), " ");
     if (std.mem.indexOfScalar(u8, trimmed, '-') == null) {
-        if (str.len < 29) return parseModifiedShort(allocator, trimmed);
+        if (str.len < 29)
+            return parseModifiedShort(allocator, trimmed);
         return parseModified(allocator, trimmed);
     } else return time.parseISO8601(trimmed);
 }

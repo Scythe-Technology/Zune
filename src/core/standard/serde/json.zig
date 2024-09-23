@@ -62,23 +62,29 @@ fn encode(L: *Luau, allocator: std.mem.Allocator, buf: *std.ArrayList(u8), track
             if (tableSize > 0 or !nextKey) {
                 try buf.append('[');
                 if (nextKey) {
-                    if (L.typeOf(-2) != .number) return Error.InvalidKey;
+                    if (L.typeOf(-2) != .number)
+                        return Error.InvalidKey;
                     try encode(L, allocator, buf, tracked);
                     L.pop(1); // drop: value
                     var n: i32 = 1;
                     while (L.next(-2)) {
                         try buf.append(',');
-                        if (L.typeOf(-2) != .number) return Error.InvalidKey;
+
+                        if (L.typeOf(-2) != .number)
+                            return Error.InvalidKey;
+
                         try encode(L, allocator, buf, tracked);
                         L.pop(1); // drop: value
                         n += 1;
                     }
-                    if (n != tableSize) return Error.TableSizeMismatch;
+                    if (n != tableSize)
+                        return Error.TableSizeMismatch;
                 }
                 try buf.append(']');
             } else {
                 try buf.appendSlice("{");
-                if (L.typeOf(-2) != .string) return Error.InvalidKey;
+                if (L.typeOf(-2) != .string)
+                    return Error.InvalidKey;
                 L.pushValue(-2); // push key
                 try encode(L, allocator, buf, tracked);
                 try buf.append(':');
@@ -87,7 +93,8 @@ fn encode(L: *Luau, allocator: std.mem.Allocator, buf: *std.ArrayList(u8), track
                 L.pop(1); // drop: value
                 while (L.next(-2)) {
                     try buf.append(',');
-                    if (L.typeOf(-2) != .string) return Error.InvalidKey;
+                    if (L.typeOf(-2) != .string)
+                        return Error.InvalidKey;
                     L.pushValue(-2); // push key [copy]
                     try encode(L, allocator, buf, tracked);
                     try buf.append(':');
@@ -108,7 +115,10 @@ fn encode(L: *Luau, allocator: std.mem.Allocator, buf: *std.ArrayList(u8), track
             const str = try L.toString(-1);
             try escape_string(buf, str);
         },
-        .boolean => if (L.toBoolean(-1)) try buf.appendSlice("true") else try buf.appendSlice("false"),
+        .boolean => if (L.toBoolean(-1))
+            try buf.appendSlice("true")
+        else
+            try buf.appendSlice("false"),
         else => return Error.UnsupportedType,
     }
 }

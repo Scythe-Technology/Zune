@@ -46,7 +46,8 @@ fn fs_readDir(L: *Luau) !i32 {
     while (true) {
         errdefer L.pop(2); // Drop: table, boolean
         const entry = try iter.next();
-        if (entry == null) break;
+        if (entry == null)
+            break;
         L.pushInteger(i);
         L.pushLString(entry.?.name);
         L.setTable(-3);
@@ -70,7 +71,10 @@ fn fs_writeDir(L: *Luau) !i32 {
     const path = L.checkString(1);
     const recursive = L.optBoolean(2) orelse false;
     const cwd = std.fs.cwd();
-    try (if (recursive) cwd.makePath(path) else cwd.makeDir(path));
+    try (if (recursive)
+        cwd.makePath(path)
+    else
+        cwd.makeDir(path));
     L.pushBoolean(true);
     return 1;
 }
@@ -86,7 +90,10 @@ fn fs_removeDir(L: *Luau) !i32 {
     const path = L.checkString(1);
     const recursive = L.optBoolean(2) orelse false;
     const cwd = std.fs.cwd();
-    try (if (recursive) cwd.deleteTree(path) else cwd.deleteDir(path));
+    try (if (recursive)
+        cwd.deleteTree(path)
+    else
+        cwd.deleteDir(path));
     L.pushBoolean(true);
     return 1;
 }
@@ -196,7 +203,8 @@ fn fs_move(L: *Luau) !i32 {
     const overwrite = L.optBoolean(3) orelse false;
     const cwd = std.fs.cwd();
     if (overwrite == false) {
-        if (internal_isFile(cwd, toPath) or internal_isDir(cwd, toPath)) return std.fs.Dir.MakeError.PathAlreadyExists;
+        if (internal_isFile(cwd, toPath) or internal_isDir(cwd, toPath))
+            return std.fs.Dir.MakeError.PathAlreadyExists;
     }
     try cwd.rename(fromPath, toPath);
     L.pushBoolean(true);
@@ -207,7 +215,8 @@ fn copyDir(fromDir: fs.Dir, toDir: fs.Dir, overwrite: bool) !void {
     var iter = fromDir.iterate();
     while (try iter.next()) |entry| switch (entry.kind) {
         .file => {
-            if (overwrite == false and internal_isFile(toDir, entry.name)) return error.PathAlreadyExists;
+            if (overwrite == false and internal_isFile(toDir, entry.name))
+                return error.PathAlreadyExists;
             try fromDir.copyFile(entry.name, toDir, entry.name, fs.Dir.CopyFileOptions{});
         },
         .directory => {
@@ -231,7 +240,8 @@ fn fs_copy(L: *Luau) !i32 {
     const overrite = L.optBoolean(3) orelse false;
     const cwd = std.fs.cwd();
     if (internal_isFile(cwd, fromPath)) {
-        if (overrite == false and internal_isFile(cwd, toPath)) return std.fs.Dir.MakeError.PathAlreadyExists;
+        if (overrite == false and internal_isFile(cwd, toPath))
+            return std.fs.Dir.MakeError.PathAlreadyExists;
 
         cwd.copyFile(fromPath, cwd, toPath, fs.Dir.CopyFileOptions{}) catch return UnhandledError.UnknownError;
     } else {
@@ -241,7 +251,9 @@ fn fs_copy(L: *Luau) !i32 {
             .no_follow = true,
         });
         defer fromDir.close();
-        if (overrite == false and internal_isDir(cwd, toPath)) return std.fs.Dir.MakeError.PathAlreadyExists else {
+        if (overrite == false and internal_isDir(cwd, toPath))
+            return std.fs.Dir.MakeError.PathAlreadyExists
+        else {
             cwd.makeDir(toPath) catch |err| switch (err) {
                 error.PathAlreadyExists => {},
                 else => return UnhandledError.UnknownError,
@@ -260,14 +272,16 @@ fn fs_copy(L: *Luau) !i32 {
 }
 
 fn fs_symlink(L: *Luau) !i32 {
-    if (builtin.os.tag == .windows) return HardwareError.NotSupported;
+    if (builtin.os.tag == .windows)
+        return HardwareError.NotSupported;
 
     const fromPath = L.checkString(1);
     const toPath = L.checkString(2);
     const cwd = std.fs.cwd();
 
     const isDir = internal_isDir(cwd, fromPath);
-    if (!isDir and !internal_isFile(cwd, fromPath)) return error.FileNotFound;
+    if (!isDir and !internal_isFile(cwd, fromPath))
+        return error.FileNotFound;
 
     const allocator = L.allocator();
 
@@ -313,7 +327,8 @@ const LuaWatch = struct {
 
         // TODO: prob should switch to static string map
         if (std.mem.eql(u8, namecall, "stop")) {
-            if (obj.ptr) |ptr| ptr.active = false;
+            if (obj.ptr) |ptr|
+                ptr.active = false;
             obj.ptr = null;
         } else L.raiseErrorStr("Unknown method: %s\n", .{namecall.ptr});
         return 0;
@@ -495,7 +510,8 @@ const LuaFile = struct {
     }
 
     pub fn __dtor(ptr: *FileObject) void {
-        if (ptr.open) ptr.handle.close();
+        if (ptr.open)
+            ptr.handle.close();
         ptr.open = false;
     }
 };
@@ -554,7 +570,8 @@ fn fs_createFile(L: *Luau) !i32 {
         L.checkType(2, .table);
         const modeType = L.getField(2, "exclusive");
         if (!luau.isNoneOrNil(modeType)) {
-            if (modeType != .boolean) return OpenError.BadExclusive;
+            if (modeType != .boolean)
+                return OpenError.BadExclusive;
             exclusive = L.toBoolean(-1);
         }
         L.pop(1);
@@ -573,7 +590,10 @@ fn fs_createFile(L: *Luau) !i32 {
         .open = true,
     };
 
-    if (L.getMetatableRegistry(LuaFile.META) == .table) L.setMetatable(-2) else std.debug.panic("InternalError (File Metatable not initialized)", .{});
+    if (L.getMetatableRegistry(LuaFile.META) == .table)
+        L.setMetatable(-2)
+    else
+        std.debug.panic("InternalError (File Metatable not initialized)", .{});
 
     return 2;
 }
@@ -602,7 +622,10 @@ fn fs_watch(L: *Luau, scheduler: *Scheduler) !i32 {
     const luaObj = L.newUserdata(WatchObject.Lua);
     luaObj.ptr = data;
 
-    if (L.getMetatableRegistry(LuaWatch.META) == .table) L.setMetatable(-2) else std.debug.panic("InternalError (Watch Metatable not initialized)", .{});
+    if (L.getMetatableRegistry(LuaWatch.META) == .table)
+        L.setMetatable(-2)
+    else
+        std.debug.panic("InternalError (Watch Metatable not initialized)", .{});
 
     data.* = .{
         .instance = watch,

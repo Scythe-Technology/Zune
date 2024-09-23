@@ -46,10 +46,15 @@ fn internal_process_getargs(L: *Luau, array: *std.ArrayList([]const u8), idx: i3
     while (L.next(-2)) {
         const keyType = L.typeOf(-2);
         const valueType = L.typeOf(-1);
-        if (keyType != luau.LuaType.number) return ProcessArgsError.NotArray;
+        if (keyType != luau.LuaType.number)
+            return ProcessArgsError.NotArray;
+
         const num = L.toInteger(-2) catch return ProcessArgsError.NotArray;
-        if (num != i) return ProcessArgsError.NotArray;
-        if (valueType != luau.LuaType.string) return ProcessArgsError.InvalidArgType;
+        if (num != i)
+            return ProcessArgsError.NotArray;
+        if (valueType != luau.LuaType.string)
+            return ProcessArgsError.InvalidArgType;
+
         const value = L.toString(-1) catch return ProcessArgsError.InvalidArgType;
 
         try array.append(value);
@@ -67,8 +72,10 @@ fn internal_process_envmap(L: *Luau, envMap: *std.process.EnvMap, idx: i32) !voi
     while (L.next(-2)) {
         const keyType = L.typeOf(-2);
         const valueType = L.typeOf(-1);
-        if (keyType != luau.LuaType.string) return ProcessEnvError.InvalidKeyType;
-        if (valueType != luau.LuaType.string) return ProcessEnvError.InvalidValueType;
+        if (keyType != luau.LuaType.string)
+            return ProcessEnvError.InvalidKeyType;
+        if (valueType != luau.LuaType.string)
+            return ProcessEnvError.InvalidValueType;
         const key = L.toString(-2) catch return ProcessEnvError.InvalidKeyType;
         const value = L.toString(-1) catch return ProcessEnvError.InvalidValueType;
         try envMap.put(key, value);
@@ -186,7 +193,8 @@ const ProcessChildOptions = struct {
             L.pop(1);
         }
 
-        if (useArgs) try internal_process_getargs(L, &childOptions.argArray, 2);
+        if (useArgs)
+            try internal_process_getargs(L, &childOptions.argArray, 2);
 
         try childOptions.argArray.insert(0, childOptions.cmd);
         if (childOptions.shell) |shell| {
@@ -194,7 +202,8 @@ const ProcessChildOptions = struct {
             try childOptions.tagged.append(joined);
             childOptions.argArray.clearAndFree();
             try childOptions.argArray.append(shell);
-            if (childOptions.shell_inline) |inlineCmd| try childOptions.argArray.append(inlineCmd);
+            if (childOptions.shell_inline) |inlineCmd|
+                try childOptions.argArray.append(inlineCmd);
             try childOptions.argArray.append(joined);
         }
 
@@ -230,8 +239,10 @@ const ProcessChildOptions = struct {
             internal_process_term(L, term);
             return 1;
         } else if (std.mem.eql(u8, namecall, "readOut")) {
-            if (childProcess.stdout == null) return outputError(L, "InternalError (No stdout stream found, did you spawn?)", .{});
-            if (childProcess.stdout_behavior != .Pipe) return outputError(L, "InternalError (stdout stream is not a pipe)", .{});
+            if (childProcess.stdout == null)
+                return outputError(L, "InternalError (No stdout stream found, did you spawn?)", .{});
+            if (childProcess.stdout_behavior != .Pipe)
+                return outputError(L, "InternalError (stdout stream is not a pipe)", .{});
             const allocator = L.allocator();
             const maxBytes = L.optUnsigned(2) orelse luaHelper.MAX_LUAU_SIZE;
 
@@ -246,8 +257,10 @@ const ProcessChildOptions = struct {
             L.pushLString(buffer[0..read_bytes]);
             return 1;
         } else if (std.mem.eql(u8, namecall, "readErr")) {
-            if (childProcess.stderr == null) return outputError(L, "InternalError (No stdout stream found, did you spawn?)", .{});
-            if (childProcess.stderr_behavior != .Pipe) return outputError(L, "InternalError (stderr stream is not a pipe)", .{});
+            if (childProcess.stderr == null)
+                return outputError(L, "InternalError (No stdout stream found, did you spawn?)", .{});
+            if (childProcess.stderr_behavior != .Pipe)
+                return outputError(L, "InternalError (stderr stream is not a pipe)", .{});
             const allocator = L.allocator();
             const maxBytes = L.optUnsigned(2) orelse luaHelper.MAX_LUAU_SIZE;
 
@@ -263,8 +276,10 @@ const ProcessChildOptions = struct {
             L.pushLString(buffer[0..read_bytes]);
             return 1;
         } else if (std.mem.eql(u8, namecall, "writeIn")) {
-            if (childProcess.stdin == null) return outputError(L, "InternalError (No stdout stream found, did you spawn?)", .{});
-            if (childProcess.stdin_behavior != .Pipe) return outputError(L, "InternalError (stderr stream is not a pipe)", .{});
+            if (childProcess.stdin == null)
+                return outputError(L, "InternalError (No stdout stream found, did you spawn?)", .{});
+            if (childProcess.stdin_behavior != .Pipe)
+                return outputError(L, "InternalError (stderr stream is not a pipe)", .{});
             const buffer = L.checkString(2);
 
             childProcess.stdin.?.writeAll(buffer) catch |err| {
@@ -278,8 +293,10 @@ const ProcessChildOptions = struct {
     }
 
     fn deinit(self: *ProcessChildOptions) void {
-        if (self.env) |env| @constCast(&env).deinit();
-        for (self.tagged.items) |mem| self.tagged.allocator.free(mem);
+        if (self.env) |env|
+            @constCast(&env).deinit();
+        for (self.tagged.items) |mem|
+            self.tagged.allocator.free(mem);
         self.argArray.deinit();
         self.tagged.deinit();
     }
@@ -294,7 +311,10 @@ fn process_run(L: *Luau) !i32 {
     const proc = try process.Child.run(.{
         .allocator = allocator,
         .argv = childOptions.argArray.items,
-        .env_map = if (childOptions.env) |env| &env else null,
+        .env_map = if (childOptions.env) |env|
+            &env
+        else
+            null,
         .cwd = childOptions.cwd,
     });
     defer allocator.free(proc.stdout);
@@ -335,7 +355,10 @@ fn process_create(L: *Luau) !i32 {
     childProcess.stdout_behavior = .Pipe;
     childProcess.stderr_behavior = .Pipe;
     childProcess.cwd = childOptions.cwd;
-    childProcess.env_map = if (childOptions.env) |env| &env else null;
+    childProcess.env_map = if (childOptions.env) |env|
+        &env
+    else
+        null;
 
     handlePtr.* = ProcessChildHandle{
         .options = childOptions,
@@ -373,7 +396,8 @@ fn decodeString(L: *Luau, slice: []const u8) !usize {
     var buf = std.ArrayList(u8).init(L.allocator());
     defer buf.deinit();
 
-    if (slice.len < 2) return DotEnvError.InvalidString;
+    if (slice.len < 2)
+        return DotEnvError.InvalidString;
     if (slice[0] == slice[1]) {
         L.pushString("");
         return 2;
@@ -386,7 +410,8 @@ fn decodeString(L: *Luau, slice: []const u8) !usize {
         switch (slice[pos]) {
             '\\' => if (stringQuote != '\'') {
                 pos += 1;
-                if (pos >= slice.len) return DotEnvError.InvalidString;
+                if (pos >= slice.len)
+                    return DotEnvError.InvalidString;
                 switch (slice[pos]) {
                     'n' => try buf.append('\n'),
                     '"', '`', '\'' => |b| try buf.append(b),
@@ -435,7 +460,8 @@ fn decodeEnvironment(L: *Luau, string: []const u8) !void {
         '=' => {
             const variableName = Parser.trimSpace(string[scan..pos]);
             pos += 1;
-            if (pos >= string.len) break;
+            if (pos >= string.len)
+                break;
             try validateWord(variableName);
             pos += Parser.nextNonCharacter(string[pos..], &WHITESPACE);
             L.pushLString(variableName);
@@ -516,11 +542,15 @@ fn process_onsignal(L: *Luau) !i32 {
 
     if (std.mem.eql(u8, sig, "INT")) {
         const GL = L.getMainThread();
-        if (GL != L) L.xPush(GL, 2);
-        const ref = GL.ref(if (GL != L) -1 else 2) catch L.raiseErrorStr("Failed to create reference", .{});
-        if (GL != L) GL.pop(1);
+        if (GL != L)
+            L.xPush(GL, 2);
 
-        if (SIGINT_LUA) |handler| handler.state.unref(handler.ref);
+        const ref = GL.ref(if (GL != L) -1 else 2) catch L.raiseErrorStr("Failed to create reference", .{});
+        if (GL != L)
+            GL.pop(1);
+
+        if (SIGINT_LUA) |handler|
+            handler.state.unref(handler.ref);
 
         SIGINT_LUA = .{
             .state = GL,

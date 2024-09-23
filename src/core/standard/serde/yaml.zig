@@ -60,6 +60,7 @@ fn encodeValue(L: *Luau, allocator: std.mem.Allocator, tracked: *std.ArrayList(*
             try tracked.append(tablePtr);
 
             const tableSize = L.objLen(-1);
+
             L.pushNil();
             const nextKey = L.next(-2);
             if (tableSize > 0 or !nextKey) {
@@ -67,27 +68,39 @@ fn encodeValue(L: *Luau, allocator: std.mem.Allocator, tracked: *std.ArrayList(*
                 errdefer allocator.free(list);
                 if (nextKey) {
                     var order: usize = 0;
-                    if (L.typeOf(-2) != .number) return Error.InvalidKey;
+
+                    if (L.typeOf(-2) != .number)
+                        return Error.InvalidKey;
+
                     list[order] = try encodeValue(L, allocator, tracked);
                     L.pop(1); // drop: value
                     while (L.next(-2)) {
-                        if (L.typeOf(-2) != .number) return Error.InvalidKey;
+                        if (L.typeOf(-2) != .number)
+                            return Error.InvalidKey;
+
                         order += 1;
                         list[order] = try encodeValue(L, allocator, tracked);
                         L.pop(1); // drop: value
                     }
                     order += 1;
-                    if (@as(i32, @intCast(order)) != tableSize) return Error.TableSizeMismatch;
+
+                    if (@as(i32, @intCast(order)) != tableSize)
+                        return Error.TableSizeMismatch;
                 }
                 return yaml.Value{ .list = list };
             } else {
                 var map = std.StringArrayHashMap(yaml.Value).init(allocator);
                 errdefer map.deinit();
-                if (L.typeOf(-2) != .string) return Error.InvalidKey;
+
+                if (L.typeOf(-2) != .string)
+                    return Error.InvalidKey;
+
                 try map.put(L.toString(-2) catch unreachable, try encodeValue(L, allocator, tracked));
                 L.pop(1); // drop: value
                 while (L.next(-2)) {
-                    if (L.typeOf(-2) != .string) return Error.InvalidKey;
+                    if (L.typeOf(-2) != .string)
+                        return Error.InvalidKey;
+
                     try map.put(L.toString(-2) catch unreachable, try encodeValue(L, allocator, tracked));
                     L.pop(1); // drop: value
                 }

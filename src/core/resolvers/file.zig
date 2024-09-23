@@ -38,7 +38,8 @@ pub fn searchForExtensions(allocator: std.mem.Allocator, fileName: []const u8, e
         for (extensions) |ext| {
             const result = std.mem.join(allocator, "", &.{ fileName, ext }) catch continue;
             defer allocator.free(result);
-            if (try doesFileExist(result)) return allocator.dupe(u8, result) catch continue;
+            if (try doesFileExist(result))
+                return allocator.dupe(u8, result) catch continue;
         }
         return FileSearchError.NoFileNameFound;
     }
@@ -51,7 +52,8 @@ pub fn searchForExtensionsZ(allocator: std.mem.Allocator, fileName: []const u8, 
         for (extensions) |ext| {
             const result = std.mem.join(allocator, "", &.{ fileName, ext }) catch continue;
             defer allocator.free(result);
-            if (try doesFileExist(result)) return allocator.dupeZ(u8, result) catch continue;
+            if (try doesFileExist(result))
+                return allocator.dupeZ(u8, result) catch continue;
         }
         return FileSearchError.NoFileNameFound;
     }

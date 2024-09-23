@@ -45,7 +45,8 @@ const LinuxAttributes = struct {
     };
 
     pub fn deinit(self: *LinuxAttributes) void {
-        if (self.fd) |fd| std.posix.close(fd);
+        if (self.fd) |fd|
+            std.posix.close(fd);
     }
 };
 
@@ -202,17 +203,23 @@ const DarwinAttributes = struct {
     }
 
     pub fn deinit(self: *DarwinAttributes, allocator: std.mem.Allocator) void {
-        if (self.fd) |fd| std.posix.close(fd);
-        if (self.dir) |*dir| dir.close();
+        if (self.fd) |fd|
+            std.posix.close(fd);
+        if (self.dir) |*dir|
+            dir.close();
         if (self.names) |*names| {
-            for (names.values()) |name| allocator.free(name);
+            for (names.values()) |name|
+                allocator.free(name);
             names.deinit();
         }
         if (self.map) |*map| {
-            if (map.values().len > 1) for (map.values()[1..]) |*i| std.posix.close(@intCast(i.ident));
+            if (map.values().len > 1)
+                for (map.values()[1..]) |*i|
+                    std.posix.close(@intCast(i.ident));
             map.deinit();
         }
-        if (self.files) |*files| files.deinit();
+        if (self.files) |*files|
+            files.deinit();
     }
 };
 
@@ -234,8 +241,10 @@ const WindowsAttributes = struct {
 
     pub fn monitor(self: *WindowsAttributes) !void {
         const handle = self.handle orelse return error.WatcherNotStarted;
-        if (self.monitoring) return;
-        if (!self.active) return;
+        if (self.monitoring)
+            return;
+        if (!self.active)
+            return;
         if (std.os.windows.kernel32.ReadDirectoryChangesW(
             handle,
             &self.buf,
@@ -258,8 +267,10 @@ const WindowsAttributes = struct {
     }
 
     pub fn deinit(self: *WindowsAttributes) void {
-        if (self.handle) |handle| _ = std.os.windows.kernel32.CloseHandle(handle);
-        if (self.iocp) |iocp| _ = std.os.windows.kernel32.CloseHandle(iocp);
+        if (self.handle) |handle|
+            _ = std.os.windows.kernel32.CloseHandle(handle);
+        if (self.iocp) |iocp|
+            _ = std.os.windows.kernel32.CloseHandle(iocp);
     }
 };
 
@@ -300,15 +311,20 @@ pub const FileSystemWatcher = struct {
     }
 
     fn nextLinux(self: *FileSystemWatcher) !?WatchInfo {
-        if (comptime builtin.os.tag != .linux) @compileError("Cannot call nextLinux on non-Linux platforms");
+        if (comptime builtin.os.tag != .linux)
+            @compileError("Cannot call nextLinux on non-Linux platforms");
+
         const fd = self.linux.fd orelse return error.WatcherNotStarted;
         const nums = try std.posix.poll(&self.linux.fds, 0);
-        if (nums == 0) return null;
-        if (nums < 0) std.debug.panic("Bad poll (2)", .{});
+        if (nums == 0)
+            return null;
+        if (nums < 0)
+            std.debug.panic("Bad poll (2)", .{});
 
         var buffer: [8096]u8 = undefined;
         const bytes_read = std.posix.system.read(fd, @ptrCast(@alignCast(&buffer)), 8096);
-        if (bytes_read == 0) return null;
+        if (bytes_read == 0)
+            return null;
 
         var watchInfo: WatchInfo = .{
             .allocator = self.allocator,
@@ -332,14 +348,17 @@ pub const FileSystemWatcher = struct {
                 },
                 .name = try self.allocator.dupe(u8, std.mem.span(event.name())),
             });
-            if (watchInfo.list.items.len >= MAX_EVENTS) break;
+            if (watchInfo.list.items.len >= MAX_EVENTS)
+                break;
         }
 
         return watchInfo;
     }
 
     fn nextDarwin(self: *FileSystemWatcher) !?WatchInfo {
-        if (comptime builtin.os.tag != .macos) @compileError("Cannot call nextDarwin on non-Darwin platforms");
+        if (comptime builtin.os.tag != .macos)
+            @compileError("Cannot call nextDarwin on non-Darwin platforms");
+
         const fd = self.darwin.fd orelse return error.WatcherNotStarted;
         const map = self.darwin.map orelse return error.WatcherNotStarted;
         const names = self.darwin.names orelse return error.WatcherNotStarted;
@@ -358,8 +377,10 @@ pub const FileSystemWatcher = struct {
             128,
             &timespec,
         );
-        if (count == 0) return null;
-        if (count < 0) std.debug.panic("Bad kevent", .{});
+        if (count == 0)
+            return null;
+        if (count < 0)
+            std.debug.panic("Bad kevent", .{});
 
         var watchInfo: WatchInfo = .{
             .allocator = self.allocator,
@@ -372,9 +393,11 @@ pub const FileSystemWatcher = struct {
         if (changes.len > 0) {
             try watchInfo.list.ensureTotalCapacity(@intCast(count));
             for (changes[0..]) |event| {
-                if (watchInfo.list.items.len >= MAX_EVENTS) break;
+                if (watchInfo.list.items.len >= MAX_EVENTS)
+                    break;
                 if (event.udata == 0) {
-                    if (root) continue;
+                    if (root)
+                        continue;
                     root = true;
                     const scandiff = try self.darwin.scanDirectory();
                     defer self.allocator.free(scandiff);
@@ -389,7 +412,8 @@ pub const FileSystemWatcher = struct {
                             },
                             .name = try self.allocator.dupe(u8, change.name),
                         });
-                        if (watchInfo.list.items.len >= MAX_EVENTS) break;
+                        if (watchInfo.list.items.len >= MAX_EVENTS)
+                            break;
                     }
                     continue;
                 }
@@ -413,11 +437,15 @@ pub const FileSystemWatcher = struct {
     }
 
     fn nextWindows(self: *FileSystemWatcher) !?WatchInfo {
-        if (comptime builtin.os.tag != .windows) @compileError("Cannot call nextWindows on non-Windows platforms");
-        const iocp = self.windows.iocp orelse return error.WatcherNotStarted;
-        if (!self.windows.active) return error.WatcherNotActive;
+        if (comptime builtin.os.tag != .windows)
+            @compileError("Cannot call nextWindows on non-Windows platforms");
 
-        if (!self.windows.monitoring) try self.windows.monitor();
+        const iocp = self.windows.iocp orelse return error.WatcherNotStarted;
+        if (!self.windows.active)
+            return error.WatcherNotActive;
+
+        if (!self.windows.monitoring)
+            try self.windows.monitor();
 
         var nbytes: std.os.windows.DWORD = 0;
         var key: std.os.windows.ULONG_PTR = 0;
@@ -434,7 +462,8 @@ pub const FileSystemWatcher = struct {
         self.windows.monitoring = false;
 
         if (overlapped) |ptr| {
-            if (ptr != &self.windows.overlapped) return null;
+            if (ptr != &self.windows.overlapped)
+                return null;
             if (nbytes == 0) {
                 self.windows.active = false;
                 return error.Shutdown;
@@ -457,7 +486,10 @@ pub const FileSystemWatcher = struct {
 
                 const action: WindowsAttributes.Action = @enumFromInt(info.Action);
 
-                if (info.NextEntryOffset == 0) n = false else offset += @as(usize, info.NextEntryOffset);
+                if (info.NextEntryOffset == 0)
+                    n = false
+                else
+                    offset += @as(usize, info.NextEntryOffset);
 
                 try watchInfo.list.append(.{
                     .event = WatchEvent.Event{
@@ -468,7 +500,8 @@ pub const FileSystemWatcher = struct {
                     },
                     .name = name,
                 });
-                if (watchInfo.list.items.len >= MAX_EVENTS) break;
+                if (watchInfo.list.items.len >= MAX_EVENTS)
+                    break;
             }
 
             return watchInfo;
@@ -486,7 +519,8 @@ pub const FileSystemWatcher = struct {
             std.os.linux.IN.MODIFY | std.os.linux.IN.CREATE | std.os.linux.IN.MOVED_TO | std.os.linux.IN.DELETE | std.os.linux.IN.MOVED_FROM | std.os.linux.IN.MOVE_SELF,
         );
 
-        if (wd < 0) return error.InotifyAddWatchFailed;
+        if (wd < 0)
+            return error.InotifyAddWatchFailed;
 
         self.linux.fd = fd;
         self.linux.fds[0] = std.posix.pollfd{
@@ -498,7 +532,8 @@ pub const FileSystemWatcher = struct {
 
     fn startDarwin(self: *FileSystemWatcher) !void {
         const fd = try std.posix.kqueue();
-        if (fd == 0) return error.KQueueError;
+        if (fd == 0)
+            return error.KQueueError;
         errdefer std.posix.close(fd);
 
         const dir = try std.fs.cwd().openDir(self.dir_path, .{
@@ -631,7 +666,8 @@ test "Platform Watch" {
     }
 
     // TODO: Renable test for macOs, cannot detect file modification in tests.
-    if (builtin.os.tag == .macos) return;
+    if (builtin.os.tag == .macos)
+        return;
 
     { // Create file
         const file = try std.fs.cwd().createFile(tempFile, .{});

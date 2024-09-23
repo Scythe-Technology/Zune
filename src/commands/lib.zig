@@ -10,7 +10,8 @@ pub fn initCommands(comptime commands: []const Command) std.StaticStringMap(Comm
     var count = 0;
 
     for (commands) |command| {
-        if (command.aliases) |aliases| count += aliases.len;
+        if (command.aliases) |aliases|
+            count += aliases.len;
         count += 1;
     }
 
@@ -20,10 +21,11 @@ pub fn initCommands(comptime commands: []const Command) std.StaticStringMap(Comm
     for (commands) |command| {
         list[i] = .{ command.name, command };
         i += 1;
-        if (command.aliases) |aliases| for (aliases) |alias| {
-            list[i] = .{ alias, command };
-            i += 1;
-        };
+        if (command.aliases) |aliases|
+            for (aliases) |alias| {
+                list[i] = .{ alias, command };
+                i += 1;
+            };
     }
 
     return std.StaticStringMap(Command).initComptime(list);

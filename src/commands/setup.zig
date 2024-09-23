@@ -109,14 +109,16 @@ fn setupVscode(allocator: std.mem.Allocator, setupInfo: SetupInfo) !void {
         defer allocator.free(defPath);
         var exists = false;
         for (definitionFilesArray.items) |value| {
-            if (value != .string) continue;
+            if (value != .string)
+                continue;
             const str = value.asString();
             if (std.mem.eql(u8, str, defPath)) {
                 exists = true;
                 break;
             }
         }
-        if (exists) continue;
+        if (exists)
+            continue;
         const defPath_copy = try settingsRoot.allocator.dupe(u8, defPath);
         errdefer allocator.free(defPath_copy);
         try definitionFilesArray.append(.{ .string = defPath_copy });
@@ -225,14 +227,16 @@ fn setupZed(allocator: std.mem.Allocator, setupInfo: SetupInfo) !void {
         defer allocator.free(defPath);
         var exists = false;
         for (definitionFilesArray.items) |value| {
-            if (value != .string) continue;
+            if (value != .string)
+                continue;
             const str = value.asString();
             if (std.mem.eql(u8, str, defPath)) {
                 exists = true;
                 break;
             }
         }
-        if (exists) continue;
+        if (exists)
+            continue;
 
         const defPath_copy = try settingsRoot.allocator.dupe(u8, defPath);
         errdefer allocator.free(defPath_copy);
