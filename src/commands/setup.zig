@@ -390,7 +390,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     const cwd = std.fs.cwd();
 
-    const HOME = envMap.get("HOME") orelse std.debug.panic("Failed to setup, $HOME variable not found", .{});
+    const HOME = envMap.get("HOME") orelse envMap.get("USERPROFILE") orelse std.debug.panic("Failed to setup, $HOME/$USERPROFILE variable not found", .{});
 
     const path = try std.fs.path.resolve(allocator, &.{ HOME, ".zune/typedefs" });
     defer allocator.free(path);

@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `require` casuing an error when requiring a module that returns nil.
 - Fixed `websockets` yielding forever.
 - Fixed threads under scheduler getting garbage collected.
+- Fixed `setup` panic on windows.
 
 ## `0.4.0` - September 17, 2024
 
