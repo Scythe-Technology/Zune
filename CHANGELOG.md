@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## `0.4.1` - September 26, 2024
+
 ### Added
 - Added flags to `new` in regex. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/regex)
   - `i` - Case Insensitive
