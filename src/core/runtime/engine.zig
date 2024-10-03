@@ -81,10 +81,10 @@ pub fn prep(L: *Luau, pOpts: PrepOptions, flags: Zune.Flags) !void {
 }
 
 pub fn prepAsync(L: *Luau, sched: *Scheduler, pOpts: PrepOptions, flags: Zune.Flags) !void {
-    try prep(L, pOpts, flags);
-
     L.pushLightUserdata(sched);
     L.setField(luau.REGISTRYINDEX, "_SCHEDULER");
+
+    try prep(L, pOpts, flags);
 }
 
 pub fn findLuauFile(allocator: std.mem.Allocator, dir: std.fs.Dir, fileName: []const u8) ![]const u8 {

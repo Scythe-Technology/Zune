@@ -4,6 +4,8 @@ const luau = @import("luau");
 const Engine = @import("../runtime/engine.zig");
 const Scheduler = @import("../runtime/scheduler.zig");
 
+const luaHelper = @import("../utils/luahelper.zig");
+
 const Luau = luau.Luau;
 
 pub const LIB_NAME = "@zcore/task";
@@ -160,13 +162,7 @@ pub fn loadLib(L: *Luau) void {
     L.setFieldFn(-1, "cancel", Scheduler.toSchedulerFn(task_cancel));
     L.setFieldFn(-1, "count", Scheduler.toSchedulerFn(task_count));
 
-    _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
-    if (L.getField(-1, LIB_NAME) != .table) {
-        L.pop(1);
-        L.pushValue(-2);
-        L.setField(-2, LIB_NAME);
-    } else L.pop(1);
-    L.pop(2);
+    luaHelper.registerModule(L, LIB_NAME);
 }
 
 const TestResult = struct {

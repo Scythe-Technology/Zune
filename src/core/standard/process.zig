@@ -217,9 +217,10 @@ const ProcessChildOptions = struct {
 
     pub fn __namecall(L: *Luau) i32 {
         L.checkType(1, .userdata);
-        const namecall = L.nameCallAtom() catch return 0;
-        var handlePtr = L.toUserdata(ProcessChildHandle, 1) catch return 0;
+        var handlePtr = L.toUserdata(ProcessChildHandle, 1) catch unreachable;
         var childProcess = &handlePtr.child;
+
+        const namecall = L.nameCallAtom() catch return 0;
 
         // TODO: prob should switch to static string map
         if (std.mem.eql(u8, namecall, "kill")) {
@@ -647,13 +648,7 @@ pub fn loadLib(L: *Luau, args: []const []const u8) !void {
 
     L.remove(-2);
 
-    _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
-    if (L.getField(-1, LIB_NAME) != .table) {
-        L.pop(1);
-        L.pushValue(-2);
-        L.setField(-2, LIB_NAME);
-    } else L.pop(1);
-    L.pop(2);
+    luaHelper.registerModule(L, LIB_NAME);
 }
 
 test "Process" {

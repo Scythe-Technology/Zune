@@ -2,9 +2,9 @@ const std = @import("std");
 const builtin = @import("builtin");
 const luau = @import("luau");
 
-const luaHelper = @import("../../utils/luahelper.zig");
-
 const Scheduler = @import("../../runtime/scheduler.zig");
+
+const luaHelper = @import("../../utils/luahelper.zig");
 
 const Watch = @import("./watch.zig");
 
@@ -322,8 +322,9 @@ const LuaWatch = struct {
 
     pub fn __namecall(L: *Luau) !i32 {
         L.checkType(1, .userdata);
+        const obj = L.toUserdata(WatchObject.Lua, 1) catch unreachable;
+
         const namecall = L.nameCallAtom() catch return 0;
-        const obj = L.toUserdata(WatchObject.Lua, 1) catch return 0;
 
         // TODO: prob should switch to static string map
         if (std.mem.eql(u8, namecall, "stop")) {
@@ -384,7 +385,7 @@ const LuaWatch = struct {
                     }
                     L.pop(2); // drop thread, function
 
-                    Scheduler.resumeState(thread, L, 2);
+                    _ = Scheduler.resumeState(thread, L, 2) catch {};
                 }
             }
         }
@@ -420,9 +421,11 @@ const LuaFile = struct {
 
     pub fn __namecall(L: *Luau) !i32 {
         L.checkType(1, .userdata);
-        const allocator = L.allocator();
+        var file_ptr = L.toUserdata(FileObject, 1) catch unreachable;
+
         const namecall = L.nameCallAtom() catch return 0;
-        var file_ptr = L.toUserdata(FileObject, 1) catch return 0;
+
+        const allocator = L.allocator();
 
         // TODO: prob should switch to static string map
         if (std.mem.eql(u8, namecall, "write")) {
@@ -684,13 +687,7 @@ pub fn loadLib(L: *Luau) void {
 
     L.setFieldFn(-1, "watch", Scheduler.toSchedulerEFn(fs_watch));
 
-    _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
-    if (L.getField(-1, LIB_NAME) != .table) {
-        L.pop(1);
-        L.pushValue(-2);
-        L.setField(-2, LIB_NAME);
-    } else L.pop(1);
-    L.pop(2);
+    luaHelper.registerModule(L, LIB_NAME);
 }
 
 test {

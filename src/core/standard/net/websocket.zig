@@ -42,7 +42,8 @@ pub const LuaMeta = struct {
     pub const WEBSOCKET_META = "net_client_ws_instance";
     pub fn __index(L: *Luau) i32 {
         L.checkType(1, .userdata);
-        const data = L.toUserdata(LuaWebSocketClient, 1) catch return 0;
+        const data = L.toUserdata(LuaWebSocketClient, 1) catch unreachable;
+
         const arg = L.checkString(2);
 
         // TODO: prob should switch to static string map
@@ -55,8 +56,9 @@ pub const LuaMeta = struct {
 
     pub fn __namecall(L: *Luau) i32 {
         L.checkType(1, .userdata);
+        const data = L.toUserdata(LuaWebSocketClient, 1) catch unreachable;
+
         const namecall = L.nameCallAtom() catch return 0;
-        const data = L.toUserdata(LuaWebSocketClient, 1) catch return 0;
 
         const ctx = data.ptr orelse return 0;
         var stream = ctx.stream.* orelse return 0;
@@ -122,7 +124,7 @@ pub fn closeConnection(ctx: *Self, L: *Luau, cleanUp: bool, codeCode: ?u16) void
             if (codeCode) |code| thread.pushInteger(@intCast(code)) else thread.pushNil();
             L.pop(2); // drop thread & function
 
-            Scheduler.resumeState(thread, L, 1);
+            _ = Scheduler.resumeState(thread, L, 1) catch {};
         }
     }
 }
@@ -170,7 +172,7 @@ pub fn handleSocket(ctx: *Self, L: *Luau, socket: *WebSocket) Scheduler.TaskResu
 
                 thread.pushLString(frame.data); // push: string
 
-                Scheduler.resumeState(thread, L, 1);
+                _ = Scheduler.resumeState(thread, L, 1) catch {};
             }
         },
         else => {
@@ -220,7 +222,7 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
             ctx.connected = response.statusCode == 101;
             ctx.establishedLua = L.ref(-1) catch std.debug.panic("InternalError (WebSocketClient bad ref)", .{});
 
-            Scheduler.resumeState(L, null, 2);
+            _ = Scheduler.resumeState(L, null, 2) catch {};
 
             if (response.statusCode != 101) {
                 ctx.closeConnection(L, false, null);
@@ -236,7 +238,7 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
                     L.xPush(thread, -2); // push: Function
                     L.pop(2); // drop: thread & function
 
-                    Scheduler.resumeState(thread, L, 0);
+                    _ = Scheduler.resumeState(thread, L, 0) catch {};
                     _ = scheduler;
                 }
 
@@ -298,7 +300,7 @@ pub fn dtor(ctx: *Self, L: *Luau, scheduler: *Scheduler) void {
     } else {
         L.pushBoolean(false);
         L.pushString("Websocket not established");
-        Scheduler.resumeState(L, null, 2);
+        _ = Scheduler.resumeState(L, null, 2) catch {};
     }
 }
 

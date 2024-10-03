@@ -58,13 +58,14 @@ pub fn fmt_print_value(L: *Luau, idx: i32, depth: usize, asKey: bool) void {
                             L.call(1, 1);
                         }
                         if (L.typeOf(-1) != .string) L.raiseErrorStr("'__tostring' must return a string", .{});
-                        const s = L.toString(-1) catch "";
+                        const s = L.toString(-1) catch unreachable;
                         if (depth == 0 and Parser.isPlainText(s)) {
                             std.debug.print("{s}", .{s});
                         } else fmt_print_value(L, -1, 0, false);
                         L.pop(2); // drop string, metatable
                         return;
                     }
+                    L.pop(1); // drop metatable
                 }
                 if (asKey) {
                     const str = fmt_tostring(allocator, L, idx) catch "!ERR!";
@@ -103,6 +104,23 @@ pub fn fmt_print_value(L: *Luau, idx: i32, depth: usize, asKey: bool) void {
                 std.debug.print("\x1b[2m{s}\x1b[0m", .{"}"});
             },
             else => {
+                if (L.getMetatable(-1)) {
+                    const metaType = L.getField(-1, "__tostring");
+                    if (!luau.isNoneOrNil(metaType)) {
+                        if (metaType != .string) {
+                            L.pushValue(idx);
+                            L.call(1, 1);
+                        }
+                        if (L.typeOf(-1) != .string) L.raiseErrorStr("'__tostring' must return a string", .{});
+                        const s = L.toString(-1) catch unreachable;
+                        if (depth == 0 and Parser.isPlainText(s)) {
+                            std.debug.print("{s}", .{s});
+                        } else fmt_print_value(L, -1, 0, false);
+                        L.pop(2); // drop string, metatable
+                        return;
+                    }
+                    L.pop(1); // drop metatable
+                }
                 const str = fmt_tostring(allocator, L, idx) catch "!ERR!";
                 if (str) |String| {
                     defer allocator.free(String);
@@ -128,7 +146,22 @@ pub fn fmt_print(L: *Luau) i32 {
         switch (L.typeOf(idx)) {
             .nil => std.debug.print("nil", .{}),
             .string => std.debug.print("{s}", .{L.toString(idx) catch @panic("Failed Conversion")}),
-            .function, .userdata, .thread => |t| {
+            .function, .userdata, .light_userdata, .thread => |t| blk: {
+                if (L.getMetatable(idx)) {
+                    const metaType = L.getField(-1, "__tostring");
+                    if (!luau.isNoneOrNil(metaType)) {
+                        if (metaType != .string) {
+                            L.pushValue(idx);
+                            L.call(1, 1);
+                        }
+                        if (L.typeOf(-1) != .string) L.raiseErrorStr("'__tostring' must return a string", .{});
+                        const s = L.toString(-1) catch unreachable;
+                        std.debug.print("{s}", .{s});
+                        L.pop(2); // drop string, metatable
+                        break :blk;
+                    }
+                    L.pop(1); // drop metatable
+                }
                 const str = fmt_tostring(allocator, L, idx) catch "!ERR!";
                 if (str) |String| {
                     defer allocator.free(String);

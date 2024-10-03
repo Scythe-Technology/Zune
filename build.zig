@@ -10,6 +10,15 @@ fn compressFile(b: *std.Build, exe: *std.Build.Step.Compile, file: []const u8, o
     return embedded_compressor_run;
 }
 
+fn compileFile(b: *std.Build, exe: *std.Build.Step.Compile, file: []const u8, out_file: []const u8) *std.Build.Step.Run {
+    const embedded_compiler_run = b.addRunArtifact(exe);
+
+    embedded_compiler_run.addArg(b.path(file).getPath(b));
+    embedded_compiler_run.addArg(b.path(out_file).getPath(b));
+
+    return embedded_compiler_run;
+}
+
 fn compressRecursive(b: *std.Build, exe: *std.Build.Step.Compile, step: *std.Build.Step, dependentStep: *std.Build.Step, path: []const u8) !void {
     const dir = try std.fs.cwd().openDir(path, .{ .iterate = true });
     var iter = dir.iterate();
@@ -60,12 +69,14 @@ fn prebuild(b: *std.Build, step: *std.Build.Step) !void {
 
         bytecode_builder.root_module.addImport("luau", dep_luau.module("zig-luau"));
 
-        const bytecode_builder_run = b.addRunArtifact(bytecode_builder);
+        const testing_framework_run = compileFile(
+            b,
+            bytecode_builder,
+            "src/core/lua/testing_lib.luau",
+            "src/core/lua/testing_lib.luac",
+        );
 
-        bytecode_builder_run.addArg(b.path("src/core/lua/testing_lib.luau").getPath(b));
-        bytecode_builder_run.addArg(b.path("src/core/lua/testing_lib.luac").getPath(b));
-
-        compile.dependOn(&bytecode_builder_run.step);
+        compile.dependOn(&testing_framework_run.step);
     }
 
     { // Compress files
@@ -78,7 +89,12 @@ fn prebuild(b: *std.Build, step: *std.Build.Step) !void {
 
         try compressRecursive(b, embedded_compressor, compress, compile, "src/types/");
 
-        const run = compressFile(b, embedded_compressor, "src/core/lua/testing_lib.luac", "src/core/lua/testing_lib.luac.gz");
+        const run = compressFile(
+            b,
+            embedded_compressor,
+            "src/core/lua/testing_lib.luac",
+            "src/core/lua/testing_lib.luac.gz",
+        );
         run.step.dependOn(compile);
         compress.dependOn(&run.step);
     }

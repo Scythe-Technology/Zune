@@ -4,6 +4,8 @@ const luau = @import("luau");
 const Engine = @import("../runtime/engine.zig");
 const Scheduler = @import("../runtime/scheduler.zig");
 
+const luaHelper = @import("../utils/luahelper.zig");
+
 const test_lib_gz = @embedFile("../lua/testing_lib.luac.gz");
 const test_lib_size = @embedFile("../lua/testing_lib.luac").len;
 
@@ -56,55 +58,6 @@ fn testing_declareSafeEnv(L: *Luau) i32 {
 fn empty(L: *Luau) i32 {
     _ = L;
     return 0;
-}
-
-pub fn loadLib(L: *Luau, enabled: bool) void {
-    const allocator = L.allocator();
-    if (enabled) {
-        const GL = L.getMainThread();
-        const ML = GL.newThread();
-        GL.xMove(L, 1);
-        ML.sandboxThread();
-
-        if (L.getField(luau.GLOBALSINDEX, "_testing_stdOut") == .boolean and !L.toBoolean(-1)) {
-            ML.setFieldFn(luau.GLOBALSINDEX, "print", empty);
-        } else ML.setFieldFn(luau.GLOBALSINDEX, "print", testing_debug);
-        L.pop(1);
-        ML.setFieldFn(luau.GLOBALSINDEX, "declare_safeEnv", testing_declareSafeEnv);
-        ML.setFieldFn(luau.GLOBALSINDEX, "scheduler_droptasks", Scheduler.toSchedulerFn(testing_droptasks));
-        ML.setFieldBoolean(luau.GLOBALSINDEX, "_FILE", false);
-
-        const bytecode_buf = allocator.alloc(u8, test_lib_size) catch |err| std.debug.panic("Unable to allocate space for testing framework: {}", .{err});
-        defer allocator.free(bytecode_buf);
-        var bytecode_buf_stream = std.io.fixedBufferStream(bytecode_buf);
-        var bytecode_gz_buf_stream = std.io.fixedBufferStream(test_lib_gz);
-
-        std.compress.gzip.decompress(bytecode_gz_buf_stream.reader(), bytecode_buf_stream.writer()) catch |err| std.debug.panic("Failed to decompress testing framework: {}", .{err});
-
-        ML.loadBytecode("test_framework", bytecode_buf) catch |err| std.debug.panic("Error loading test framework: {}\n", .{err});
-        ML.pcall(0, 1, 0) catch |err| {
-            std.debug.print("Error loading test framework (2): {}\n", .{err});
-            Engine.logError(ML, err);
-            std.debug.panic("Test Framework (2)\n", .{});
-        };
-        ML.xMove(L, 1);
-
-        L.remove(-2);
-    } else {
-        L.newTable();
-        L.setFieldBoolean(-1, "running", false);
-        L.setFieldFn(-1, "describe", empty);
-        L.setFieldFn(-1, "test", empty);
-        L.setFieldFn(-1, "expect", empty);
-    }
-
-    _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
-    if (L.getField(-1, LIB_NAME) != .table) {
-        L.pop(1);
-        L.pushValue(-2);
-        L.setField(-2, LIB_NAME);
-    } else L.pop(1);
-    L.pop(2);
 }
 
 pub const TestResult = struct {
@@ -164,6 +117,50 @@ pub fn runTestAsync(L: *Luau, sched: *Scheduler) !TestResult {
     try Engine.runAsync(L, sched, true);
 
     return finish_testing(L, start);
+}
+
+pub fn loadLib(L: *Luau, enabled: bool) void {
+    const allocator = L.allocator();
+    if (enabled) {
+        const GL = L.getMainThread();
+        const ML = GL.newThread();
+        GL.xMove(L, 1);
+        ML.sandboxThread();
+
+        if (L.getField(luau.GLOBALSINDEX, "_testing_stdOut") == .boolean and !L.toBoolean(-1)) {
+            ML.setFieldFn(luau.GLOBALSINDEX, "print", empty);
+        } else ML.setFieldFn(luau.GLOBALSINDEX, "print", testing_debug);
+        L.pop(1);
+        ML.setFieldFn(luau.GLOBALSINDEX, "declare_safeEnv", testing_declareSafeEnv);
+        ML.setFieldFn(luau.GLOBALSINDEX, "scheduler_droptasks", Scheduler.toSchedulerFn(testing_droptasks));
+        ML.setFieldBoolean(luau.GLOBALSINDEX, "_FILE", false);
+
+        const bytecode_buf = allocator.alloc(u8, test_lib_size) catch |err| std.debug.panic("Unable to allocate space for testing framework: {}", .{err});
+        defer allocator.free(bytecode_buf);
+        var bytecode_buf_stream = std.io.fixedBufferStream(bytecode_buf);
+        var bytecode_gz_buf_stream = std.io.fixedBufferStream(test_lib_gz);
+
+        std.compress.gzip.decompress(bytecode_gz_buf_stream.reader(), bytecode_buf_stream.writer()) catch |err| std.debug.panic("Failed to decompress testing framework: {}", .{err});
+
+        ML.loadBytecode("test_framework", bytecode_buf) catch |err|
+            std.debug.panic("Error loading test framework: {}\n", .{err});
+        ML.pcall(0, 1, 0) catch |err| {
+            std.debug.print("Error loading test framework (2): {}\n", .{err});
+            Engine.logError(ML, err);
+            std.debug.panic("Test Framework (2)\n", .{});
+        };
+        ML.xMove(L, 1);
+
+        L.remove(-2);
+    } else {
+        L.newTable();
+        L.setFieldBoolean(-1, "running", false);
+        L.setFieldFn(-1, "describe", empty);
+        L.setFieldFn(-1, "test", empty);
+        L.setFieldFn(-1, "expect", empty);
+    }
+
+    luaHelper.registerModule(L, LIB_NAME);
 }
 
 test "Test" {

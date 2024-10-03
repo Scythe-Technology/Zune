@@ -42,9 +42,9 @@ pub const LuaMeta = struct {
     pub const WEBSOCKET_META = "net_server_ws_instance";
     pub fn websocket__index(L: *Luau) i32 {
         L.checkType(1, .userdata);
-        const arg = L.checkString(2);
+        const data = L.toUserdata(LuaWebSocket, 1) catch unreachable;
 
-        const data = L.toUserdata(LuaWebSocket, 1) catch return 0;
+        const arg = L.checkString(2);
 
         // TODO: prob should switch to static string map
         if (std.mem.eql(u8, arg, "connected")) {
@@ -56,8 +56,9 @@ pub const LuaMeta = struct {
     }
     pub fn websocket__namecall(L: *Luau) i32 {
         L.checkType(1, .userdata);
+        const data = L.toUserdata(LuaWebSocket, 1) catch unreachable;
+
         const namecall = L.nameCallAtom() catch return 0;
-        const data = L.toUserdata(LuaWebSocket, 1) catch return 0;
 
         const id = data.id orelse return 0;
         const ctx = data.ptr orelse return 0;
@@ -88,7 +89,7 @@ pub const LuaMeta = struct {
     pub const SERVER_META = "net_server_instance";
     pub fn server__index(L: *Luau) i32 {
         L.checkType(1, .userdata);
-        const data = L.toUserdata(LuaServer, 1) catch return 0;
+        const data = L.toUserdata(LuaServer, 1) catch unreachable;
 
         const arg = L.checkString(2);
 
@@ -102,8 +103,9 @@ pub const LuaMeta = struct {
 
     pub fn server__namecall(L: *Luau) i32 {
         L.checkType(1, .userdata);
+        const data = L.toUserdata(LuaServer, 1) catch unreachable;
+
         const namecall = L.nameCallAtom() catch return 0;
-        const data = L.toUserdata(LuaServer, 1) catch return 0;
 
         var scheduler = Scheduler.getScheduler(L);
 
@@ -180,7 +182,7 @@ pub fn closeConnection(ctx: *Self, L: *Luau, id: usize, cleanUp: bool) void {
                                 L.xPush(thread, -3); // push: userdata
                                 L.pop(2); // drop thread, function
 
-                                Scheduler.resumeState(thread, L, 1);
+                                _ = Scheduler.resumeState(thread, L, 1) catch {};
                             }
                         }
                     }
@@ -247,7 +249,7 @@ pub fn handleWebSocket(ctx: *Self, L: *Luau, scheduler: *Scheduler, i: usize, co
 
                     thread.pushLString(frame.data); // push: string
 
-                    Scheduler.resumeState(thread, L, 2);
+                    _ = Scheduler.resumeState(thread, L, 2) catch {};
                 }
             }
         },
@@ -526,7 +528,7 @@ pub fn handleRequest(ctx: *Self, L: *Luau, scheduler: *Scheduler, i: usize, conn
                 L.xPush(thread, -3); // push: Table
                 L.pop(3); // drop thread, function & userdata
 
-                Scheduler.resumeState(thread, L, 1);
+                _ = Scheduler.resumeState(thread, L, 1) catch {};
             }
             return;
         }

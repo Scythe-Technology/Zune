@@ -158,8 +158,8 @@ pub fn addTask(self: *Self, comptime T: type, data: *T, L: *Luau, comptime handl
     }) catch |err| std.debug.panic("Error: {}\n", .{err});
 }
 
-pub fn awaitCall(self: *Self, comptime T: type, data: *T, L: *Luau, args: i32, comptime handler: *const fn (ctx: *T, L: *Luau, scheduler: *Self) void, from: ?*Luau) !void {
-    const status = try L.resumeThread(from, args);
+pub fn awaitResult(self: *Self, comptime T: type, data: *T, L: *Luau, comptime handler: *const fn (ctx: *T, L: *Luau, scheduler: *Self) void) !void {
+    const status = L.status();
     if (status != .yield) {
         handler(data, L, self);
         return;
@@ -179,10 +179,29 @@ pub fn awaitCall(self: *Self, comptime T: type, data: *T, L: *Luau, args: i32, c
     }) catch |err| std.debug.panic("Error: {}\n", .{err});
 }
 
-pub fn resumeState(state: *Luau, from: ?*Luau, args: i32) void {
-    _ = state.resumeThread(from, args) catch |err| {
+pub fn awaitCall(self: *Self, comptime T: type, data: *T, L: *Luau, args: i32, comptime handler: *const fn (ctx: *T, L: *Luau, scheduler: *Self) void, from: ?*Luau) !void {
+    _ = try L.resumeThread(from, args);
+    try awaitResult(self, T, data, L, handler);
+}
+
+pub fn resumeState(state: *Luau, from: ?*Luau, args: i32) !luau.ResumeStatus {
+    return state.resumeThread(from, args) catch |err| {
         Engine.logError(state, err);
-        return;
+        return err;
+    };
+}
+
+pub fn resumeStateError(state: *Luau, from: ?*Luau) !luau.ResumeStatus {
+    return state.resumeThreadError(from) catch |err| {
+        Engine.logError(state, err);
+        return err;
+    };
+}
+
+pub fn resumeStateErrorFmt(state: *Luau, from: ?*Luau, comptime fmt: []const u8, args: anytype) !luau.ResumeStatus {
+    return state.resumeThreadErrorFmt(from, fmt, args) catch |err| {
+        Engine.logError(state, err);
+        return err;
     };
 }
 
@@ -247,7 +266,7 @@ pub fn run(self: *Self) void {
                         thread.pushNumber(now - slept.start);
                         args += 1;
                     }
-                    resumeState(thread, null, args);
+                    _ = resumeState(thread, null, args) catch {};
                     derefThread(thread, slept.ref);
                 }
             }
@@ -263,7 +282,7 @@ pub fn run(self: *Self) void {
                 var thread = deferred.thread;
                 const status = thread.status();
                 if (status != .ok and status != .yield) continue;
-                resumeState(thread, deferred.from, deferred.args);
+                _ = resumeState(thread, deferred.from, deferred.args) catch {};
                 derefThread(thread, deferred.ref);
             }
         }
@@ -280,7 +299,7 @@ pub fn deinit(self: *Self) void {
 
 pub fn getScheduler(L: *Luau) *Self {
     if (L.getField(luau.REGISTRYINDEX, "_SCHEDULER") != .light_userdata) L.raiseErrorStr("InternalError (Scheduler not found)", .{});
-    const luau_scheduler = L.toUserdata(Self, -1) catch L.raiseErrorStr("InternalError (Scheduler failed)", .{});
+    const luau_scheduler = L.toUserdata(Self, -1) catch unreachable;
     L.pop(1); // drop: Scheduler
     return luau_scheduler;
 }

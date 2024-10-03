@@ -5,6 +5,8 @@ const builtin = @import("builtin");
 const Engine = @import("../runtime/engine.zig");
 const Scheduler = @import("../runtime/scheduler.zig");
 
+const luaHelper = @import("../utils/luahelper.zig");
+
 const Terminal = @import("../../commands/repl/Terminal.zig");
 const sysfd = @import("../utils/sysfd.zig");
 
@@ -281,8 +283,8 @@ const LuaStdIn = struct {
 
     pub fn __namecall(L: *Luau) !i32 {
         L.checkType(1, .userdata);
+        var file_ptr = L.toUserdata(std.fs.File, 1) catch unreachable;
         const namecall = L.nameCallAtom() catch return 0;
-        var file_ptr = L.toUserdata(std.fs.File, 1) catch return 0;
         // TODO: prob should switch to static string map
         if (std.mem.eql(u8, namecall, "read")) {
             var fds = [_]sysfd.context.pollfd{.{ .events = sysfd.context.POLLIN, .fd = file_ptr.handle, .revents = 0 }};
@@ -319,8 +321,9 @@ const LuaStdOut = struct {
 
     pub fn __namecall(L: *Luau) !i32 {
         L.checkType(1, .userdata);
+        var file_ptr = L.toUserdata(std.fs.File, 1) catch unreachable;
+
         const namecall = L.nameCallAtom() catch return 0;
-        var file_ptr = L.toUserdata(std.fs.File, 1) catch return 0;
 
         // TODO: prob should switch to static string map
         if (std.mem.eql(u8, namecall, "write")) {
@@ -337,8 +340,8 @@ const LuaTerminal = struct {
 
     pub fn __index(L: *Luau) i32 {
         L.checkType(1, .light_userdata);
+        const data = L.toUserdata(Terminal, 1) catch unreachable;
         const arg = L.checkString(2);
-        const data = L.toUserdata(Terminal, 1) catch return 0;
 
         // TODO: prob should switch to static string map
         if (std.mem.eql(u8, arg, "isTTY")) {
@@ -351,9 +354,10 @@ const LuaTerminal = struct {
 
     pub fn __namecall(L: *Luau) !i32 {
         L.checkType(1, .light_userdata);
-        const namecall = L.nameCallAtom() catch return 0;
-        const ud_term = L.toUserdata(?Terminal, 1) catch return 0;
+        const ud_term = L.toUserdata(?Terminal, 1) catch unreachable;
         const term_ptr = &(ud_term.* orelse L.raiseErrorStr("Terminal not initialized", .{}));
+
+        const namecall = L.nameCallAtom() catch return 0;
 
         // TODO: prob should switch to static string map
         if (std.mem.eql(u8, namecall, "enableRawMode")) {
@@ -464,13 +468,7 @@ pub fn loadLib(L: *Luau) void {
 
     L.setFieldFn(-1, "cursorMove", stdio_cursorMove);
 
-    _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
-    if (L.getField(-1, LIB_NAME) != .table) {
-        L.pop(1);
-        L.pushValue(-2);
-        L.setField(-2, LIB_NAME);
-    } else L.pop(1);
-    L.pop(2);
+    luaHelper.registerModule(L, LIB_NAME);
 }
 
 test "Stdio" {

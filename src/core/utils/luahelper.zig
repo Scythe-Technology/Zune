@@ -20,3 +20,15 @@ pub fn toSafeZigFunction(comptime f: luau.ZigEFn) luau.ZigFn {
         }
     }.inner;
 }
+
+/// Register a module in the registry.
+/// Pops the module from the stack.
+pub fn registerModule(L: *Luau, comptime libName: [:0]const u8) void {
+    _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
+    if (L.getField(-1, libName) != .table) {
+        L.pop(1);
+        L.pushValue(-2);
+        L.setField(-2, libName);
+    } else L.pop(1);
+    L.pop(2);
+}

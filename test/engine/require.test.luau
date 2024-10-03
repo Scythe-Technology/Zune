@@ -1,3 +1,4 @@
+local task = require("@zcore/task");
 local testing = require("@zcore/testing");
 
 local describe = testing.describe;
@@ -69,14 +70,50 @@ describe("Require Many Value", function()
     test("Require Boolean", function()
         expect(require(("generated/v4"))).toBe(true);
     end)
+
+    test("Require Async", function()
+        expect(require(("generated/v5"))).toBe(true);
+    end)
+
+    test("Require Async Queue", function()
+        local a, b, c;
+        local start = os.clock();
+        task.spawn(function()
+            a = require(("generated/v6"))
+        end)
+        task.spawn(function()
+            b = require(("generated/v6"))
+        end)
+        task.spawn(function()
+            c = require(("generated/v6"))
+        end)
+        local res = require(("generated/v6"));
+        expect(os.clock() - start).toBeCloseTo(1, 0);
+
+        expect(a).toBe(res);
+        expect(b).toBe(res);
+        expect(c).toBe(res);
+    end)
+
+    test("Require Async Error", function()
+        local success, err = pcall(require, ("generated/yielderror"));
+        expect(success).toBe(false);
+        expect(err).toBe("requested module failed to load");
+    end)
     
     test("Require Blank", function()
-        local res = require("generated/blank");
+        local res = require(("generated/blank"));
         expect(res).toBe(nil);
     end)
     
     test("Require TooMany", function()
         local ok, err = pcall(require, ("generated/toomany"));
+        expect(ok).toBeFalsy();
+        assert((string.find(err, "module must return one value")) ~= nil);
+    end)
+
+    test("Require Yield TooMany", function()
+        local ok, err = pcall(require, ("generated/yieldtoomany"));
         expect(ok).toBeFalsy();
         assert((string.find(err, "module must return one value")) ~= nil);
     end)
@@ -95,7 +132,7 @@ end)
 
 describe("Aliases", function()
     test("@Dev", function()
-        local dev = require("@dev");
+        local dev = require(("@dev"));
         expect(dev).toBe(expect.similar({
             Boolean = true,
             Number = 1,
@@ -104,13 +141,13 @@ describe("Aliases", function()
     end)
     
     test("@Module", function()
-        local module = require("@module");
+        local module = require(("@module"));
         expect(module).toBe(expect.type("string"));
         expect(module).toBe("FullModule");
     end)
 
     test("@Module/sub", function()
-        local module = require("@module/sub");
+        local module = require(("@module/sub"));
         expect(module).toBe(expect.similar({
             foo = expect.type("function"),
             bar = expect.type("function"),

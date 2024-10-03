@@ -1,6 +1,7 @@
 const std = @import("std");
 const luau = @import("luau");
-const toml = @import("toml");
+
+const toml = @import("libraries/toml.zig");
 
 pub const cli = @import("cli.zig");
 
@@ -39,8 +40,8 @@ pub fn loadConfiguration() void {
     };
     defer zconfig.deinit(DEFAULT_ALLOCATOR);
 
-    if (zconfig.getTable("luau")) |luau_config| {
-        if (luau_config.getTable("fflags")) |fflags_config| {
+    if (toml.checkOptionTable(zconfig, "luau")) |luau_config| {
+        if (toml.checkOptionTable(luau_config, "fflags")) |fflags_config| {
             var iter = fflags_config.table.iterator();
             while (iter.next()) |entry| {
                 switch (entry.value_ptr.*) {
@@ -53,64 +54,35 @@ pub fn loadConfiguration() void {
                     else => |t| std.debug.print("[zune.toml] Unsupported type for FFlags: {s}\n", .{@tagName(t)}),
                 }
             }
-        } else if (luau_config.contains("fflags")) {
-            std.debug.print("[zune.toml] 'fflags' must be a table\n", .{});
         }
-    } else if (zconfig.contains("luau")) {
-        std.debug.print("[zune.toml] 'luau' must be a table\n", .{});
     }
 
-    if (zconfig.getTable("compiling")) |compiling_config| {
-        if (compiling_config.getInteger("debugLevel")) |debug_level| {
+    if (toml.checkOptionTable(zconfig, "compiling")) |compiling_config| {
+        if (toml.checkOptionInteger(compiling_config, "debugLevel")) |debug_level|
             runtime_engine.DEBUG_LEVEL = @max(0, @min(2, @as(u2, @truncate(@as(u64, @intCast(debug_level))))));
-        } else if (compiling_config.contains("debugLevel")) {
-            std.debug.print("[zune.toml] 'debugLevel' must be an integer value\n", .{});
-        }
-        if (compiling_config.getInteger("optimizationLevel")) |opt_level| {
+        if (toml.checkOptionInteger(compiling_config, "optimizationLevel")) |opt_level|
             runtime_engine.OPTIMIZATION_LEVEL = @max(0, @min(2, @as(u2, @truncate(@as(u64, @intCast(opt_level))))));
-        } else if (compiling_config.contains("optimizationLevel")) {
-            std.debug.print("[zune.toml] 'optimizationLevel' must be an integer value\n", .{});
-        }
-        if (compiling_config.getBool("nativeCodeGen")) |codegen| {
+        if (toml.checkOptionBool(compiling_config, "nativeCodeGen")) |codegen|
             runtime_engine.CODEGEN = codegen;
-        } else if (compiling_config.contains("nativeCodeGen")) {
-            std.debug.print("[zune.toml] 'nativeCodeGen' must be a boolean value\n", .{});
-        }
-    } else if (zconfig.contains("compiling")) {
-        std.debug.print("[zune.toml] 'compiling' must be a table\n", .{});
     }
 
-    if (zconfig.getTable("resolvers")) |resolvers_config| {
-        if (resolvers_config.getTable("formatter")) |fmt_config| {
-            if (fmt_config.getInteger("maxDepth")) |depth| {
+    if (toml.checkOptionTable(zconfig, "resolvers")) |resolvers_config| {
+        if (toml.checkOptionTable(resolvers_config, "formatter")) |fmt_config| {
+            if (toml.checkOptionInteger(fmt_config, "maxDepth")) |depth|
                 resolvers_fmt.MAX_DEPTH = @truncate(@as(u64, @intCast(depth)));
-            } else if (fmt_config.contains("maxDepth")) {
-                std.debug.print("[zune.toml] 'maxDepth' must be an integer value\n", .{});
-            }
-            if (fmt_config.getBool("showTableAddress")) |show_addr| {
+            if (toml.checkOptionBool(fmt_config, "showTableAddress")) |show_addr|
                 resolvers_fmt.SHOW_TABLE_ADDRESS = show_addr;
-            } else if (fmt_config.contains("showTableAddress")) {
-                std.debug.print("[zune.toml] 'showTableAddress' must be a boolean value\n", .{});
-            }
-        } else if (resolvers_config.contains("formatter")) {
-            std.debug.print("[zune.toml] 'formatter' must be a table\n", .{});
         }
 
-        if (resolvers_config.getTable("require")) |require_config| {
-            if (require_config.getString("mode")) |mode| {
+        if (toml.checkOptionTable(resolvers_config, "require")) |require_config| {
+            if (toml.checkOptionString(require_config, "mode")) |mode| {
                 if (std.mem.eql(u8, mode, "RelativeToProject")) {
                     resolvers_require.MODE = .RelativeToCwd;
                 } else if (!std.mem.eql(u8, mode, "RelativeToFile")) {
                     std.debug.print("[zune.toml] 'Mode' must be 'RelativeToProject' or 'RelativeToFile'\n", .{});
                 }
-            } else if (require_config.contains("mode")) {
-                std.debug.print("[zune.toml] 'Mode' must be a string value\n", .{});
             }
-        } else if (resolvers_config.contains("require")) {
-            std.debug.print("[zune.toml] 'require' must be a table\n", .{});
         }
-    } else if (zconfig.contains("resolvers")) {
-        std.debug.print("[zune.toml] 'resolvers' must be a table\n", .{});
     }
 }
 
@@ -127,8 +99,7 @@ pub fn openZune(L: *luau.Luau, args: []const []const u8, mode: RunMode, flags: F
     }.inner, "zcore_fmt_warn");
     L.setGlobal("warn");
 
-    L.pushFunction(resolvers_require.zune_require, "zcore_require");
-    L.setGlobal("require");
+    resolvers_require.load_require(L);
 
     L.setGlobalLString("_VERSION", VERSION);
 

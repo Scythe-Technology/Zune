@@ -246,7 +246,7 @@ pub fn dtor(ctx: *Self, L: *Luau, scheduler: *Scheduler) void {
             std.debug.print("Error reading response0: {}\n", .{err});
             L.pushBoolean(false);
             L.pushString(@errorName(err));
-            Scheduler.resumeState(L, null, 2);
+            _ = Scheduler.resumeState(L, null, 2) catch {};
             return;
         };
 
@@ -254,7 +254,7 @@ pub fn dtor(ctx: *Self, L: *Luau, scheduler: *Scheduler) void {
             std.debug.print("Server header buffer is null\n", .{});
             L.pushBoolean(false);
             L.pushString("InternalError (Header Buffer is null)");
-            Scheduler.resumeState(L, null, 2);
+            _ = Scheduler.resumeState(L, null, 2) catch {};
             return;
         }
 
@@ -271,7 +271,7 @@ pub fn dtor(ctx: *Self, L: *Luau, scheduler: *Scheduler) void {
             std.debug.print("Error creating response1: {}\n", .{err});
             L.pushBoolean(false);
             L.pushString(@errorName(err));
-            Scheduler.resumeState(L, null, 2);
+            _ = Scheduler.resumeState(L, null, 2) catch {};
             return;
         };
         defer response.deinit();
@@ -282,16 +282,16 @@ pub fn dtor(ctx: *Self, L: *Luau, scheduler: *Scheduler) void {
             std.debug.print("Error pushing response2: {}\n", .{err});
             L.pushBoolean(false);
             L.pushString(@errorName(err));
-            Scheduler.resumeState(L, null, 2);
+            _ = Scheduler.resumeState(L, null, 2) catch {};
             return;
         };
 
-        Scheduler.resumeState(L, null, 2);
+        _ = Scheduler.resumeState(L, null, 2) catch {};
     } else {
         // continue lua with error
         L.pushBoolean(false);
         if (ctx.err) |err| L.pushString(@errorName(err)) else L.pushString("Error");
-        Scheduler.resumeState(L, null, 2);
+        _ = Scheduler.resumeState(L, null, 2) catch {};
     }
 }
 
