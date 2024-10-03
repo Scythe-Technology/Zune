@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+- Added async support to require. You can now do yields in required modules.
+
+### Changed
+- Updated `luau` to `0.645`.
+- Backend formatted print/warn can now call/read `__tostring` metamethods on userdata.
+
 ## `0.4.1` - September 26, 2024
 
 ### Added
