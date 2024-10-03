@@ -6,7 +6,7 @@ local describe = testing.describe;
 local expect = testing.expect;
 local test = testing.test;
 
-local version = _VERSION:match("%d+%.%d+%.%d+");
+local _, version, _ = _VERSION:match("(Zune) (%d+%.%d+%.%d+.*)+(%d+%.%d+)");
 assert(version and #version > 0, "No version");
 
 describe("Server", function()
