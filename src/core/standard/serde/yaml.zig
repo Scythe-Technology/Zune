@@ -135,7 +135,7 @@ fn decodeList(L: *Luau, list: yaml.List) void {
 
     if (list.len == 0) return;
 
-    for (list, 0..) |val, key| {
+    for (list, 1..) |val, key| {
         switch (val) {
             .float => |f| L.pushNumber(f),
             .int => |i| L.pushInteger(@intCast(i)),
@@ -144,7 +144,7 @@ fn decodeList(L: *Luau, list: yaml.List) void {
             .list => |ls| decodeList(L, ls),
             .empty => continue,
         }
-        L.rawSetIndex(-2, @intCast(key + 1));
+        L.rawSetIndex(-2, @intCast(key));
     }
 }
 

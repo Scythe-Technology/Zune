@@ -28,10 +28,8 @@ const LuaDatetime = struct {
                 try datetime_ptr.tzLocalize(null)
             else
                 datetime_ptr.*;
-            const iso = try std.fmt.allocPrint(allocator, "{}Z", .{utc});
-            defer allocator.free(iso);
 
-            L.pushLString(iso);
+            try L.pushFmtString("{}Z", .{utc});
 
             return 1;
         } else if (std.mem.eql(u8, namecall, "toLocalTime") or std.mem.eql(u8, namecall, "ToLocalTime")) {

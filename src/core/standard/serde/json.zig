@@ -148,9 +148,9 @@ pub fn lua_encode(L: *Luau) i32 {
 fn decodeArray(L: *Luau, array: *std.ArrayList(json.JsonValue)) !void {
     L.newTable();
 
-    for (array.items, 0..) |item, i| {
+    for (array.items, 1..) |item, i| {
         try decodeValue(L, item);
-        L.rawSetIndex(-2, @intCast(i + 1));
+        L.rawSetIndex(-2, @intCast(i));
     }
 }
 

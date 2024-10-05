@@ -134,7 +134,8 @@ pub fn sleepThread(self: *Self, thread: *Luau, time: f64, args: i32, waited: boo
         .args = args,
         .waited = waited,
         .ref = refThread(thread),
-    }) catch |err| std.debug.panic("Error: {}\n", .{err});
+    }) catch |err|
+        std.debug.panic("Error: {}\n", .{err});
 }
 
 pub fn addTask(self: *Self, comptime T: type, data: *T, L: *Luau, comptime handler: *const fn (ctx: *T, L: *Luau, scheduler: *Self) TaskResult, comptime destructor: *const fn (ctx: *T, L: *Luau, scheduler: *Self) void) void {
@@ -155,7 +156,58 @@ pub fn addTask(self: *Self, comptime T: type, data: *T, L: *Luau, comptime handl
         .state = L,
         .virtualFn = virtualFn,
         .virtualDtor = virtualDtor,
-    }) catch |err| std.debug.panic("Error: {}\n", .{err});
+    }) catch |err|
+        std.debug.panic("Error: {}\n", .{err});
+}
+
+pub fn addSimpleTask(self: *Self, comptime T: type, data: T, L: *Luau, comptime handler: *const fn (ctx: *T, L: *Luau, scheduler: *Self) anyerror!i32) !i32 {
+    const allocator = L.allocator();
+    const virtualFn = struct {
+        fn inner(ctx: *anyopaque, l: *Luau, scheduler: *Self) TaskResult {
+            if (l.status() != .yield)
+                return .Stop;
+            const top = l.getTop();
+            if (@call(.always_inline, handler, .{ @as(*T, @alignCast(@ptrCast(ctx))), l, scheduler })) |res| {
+                if (res < 0) {
+                    if (res < -1) {
+                        _ = resumeStateError(l, null) catch {};
+                        return .Stop;
+                    }
+                    const top_now = l.getTop();
+                    if (top_now > top)
+                        l.pop(top_now - top);
+                    return .Continue;
+                }
+                _ = resumeState(l, null, res) catch {};
+                return .Stop;
+            } else |err| {
+                l.pushString(@errorName(err));
+                _ = resumeStateError(l, null) catch {};
+                return .Stop;
+            }
+        }
+    }.inner;
+
+    const virtualDtor = struct {
+        fn inner(ctx: *anyopaque, l: *Luau, _: *Self) void {
+            l.allocator().destroy(@as(*T, @alignCast(@ptrCast(ctx))));
+        }
+    }.inner;
+
+    const ptr = allocator.create(T) catch |err|
+        std.debug.panic("Error: {}\n", .{err});
+
+    ptr.* = data;
+
+    self.tasks.append(.{
+        .data = @ptrCast(ptr),
+        .state = L,
+        .virtualFn = virtualFn,
+        .virtualDtor = virtualDtor,
+    }) catch |err|
+        std.debug.panic("Error: {}\n", .{err});
+
+    return L.yield(0);
 }
 
 pub fn awaitResult(self: *Self, comptime T: type, data: *T, L: *Luau, comptime handler: *const fn (ctx: *T, L: *Luau, scheduler: *Self) void) !void {
@@ -176,7 +228,8 @@ pub fn awaitResult(self: *Self, comptime T: type, data: *T, L: *Luau, comptime h
         .state = L,
         .resumeFn = resumeFn,
         .ref = refThread(L),
-    }) catch |err| std.debug.panic("Error: {}\n", .{err});
+    }) catch |err|
+        std.debug.panic("Error: {}\n", .{err});
 }
 
 pub fn awaitCall(self: *Self, comptime T: type, data: *T, L: *Luau, args: i32, comptime handler: *const fn (ctx: *T, L: *Luau, scheduler: *Self) void, from: ?*Luau) !void {
@@ -271,8 +324,9 @@ pub fn run(self: *Self) void {
                 }
             }
         }
-        {
-            var deferredArray = self.deferred.clone() catch |err| std.debug.panic("Error: {}\n", .{err});
+        if (self.deferred.items.len > 0) {
+            var deferredArray = self.deferred.clone() catch |err|
+                std.debug.panic("Error: {}\n", .{err});
             defer deferredArray.deinit();
             self.deferred.clearAndFree();
             var i = deferredArray.items.len;

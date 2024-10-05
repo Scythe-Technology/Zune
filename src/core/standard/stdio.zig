@@ -92,63 +92,46 @@ const EraseActionMap = std.StaticStringMap(EraseKind).initComptime(.{
 });
 
 fn stdio_color(L: *Luau) !i32 {
-    const allocator = L.allocator();
     const color = L.checkString(1);
 
     const code = ColorMap.get(color) orelse L.raiseErrorStr("UnknownColor", .{});
 
-    const buf = try std.fmt.allocPrint(allocator, "\x1b[{d}m", .{code});
-    defer allocator.free(buf);
-
-    L.pushLString(buf);
+    try L.pushFmtString("\x1b[{d}m", .{code});
 
     return 1;
 }
 fn stdio_bgColor(L: *Luau) !i32 {
-    const allocator = L.allocator();
     const color = L.checkString(1);
 
     const code = ColorMap.get(color) orelse L.raiseErrorStr("UnknownColor", .{});
 
-    const buf = try std.fmt.allocPrint(allocator, "\x1b[{d}m", .{code + 10});
-    defer allocator.free(buf);
-
-    L.pushLString(buf);
+    try L.pushFmtString("\x1b[{d}m", .{code + 10});
 
     return 1;
 }
 
 fn stdio_color256(L: *Luau) !i32 {
-    const allocator = L.allocator();
     const code = L.checkInteger(1);
 
     if (code < 0 or code > 255)
         L.raiseErrorStr("Code must be between 0 to 255", .{});
 
-    const buf = try std.fmt.allocPrint(allocator, "\x1b[38;5;{d}m", .{code});
-    defer allocator.free(buf);
-
-    L.pushLString(buf);
+    try L.pushFmtString("\x1b[38;5;{d}m", .{code});
 
     return 1;
 }
 fn stdio_bgColor256(L: *Luau) !i32 {
-    const allocator = L.allocator();
     const code = L.checkInteger(1);
 
     if (code < 0 or code > 255)
         L.raiseErrorStr("Code must be between 0 to 255", .{});
 
-    const buf = try std.fmt.allocPrint(allocator, "\x1b[48;5;{d}m", .{code});
-    defer allocator.free(buf);
-
-    L.pushLString(buf);
+    try L.pushFmtString("\x1b[48;5;{d}m", .{code});
 
     return 1;
 }
 
 fn stdio_trueColor(L: *Luau) !i32 {
-    const allocator = L.allocator();
     const r = L.checkInteger(1);
     const g = L.checkInteger(2);
     const b = L.checkInteger(3);
@@ -160,17 +143,11 @@ fn stdio_trueColor(L: *Luau) !i32 {
     if (b < 0 or b > 255)
         L.raiseErrorStr("B must be between 0 to 255", .{});
 
-    const buf = try std.fmt.allocPrint(allocator, "\x1b[38;2;{d};{d};{d}m", .{
-        r, g, b,
-    });
-    defer allocator.free(buf);
-
-    L.pushLString(buf);
+    try L.pushFmtString("\x1b[38;2;{d};{d};{d}m", .{ r, g, b });
 
     return 1;
 }
 fn stdio_bgTrueColor(L: *Luau) !i32 {
-    const allocator = L.allocator();
     const r = L.checkInteger(1);
     const g = L.checkInteger(2);
     const b = L.checkInteger(3);
@@ -182,39 +159,27 @@ fn stdio_bgTrueColor(L: *Luau) !i32 {
     if (b < 0 or b > 255)
         L.raiseErrorStr("B must be between 0 to 255", .{});
 
-    const buf = try std.fmt.allocPrint(allocator, "\x1b[48;2;{d};{d};{d}m", .{
-        r, g, b,
-    });
-    defer allocator.free(buf);
-
-    L.pushLString(buf);
+    try L.pushFmtString("\x1b[48;2;{d};{d};{d}m", .{ r, g, b });
 
     return 1;
 }
 
 fn stdio_style(L: *Luau) !i32 {
-    const allocator = L.allocator();
     const color = L.checkString(1);
 
     const code = StyleMap.get(color) orelse L.raiseErrorStr("UnknownStyle", .{});
 
-    const buf = try std.fmt.allocPrint(allocator, "\x1b[{d}m", .{code});
-    defer allocator.free(buf);
-
-    L.pushLString(buf);
+    try L.pushFmtString("\x1b[{d}m", .{code});
 
     return 1;
 }
 
 fn stdio_reset(L: *Luau) !i32 {
-    const allocator = L.allocator();
     const reset = L.optString(1);
 
     if (reset) |kind| {
         if (ResetMap.get(kind)) |code| {
-            const buf = try std.fmt.allocPrint(allocator, "\x1b[{d}m", .{code});
-            defer allocator.free(buf);
-            L.pushLString(buf);
+            try L.pushFmtString("\x1b[{d}m", .{code});
             return 1;
         }
     }
@@ -225,31 +190,26 @@ fn stdio_reset(L: *Luau) !i32 {
 }
 
 fn stdio_cursorMove(L: *Luau) !i32 {
-    const allocator = L.allocator();
     const action = L.checkString(1);
 
     const kind = CursorActionMap.get(action) orelse L.raiseErrorStr("UnknownKind", .{});
 
-    const buf = switch (kind) {
-        .Home => try std.fmt.allocPrint(allocator, "\x1b[H", .{}),
-        .Goto => try std.fmt.allocPrint(allocator, "\x1b[{d};{d}H", .{ L.checkInteger(2), L.checkInteger(3) }),
-        .Up => try std.fmt.allocPrint(allocator, "\x1b[{d}A", .{L.checkInteger(2)}),
-        .Down => try std.fmt.allocPrint(allocator, "\x1b[{d}B", .{L.checkInteger(2)}),
-        .Right => try std.fmt.allocPrint(allocator, "\x1b[{d}C", .{L.checkInteger(2)}),
-        .Left => try std.fmt.allocPrint(allocator, "\x1b[{d}D", .{L.checkInteger(2)}),
-        .Nextline => try std.fmt.allocPrint(allocator, "\x1b[{d}E", .{L.checkInteger(2)}),
-        .PreviousLine => try std.fmt.allocPrint(allocator, "\x1b[{d}F", .{L.checkInteger(2)}),
-        .GotoColumn => try std.fmt.allocPrint(allocator, "\x1b[{d}G", .{L.checkInteger(2)}),
-    };
-    defer allocator.free(buf);
-
-    L.pushLString(buf);
+    switch (kind) {
+        .Home => try L.pushFmtString("\x1b[H", .{}),
+        .Goto => try L.pushFmtString("\x1b[{d};{d}H", .{ L.checkInteger(2), L.checkInteger(3) }),
+        .Up => try L.pushFmtString("\x1b[{d}A", .{L.checkInteger(2)}),
+        .Down => try L.pushFmtString("\x1b[{d}B", .{L.checkInteger(2)}),
+        .Right => try L.pushFmtString("\x1b[{d}C", .{L.checkInteger(2)}),
+        .Left => try L.pushFmtString("\x1b[{d}D", .{L.checkInteger(2)}),
+        .Nextline => try L.pushFmtString("\x1b[{d}E", .{L.checkInteger(2)}),
+        .PreviousLine => try L.pushFmtString("\x1b[{d}F", .{L.checkInteger(2)}),
+        .GotoColumn => try L.pushFmtString("\x1b[{d}G", .{L.checkInteger(2)}),
+    }
 
     return 1;
 }
 
 fn stdio_erase(L: *Luau) !i32 {
-    const allocator = L.allocator();
     const action = L.checkString(1);
 
     const kind = EraseActionMap.get(action) orelse L.raiseErrorStr("UnknownKind", .{});
@@ -264,10 +224,7 @@ fn stdio_erase(L: *Luau) !i32 {
         .EntireLine => "2K",
     };
 
-    const buf = try std.fmt.allocPrint(allocator, "\x1b[{s}", .{str});
-    defer allocator.free(buf);
-
-    L.pushLString(buf);
+    try L.pushFmtString("\x1b[{s}", .{str});
 
     return 1;
 }
@@ -281,13 +238,14 @@ const LuaStdIn = struct {
         return 0;
     }
 
-    pub fn __namecall(L: *Luau) !i32 {
+    pub fn __namecall(L: *Luau, scheduler: *Scheduler) !i32 {
         L.checkType(1, .userdata);
         var file_ptr = L.toUserdata(std.fs.File, 1) catch unreachable;
         const namecall = L.nameCallAtom() catch return 0;
         // TODO: prob should switch to static string map
         if (std.mem.eql(u8, namecall, "read")) {
-            var fds = [_]sysfd.context.pollfd{.{ .events = sysfd.context.POLLIN, .fd = file_ptr.handle, .revents = 0 }};
+            var fds = [1]sysfd.context.pollfd{.{ .events = sysfd.context.POLLIN, .fd = file_ptr.handle, .revents = 0 }};
+
             const poll = try sysfd.context.poll(&fds, 0);
             if (poll < 0)
                 std.debug.panic("InternalError (Bad Poll)", .{});
@@ -305,6 +263,36 @@ const LuaStdIn = struct {
             L.pushLString(buffer[0..amount]);
 
             return 1;
+        } else if (std.mem.eql(u8, namecall, "readAsync")) {
+            const maxBytes = L.optUnsigned(2) orelse 1;
+
+            const TaskContext = struct { sysfd.context.pollfd, std.fs.File, usize };
+            return try scheduler.addSimpleTask(TaskContext, .{
+                .{ .events = sysfd.context.POLLIN, .fd = file_ptr.handle, .revents = 0 },
+                file_ptr.*,
+                maxBytes,
+            }, L, struct {
+                fn inner(ctx: *TaskContext, l: *Luau, _: *Scheduler) !i32 {
+                    const fd, const file, const max_bytes = ctx.*;
+                    var fds_poll = [1]sysfd.context.pollfd{fd};
+                    const async_poll = try sysfd.context.poll(&fds_poll, 0);
+                    if (async_poll < 0)
+                        std.debug.panic("InternalError (Bad Poll)", .{});
+                    if (async_poll == 0)
+                        return -1;
+
+                    const allocator = l.allocator();
+
+                    var buffer = try allocator.alloc(u8, max_bytes);
+                    defer allocator.free(buffer);
+
+                    const amount = try file.read(buffer);
+
+                    l.pushLString(buffer[0..amount]);
+
+                    return 1;
+                }
+            }.inner);
         } else L.raiseErrorStr("Unknown method: %s\n", .{namecall.ptr});
         return 0;
     }
@@ -395,7 +383,7 @@ pub fn loadLib(L: *Luau) void {
         L.newMetatable(LuaStdIn.META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
 
         L.setFieldFn(-1, luau.Metamethods.index, LuaStdIn.__index); // metatable.__index
-        L.setFieldFn(-1, luau.Metamethods.namecall, LuaStdIn.__namecall); // metatable.__namecall
+        L.setFieldFn(-1, luau.Metamethods.namecall, Scheduler.toSchedulerEFn(LuaStdIn.__namecall)); // metatable.__namecall
 
         L.setFieldString(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.pop(1);
