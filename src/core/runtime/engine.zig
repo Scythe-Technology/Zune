@@ -62,8 +62,9 @@ pub fn setLuaFileContext(L: *Luau, ctx: FileContext) void {
     L.setFieldLString(-1, "name", ctx.name);
     L.setFieldLString(-1, "path", ctx.path);
 
-    if (USE_DETAILED_ERROR)
-        L.setFieldLString(-1, "source", ctx.source);
+    // TODO: Only include source when USE_DETAILED_ERROR is true or testing.
+    // if (USE_DETAILED_ERROR)
+    L.setFieldLString(-1, "source", ctx.source);
 
     L.setField(luau.GLOBALSINDEX, "_FILE");
 }

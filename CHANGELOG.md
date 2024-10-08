@@ -9,9 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Added async support to require. You can now do yields in required modules.
+- Added custom error logging, enabled with `runtime.debug.detailedError` in `zune.toml`.
+
+  Example:
+  ```shell
+  error: Zune
+  example.luau:1
+    |
+  1 | error("Zune")
+    | ^^^^^^^^^^^^^
+  ```
+- Added `useColor` and `showRecursiveTable` to `resolvers.formatter` in `zune.toml` for configurable output when using `print` and `warn`.
 
 ### Changed
-- Updated `luau` to `0.645`.
+- Updated `luau` to `0.646`.
 - Backend formatted print/warn can now call/read `__tostring` metamethods on userdata.
 
 ## `0.4.1` - September 26, 2024
