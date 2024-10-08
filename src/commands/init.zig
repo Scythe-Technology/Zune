@@ -5,6 +5,11 @@ const command = @import("lib.zig");
 const INIT_CONFIG_FILE =
     \\# Zune Configuration
     \\
+    \\# Debug settings for Zune
+    \\#  This affects the way Zune handles errors and debug information.
+    \\[runtime.debug]
+    \\detailedError=false
+    \\
     \\# Require settings for Zune
     \\#  This affects the way Zune loads files.
     \\[resolvers.require]
@@ -14,7 +19,9 @@ const INIT_CONFIG_FILE =
     \\#  This affects the output of the formatter while printing.
     \\[resolvers.formatter]
     \\maxDepth=4
+    \\useColor=true
     \\showTableAddress=true
+    \\showRecursiveTable=false
     \\
     \\# Compiling settings for Zune
     \\#  This affects all required files and the main file.

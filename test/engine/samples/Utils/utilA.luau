@@ -15,7 +15,7 @@ end)
 describe("utilA", function()
 	test("Validating Context", function()
 		expect(_FILE).never.toBeNil();
-		expect(_FILE:find("utilA%.luau")).never.toBeNil();
+		expect(_FILE.name:find("utilA%.luau")).never.toBeNil();
 	end)
 end)
 

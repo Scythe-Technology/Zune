@@ -173,12 +173,14 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
 
             moduleAbsolutePath = Engine.findLuauFileFromPathZ(allocator, absPath, modulePath) catch return error.FileNotFound;
         } else {
-            if (L.getField(luau.GLOBALSINDEX, "_FILE") != .string)
+            if (L.getField(luau.GLOBALSINDEX, "_FILE") != .table)
                 return finishError(L, "InternalError (_FILE is invalid)");
+            if (L.getField(-1, "path") != .string)
+                return finishError(L, "InternalError (_FILE.path is not a string)");
             const moduleFilePath = L.toString(-1) catch unreachable;
-            L.pop(1); // drop: _FILE
+            L.pop(2); // drop: path, _FILE
             if (!std.fs.path.isAbsolute(moduleFilePath))
-                return finishError(L, "InternalError (_FILE is not absolute)");
+                return finishError(L, "InternalError (_FILE.path is not absolute)");
 
             if (MODE == .RelativeToFile) {
                 const relativeDirPath = std.fs.path.dirname(moduleFilePath) orelse return error.FileNotFound;
@@ -245,10 +247,14 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
 
             ML.sandboxThread();
 
-            Engine.setLuaFileContext(ML, moduleAbsolutePath);
-
             const moduleRelativeName = try std.fs.path.relative(allocator, cwdDirPath, moduleAbsolutePath);
             defer allocator.free(moduleRelativeName);
+
+            Engine.setLuaFileContext(ML, .{
+                .path = moduleAbsolutePath,
+                .name = moduleRelativeName,
+                .source = fileContent,
+            });
 
             const moduleRelativeNameZ = try allocator.dupeZ(u8, moduleRelativeName);
             defer allocator.free(moduleRelativeNameZ);

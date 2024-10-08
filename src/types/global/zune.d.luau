@@ -1,6 +1,10 @@
 --  https://github.com/JohnnyMorganz/luau-lsp/issues/271
 
-declare _FILE : string;
+declare _FILE : {
+    name: string,
+    path: string,
+    source: string,
+};
 
 --// PROCESS
 

@@ -68,7 +68,11 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const virtual_path = try std.fs.path.join(allocator, &.{ path, "REPL" });
     defer allocator.free(virtual_path);
 
-    Engine.setLuaFileContext(L, virtual_path);
+    Engine.setLuaFileContext(L, .{
+        .path = virtual_path,
+        .name = "REPL",
+        .source = "",
+    });
 
     var stdin = std.io.getStdIn();
     var in_reader = stdin.reader();

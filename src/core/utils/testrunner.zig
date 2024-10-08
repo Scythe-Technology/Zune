@@ -53,7 +53,11 @@ pub fn runTest(allocator: std.mem.Allocator, comptime testFile: zune_test_files.
 
     ML.sandboxThread();
 
-    Engine.setLuaFileContext(ML, testFileAbsolute);
+    Engine.setLuaFileContext(ML, .{
+        .path = testFileAbsolute,
+        .name = testFile.path,
+        .source = testFile.content,
+    });
 
     const zbasename = try allocator.dupeZ(u8, std.fs.path.basename(testFile.path));
     defer allocator.free(zbasename);

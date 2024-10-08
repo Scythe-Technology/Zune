@@ -9,19 +9,21 @@ const Parser = @import("../utils/parser.zig");
 const Luau = luau.Luau;
 
 pub var MAX_DEPTH: u8 = 4;
+pub var USE_COLOR: bool = true;
 pub var SHOW_TABLE_ADDRESS: bool = true;
+pub var SHOW_RECURSIVE_TABLE: bool = false;
 
-pub fn finishRequire(L: *Luau) i32 {
+fn finishRequire(L: *Luau) i32 {
     if (L.isString(-1)) L.raiseError();
     return 1;
 }
 
-pub fn finishError(L: *Luau, errMsg: [:0]const u8) i32 {
+fn finishError(L: *Luau, errMsg: [:0]const u8) i32 {
     L.pushString(errMsg);
     return finishRequire(L);
 }
 
-pub fn fmt_tostring(allocator: std.mem.Allocator, L: *Luau, idx: i32) !?[]const u8 {
+fn fmt_tostring(allocator: std.mem.Allocator, L: *Luau, idx: i32) !?[]const u8 {
     switch (L.typeOf(idx)) {
         else => |t| {
             const ptr: *const anyopaque = L.toPointer(idx) catch return null;
@@ -31,146 +33,218 @@ pub fn fmt_tostring(allocator: std.mem.Allocator, L: *Luau, idx: i32) !?[]const 
     return null;
 }
 
-pub fn fmt_print_value(L: *Luau, idx: i32, depth: usize, asKey: bool) void {
+fn fmt_write_metamethod__tostring(L: *Luau, writer: anytype, idx: i32, force_plain: bool) !bool {
+    L.pushValue(idx);
+    defer L.pop(1); // drop: value
+    if (L.getMetatable(if (idx < 0) idx - 1 else idx)) {
+        const metaType = L.getField(-1, "__tostring");
+        defer L.pop(2); // drop: field(or result of function), metatable
+        if (!luau.isNoneOrNil(metaType)) {
+            if (metaType != .string) {
+                L.pushValue(-3);
+                L.call(1, 1);
+            }
+            if (L.typeOf(-1) != .string) L.raiseErrorStr("'__tostring' must return a string", .{});
+            const s = L.toString(-1) catch unreachable;
+            if (force_plain or Parser.isPlainText(s)) {
+                try writer.print("{s}", .{s});
+            } else try fmt_print_value(L, writer, -1, 0, false, null);
+            return true;
+        }
+    }
+    return false;
+}
+
+pub fn fmt_print_value(L: *Luau, writer: anytype, idx: i32, depth: usize, asKey: bool, map: ?*std.AutoArrayHashMap(usize, bool)) anyerror!void {
     const allocator = L.allocator();
     if (depth > MAX_DEPTH) {
-        std.debug.print("{s}", .{"{...}"});
+        try writer.print("{s}", .{"{...}"});
         return;
     } else {
         switch (L.typeOfObjConsumed(idx) catch @panic("Failed LuaObject")) {
-            .nil => std.debug.print("nil", .{}),
-            .boolean => |b| std.debug.print("\x1b[1;33m{s}\x1b[0m", .{if (b) "true" else "false"}),
-            .number => |n| std.debug.print("\x1b[96m{d}\x1b[0m", .{n}),
+            .nil => try writer.print("nil", .{}),
+            .boolean => |b| {
+                if (USE_COLOR)
+                    try writer.print("\x1b[1;33m{s}\x1b[0m", .{if (b) "true" else "false"})
+                else
+                    try writer.print("{s}", .{if (b) "true" else "false"});
+            },
+            .number => |n| {
+                if (USE_COLOR)
+                    try writer.print("\x1b[96m{d}\x1b[0m", .{n})
+                else
+                    try writer.print("{d}", .{n});
+            },
             .string => |s| {
                 if (asKey) {
-                    if (Parser.isPlainText(s)) std.debug.print("{s}", .{s}) else {
-                        std.debug.print("\x1b[2m[\x1b[0m\x1b[32m\"{s}\"\x1b[0m\x1b[2m]\x1b[0m", .{s});
+                    if (Parser.isPlainText(s)) try writer.print("{s}", .{s}) else {
+                        if (USE_COLOR)
+                            try writer.print("\x1b[2m[\x1b[0m\x1b[32m\"{s}\"\x1b[0m\x1b[2m]\x1b[0m", .{
+                                s,
+                            })
+                        else
+                            try writer.print("[\"{s}\"]", .{s});
                         return;
                     }
-                } else std.debug.print("\x1b[32m\"{s}\"\x1b[0m", .{s});
+                } else {
+                    if (USE_COLOR)
+                        try writer.print("\x1b[32m\"{s}\"\x1b[0m", .{s})
+                    else
+                        try writer.print("\"{s}\"", .{s});
+                }
             },
             .table => {
-                if (L.getMetatable(-1)) {
-                    const metaType = L.getField(-1, "__tostring");
-                    if (!luau.isNoneOrNil(metaType)) {
-                        if (metaType != .string) {
-                            L.pushValue(idx);
-                            L.call(1, 1);
-                        }
-                        if (L.typeOf(-1) != .string) L.raiseErrorStr("'__tostring' must return a string", .{});
-                        const s = L.toString(-1) catch unreachable;
-                        if (depth == 0 and Parser.isPlainText(s)) {
-                            std.debug.print("{s}", .{s});
-                        } else fmt_print_value(L, -1, 0, false);
-                        L.pop(2); // drop string, metatable
-                        return;
-                    }
-                    L.pop(1); // drop metatable
-                }
+                if (try fmt_write_metamethod__tostring(L, writer, -1, false))
+                    return;
                 if (asKey) {
                     const str = fmt_tostring(allocator, L, idx) catch "!ERR!";
                     if (str) |String| {
                         defer allocator.free(String);
-                        std.debug.print("\x1b[95m<{s}>\x1b[0m", .{String});
-                    } else std.debug.print("\x1b[95m<table>\x1b[0m", .{});
+                        if (USE_COLOR)
+                            try writer.print("\x1b[95m<{s}>\x1b[0m", .{String})
+                        else
+                            try writer.print("<{s}>", .{String});
+                    } else {
+                        if (USE_COLOR)
+                            try writer.print("\x1b[95m<table>\x1b[0m", .{})
+                        else
+                            try writer.print("<table>", .{});
+                    }
                     return;
+                }
+                const ptr = @intFromPtr(L.toPointer(idx) catch std.debug.panic("Failed Table to Ptr Conversion", .{}));
+                if (map) |tracked| {
+                    if (tracked.get(ptr)) |_| {
+                        if (SHOW_TABLE_ADDRESS) {
+                            if (USE_COLOR)
+                                try writer.print("\x1b[2m<recursive, table: 0x{x}>\x1b[0m", .{ptr})
+                            else
+                                try writer.print("<recursive, table: 0x{x}>", .{ptr});
+                        } else {
+                            if (USE_COLOR)
+                                try writer.print("\x1b[2m<recursive, table>\x1b[0m", .{})
+                            else
+                                try writer.print("<recursive, table>", .{});
+                        }
+                        return;
+                    }
+                    try tracked.put(ptr, true);
                 }
                 if (SHOW_TABLE_ADDRESS) {
                     const tableString = fmt_tostring(allocator, L, idx) catch "!ERR!";
                     if (tableString) |String| {
                         defer allocator.free(String);
-                        std.debug.print("\x1b[2m<{s}> {{\x1b[0m\n", .{String});
-                    } else std.debug.print("\x1b[2m<table> {{\x1b[0m\n", .{});
+                        if (USE_COLOR)
+                            try writer.print("\x1b[2m<{s}> {{\x1b[0m\n", .{String})
+                        else
+                            try writer.print("<{s}> {{\n", .{String});
+                    } else {
+                        if (USE_COLOR)
+                            try writer.print("\x1b[2m<table> {{\x1b[0m\n", .{})
+                        else
+                            try writer.print("<table> {{\n", .{});
+                    }
                 } else {
-                    std.debug.print("\x1b[2m{{\x1b[0m\n", .{});
+                    if (USE_COLOR)
+                        try writer.print("\x1b[2m{{\x1b[0m\n", .{})
+                    else
+                        try writer.print("{{\n", .{});
                 }
                 L.pushNil();
                 while (L.next(idx)) {
-                    for (0..depth + 1) |_| std.debug.print("    ", .{});
+                    for (0..depth + 1) |_| try writer.print("    ", .{});
                     const n = L.getTop();
                     if (L.typeOf(n - 1) == .string) {
-                        fmt_print_value(L, n - 1, depth + 1, true);
-                        std.debug.print("\x1b[2m = \x1b[0m", .{});
+                        try fmt_print_value(L, writer, n - 1, depth + 1, true, null);
+                        if (USE_COLOR)
+                            try writer.print("\x1b[2m = \x1b[0m", .{})
+                        else
+                            try writer.print(" = ", .{});
                     } else {
-                        std.debug.print("\x1b[2m[\x1b[0m", .{});
-                        fmt_print_value(L, n - 1, depth + 1, true);
-                        std.debug.print("\x1b[2m] = \x1b[0m", .{});
+                        if (USE_COLOR)
+                            try writer.print("\x1b[2m[\x1b[0m", .{})
+                        else
+                            try writer.print("[", .{});
+                        try fmt_print_value(L, writer, n - 1, depth + 1, true, null);
+                        if (USE_COLOR)
+                            try writer.print("\x1b[2m] = \x1b[0m", .{})
+                        else
+                            try writer.print("] = ", .{});
                     }
-                    fmt_print_value(L, n, depth + 1, false);
-                    std.debug.print("\x1b[2m,\x1b[0m \n", .{});
+                    try fmt_print_value(L, writer, n, depth + 1, false, map);
+                    if (USE_COLOR)
+                        try writer.print("\x1b[2m,\x1b[0m \n", .{})
+                    else
+                        try writer.print(", \n", .{});
                     L.pop(1);
                 }
-                for (0..depth) |_| std.debug.print("    ", .{});
-                std.debug.print("\x1b[2m{s}\x1b[0m", .{"}"});
+                for (0..depth) |_| try writer.print("    ", .{});
+                if (USE_COLOR)
+                    try writer.print("\x1b[2m}}\x1b[0m", .{})
+                else
+                    try writer.print("}}", .{});
             },
             else => {
-                if (L.getMetatable(-1)) {
-                    const metaType = L.getField(-1, "__tostring");
-                    if (!luau.isNoneOrNil(metaType)) {
-                        if (metaType != .string) {
-                            L.pushValue(idx);
-                            L.call(1, 1);
-                        }
-                        if (L.typeOf(-1) != .string) L.raiseErrorStr("'__tostring' must return a string", .{});
-                        const s = L.toString(-1) catch unreachable;
-                        if (depth == 0 and Parser.isPlainText(s)) {
-                            std.debug.print("{s}", .{s});
-                        } else fmt_print_value(L, -1, 0, false);
-                        L.pop(2); // drop string, metatable
-                        return;
-                    }
-                    L.pop(1); // drop metatable
-                }
+                if (try fmt_write_metamethod__tostring(L, writer, -1, false))
+                    return;
                 const str = fmt_tostring(allocator, L, idx) catch "!ERR!";
                 if (str) |String| {
                     defer allocator.free(String);
-                    std.debug.print("\x1b[95m<{s}>\x1b[0m", .{String});
+                    if (USE_COLOR)
+                        try writer.print("\x1b[95m<{s}>\x1b[0m", .{String})
+                    else
+                        try writer.print("<{s}>", .{String});
                 }
             },
         }
     }
 }
 
-pub fn fmt_print(L: *Luau) i32 {
+pub fn fmt_print(L: *Luau) !i32 {
     const top = L.getTop();
     const allocator = L.allocator();
     if (top == 0) {
         std.debug.print("\n", .{});
         return 0;
     }
+    var buffer = std.ArrayList(u8).init(allocator);
+    defer buffer.deinit();
+
+    const writer = buffer.writer();
+
     for (1..@intCast(top + 1)) |i| {
-        if (i > 1) {
-            std.debug.print("\t", .{});
-        }
+        if (i > 1)
+            try writer.print("\t", .{});
         const idx: i32 = @intCast(i);
         switch (L.typeOf(idx)) {
-            .nil => std.debug.print("nil", .{}),
-            .string => std.debug.print("{s}", .{L.toString(idx) catch @panic("Failed Conversion")}),
+            .nil => try writer.print("nil", .{}),
+            .string => try writer.print("{s}", .{L.toString(idx) catch @panic("Failed Conversion")}),
             .function, .userdata, .light_userdata, .thread => |t| blk: {
-                if (L.getMetatable(idx)) {
-                    const metaType = L.getField(-1, "__tostring");
-                    if (!luau.isNoneOrNil(metaType)) {
-                        if (metaType != .string) {
-                            L.pushValue(idx);
-                            L.call(1, 1);
-                        }
-                        if (L.typeOf(-1) != .string) L.raiseErrorStr("'__tostring' must return a string", .{});
-                        const s = L.toString(-1) catch unreachable;
-                        std.debug.print("{s}", .{s});
-                        L.pop(2); // drop string, metatable
-                        break :blk;
-                    }
-                    L.pop(1); // drop metatable
-                }
+                if (try fmt_write_metamethod__tostring(L, writer, idx, true))
+                    break :blk;
                 const str = fmt_tostring(allocator, L, idx) catch "!ERR!";
                 if (str) |String| {
                     defer allocator.free(String);
-                    std.debug.print("\x1b[95m<{s}>\x1b[0m", .{String});
-                } else std.debug.print("\x1b[95m<{s}>\x1b[0m", .{L.typeName(t)});
+                    if (USE_COLOR)
+                        try writer.print("\x1b[95m<{s}>\x1b[0m", .{String})
+                    else
+                        try writer.print("<{s}>", .{String});
+                } else {
+                    if (USE_COLOR)
+                        try writer.print("\x1b[95m<{s}>\x1b[0m", .{L.typeName(t)})
+                    else
+                        try writer.print("<{s}>", .{L.typeName(t)});
+                }
             },
-            else => fmt_print_value(L, idx, 0, false),
+            else => {
+                if (!SHOW_RECURSIVE_TABLE) {
+                    var map = std.AutoArrayHashMap(usize, bool).init(allocator);
+                    defer map.deinit();
+                    try fmt_print_value(L, writer, idx, 0, false, &map);
+                } else try fmt_print_value(L, writer, idx, 0, false, null);
+            },
         }
     }
-    std.debug.print("\n", .{});
+    std.debug.print("{s}\n", .{buffer.items});
     return 0;
 }

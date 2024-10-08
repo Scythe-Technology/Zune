@@ -90,13 +90,17 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     ML.sandboxThread();
 
-    Engine.setLuaFileContext(ML, fileName);
-
     const cwdDirPath = dir.realpathAlloc(allocator, ".") catch return error.FileNotFound;
     defer allocator.free(cwdDirPath);
 
     const moduleRelativeName = try std.fs.path.relative(allocator, cwdDirPath, fileName);
     defer allocator.free(moduleRelativeName);
+
+    Engine.setLuaFileContext(ML, .{
+        .path = fileName,
+        .name = moduleRelativeName,
+        .source = fileContent,
+    });
 
     const moduleRelativeNameZ = try allocator.dupeZ(u8, moduleRelativeName);
     defer allocator.free(moduleRelativeNameZ);

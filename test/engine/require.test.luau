@@ -52,7 +52,7 @@ end)
 describe("Require Many Value", function()
     test("Validating Require Context", function()
         expect(_FILE).never.toBeNil();
-        expect(_FILE:find("require%.test%.luau")).never.toBeNil();
+        expect(_FILE.name:find("require%.test%.luau")).never.toBeNil();
     end)
     
     test("Require Buffer", function()

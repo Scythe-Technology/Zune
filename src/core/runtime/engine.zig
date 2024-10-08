@@ -11,6 +11,7 @@ const Luau = luau.Luau;
 pub var DEBUG_LEVEL: u2 = 2;
 pub var OPTIMIZATION_LEVEL: u2 = 1;
 pub var CODEGEN: bool = true;
+pub var USE_DETAILED_ERROR: bool = false;
 
 pub const LuauCompileError = error{
     Syntax,
@@ -42,15 +43,215 @@ pub fn loadModule(L: *Luau, name: [:0]const u8, content: []const u8, cOpts: ?lua
     return try loadModuleBytecode(L, name, bytecode);
 }
 
-pub fn setLuaFileContext(L: *Luau, absPath: []const u8) void {
-    L.setFieldLString(luau.GLOBALSINDEX, "_FILE", absPath);
+const FileContext = struct {
+    path: []const u8,
+    name: []const u8,
+    source: []const u8,
+};
+
+const StackInfo = struct {
+    what: luau.DebugInfo.FnType,
+    name: ?[]const u8 = null,
+    source: ?[]const u8 = null,
+    source_line: ?i32 = null,
+    current_line: ?i32 = null,
+};
+
+pub fn setLuaFileContext(L: *Luau, ctx: FileContext) void {
+    L.newTable();
+    L.setFieldLString(-1, "name", ctx.name);
+    L.setFieldLString(-1, "path", ctx.path);
+
+    if (USE_DETAILED_ERROR)
+        L.setFieldLString(-1, "source", ctx.source);
+
+    L.setField(luau.GLOBALSINDEX, "_FILE");
+}
+
+pub fn printSpacedPadding(padding: []u8) void {
+    @memset(padding, ' ');
+    std.debug.print("{s}|\n", .{padding});
+}
+
+pub fn printPreviewError(padding: []u8, line: i32, comptime fmt: []const u8, args: anytype) void {
+    std.debug.print("{s}|\n", .{padding});
+    _ = std.fmt.bufPrint(padding, "{d}", .{line}) catch |e| std.debug.panic("{}", .{e});
+    std.debug.print("{s}~ \x1b[2mPreviewError: " ++ fmt ++ "\x1b[0m\n", .{padding} ++ args);
+    @memset(padding, ' ');
+    std.debug.print("{s}|\n", .{padding});
+}
+
+pub fn logDetailedError(L: *Luau) !void {
+    const allocator = L.allocator();
+
+    var list = std.ArrayList(StackInfo).init(allocator);
+    defer list.deinit();
+    defer for (list.items) |item| {
+        if (item.name) |name|
+            allocator.free(name);
+        if (item.source) |source|
+            allocator.free(source);
+    };
+
+    var ar: luau.DebugInfo = undefined;
+    var level: i32 = 0;
+    while (L.getInfo(level, .{ .s = true, .l = true, .n = true }, &ar)) : (level += 1) {
+        var info: StackInfo = .{
+            .what = ar.what,
+        };
+        if (ar.name) |name|
+            info.name = try allocator.dupe(u8, name);
+        if (ar.line_defined) |line|
+            info.source_line = line;
+        if (ar.current_line) |line|
+            info.current_line = line;
+
+        info.source = try allocator.dupe(u8, ar.source);
+
+        try list.append(info);
+    }
+
+    var err_msg = L.toString(-1) catch "UnknownError";
+
+    if (list.items.len < 1) {
+        std.debug.print("\x1b[32merror\x1b[0m: {s}\n", .{err_msg});
+        std.debug.print("{s}\n", .{L.debugTrace()});
+        return;
+    }
+
+    Luau.sys.luaD_checkstack(L, 5);
+    Luau.sys.luaD_expandstacklimit(L, 5);
+
+    var reference_level: ?usize = null;
+    jmp: {
+        const item = blk: {
+            for (list.items, 0..) |item, lvl|
+                if (item.what == .luau) {
+                    reference_level = lvl;
+                    break :blk item;
+                };
+            break :blk list.items[0];
+        };
+        if (item.source == null or item.current_line == null)
+            break :jmp;
+        const strip = try std.fmt.allocPrint(allocator, "[string \"{s}\"]:{d}: ", .{
+            item.source.?,
+            item.current_line.?,
+        });
+        defer allocator.free(strip);
+
+        const pos = std.mem.indexOfPosLinear(u8, err_msg, 0, strip);
+        if (pos) |p|
+            err_msg = err_msg[p + strip.len ..];
+    }
+
+    var largest_line: usize = 0;
+    for (list.items) |info| {
+        if (info.current_line) |line|
+            largest_line = @max(largest_line, @as(usize, @intCast(line)));
+        if (info.source_line) |line| {
+            if (line > 0)
+                largest_line = @max(largest_line, @as(usize, @intCast(line)));
+        }
+    }
+    const padding = std.math.log10(largest_line) + 1;
+
+    std.debug.print("\x1b[31merror\x1b[0m: {s}\n", .{err_msg});
+
+    const padded_string = try allocator.alloc(u8, padding + 1);
+    defer allocator.free(padded_string);
+    @memset(padded_string, ' ');
+
+    for (list.items, 0..) |info, lvl| {
+        if (info.current_line == null or info.current_line.? < 0)
+            continue;
+        if (info.source) |src| blk: {
+            const current_line = info.current_line.?;
+
+            std.debug.print("\x1b[1;4m{s}:{d}\x1b[0m\n", .{ src, current_line });
+
+            if (!L.getInfo(@intCast(lvl), .{ .f = true }, &ar)) {
+                printPreviewError(padded_string, current_line, "Failed to get function info", .{});
+                continue;
+            }
+
+            if (L.typeOf(-1) != .function)
+                return error.InternalError;
+            L.getFenv(-1);
+            defer L.pop(2); // drop: env, func
+            if (L.typeOf(-1) != .table) {
+                printPreviewError(padded_string, current_line, "Failed to get function environment", .{});
+                continue;
+            }
+            defer L.pop(1); // drop: _FILE
+            if (L.getField(-1, "_FILE") != .table) {
+                printPreviewError(padded_string, current_line, "Failed to get file context", .{});
+                continue;
+            }
+            defer L.pop(1); // drop: source
+            if (L.getField(-1, "source") != .string) {
+                printPreviewError(padded_string, current_line, "Failed to get file source", .{});
+                continue;
+            }
+            const content = L.toString(-1) catch unreachable;
+
+            var stream = std.io.fixedBufferStream(content);
+            const reader = stream.reader();
+            if (current_line > 1) for (0..@intCast(current_line - 1)) |_| {
+                const buf = reader.readUntilDelimiterOrEofAlloc(allocator, '\n', std.math.maxInt(usize)) catch |e| {
+                    printPreviewError(padded_string, current_line, "Failed to read line: {}", .{e});
+                    continue;
+                };
+                defer if (buf) |b| allocator.free(b);
+                if (buf == null) {
+                    printPreviewError(padded_string, current_line, "Failed to read line, ended too early", .{});
+                    break :blk;
+                }
+            };
+
+            const line_content = reader.readUntilDelimiterOrEofAlloc(allocator, '\n', std.math.maxInt(usize)) catch |e| {
+                printPreviewError(padded_string, current_line, "Failed to read line: {}", .{e});
+                continue;
+            } orelse {
+                printPreviewError(padded_string, current_line, "Failed to read line, ended too early", .{});
+                break :blk;
+            };
+            defer allocator.free(line_content);
+
+            std.debug.print("{s}|\n", .{padded_string});
+            _ = std.fmt.bufPrint(padded_string, "{d}", .{current_line}) catch |e| std.debug.panic("{}", .{e});
+            std.debug.print("{s}| {s}\n", .{ padded_string, line_content });
+            @memset(padded_string, ' ');
+
+            if (reference_level != null and reference_level.? == lvl) {
+                const front_pos = std.mem.indexOfNonePos(u8, line_content, 0, " \t") orelse 0;
+                const end_pos = std.mem.lastIndexOfNone(u8, line_content, " \t\r") orelse front_pos;
+                const len = (end_pos - front_pos) + 1;
+
+                const space_slice = line_content[0..front_pos];
+
+                const buf = allocator.alloc(u8, len) catch |e| std.debug.panic("{}", .{e});
+                defer allocator.free(buf);
+
+                @memset(buf, '^');
+
+                std.debug.print("{s}| {s}\x1b[31m{s}\x1b[0m\n", .{ padded_string, space_slice, buf });
+            } else {
+                std.debug.print("{s}|\n", .{padded_string});
+            }
+        }
+    }
 }
 
 pub fn logError(L: *Luau, err: anyerror) void {
     switch (err) {
         error.Runtime => {
-            std.debug.print("{s}\n", .{L.toString(-1) catch "UnknownError"});
-            std.debug.print("{s}\n", .{L.debugTrace()});
+            if (USE_DETAILED_ERROR) {
+                logDetailedError(L) catch |e| std.debug.panic("{}", .{e});
+            } else {
+                std.debug.print("{s}\n", .{L.toString(-1) catch "UnknownError"});
+                std.debug.print("{s}\n", .{L.debugTrace()});
+            }
         },
         else => {
             std.debug.print("Error: {}\n", .{err});

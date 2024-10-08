@@ -40,6 +40,36 @@ pub fn loadConfiguration() void {
     };
     defer zconfig.deinit(DEFAULT_ALLOCATOR);
 
+    if (toml.checkOptionTable(zconfig, "runtime")) |runtime_config| {
+        if (toml.checkOptionTable(runtime_config, "debug")) |debug_config| {
+            if (toml.checkOptionBool(debug_config, "detailedError")) |enabled|
+                runtime_engine.USE_DETAILED_ERROR = enabled;
+        }
+    }
+
+    if (toml.checkOptionTable(zconfig, "resolvers")) |resolvers_config| {
+        if (toml.checkOptionTable(resolvers_config, "formatter")) |fmt_config| {
+            if (toml.checkOptionInteger(fmt_config, "maxDepth")) |depth|
+                resolvers_fmt.MAX_DEPTH = @truncate(@as(u64, @intCast(depth)));
+            if (toml.checkOptionBool(fmt_config, "useColor")) |enabled|
+                resolvers_fmt.USE_COLOR = enabled;
+            if (toml.checkOptionBool(fmt_config, "showTableAddress")) |enabled|
+                resolvers_fmt.SHOW_TABLE_ADDRESS = enabled;
+            if (toml.checkOptionBool(fmt_config, "showRecursiveTable")) |enabled|
+                resolvers_fmt.SHOW_RECURSIVE_TABLE = enabled;
+        }
+
+        if (toml.checkOptionTable(resolvers_config, "require")) |require_config| {
+            if (toml.checkOptionString(require_config, "mode")) |mode| {
+                if (std.mem.eql(u8, mode, "RelativeToProject")) {
+                    resolvers_require.MODE = .RelativeToCwd;
+                } else if (!std.mem.eql(u8, mode, "RelativeToFile")) {
+                    std.debug.print("[zune.toml] 'Mode' must be 'RelativeToProject' or 'RelativeToFile'\n", .{});
+                }
+            }
+        }
+    }
+
     if (toml.checkOptionTable(zconfig, "luau")) |luau_config| {
         if (toml.checkOptionTable(luau_config, "fflags")) |fflags_config| {
             var iter = fflags_config.table.iterator();
@@ -62,27 +92,8 @@ pub fn loadConfiguration() void {
             runtime_engine.DEBUG_LEVEL = @max(0, @min(2, @as(u2, @truncate(@as(u64, @intCast(debug_level))))));
         if (toml.checkOptionInteger(compiling_config, "optimizationLevel")) |opt_level|
             runtime_engine.OPTIMIZATION_LEVEL = @max(0, @min(2, @as(u2, @truncate(@as(u64, @intCast(opt_level))))));
-        if (toml.checkOptionBool(compiling_config, "nativeCodeGen")) |codegen|
-            runtime_engine.CODEGEN = codegen;
-    }
-
-    if (toml.checkOptionTable(zconfig, "resolvers")) |resolvers_config| {
-        if (toml.checkOptionTable(resolvers_config, "formatter")) |fmt_config| {
-            if (toml.checkOptionInteger(fmt_config, "maxDepth")) |depth|
-                resolvers_fmt.MAX_DEPTH = @truncate(@as(u64, @intCast(depth)));
-            if (toml.checkOptionBool(fmt_config, "showTableAddress")) |show_addr|
-                resolvers_fmt.SHOW_TABLE_ADDRESS = show_addr;
-        }
-
-        if (toml.checkOptionTable(resolvers_config, "require")) |require_config| {
-            if (toml.checkOptionString(require_config, "mode")) |mode| {
-                if (std.mem.eql(u8, mode, "RelativeToProject")) {
-                    resolvers_require.MODE = .RelativeToCwd;
-                } else if (!std.mem.eql(u8, mode, "RelativeToFile")) {
-                    std.debug.print("[zune.toml] 'Mode' must be 'RelativeToProject' or 'RelativeToFile'\n", .{});
-                }
-            }
-        }
+        if (toml.checkOptionBool(compiling_config, "nativeCodeGen")) |enabled|
+            runtime_engine.CODEGEN = enabled;
     }
 }
 
@@ -92,9 +103,9 @@ pub fn openZune(L: *luau.Luau, args: []const []const u8, mode: RunMode, flags: F
     L.pushFunction(resolvers_fmt.fmt_print, "zcore_fmt_print");
     L.setGlobal("print");
     L.pushFunction(struct {
-        fn inner(l: *luau.Luau) i32 {
+        fn inner(l: *luau.Luau) !i32 {
             std.debug.print("\x1b[2m[\x1b[0;33mWARN\x1b[0;2m]\x1b[0m ", .{});
-            return resolvers_fmt.fmt_print(l);
+            return try resolvers_fmt.fmt_print(l);
         }
     }.inner, "zcore_fmt_warn");
     L.setGlobal("warn");

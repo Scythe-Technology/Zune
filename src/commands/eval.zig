@@ -50,7 +50,11 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     ML.sandboxThread();
 
-    Engine.setLuaFileContext(ML, virtual_path);
+    Engine.setLuaFileContext(ML, .{
+        .path = virtual_path,
+        .name = "EVAL",
+        .source = fileContent,
+    });
 
     const relativeDirPath = std.fs.path.dirname(virtual_path) orelse std.debug.panic("FileNotFound", .{});
 

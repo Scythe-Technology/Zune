@@ -1,7 +1,5 @@
 --!strict
-local fs = require("@zcore/fs");
 local task = require("@zcore/task");
-local process = require("@zcore/process");
 
 local testing = {
     running = true,
@@ -74,7 +72,7 @@ function testing.test(name : string, fn: () -> (), timeout : number?)
             end
             local context = getfenv(f);
             local _FILE = context._FILE;
-            if (type(_FILE) ~= "string") then
+            if (type(_FILE) ~= "table") then
                 continue;
             end
             table.insert(stacktrace, {
@@ -182,10 +180,7 @@ function testing.test(name : string, fn: () -> (), timeout : number?)
 
     for i, v in stacktrace do
         local last = i == sz;
-        local readOk, contents = fs.readFile(v.file);
-        if (not readOk or type(contents) ~= "string") then
-            continue;
-        end
+        local contents = v.file.source;
 
         local line = contents:split("\n")[v.line];
         local safeLine = line:gsub("\t", "    ");
@@ -203,7 +198,7 @@ function testing.test(name : string, fn: () -> (), timeout : number?)
             end
         end
         
-        print(` \x1b[2m{L}\x1b[0m \x1b[31m{v.file}:{v.line}:{column}:\x1b[0m \x1b[2m{v.address:sub(11)}{#v.source > 0 and ` {v.source}` or ""}{nameHasValue and ` called {v.name}` or ""} (test)\x1b[0m`);
+        print(` \x1b[2m{L}\x1b[0m \x1b[31m{v.file.name}:{v.line}:{column}:\x1b[0m \x1b[2m{v.address:sub(11)}{#v.source > 0 and ` {v.source}` or ""}{nameHasValue and ` called {v.name}` or ""} (test)\x1b[0m`);
         print(` \x1b[2m{L}\x1b[0m \x1b[0m{safeLine}\x1b[0m`);
         print(` \x1b[2m{last and `{CL}` or `{L} `}\x1b[0m{string.rep("\32", indent)}\x1b[31m^\x1b[0m`);
     end
