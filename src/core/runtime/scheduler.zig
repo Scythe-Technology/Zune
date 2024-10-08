@@ -340,6 +340,7 @@ pub fn run(self: *Self) void {
                 derefThread(thread, deferred.ref);
             }
         }
+        std.time.sleep(std.time.ns_per_ms * 4);
     }
 }
 
