@@ -28,7 +28,28 @@ pub fn loadLib(L: *Luau) void {
         L.setFieldFn(-1, "encode", json.lua_encode);
         L.setFieldFn(-1, "decode", json.lua_decode);
 
+        json.lua_setprops(L);
+
         L.setFieldAhead(-1, "json");
+    }
+
+    { // Json5
+        L.newTable();
+
+        L.setFieldFn(-1, "encode", json.lua_encode);
+        L.setFieldFn(-1, "decode", json.lua_decode5);
+
+        _ = L.getField(-2, "json");
+
+        _ = L.getField(-1, "Indents");
+        L.setField(-3, "Indents");
+
+        _ = L.getField(-1, "Values");
+        L.setField(-3, "Values");
+
+        L.pop(1);
+
+        L.setFieldAhead(-1, "json5");
     }
 
     { // Toml

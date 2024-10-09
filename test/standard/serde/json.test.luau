@@ -33,11 +33,33 @@ describe("Json", function()
         end)
         test("Null", function()
             expect(serde.json.encode(nil)).toBe("null");
+            expect(serde.json.encode(serde.json.Values.Null)).toBe("null");
         end)
         test("Object/Array", function()
             expect(serde.json.encode({})).toBe("[]");
             expect(serde.json.encode({a = 1, b = 2, c = 3})).toBe(`\{"a":1,"c":3,"b":2\}`);
+            expect(serde.json.encode({a = 1, b = serde.json.Values.Null, c = 3})).toBe(`\{"a":1,"c":3,"b":null\}`);
             expect(serde.json.encode({1,2,3})).toBe(`[1,2,3]`);
+
+            expect(serde.json.encode({1,2,3}, {
+                prettyIndent = 0
+            })).toBe(`[1,2,3]`);
+            expect(serde.json.encode({1,2,3}, {
+                prettyIndent = serde.json.Indents.None
+            })).toBe(`[1,2,3]`);
+
+            expect(serde.json.encode({1,2,3}, {
+                prettyIndent = serde.json.Indents.TwoSpaces
+            })).toBe(`[1, 2, 3]`);
+            expect(serde.json.encode({a = 1, b = 2, c = 3}, {
+                prettyIndent = serde.json.Indents.TwoSpaces
+            })).toBe(`\{\n  "a": 1,\n  "c": 3,\n  "b": 2\n\}`);
+            expect(serde.json.encode({a = 1, b = 2, c = 3}, {
+                prettyIndent = serde.json.Indents.Tabs
+            })).toBe(`\{\n\t"a": 1,\n\t"c": 3,\n\t"b": 2\n\}`);
+            expect(serde.json.encode({a = 1, b = 2, c = 3}, {
+                prettyIndent = 1
+            })).toBe(`\{\n  "a": 1,\n  "c": 3,\n  "b": 2\n\}`);
         end)
         test("Fail", function()
             expect(function() serde.json.encode(function() end); end).toThrow(`Unsupported type function`);
@@ -81,6 +103,13 @@ describe("Json", function()
         end)
         test("Null", function()
             expect(serde.json.decode("null")).toBe(nil);
+            expect(serde.json.decode("[null]")).toBe(expect.similar({}));
+            expect(serde.json.decode("null", {
+                preserveNull = true
+            })).toBe(serde.json.Values.Null);
+            expect(serde.json.decode("[null]", {
+                preserveNull = true
+            })).toBe(expect.similar({serde.json.Values.Null}));
         end)
         test("Object/Array", function()
             expect(serde.json.decode(`\{\}`)).toBe(expect.similar({}));
@@ -107,6 +136,7 @@ describe("Json", function()
             expect(function() serde.json.decode(`\{"a":1,"b":2,"c":3,`); end).toThrow(`UnexpectedTokenError`);
             expect(function() serde.json.decode(`\{"a":1,"b":2"c":3}`); end).toThrow(`UnexpectedTokenError`);
             expect(function() serde.json.decode(`\{ "a" :1 , "b"   : 2,       "c"   :    3       `); end).toThrow(`UnexpectedTokenError`);
+            expect(function() serde.json.Values.Null.a = 2 end).toThrow(`attempt to modify a readonly table`);
         end)
     end)
 end)
