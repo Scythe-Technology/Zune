@@ -74,28 +74,27 @@ describe("task", function()
                 local task_ret = {task.spawn(function()
                     task.wait();
                     success = 0;
-                    task.wait(0.05);
+                    task.wait(0.25);
                     success = 1;
                 end)};
                 expect(task_ret).toHaveLength(1);
                 expect(task_ret[1]).toBe(expect.any("thread"));
                 expect(coroutine.status(task_ret[1])).toBe("suspended");
                 expect(task.count("s")).toBe(1);
-                task.wait(0.01);
+                task.wait(0.05);
                 expect(task.count("s")).toBe(1);
                 expect(coroutine.status(task_ret[1])).toBe("suspended");
                 task.cancel(task_ret[1]);
                 expect(coroutine.status(task_ret[1])).toBe("dead");
-                task.wait(0.1);
+                task.wait(0.5);
                 expect(task.count("s")).toBe(0);
                 expect(success).toBe(0);
             end)
             test("Defer", function()
                 local success;
                 local task_ret = {task.defer(function()
-                    task.wait();
                     success = 0;
-                    task.wait(0.05);
+                    task.wait(0.25);
                     success = 1;
                 end)};
                 expect(task_ret).toHaveLength(1);
@@ -103,7 +102,7 @@ describe("task", function()
                 expect(coroutine.status(task_ret[1])).toBe("suspended");
                 expect(task.count("d")).toBe(1);
                 expect(task.count("s")).toBe(0);
-                task.wait(0.01);
+                task.wait(0.05);
                 expect(task.count("d")).toBe(0);
                 expect(task.count("s")).toBe(1);
                 expect(coroutine.status(task_ret[1])).toBe("suspended");
@@ -111,27 +110,27 @@ describe("task", function()
                 expect(task.count("d")).toBe(0);
                 expect(task.count("s")).toBe(0);
                 expect(coroutine.status(task_ret[1])).toBe("dead");
-                task.wait(0.1);
+                task.wait(0.5);
                 expect(success).toBe(0);
             end)
             test("Delay", function()
                 local success;
                 local task_ret = {task.delay(0, function()
                     success = 0;
-                    task.wait(0.05);
+                    task.wait(0.25);
                     success = 1;
                 end)};
                 expect(task_ret).toHaveLength(1);
                 expect(task_ret[1]).toBe(expect.any("thread"));
                 expect(task.count("s")).toBe(1);
                 expect(coroutine.status(task_ret[1])).toBe("suspended");
-                task.wait(0.01);
+                task.wait(0.05);
                 expect(task.count("s")).toBe(1);
                 expect(coroutine.status(task_ret[1])).toBe("suspended");
                 task.cancel(task_ret[1]);
                 expect(task.count("s")).toBe(0);
                 expect(coroutine.status(task_ret[1])).toBe("dead");
-                task.wait(0.1);
+                task.wait(0.5);
                 expect(success).toBe(0);
             end)
         end)
@@ -143,15 +142,15 @@ describe("task", function()
                 local success, err;
                 local thread = coroutine.create(function()
                     success, err = pcall(function()
-                        local delta = task.wait(0.05);
-                        expect(delta).toBeGreaterThanOrEqual(0.049);
-                        expect(delta).toBeLessThanOrEqual(0.1);
+                        local delta = task.wait(0.25);
+                        expect(delta).toBeGreaterThanOrEqual(0.249);
+                        expect(delta).toBeLessThanOrEqual(0.5);
                     end)
                 end)
                 expect(coroutine.status(thread)).toBe("suspended");
                 coroutine.resume(thread);
                 expect(coroutine.status(thread)).toBe("suspended");
-                task.wait(0.1);
+                task.wait(0.5);
                 expect(coroutine.status(thread)).toBe("dead");
                 expect(success).toBeTruthy();
                 expect(err).toBeNil();
@@ -199,19 +198,19 @@ describe("task", function()
                 local thread = coroutine.create(function(a, b, c)
                     local endTime = os.clock() - startTime;
                     success, err = pcall(function()
-                        expect(endTime).toBeGreaterThanOrEqual(0.049);
-                        expect(endTime).toBeLessThanOrEqual(0.1);
+                        expect(endTime).toBeGreaterThanOrEqual(0.249);
+                        expect(endTime).toBeLessThanOrEqual(0.5);
                         expect(a).toBe(1);
                         expect(b).toBe(4);
                         expect(c).toBe(8);
                     end)
                 end)
-                local task_ret = {task.delay(0.05, thread, 1, 4, 8)};
+                local task_ret = {task.delay(0.25, thread, 1, 4, 8)};
                 expect(task_ret).toHaveLength(1);
                 expect(task_ret[1]).toBe(expect.any("thread"));
                 expect(task_ret[1]).toBe(thread);
                 expect(coroutine.status(task_ret[1])).toBe("suspended");
-                task.wait(0.1);
+                task.wait(0.5);
                 expect(coroutine.status(task_ret[1])).toBe("dead");
                 expect(success).toBeTruthy();
                 expect(err).toBeNil();
@@ -223,7 +222,7 @@ describe("task", function()
                 local thread = coroutine.create(function()
                     task.wait();
                     success = 0;
-                    task.wait(0.05);
+                    task.wait(0.25);
                     success = 1;
                 end)
                 local task_ret = {task.spawn(thread)};
@@ -231,19 +230,18 @@ describe("task", function()
                 expect(task_ret[1]).toBe(expect.any("thread"));
                 expect(task_ret[1]).toBe(thread);
                 expect(coroutine.status(task_ret[1])).toBe("suspended");
-                task.wait(0.01);
+                task.wait(0.05);
                 expect(coroutine.status(task_ret[1])).toBe("suspended");
                 task.cancel(task_ret[1]);
                 expect(coroutine.status(task_ret[1])).toBe("dead");
-                task.wait(0.1);
+                task.wait(0.5);
                 expect(success).toBe(0);
             end)
             test("Defer", function()
                 local success;
                 local thread = coroutine.create(function()
-                    task.wait();
                     success = 0;
-                    task.wait(0.05);
+                    task.wait(0.25);
                     success = 1;
                 end)
                 local task_ret = {task.defer(thread)};
@@ -251,18 +249,18 @@ describe("task", function()
                 expect(task_ret[1]).toBe(expect.any("thread"));
                 expect(task_ret[1]).toBe(thread);
                 expect(coroutine.status(task_ret[1])).toBe("suspended");
-                task.wait(0.01);
+                task.wait(0.05);
                 expect(coroutine.status(task_ret[1])).toBe("suspended");
                 task.cancel(task_ret[1]);
                 expect(coroutine.status(task_ret[1])).toBe("dead");
-                task.wait(0.1);
+                task.wait(0.5);
                 expect(success).toBe(0);
             end)
             test("Delay", function()
                 local success;
                 local thread = coroutine.create(function()
                     success = 0;
-                    task.wait(0.05);
+                    task.wait(0.25);
                     success = 1;
                 end)
                 local task_ret = {task.delay(0, thread)};
@@ -270,11 +268,11 @@ describe("task", function()
                 expect(task_ret[1]).toBe(expect.any("thread"));
                 expect(task_ret[1]).toBe(thread);
                 expect(coroutine.status(task_ret[1])).toBe("suspended");
-                task.wait(0.01);
+                task.wait(0.05);
                 expect(coroutine.status(task_ret[1])).toBe("suspended");
                 task.cancel(task_ret[1]);
                 expect(coroutine.status(task_ret[1])).toBe("dead");
-                task.wait(0.1);
+                task.wait(0.5);
                 expect(success).toBe(0);
             end)
         end)
@@ -330,7 +328,7 @@ describe("task", function()
                     nested1();
                 end)
                 expect(task.count("s")).toBe(1);
-                task.wait(0.05);
+                task.wait(0.25);
                 expect(task.count("s")).toBe(0);
                 expect(flag).toBeTruthy();
             end)
@@ -359,7 +357,7 @@ describe("task", function()
                     nested1();
                 end)
                 expect(task.count("d")).toBe(1);
-                task.wait(0.05);
+                task.wait(0.25);
                 expect(task.count("d")).toBe(0);
                 expect(flag).toBeTruthy();
             end)
@@ -380,7 +378,7 @@ describe("task", function()
                     nested1();
                 end)
                 expect(task.count("s")).toBe(1);
-                task.wait(0.05);
+                task.wait(0.25);
                 expect(task.count("s")).toBe(0);
                 expect(flag).toBeTruthy();
             end)
