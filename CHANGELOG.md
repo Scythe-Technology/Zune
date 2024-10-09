@@ -20,6 +20,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     | ^^^^^^^^^^^^^
   ```
 - Added `useColor` and `showRecursiveTable` to `resolvers.formatter` in `zune.toml` for configurable output when using `print` and `warn`.
+- Added `json5`, null preservation & pretty print for `json` in `@zcore/serde`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/serde)
+
+  Example:
+  ```lua
+  local serde = require("@zcore/serde")
+
+  local json = [[
+    {
+      "key": null
+    }
+  ]]
+
+  -- Json5 and Json are very similar, just Json5 has a different decoder.
+  -- serde.json.Values & serde.json.Indents are both the same for Json5, usable for in either one.
+  local decoded = serde.json5.decode(json, {
+      preserveNull = true -- Preserve null values as 'serde.json.Values.Null'
+  })
+  print(serde.json5.encode(decoded, {
+      prettyIndent = serde.json5.Indents.TwoSpaces -- Pretty print with 2 spaces
+  }))
+  ```
 
 ### Changed
 - Updated `luau` to `0.646`.
