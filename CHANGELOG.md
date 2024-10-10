@@ -100,7 +100,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Fixed `eval` requiring modules relative to the parent of the current working directory, instead of the current working directory.
-- Fixed `require` casuing an error when requiring a module that returns nil.
+- Fixed `require` causing an error when requiring a module that returns nil.
 - Fixed `websockets` yielding forever.
 - Fixed threads under scheduler getting garbage collected.
 - Fixed `setup` panic on windows.
@@ -373,7 +373,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ```
 
 ### Changed
-- Partial backend code for print formating.
+- Partial backend code for print formatting.
 - Internal package.
 
 ## `0.0.5` - August 29, 2024

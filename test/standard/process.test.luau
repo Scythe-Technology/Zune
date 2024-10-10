@@ -64,7 +64,7 @@ test("Context", function()
 	end
 end)
 
-describe("Enviroment", function()
+describe("Environment", function()
 	expect(process.loadEnv).toBe(expect.any("function"));
 
 	test("Context", function()

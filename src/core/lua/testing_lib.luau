@@ -241,7 +241,7 @@ function Conditional.__tostring(self : Conditional)
 end
 
 type ConditionState = {
-    recieved : any,
+    received : any,
     flipped : boolean,
     shared : {[string] : any},
 };
@@ -290,65 +290,65 @@ end
 local conditionals = {
     toBe = function(self : ConditionState, expected : any)
         if (Conditional.is(expected)) then
-            local cond, a, s = expected(self.recieved);
+            local cond, a, s = expected(self.received);
             if (s) then
                 assertExpect(self.flipped, cond, s, flipTag(self.flipped));
             else
-                assertExpect(self.flipped, cond, "Expected %s to %sbe %s", a or readable(self.recieved), flipTag(self.flipped), readable(expected));
+                assertExpect(self.flipped, cond, "Expected %s to %sbe %s", a or readable(self.received), flipTag(self.flipped), readable(expected));
             end
         else 
-            assertExpect(self.flipped, self.recieved == expected, "Expected %s to %sbe %s", readable(self.recieved), flipTag(self.flipped), readable(expected));
+            assertExpect(self.flipped, self.received == expected, "Expected %s to %sbe %s", readable(self.received), flipTag(self.flipped), readable(expected));
         end
     end,
     toBeDefined = function(self : ConditionState)
-        assertExpect(self.flipped, self.recieved ~= nil, "Expected %s to %sbe defined", readable(self.recieved), flipTag(self.flipped));
+        assertExpect(self.flipped, self.received ~= nil, "Expected %s to %sbe defined", readable(self.received), flipTag(self.flipped));
     end,
     toBeCloseTo = function(self : ConditionState, expected, precision: number)
         assertExpect(self.flipped, 
-            expected == math.huge and self.recieved == math.huge
-            or expected == -math.huge and self.recieved == -math.huge
-            or math.abs(self.recieved - expected) < (10 ^ -precision)/2
-        , "Expected %s to be close to %s", readable(self.recieved), expected);
+            expected == math.huge and self.received == math.huge
+            or expected == -math.huge and self.received == -math.huge
+            or math.abs(self.received - expected) < (10 ^ -precision)/2
+        , "Expected %s to be close to %s", readable(self.received), expected);
     end,
     toBeGreaterThan = function(self : ConditionState, expected)
-        assertExpect(self.flipped, self.recieved > expected, "Expected %s to %sbe greater than %s", readable(self.recieved), flipTag(self.flipped), readable(expected));
+        assertExpect(self.flipped, self.received > expected, "Expected %s to %sbe greater than %s", readable(self.received), flipTag(self.flipped), readable(expected));
     end,
     toBeGreaterThanOrEqual = function(self : ConditionState, expected)
-        assertExpect(self.flipped, self.recieved >= expected, "Expected %s to %sbe greater than or equal to %s", readable(self.recieved), flipTag(self.flipped), readable(expected));
+        assertExpect(self.flipped, self.received >= expected, "Expected %s to %sbe greater than or equal to %s", readable(self.received), flipTag(self.flipped), readable(expected));
     end,
     toBeLessThan = function(self : ConditionState, expected)
-        assertExpect(self.flipped, self.recieved < expected, "Expected %s to %sbe less than %s", readable(self.recieved), flipTag(self.flipped), readable(expected));
+        assertExpect(self.flipped, self.received < expected, "Expected %s to %sbe less than %s", readable(self.received), flipTag(self.flipped), readable(expected));
     end,
     toBeLessThanOrEqual = function(self : ConditionState, expected)
-        assertExpect(self.flipped, self.recieved <= expected, "Expected %s to %sbe less than or equal to %s", readable(self.recieved), flipTag(self.flipped), readable(expected));
+        assertExpect(self.flipped, self.received <= expected, "Expected %s to %sbe less than or equal to %s", readable(self.received), flipTag(self.flipped), readable(expected));
     end,
     toBeNil = function(self : ConditionState)
-        assertExpect(self.flipped, self.recieved == nil, "Expected %s to %sbe Nil", readable(self.recieved), flipTag(self.flipped));
+        assertExpect(self.flipped, self.received == nil, "Expected %s to %sbe Nil", readable(self.received), flipTag(self.flipped));
     end,
     toBeNan = function(self : ConditionState)
-        assertExpect(self.flipped, self.recieved ~= self.recieved and type(self.recieved) == "number", "Expected %s to %sbe NaN", readable(self.recieved), flipTag(self.flipped));
+        assertExpect(self.flipped, self.received ~= self.received and type(self.received) == "number", "Expected %s to %sbe NaN", readable(self.received), flipTag(self.flipped));
     end,
     toHaveLength = function(self : ConditionState, expected)
-        assertExpect(self.flipped, #self.recieved == expected, "Expected %s to %shave length %s", readable(self.recieved), flipTag(self.flipped), readable(expected));
+        assertExpect(self.flipped, #self.received == expected, "Expected %s to %shave length %s", readable(self.received), flipTag(self.flipped), readable(expected));
     end,
     toBeFalsy = function(self : ConditionState)
-        assertExpect(self.flipped, not self.recieved, "Expected %s to %sbe falsy", readable(self.recieved), flipTag(self.flipped));
+        assertExpect(self.flipped, not self.received, "Expected %s to %sbe falsy", readable(self.received), flipTag(self.flipped));
     end,
     toBeTruthy = function(self : ConditionState)
-        assertExpect(self.flipped, self.recieved, "Expected %s to %sbe truthy", readable(self.recieved), flipTag(self.flipped));
+        assertExpect(self.flipped, self.received, "Expected %s to %sbe truthy", readable(self.received), flipTag(self.flipped));
     end,
     toThrow = function(self : ConditionState, expected : string?)
-        assertExpect(false, type(self.recieved) == "function", "Expected %s to %sbe a function", readable(self.recieved), flipTag(self.flipped));
-        local success, err = pcall(self.recieved);
+        assertExpect(false, type(self.received) == "function", "Expected %s to %sbe a function", readable(self.received), flipTag(self.flipped));
+        local success, err = pcall(self.received);
         if (expected ~= nil) then
-            assertExpect(false, not success, "Expected %s to %sthrow an error", readable(self.recieved), flipTag(self.flipped));
+            assertExpect(false, not success, "Expected %s to %sthrow an error", readable(self.received), flipTag(self.flipped));
             local stripped = err:match("^%[string \"[^\"]+\"%]:%d+: (.+)$");
             if (not stripped) then
                 error("Expected error message to be in the format of '[string \"<filename>\"]:<line>: <message>'", 2);
             end
             assertExpect(self.flipped, stripped == expected, "Got error %s expected to %sthrow %s", readable(stripped), flipTag(self.flipped), readable(expected));
         else
-            assertExpect(self.flipped, not success, "Expected %s to %sthrow an error", readable(self.recieved), flipTag(self.flipped));
+            assertExpect(self.flipped, not success, "Expected %s to %sthrow an error", readable(self.received), flipTag(self.flipped));
         end
     end,
 };
@@ -438,12 +438,12 @@ local expect = setmetatable({
 
         local sharedState = {};
         local normalState = {
-            recieved = value,
+            received = value,
             flipped = false,
             shared = sharedState,
         };
         local neverState = {
-            recieved = value,
+            received = value,
             flipped = true,
             shared = sharedState,
         };

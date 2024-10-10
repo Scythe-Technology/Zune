@@ -237,10 +237,10 @@ fn copyDir(fromDir: fs.Dir, toDir: fs.Dir, overwrite: bool) !void {
 fn fs_copy(L: *Luau) !i32 {
     const fromPath = L.checkString(1);
     const toPath = L.checkString(2);
-    const overrite = L.optBoolean(3) orelse false;
+    const override = L.optBoolean(3) orelse false;
     const cwd = std.fs.cwd();
     if (internal_isFile(cwd, fromPath)) {
-        if (overrite == false and internal_isFile(cwd, toPath))
+        if (override == false and internal_isFile(cwd, toPath))
             return std.fs.Dir.MakeError.PathAlreadyExists;
 
         cwd.copyFile(fromPath, cwd, toPath, fs.Dir.CopyFileOptions{}) catch return UnhandledError.UnknownError;
@@ -251,7 +251,7 @@ fn fs_copy(L: *Luau) !i32 {
             .no_follow = true,
         });
         defer fromDir.close();
-        if (overrite == false and internal_isDir(cwd, toPath))
+        if (override == false and internal_isDir(cwd, toPath))
             return std.fs.Dir.MakeError.PathAlreadyExists
         else {
             cwd.makeDir(toPath) catch |err| switch (err) {
@@ -265,7 +265,7 @@ fn fs_copy(L: *Luau) !i32 {
             .no_follow = true,
         });
         defer toDir.close();
-        try copyDir(fromDir, toDir, overrite);
+        try copyDir(fromDir, toDir, override);
     }
     L.pushBoolean(true);
     return 1;

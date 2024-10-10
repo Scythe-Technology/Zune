@@ -38,7 +38,7 @@ zig build test
 5. Formatting:
 ```sh
 zig fmt [file]
-# or any other tools, idealy it just needs to be zig formatted.
+# or any other tools, ideally it just needs to be zig formatted.
 # and should pass CI.
 ```
 6. Code Style: *N/A (Undecided)*.

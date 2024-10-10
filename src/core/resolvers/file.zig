@@ -19,14 +19,14 @@ pub fn doesFileExist(path: []const u8) !bool {
 }
 
 pub const AbsoluteResolveError = error{
-    CouldNotGetAbolutePath,
+    CouldNotGetAbsolutePath,
 };
 pub fn getAbsolutePathFromCwd(allocator: std.mem.Allocator, path: []const u8) AbsoluteResolveError![]const u8 {
     const cwd_path = std.fs.cwd().realpathAlloc(allocator, ".") catch
-        return AbsoluteResolveError.CouldNotGetAbolutePath;
+        return AbsoluteResolveError.CouldNotGetAbsolutePath;
     defer allocator.free(cwd_path);
     return std.fs.path.resolve(allocator, &.{ cwd_path, path }) catch
-        return AbsoluteResolveError.CouldNotGetAbolutePath;
+        return AbsoluteResolveError.CouldNotGetAbsolutePath;
 }
 
 pub const FileSearchError = error{
