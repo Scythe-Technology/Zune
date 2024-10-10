@@ -1,7 +1,7 @@
 const std = @import("std");
 const luau = @import("luau");
 
-const zune = @import("../../zune.zig");
+const Zune = @import("../../zune.zig");
 const Engine = @import("../runtime/engine.zig");
 const Scheduler = @import("../runtime/scheduler.zig");
 
@@ -9,7 +9,7 @@ const Luau = luau.Luau;
 
 const zune_test_files = @import("zune-test-files");
 
-pub fn runTest(allocator: std.mem.Allocator, comptime testFile: zune_test_files.File, args: []const []const u8, comptime stdOutEnabled: bool) !zune.corelib.testing.TestResult {
+pub fn runTest(allocator: std.mem.Allocator, comptime testFile: zune_test_files.File, args: []const []const u8, comptime stdOutEnabled: bool) !Zune.corelib.testing.TestResult {
     const cwd_path = try std.fs.cwd().realpathAlloc(allocator, ".");
     defer allocator.free(cwd_path);
 
@@ -21,6 +21,8 @@ pub fn runTest(allocator: std.mem.Allocator, comptime testFile: zune_test_files.
     defer path_dir.close();
 
     try path_dir.setAsCwd();
+
+    Zune.loadConfiguration();
 
     var L = try Luau.init(&allocator);
     defer L.deinit();
@@ -72,7 +74,7 @@ pub fn runTest(allocator: std.mem.Allocator, comptime testFile: zune_test_files.
         else => return err,
     };
 
-    return zune.corelib.testing.runTestAsync(ML, &scheduler) catch |err| switch (err) {
+    return Zune.corelib.testing.runTestAsync(ML, &scheduler) catch |err| switch (err) {
         error.MsgHandler, error.Runtime => {
             Engine.logError(L, err);
             return err;

@@ -1,0 +1,7 @@
+# test configuration
+
+[runtime.debug]
+detailedError=true
+
+[experimental]
+ffi=true

@@ -1,3 +1,4 @@
+pub const ffi = @import("ffi.zig");
 pub const fs = @import("fs/lib.zig");
 pub const task = @import("task.zig");
 pub const luau = @import("luau.zig");

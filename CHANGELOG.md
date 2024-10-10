@@ -41,6 +41,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       prettyIndent = serde.json5.Indents.TwoSpaces -- Pretty print with 2 spaces
   }))
   ```
+- Added `@zcore/ffi` for FFI support. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/ffi)
+
+  Currently this is marked as experimental and may change in the future. Api may change.
+  To enable this, you need to set `experimental.ffi` to `true` in `zune.toml`.
+
+  It is also likely this might not work on all platforms.
+
+  Example:
+  ```luau
+  local ffi = require("@zcore/ffi")
+
+  local lib = ffi.dlopen(`libsample.{ffi.suffix}`, {
+      add = {
+          returns = ffi.types.i32,
+          args = {ffi.types.i32, ffi.types.i32},
+      },
+  })
+
+  print(lib.add(1, 2))
+  ```
 
 ### Changed
 - Updated `luau` to `0.646`.
@@ -91,7 +111,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `watch`, `openFile`, and `createFile` to `@zcore/fs`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/fs)
 
   Example:
-    ```lua
+    ```luau
     local fs = require("@zcore/fs")
 
     local watcher = fs.watch("file.txt", function(filename, events)
@@ -130,7 +150,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `random` and `aes` to `@zcore/crypto`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/crypto)
 
   Example:
-    ```lua
+    ```luau
     local crypto = require("@zcore/crypto")
 
     -- Random
@@ -154,7 +174,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `getSize` method to `terminal` in `@zcore/stdio`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/serde)
 
   Example:
-    ```lua
+    ```luau
     local stdio = require("@zcore/stdio")
     
     if (stdio.terminal.isTTY) then
@@ -165,7 +185,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `base64` to `@zcore/serde`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/serde)
 
   Example:
-    ```lua
+    ```luau
     local serde = require("@zcore/serde")
 
     local encoded = serde.base64.encode("Hello World!")
@@ -183,7 +203,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       }
     }
     ```
-    ```lua
+    ```luau
     local module = require("@dev/module")
     local globals = require("@globals")
     ```
@@ -194,7 +214,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `m` - Multiline
 
   Example:
-    ```lua
+    ```luau
     local regex = require("@zcore/regex")
 
     local pattern = regex.new("[A-Za-z!]+")
@@ -203,7 +223,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `@zcore/datetime`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/datetime)
 
   Example:
-    ```lua
+    ```luau
     local datetime = require("@zcore/datetime")
 
     print(datetime.now().unixTimestamp) -- Timestamp
@@ -212,7 +232,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `onSignal` to `@zcore/process`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/process)
 
   Example:
-    ```lua
+    ```luau
     local process = require("@zcore/process")
 
     process.onSignal("INT", function()
@@ -238,7 +258,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `stdin`, `stdout`, and `stderr` to `@zcore/stdio`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/stdio)
 
   Example:
-    ```lua
+    ```luau
     local stdio = require("@zcore/stdio")
 
     stdio.stdin:read() -- read byte
@@ -253,7 +273,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   *note*: If you have weird terminal output in windows, we recommend you to use `enableRawMode` to enable windows console `Virtual Terminal Processing`.
 
   Example:
-    ```lua
+    ```luau
     local stdio = require("@zcore/stdio")
 
     if (stdio.terminal.isTTY) then -- check if terminal is a TTY
@@ -265,7 +285,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `@zcore/regex`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/regex)
 
   Example:
-    ```lua
+    ```luau
     local regex = require("@zcore/regex")
 
     local pattern = regex.new("([A-Za-z\\s!])+")
@@ -297,7 +317,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added buffer support for `@net/server` body response. If a buffer is returned, it will be sent as the response body, works with `{ body = buffer, statusCode = 200 }`.
   
   Example:
-    ```lua
+    ```luau
     local net = require("@net/net")
 
     net.serve({
@@ -310,7 +330,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added buffer support for `@net/serde` in compress/decompress. If a buffer is passed, it will return a new buffer.
   
   Example:
-    ```lua
+    ```luau
     local serde = require("@net/serde")
 
     local compressed_buffer = serde.gzip.compress(buffer.fromstring("Zune"))

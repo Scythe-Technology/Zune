@@ -115,6 +115,7 @@ pub fn build(b: *std.Build) !void {
     const dep_czrex = b.dependency("czrex", .{ .target = target, .optimize = optimize });
     const dep_datetime = b.dependency("datetime", .{ .target = target, .optimize = optimize });
     const dep_toml = b.dependency("toml", .{ .target = target, .optimize = optimize });
+    const dep_ffi = b.dependency("ffi", .{ .target = target, .optimize = optimize, .safe_build = true });
 
     const prebuild_step = b.step("prebuild", "Setup project for build");
 
@@ -143,6 +144,7 @@ pub fn build(b: *std.Build) !void {
     exe.root_module.addImport("regex", dep_czrex.module("czrex"));
     exe.root_module.addImport("datetime", dep_datetime.module("zdt"));
     exe.root_module.addImport("toml", dep_toml.module("tomlz"));
+    exe.root_module.addImport("ffi", dep_ffi.module("ffi"));
 
     b.installArtifact(exe);
 
@@ -154,6 +156,22 @@ pub fn build(b: *std.Build) !void {
 
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
+
+    const sample_dylib = b.addSharedLibrary(.{
+        .name = "sample",
+        .root_source_file = b.path("test/standard/ffi/sample.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    sample_dylib.step.dependOn(prebuild_step);
+
+    const sample_dylib_path = try std.fs.path.resolve(b.allocator, &[_][]const u8{ "../test/standard/ffi/zig-out/", sample_dylib.out_lib_filename });
+    defer b.allocator.free(sample_dylib_path);
+
+    const install_sample_dylib = b.addInstallArtifact(sample_dylib, .{});
+    const install_test_sample_dylib = b.addInstallFile(install_sample_dylib.artifact.getEmittedBin(), sample_dylib_path);
+    install_test_sample_dylib.step.dependOn(&install_sample_dylib.step);
 
     const exe_unit_tests = b.addTest(.{
         .root_source_file = b.path("src/main.zig"),
@@ -177,10 +195,12 @@ pub fn build(b: *std.Build) !void {
     exe_unit_tests.root_module.addImport("regex", dep_czrex.module("czrex"));
     exe_unit_tests.root_module.addImport("datetime", dep_datetime.module("zdt"));
     exe_unit_tests.root_module.addImport("toml", dep_toml.module("tomlz"));
+    exe_unit_tests.root_module.addImport("ffi", dep_ffi.module("ffi"));
 
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
 
     const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(&install_test_sample_dylib.step);
     test_step.dependOn(&run_exe_unit_tests.step);
 
     const version_step = b.step("version", "Get build version");

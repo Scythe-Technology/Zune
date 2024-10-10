@@ -1,6 +1,6 @@
 # Zig build artifacts
 .zig-cache/
-zig-out/
+**/zig-out/
 
 # macOs Directory
 **/.DS_Store

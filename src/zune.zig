@@ -28,17 +28,19 @@ pub var CONFIGURATIONS = .{.format_max_depth};
 
 const VERSION = "Zune " ++ zune_info.version ++ "+" ++ std.fmt.comptimePrint("{d}.{d}", .{ luau.LUAU_VERSION.major, luau.LUAU_VERSION.minor });
 
+var EXPERIMENTAL_FFI = false;
 pub fn loadConfiguration() void {
-    const config_content = std.fs.cwd().readFileAlloc(DEFAULT_ALLOCATOR, "zune.toml", std.math.maxInt(usize)) catch |err| switch (err) {
+    const allocator = DEFAULT_ALLOCATOR;
+    const config_content = std.fs.cwd().readFileAlloc(allocator, "zune.toml", std.math.maxInt(usize)) catch |err| switch (err) {
         error.FileNotFound => return,
         else => return std.debug.print("Failed to read zune.toml: {}\n", .{err}),
     };
-    defer DEFAULT_ALLOCATOR.free(config_content);
+    defer allocator.free(config_content);
 
-    var zconfig = toml.parse(DEFAULT_ALLOCATOR, config_content) catch |err| {
+    var zconfig = toml.parse(allocator, config_content) catch |err| {
         return std.debug.print("Failed to parse zune.toml: {}\n", .{err});
     };
-    defer zconfig.deinit(DEFAULT_ALLOCATOR);
+    defer zconfig.deinit(allocator);
 
     if (toml.checkOptionTable(zconfig, "runtime")) |runtime_config| {
         if (toml.checkOptionTable(runtime_config, "debug")) |debug_config| {
@@ -95,6 +97,11 @@ pub fn loadConfiguration() void {
         if (toml.checkOptionBool(compiling_config, "nativeCodeGen")) |enabled|
             runtime_engine.CODEGEN = enabled;
     }
+
+    if (toml.checkOptionTable(zconfig, "experimental")) |experimental_config| {
+        if (toml.checkOptionBool(experimental_config, "ffi")) |enabled|
+            EXPERIMENTAL_FFI = enabled;
+    }
 }
 
 pub fn openZune(L: *luau.Luau, args: []const []const u8, mode: RunMode, flags: Flags) !void {
@@ -124,6 +131,9 @@ pub fn openZune(L: *luau.Luau, args: []const []const u8, mode: RunMode, flags: F
     corelib.net.loadLib(L);
     corelib.datetime.loadLib(L);
     try corelib.process.loadLib(L, args);
+
+    if (EXPERIMENTAL_FFI)
+        corelib.ffi.loadLib(L);
 
     corelib.testing.loadLib(L, mode == .Test);
 
