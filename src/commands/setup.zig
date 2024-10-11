@@ -13,6 +13,7 @@ const typedef = struct {
 
 const typedefs = &[_]typedef{
     typedef{ .name = "core/fs", .content = @embedFile("../types/core/fs.luau.gz") },
+    typedef{ .name = "core/ffi", .content = @embedFile("../types/core/ffi.luau.gz") },
     typedef{ .name = "core/net", .content = @embedFile("../types/core/net.luau.gz") },
     typedef{ .name = "core/task", .content = @embedFile("../types/core/task.luau.gz") },
     typedef{ .name = "core/luau", .content = @embedFile("../types/core/luau.luau.gz") },
