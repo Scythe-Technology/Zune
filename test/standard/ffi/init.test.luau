@@ -49,6 +49,12 @@ else
     error("Unsupported OS: " .. process.os);
 end
 
+-- Workaround for Windows tests, test sample library
+local static_suffix = ffi.suffix;
+if (process.os == "windows") then
+    static_suffix = "lib";
+end
+
 describe("FFI", function()
     if (not ffi.supported) then
         warn("Skipping 'FFI' tests (Not Supported)");
@@ -56,19 +62,19 @@ describe("FFI", function()
     end
     describe("dlopen", function()
         test("Sample Library (No Decls)", function()
-            local lib = ffi.dlopen(`./zig-out/{ffi.prefix}sample.{ffi.suffix}`, {});
+            local lib = ffi.dlopen(`./zig-out/{ffi.prefix}sample.{static_suffix}`, {});
             expect(lib).toBe(expect.type("userdata"));
             lib:close();
         end);
         test("Fail", function()
             expect(function()
-                ffi.dlopen(`./zig-out/{ffi.prefix}invalid.{ffi.suffix}`, {});
+                ffi.dlopen(`./zig-out/{ffi.prefix}invalid.{static_suffix}`, {});
             end).toThrow("FileNotFound");
         end);
     end)
 
     describe("Sample Library", function()
-        local lib = ffi.dlopen(`./zig-out/{ffi.prefix}sample.{ffi.suffix}`, {
+        local lib = ffi.dlopen(`./zig-out/{ffi.prefix}sample.{static_suffix}`, {
             add = {
                 returns = ffi.types.i32,
                 args = {ffi.types.i32, ffi.types.i32},
