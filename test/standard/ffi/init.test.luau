@@ -12,6 +12,7 @@ expect(ffi).toBe(
         dlopen = expect.type("function"),
         sizeOf = expect.type("function"),
         alignOf = expect.type("function"),
+        eqlPtr = expect.type("function"),
         intFromPtr = expect.type("function"),
         valueFromPtr = expect.type("function"),
         writeIntoPtr = expect.type("function"),

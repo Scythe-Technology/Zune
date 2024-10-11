@@ -20,3 +20,5 @@
 .dir-locals.el
 # Nix Environment
 shell.nix
+.direnv
+.envrc

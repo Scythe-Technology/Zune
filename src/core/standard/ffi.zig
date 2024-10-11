@@ -464,6 +464,25 @@ fn ffi_valueFromPtr(L: *Luau) !i32 {
     return 1;
 }
 
+fn ffi_eqlPtr(L: *Luau) i32 {
+    const ptr1 = L.checkBuffer(1);
+    const ptr2 = L.checkBuffer(2);
+
+    const res = blk: {
+        if (ptr1.len != ptr2.len)
+            break :blk false;
+
+        if (@sizeOf(usize) != ptr1.len)
+            break :blk false;
+
+        break :blk std.mem.eql(u8, ptr1, ptr2);
+    };
+
+    L.pushBoolean(res);
+
+    return 1;
+}
+
 fn ffi_sizeOf(L: *Luau) !i32 {
     const t = try convertToFFIType(L.checkInteger(1));
     L.pushInteger(@intCast(t.toSize()));
@@ -504,6 +523,7 @@ pub fn loadLib(L: *Luau) void {
     L.setFieldFn(-1, "intFromPtr", ffi_intFromPtr);
     L.setFieldFn(-1, "writeIntoPtr", ffi_writeIntoPtr);
     L.setFieldFn(-1, "valueFromPtr", ffi_valueFromPtr);
+    L.setFieldFn(-1, "eqlPtr", ffi_eqlPtr);
     L.setFieldFn(-1, "sizeOf", ffi_sizeOf);
     L.setFieldFn(-1, "alignOf", ffi_alignOf);
 

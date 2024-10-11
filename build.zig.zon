@@ -24,8 +24,8 @@
             .hash = "1220c4004e77aa9880e02cc11d90d7eb92ddbc3ea2b4f2ebe5220ef53763173fe491",
         },
         .ffi = .{
-            .url = "https://codeload.github.com/Scythe-Technology/zffi/tar.gz/e4bd0080901a14c5e2404203ba4aef083611699f",
-            .hash = "1220fa83675885530f277802377051893c701b6e1f8f92089643ede46dafc6841221",
+            .url = "https://codeload.github.com/Scythe-Technology/zffi/tar.gz/4c3eb09e52a30e86af6b53f3ad3b134f0102289a",
+            .hash = "122011a7f2666ee58c608132247384344d749a81e3e5afcb772f6ad11a6dde341bf4",
         },
         .datetime = .{
             .url = "https://codeload.github.com/FObersteiner/zdt/tar.gz/eb49813879c49413661601822c7b466d8daf5055",
