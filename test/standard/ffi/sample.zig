@@ -12,6 +12,10 @@ export fn add_ptr_ptr(a_ptr_ptr: **i32, b: i32) void {
     a_ptr_ptr.*.* += b;
 }
 
+export fn fire_callback(callback: *const fn (i32) callconv(.C) i8) bool {
+    return callback(123) == -1;
+}
+
 export fn check_string(string: [*c]const u8) bool {
     return std.mem.eql(u8, std.mem.span(string), "hello");
 }

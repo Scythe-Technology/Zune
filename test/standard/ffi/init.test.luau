@@ -11,12 +11,15 @@ expect(ffi).toBe(
     expect.similar({
         dlopen = expect.type("function"),
         struct = expect.type("function"),
+        closure = expect.type("function"),
         sizeOf = expect.type("function"),
         alignOf = expect.type("function"),
         eqlPtr = expect.type("function"),
         intFromPtr = expect.type("function"),
         valueFromPtr = expect.type("function"),
         writeIntoPtr = expect.type("function"),
+        readFromPtr = expect.type("function"),
+        spanFromPtr = expect.type("function"),
         prefix = expect.type("string"),
         suffix = expect.type("string"),
         supported = expect.type("boolean"),
@@ -72,6 +75,79 @@ describe("FFI", function()
                 ffi.dlopen(`./zig-out/{ffi.prefix}invalid.{static_suffix}`, {});
             end).toThrow("FileNotFound");
         end);
+    end)
+
+    describe("ffi helpers", function()
+        test("Span From Ptr", function()
+            local src = buffer.fromstring("terminated string\0");
+
+            local ptr = ffi.intFromPtr(buffer.create(ffi.sizeOf(ffi.types.pointer)), src);
+
+            local buf = ffi.spanFromPtr(ptr, 0);
+            expect(buffer.len(buf)).toBe(buffer.len(src) - 1);
+            expect(buffer.tostring(buf)).toBe("terminated string");
+        end)
+
+        test("Read From Ptr", function()
+            local src = buffer.create(ffi.sizeOf(ffi.types.i32));
+            buffer.writei32(src, 0, 42);
+
+            local ptr = ffi.intFromPtr(buffer.create(ffi.sizeOf(ffi.types.pointer)), src);
+
+            local dest = buffer.create(ffi.sizeOf(ffi.types.i32));
+            ffi.readFromPtr(ptr, 0, dest, 0, ffi.sizeOf(ffi.types.i32));
+
+            expect(buffer.readi32(dest, 0)).toBe(42);
+        end)
+
+        test("Write Into Ptr", function()
+            local src = buffer.create(ffi.sizeOf(ffi.types.i32));
+            buffer.writei32(src, 0, 42);
+
+            local out = buffer.create(ffi.sizeOf(ffi.types.i32));
+            local ptr = ffi.intFromPtr(buffer.create(ffi.sizeOf(ffi.types.pointer)), out);
+
+            ffi.writeIntoPtr(ptr, 0, src, 0, ffi.sizeOf(ffi.types.i32));
+
+            expect(buffer.readi32(out, 0)).toBe(42);
+        end)
+
+        test("Int From Ptr", function()
+            local src = buffer.create(ffi.sizeOf(ffi.types.i32));
+            buffer.writei32(src, 0, 42);
+
+            local ptr = ffi.intFromPtr(buffer.create(ffi.sizeOf(ffi.types.pointer)), src);
+
+            expect(ffi.valueFromPtr(ptr, ffi.types.i32)).toBe(42);
+        end)
+
+        test("Eql Ptr", function()
+            local src = buffer.create(ffi.sizeOf(ffi.types.i32));
+            buffer.writei32(src, 0, 42);
+
+            local ptr = ffi.intFromPtr(buffer.create(ffi.sizeOf(ffi.types.pointer)), src);
+            local ptr2 = ffi.intFromPtr(buffer.create(ffi.sizeOf(ffi.types.pointer)), src);
+
+            expect(ffi.eqlPtr(ptr, ptr2)).toBe(true);
+        end)
+
+        test("Size Of", function()
+            expect(ffi.sizeOf(ffi.types.i32)).toBe(4);
+        end)
+
+        test("Align Of", function()
+            expect(ffi.alignOf(ffi.types.i32)).toBe(4);
+        end)
+
+        test("Value From Ptr", function()
+            local src = buffer.create(ffi.sizeOf(ffi.types.i32));
+            buffer.writei32(src, 0, 42);
+
+            local ptr = ffi.intFromPtr(buffer.create(ffi.sizeOf(ffi.types.pointer)), src);
+
+            expect(ffi.valueFromPtr(ptr, ffi.types.i32)).toBe(42);
+        end)
+
     end)
 
     describe("struct", function()
@@ -209,6 +285,10 @@ describe("FFI", function()
                 returns = ffi.types.void,
                 args = {ffi.types.pointer, ffi.types.i32},
             },
+            fire_callback = {
+                returns = ffi.types.u8,
+                args = {ffi.types.pointer},
+            },
 
             check_string = {
                 returns = ffi.types.u8,
@@ -266,6 +346,23 @@ describe("FFI", function()
 
             expect(ffi.valueFromPtr(ptr, ffi.types.i32)).toBe(7);
             expect(buffer.readi32(out, 0)).toBe(7);
+        end)
+
+        test("Symbol<void fire_callback(*void)>", function()
+            local counter = 0;
+            local c_func = ffi.closure({
+                returns = ffi.types.i8,
+                args = {ffi.types.i32},
+            }, function(a)
+                if (a ~= 123) then
+                    return 0;
+                end
+                counter += 1;
+                return if (counter == 1) then -1 else 1;
+            end)
+
+            expect(lib.fire_callback(c_func.ptr)).toBe(1);
+            expect(lib.fire_callback(c_func.ptr)).toBe(0);
         end)
 
         test("Symbol<void check_string(const char*)>", function()

@@ -61,8 +61,9 @@ const LuaHandle = struct {
                         const ptr_value = @as(**anyopaque, @alignCast(@ptrCast(args[i])));
                         switch (L.typeOf(@intCast(i + 1))) {
                             .string => {
+                                const str = L.toString(@intCast(i + 1)) catch unreachable;
                                 const dup: [*c]u8 = @ptrCast(ptr_value.*);
-                                allocator.free(@as([:0]const u8, std.mem.span(dup)));
+                                allocator.free(@as([:0]const u8, dup[0..str.len :0]));
                             },
                             else => {},
                         }
@@ -273,6 +274,19 @@ const LuaHandle = struct {
             ptr.lib.close();
         }
         ptr.open = false;
+    }
+};
+
+const LuaClosure = struct {
+    closure: *ffi.CallbackClosure,
+    args: std.ArrayList(ffi.GenType),
+    returns: ffi.GenType,
+    thread: *Luau,
+
+    pub fn __dtor(ptr: *LuaClosure) void {
+        ptr.closure.deinit();
+        ptr.args.deinit();
+        ptr.args.allocator.destroy(ptr.closure);
     }
 };
 
@@ -597,10 +611,8 @@ fn ffi_dlopen(L: *Luau) !i32 {
                 return error.InvalidArgOrder;
 
             args[order] = try toFFIType(L, -1);
-            switch (args[order]) {
-                .ffiType => |v| if (v == .void) return error.VoidArg,
-                .structType => {},
-            }
+            if (args[order] == .ffiType and args[order].ffiType == .void)
+                return error.VoidArg;
             order += 1;
         }
         L.pop(1); // drop: args
@@ -667,6 +679,235 @@ fn ffi_dlopen(L: *Luau) !i32 {
     return 1;
 }
 
+fn ffi_closure(L: *Luau) !i32 {
+    L.checkType(1, .table);
+    L.checkType(2, .function);
+
+    const allocator = L.allocator();
+
+    var returns: ffi.GenType = .{ .ffiType = .void };
+    var args = std.ArrayList(ffi.GenType).init(allocator);
+    errdefer args.deinit();
+
+    _ = L.getField(1, "returns");
+    if (!isFFIType(L, -1))
+        return error.InvalidReturnType;
+    returns = try toFFIType(L, -1);
+    L.pop(1);
+
+    if (L.getField(1, "args") != .table)
+        return error.InvalidArgs;
+
+    var order: usize = 0;
+    L.pushNil();
+    while (L.next(-2)) {
+        if (L.typeOf(-2) != .number)
+            return error.InvalidArgOrder;
+        if (!isFFIType(L, -1))
+            return error.InvalidArgType;
+
+        const index = L.toInteger(-2) catch unreachable;
+        if (index != order + 1)
+            return error.InvalidArgOrder;
+
+        const t = try toFFIType(L, -1);
+
+        if (t == .ffiType and t.ffiType == .void)
+            return error.VoidArg;
+
+        try args.append(t);
+
+        order += 1;
+        L.pop(1);
+    }
+
+    const callback_handler = struct {
+        fn inner(cif: ffi.CallInfo, ffi_args: []?*anyopaque, ffi_ret: ?*anyopaque, ud: ?*anyopaque) void {
+            if (ud == null)
+                std.debug.panic("Invalid userdata", .{});
+            const data = @as(*LuaClosure, @alignCast(@ptrCast(ud.?)));
+            if (cif.nargs != data.args.items.len)
+                std.debug.panic("Invalid number of arguments", .{});
+
+            data.thread.pushValue(1);
+
+            for (data.args.items, 0..) |arg_type, i| {
+                switch (arg_type) {
+                    .ffiType => |t| switch (t) {
+                        .void => unreachable,
+                        .i8 => data.thread.pushInteger(@intCast(@as(*i8, @ptrCast(ffi_args[i])).*)),
+                        .u8 => data.thread.pushInteger(@intCast(@as(*u8, @ptrCast(ffi_args[i])).*)),
+                        .i16 => data.thread.pushInteger(@intCast(@as(*i16, @alignCast(@ptrCast(ffi_args[i]))).*)),
+                        .u16 => data.thread.pushInteger(@intCast(@as(*u16, @alignCast(@ptrCast(ffi_args[i]))).*)),
+                        .i32 => data.thread.pushInteger(@as(*i32, @alignCast(@ptrCast(ffi_args[i]))).*),
+                        .u32 => data.thread.pushInteger(@intCast(@as(*u32, @alignCast(@ptrCast(ffi_args[i]))).*)),
+                        .i64 => {
+                            const bytes: [8]u8 = @bitCast(@as(*i64, @alignCast(@ptrCast(ffi_args[i]))).*);
+                            data.thread.pushBuffer(&bytes) catch |err| std.debug.panic("Failed: {}", .{err});
+                        },
+                        .u64 => {
+                            const bytes: [8]u8 = @bitCast(@as(*u64, @alignCast(@ptrCast(ffi_args[i]))).*);
+                            data.thread.pushBuffer(&bytes) catch |err| std.debug.panic("Failed: {}", .{err});
+                        },
+                        .float => data.thread.pushNumber(@floatCast(@as(f32, @bitCast(@as(*u32, @alignCast(@ptrCast(ffi_args[i]))).*)))),
+                        .double => data.thread.pushNumber(@as(f64, @bitCast(@as(*u64, @alignCast(@ptrCast(ffi_args[i]))).*))),
+                        .pointer => {
+                            const bytes: [@sizeOf(usize)]u8 = @bitCast(@intFromPtr(@as(*[*]u8, @alignCast(@ptrCast(ffi_args[i]))).*));
+                            data.thread.pushBuffer(bytes[0..@sizeOf(usize)]) catch |err| std.debug.panic("Failed: {}", .{err});
+                        },
+                    },
+                    .structType => |t| {
+                        const bytes: *[*]u8 = @alignCast(@ptrCast(ffi_args[i]));
+                        data.thread.pushBuffer(bytes.*[0..t.getSize()]) catch |err| std.debug.panic("Failed: {}", .{err});
+                    },
+                }
+            }
+
+            const has_return = if (data.returns == .ffiType and data.returns.ffiType == .void) false else true;
+
+            data.thread.pcall(@intCast(data.args.items.len), if (has_return) 1 else 0, 0) catch {
+                std.debug.panic("C Closure Runtime Error: {s}", .{data.thread.toString(-1) catch "UnknownError"});
+            };
+
+            if (has_return) {
+                defer data.thread.pop(1);
+                if (ffi_ret) |ret_ptr| {
+                    switch (data.returns) {
+                        .ffiType => |t| switch (t) {
+                            .void => unreachable,
+                            .i8 => {
+                                if (data.thread.typeOf(-1) != .number)
+                                    return std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)});
+                                const value = data.thread.toInteger(-1) catch unreachable;
+                                if (value < -128 or value > 127)
+                                    return std.debug.panic("Out of range ('{s}')", .{@tagName(t)});
+                                @as(*i8, @ptrCast(@alignCast(ret_ptr))).* = @intCast(value);
+                            },
+                            .u8 => {
+                                if (data.thread.typeOf(-1) != .number)
+                                    return std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)});
+                                const value = data.thread.toInteger(-1) catch unreachable;
+                                if (value < 0 or value > 255)
+                                    return std.debug.panic("Out of range ('{s}')", .{@tagName(t)});
+                                @as(*u8, @ptrCast(@alignCast(ret_ptr))).* = @intCast(value);
+                            },
+                            .i16 => {
+                                if (data.thread.typeOf(-1) != .number)
+                                    return std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)});
+                                const value = data.thread.toInteger(-1) catch unreachable;
+                                if (value < -32768 or value > 32767)
+                                    return std.debug.panic("Out of range ('{s}')", .{@tagName(t)});
+                                @as(*i16, @ptrCast(@alignCast(ret_ptr))).* = @intCast(value);
+                            },
+                            .u16 => {
+                                if (data.thread.typeOf(-1) != .number)
+                                    return std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)});
+                                const value = data.thread.toInteger(-1) catch unreachable;
+                                if (value < 0 or value > 65535)
+                                    return std.debug.panic("Out of range ('{s}')", .{@tagName(t)});
+                                @as(*u16, @ptrCast(@alignCast(ret_ptr))).* = @intCast(value);
+                            },
+                            .i32 => {
+                                if (data.thread.typeOf(-1) != .number)
+                                    return std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)});
+                                @as(*i32, @ptrCast(@alignCast(ret_ptr))).* = @intCast(data.thread.toInteger(-1) catch unreachable);
+                            },
+                            .u32 => {
+                                if (data.thread.typeOf(-1) != .number)
+                                    return std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)});
+                                @as(*u32, @ptrCast(@alignCast(ret_ptr))).* = @intCast(data.thread.toInteger(-1) catch unreachable);
+                            },
+                            .i64 => {
+                                if (data.thread.typeOf(-1) != .number)
+                                    return std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)});
+                                @as(*i64, @ptrCast(@alignCast(ret_ptr))).* = @intCast(data.thread.toInteger(-1) catch unreachable);
+                            },
+                            .u64 => {
+                                if (data.thread.typeOf(-1) != .number)
+                                    return std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)});
+                                @as(*u64, @ptrCast(@alignCast(ret_ptr))).* = @intCast(data.thread.toInteger(-1) catch unreachable);
+                            },
+                            .float => {
+                                if (data.thread.typeOf(-1) != .number)
+                                    return std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)});
+                                const value = data.thread.toNumber(-1) catch unreachable;
+                                const large: u64 = @bitCast(value);
+                                if (large >= 0x7f800000 and large <= 0x7fffffff)
+                                    return std.debug.panic("Out of range ('{s}')", .{@tagName(t)});
+                                @as(*f32, @ptrCast(@alignCast(ret_ptr))).* = @floatCast(value);
+                            },
+                            .double => {
+                                if (data.thread.typeOf(-1) != .number)
+                                    return std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)});
+                                @as(*f64, @ptrCast(@alignCast(ret_ptr))).* = data.thread.toNumber(-1) catch unreachable;
+                            },
+                            .pointer => {
+                                switch (data.thread.typeOf(-1)) {
+                                    .buffer => {
+                                        const buf = data.thread.toBuffer(-1) catch unreachable;
+                                        if (buf.len != @sizeOf(usize))
+                                            return std.debug.panic("Invalid return type (expected buffer of size {d} for '{s}')", .{ @sizeOf(usize), @tagName(t) });
+                                        const ptr_int = std.mem.readVarInt(usize, buf, .little);
+                                        if (ptr_int == 0)
+                                            return std.debug.panic("Null pointer", .{});
+                                        @as(*[*]u8, @ptrCast(@alignCast(ret_ptr))).* = @ptrFromInt(ptr_int);
+                                    },
+                                    .string => std.debug.panic("Unsupported return type (use a pointer to a buffer instead)", .{}),
+                                    .nil => {
+                                        @as(*?*anyopaque, @ptrCast(@alignCast(ret_ptr))).* = null;
+                                    },
+                                    else => return std.debug.panic("Invalid return type (expected buffer/nil for '{s}')", .{@tagName(t)}),
+                                }
+                            },
+                        },
+                        .structType => |t| {
+                            if (data.thread.typeOf(-1) != .buffer)
+                                return std.debug.panic("Invalid return type (expected buffer for struct)", .{});
+                            const buf = data.thread.toBuffer(-1) catch unreachable;
+                            if (buf.len != t.getSize())
+                                return std.debug.panic("Invalid return type (expected buffer of size {d} for struct)", .{t.getSize()});
+                            @memcpy(@as(*[*]u8, @ptrCast(@alignCast(ret_ptr))).*, buf);
+                        },
+                    }
+                }
+            }
+        }
+    }.inner;
+
+    const closure_ptr = try allocator.create(ffi.CallbackClosure);
+    {
+        errdefer allocator.destroy(closure_ptr);
+
+        closure_ptr.* = try ffi.CallbackClosure.init(allocator, ffi.toCClosureFn(callback_handler), args.items, returns);
+    }
+
+    const thread = L.newThread();
+    L.xPush(thread, 2);
+
+    const data = L.newUserdataDtor(LuaClosure, LuaClosure.__dtor);
+
+    data.* = .{
+        .args = args,
+        .closure = closure_ptr,
+        .returns = returns,
+        .thread = thread,
+    };
+
+    try closure_ptr.prep(data);
+
+    L.newTable();
+
+    L.newTable();
+    const bytes: [@sizeOf(usize)]u8 = @bitCast(@intFromPtr(closure_ptr.executable));
+    try L.pushBuffer(&bytes);
+    L.setField(-2, "ptr");
+    L.setField(-2, luau.Metamethods.index);
+
+    L.setMetatable(-2);
+
+    return 1;
+}
+
 fn ffi_intFromPtr(L: *Luau) i32 {
     const dest = L.checkBuffer(1);
     if (@sizeOf(usize) != dest.len)
@@ -700,33 +941,69 @@ fn ffi_writeIntoPtr(L: *Luau) !i32 {
     return 0;
 }
 
+fn ffi_readFromPtr(L: *Luau) !i32 {
+    const source = L.checkBuffer(1);
+    const source_offset: usize = @intCast(L.checkInteger(2));
+    const dest = L.checkBuffer(3);
+    const dest_offset: usize = @intCast(L.checkInteger(4));
+    const len: usize = @intCast(L.checkInteger(5));
+
+    const target: [*]u8 = @ptrFromInt(std.mem.readVarInt(usize, source, .little));
+
+    @memcpy(dest[dest_offset .. dest_offset + len], target[source_offset .. source_offset + len]);
+
+    return 1;
+}
+
+fn ffi_spanFromPtr(L: *Luau) !i32 {
+    const source = L.checkBuffer(1);
+    const source_offset: usize = @intCast(L.checkInteger(2));
+
+    const target: [*c]u8 = @ptrFromInt(std.mem.readVarInt(usize, source, .little));
+
+    const bytes: [:0]const u8 = std.mem.span(target[source_offset..]);
+
+    try L.pushBuffer(bytes);
+
+    return 1;
+}
+
 fn ffi_valueFromPtr(L: *Luau) !i32 {
     const buf = L.checkBuffer(1);
     if (@sizeOf(usize) != buf.len)
         L.raiseErrorStr("Invalid buffer size", .{});
 
-    const t = try convertToFFIType(L.checkInteger(2));
-    if (t == .void)
+    if (!isFFIType(L, 2))
+        L.raiseErrorStr("Invalid type", .{});
+
+    const ffi_type = try toFFIType(L, 2);
+    if (ffi_type == .ffiType and ffi_type.ffiType == .void)
         L.raiseErrorStr("Void type not supported", .{});
 
     const ptr: [*]u8 = @ptrFromInt(std.mem.readVarInt(usize, buf, .little));
 
-    switch (t) {
-        .i8 => L.pushInteger(@intCast(@as(i8, @intCast(ptr[0])))),
-        .u8 => L.pushInteger(@intCast(ptr[0])),
-        .i16 => L.pushInteger(@intCast(std.mem.readVarInt(i16, ptr[0..2], .little))),
-        .u16 => L.pushInteger(@intCast(std.mem.readVarInt(u16, ptr[0..2], .little))),
-        .i32 => L.pushInteger(@intCast(std.mem.readVarInt(i32, ptr[0..4], .little))),
-        .u32 => L.pushInteger(@intCast(std.mem.readVarInt(u32, ptr[0..4], .little))),
-        .i64 => try L.pushBuffer(ptr[0..8]),
-        .u64 => try L.pushBuffer(ptr[0..8]),
-        .float => L.pushNumber(@floatCast(@as(f32, @bitCast(std.mem.readVarInt(u32, ptr[0..4], .little))))),
-        .double => L.pushNumber(@as(f64, @bitCast(std.mem.readVarInt(u64, ptr[0..8], .little)))),
-        .pointer => {
-            const bytes: [@sizeOf(usize)]u8 = @bitCast(@intFromPtr(@as(*[*]u8, @alignCast(@ptrCast(ptr))).*));
-            try L.pushBuffer(bytes[0..@sizeOf(usize)]);
+    switch (ffi_type) {
+        .ffiType => |t| switch (t) {
+            .void => unreachable,
+            .i8 => L.pushInteger(@intCast(@as(i8, @intCast(ptr[0])))),
+            .u8 => L.pushInteger(@intCast(ptr[0])),
+            .i16 => L.pushInteger(@intCast(std.mem.readVarInt(i16, ptr[0..2], .little))),
+            .u16 => L.pushInteger(@intCast(std.mem.readVarInt(u16, ptr[0..2], .little))),
+            .i32 => L.pushInteger(@intCast(std.mem.readVarInt(i32, ptr[0..4], .little))),
+            .u32 => L.pushInteger(@intCast(std.mem.readVarInt(u32, ptr[0..4], .little))),
+            .i64 => try L.pushBuffer(ptr[0..8]),
+            .u64 => try L.pushBuffer(ptr[0..8]),
+            .float => L.pushNumber(@floatCast(@as(f32, @bitCast(std.mem.readVarInt(u32, ptr[0..4], .little))))),
+            .double => L.pushNumber(@as(f64, @bitCast(std.mem.readVarInt(u64, ptr[0..8], .little)))),
+            .pointer => {
+                const bytes: [@sizeOf(usize)]u8 = @bitCast(@intFromPtr(@as(*[*]u8, @alignCast(@ptrCast(ptr))).*));
+                try L.pushBuffer(bytes[0..@sizeOf(usize)]);
+            },
         },
-        else => L.raiseErrorStr("Invalid type", .{}),
+        .structType => |t| {
+            const mem = ptr[0..t.getSize()];
+            try L.pushBuffer(mem);
+        },
     }
 
     return 1;
@@ -804,15 +1081,19 @@ pub fn loadLib(L: *Luau) void {
     if (ffi.Supported()) {
         L.setFieldFn(-1, "dlopen", ffi_dlopen);
         L.setFieldFn(-1, "struct", ffi_struct);
+        L.setFieldFn(-1, "closure", ffi_closure);
         L.setFieldBoolean(-1, "supported", true);
     } else {
         L.setFieldFn(-1, "dlopen", ffi_unsupported);
         L.setFieldFn(-1, "struct", ffi_unsupported);
+        L.setFieldFn(-1, "closure", ffi_unsupported);
         L.setFieldBoolean(-1, "supported", false);
     }
 
     L.setFieldFn(-1, "intFromPtr", ffi_intFromPtr);
     L.setFieldFn(-1, "writeIntoPtr", ffi_writeIntoPtr);
+    L.setFieldFn(-1, "readFromPtr", ffi_readFromPtr);
+    L.setFieldFn(-1, "spanFromPtr", ffi_spanFromPtr);
     L.setFieldFn(-1, "valueFromPtr", ffi_valueFromPtr);
     L.setFieldFn(-1, "eqlPtr", ffi_eqlPtr);
     L.setFieldFn(-1, "sizeOf", ffi_sizeOf);
