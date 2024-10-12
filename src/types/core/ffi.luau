@@ -3,6 +3,18 @@ export type Library = {
     [string]: (...any) -> any,
 };
 
+export type Structure = {
+    size : (self: Structure) -> number,
+    alignment : (self: Structure) -> number,
+    offset : (self: Structure, field: string) -> number,
+    new : (self: Structure, fields: {{ [string]: buffer | number }}) -> buffer,
+};
+
+export type LibraryDefinition = {
+    returns: Structure | number,
+    args: { Structure | number }
+};
+
 local ffi = {}
 
 ffi.supported = (nil :: any) :: boolean;
@@ -25,20 +37,16 @@ ffi.types = (nil :: any) :: {
     pointer : number,
 };
 
-ffi.sizeOf = (nil :: any) :: (type: number) -> number;
-ffi.alignOf = (nil :: any) :: any; -- TODO: Implement alignOf
+ffi.sizeOf = (nil :: any) :: (type: Structure | number) -> number;
+ffi.alignOf = (nil :: any) :: (type: Structure | number) -> number;
 ffi.eqlPtr = (nil :: any) :: (a: buffer, b: buffer) -> boolean;
 
 ffi.intFromPtr = (nil :: any) :: (ptr: buffer, src: buffer) -> number;
-ffi.valueFromPtr = (nil :: any) :: (ptr: buffer, type: number) -> any;
+ffi.valueFromPtr = (nil :: any) :: (ptr: buffer, type: Structure | number) -> any;
 
 ffi.writeIntoPtr = (nil :: any) :: (destPtr: buffer, destOffset: number, src: buffer, srcOffset: number, size: number) -> ();
 
-type LibraryDefinition = {
-    returns: number,
-    args: {number}
-};
-
+ffi.struct = (nil :: any) :: (fields: {{ [string]: Structure | number }}) -> Structure;
 ffi.dlopen = (nil :: any) :: (path: string, { [string] : LibraryDefinition }) -> Library;
 
 return ffi;

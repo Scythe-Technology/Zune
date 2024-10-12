@@ -12,6 +12,23 @@ export fn add_ptr_ptr(a_ptr_ptr: **i32, b: i32) void {
     a_ptr_ptr.*.* += b;
 }
 
+export fn check_string(string: [*c]const u8) bool {
+    return std.mem.eql(u8, std.mem.span(string), "hello");
+}
+
+export fn check_nullptr(ptr: [*c]u8) bool {
+    return ptr == null;
+}
+
+const Foo = extern struct {
+    x: i32,
+    y: i32,
+};
+
+export fn check_struct(foo: Foo) bool {
+    return foo.x == 1 and foo.y == 2;
+}
+
 export fn new_i32() *i32 {
     const ptr = std.heap.page_allocator.create(i32) catch @panic("allocation failed");
     ptr.* = 123;
