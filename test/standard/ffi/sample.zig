@@ -16,6 +16,14 @@ export fn fire_callback(callback: *const fn (i32) callconv(.C) i8) bool {
     return callback(123) == -1;
 }
 
+fn the_callback(a: i32) callconv(.C) i32 {
+    return a + 2555;
+}
+
+export fn double_call(callback: *const fn (*const fn (i32) callconv(.C) i32) callconv(.C) i8) bool {
+    return callback(the_callback) == 1;
+}
+
 export fn check_string(string: [*c]const u8) bool {
     return std.mem.eql(u8, std.mem.span(string), "hello");
 }

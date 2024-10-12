@@ -10,9 +10,13 @@ export type Structure = {
     new : (self: Structure, fields: {{ [string]: buffer | number }}) -> buffer,
 };
 
-export type LibraryDefinition = {
-    returns: Structure | number,
-    args: { Structure | number }
+export type Closure = {
+    ptr : buffer,
+}
+
+export type FunctionDefinition = {
+    returns : Structure | number,
+    args : { Structure | number }
 };
 
 local ffi = {}
@@ -49,6 +53,8 @@ ffi.spanFromPtr = (nil :: any) :: (srcPtr: buffer, srcOffset: number) -> buffer;
 ffi.writeIntoPtr = (nil :: any) :: (destPtr: buffer, destOffset: number, src: buffer, srcOffset: number, size: number) -> ();
 
 ffi.struct = (nil :: any) :: (fields: {{ [string]: Structure | number }}) -> Structure;
-ffi.dlopen = (nil :: any) :: (path: string, { [string] : LibraryDefinition }) -> Library;
+ffi.call = (nil :: any) :: (definition: FunctionDefinition, srcPtr: buffer, ...any) -> any;
+ffi.closure = (nil :: any) :: (definition: FunctionDefinition, handler: (...any) -> any) -> Closure;
+ffi.dlopen = (nil :: any) :: (path: string, { [string] : FunctionDefinition }) -> Library;
 
 return ffi;

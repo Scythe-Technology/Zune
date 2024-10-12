@@ -12,6 +12,7 @@ expect(ffi).toBe(
         dlopen = expect.type("function"),
         struct = expect.type("function"),
         closure = expect.type("function"),
+        call = expect.type("function"),
         sizeOf = expect.type("function"),
         alignOf = expect.type("function"),
         eqlPtr = expect.type("function"),
@@ -146,6 +147,37 @@ describe("FFI", function()
             local ptr = ffi.intFromPtr(buffer.create(ffi.sizeOf(ffi.types.pointer)), src);
 
             expect(ffi.valueFromPtr(ptr, ffi.types.i32)).toBe(42);
+        end)
+
+        describe("Generative C Calls", function()
+            test("Lua<i32 add(i32 i32)>", function()
+                local add_defintion = {
+                    returns = ffi.types.i32,
+                    args = {ffi.types.i32, ffi.types.i32},
+                };
+                local c_add_func = ffi.closure(add_defintion, function(a, b)
+                    return a + b;
+                end)
+
+                expect(ffi.call(add_defintion, c_add_func.ptr, 1, 2)).toBe(3);
+                expect(ffi.call(add_defintion, c_add_func.ptr, 2, 3)).toBe(5);
+                expect(ffi.call(add_defintion, c_add_func.ptr, -4, 4)).toBe(0);
+            end)
+
+            test("Lua<f64 add(f64 f64)>", function()
+                local add_defintion = {
+                    returns = ffi.types.double,
+                    args = {ffi.types.double, ffi.types.double},
+                };
+                local c_add_func = ffi.closure(add_defintion, function(a, b)
+                    return a + b;
+                end)
+
+                expect(ffi.call(add_defintion, c_add_func.ptr, 1.123, 2)).toBe(3.123);
+                expect(ffi.call(add_defintion, c_add_func.ptr, 2.25, 3.25)).toBe(5.5);
+                expect(ffi.call(add_defintion, c_add_func.ptr, -4.25, 4.25)).toBe(0);
+            end)
+
         end)
 
     end)
@@ -289,6 +321,10 @@ describe("FFI", function()
                 returns = ffi.types.u8,
                 args = {ffi.types.pointer},
             },
+            double_call = {
+                returns = ffi.types.u8,
+                args = {ffi.types.pointer},
+            },
 
             check_string = {
                 returns = ffi.types.u8,
@@ -363,6 +399,24 @@ describe("FFI", function()
 
             expect(lib.fire_callback(c_func.ptr)).toBe(1);
             expect(lib.fire_callback(c_func.ptr)).toBe(0);
+        end)
+
+        test("Symbol<void double_call(*void)>", function()
+            local counter = 0;
+            local c_func = ffi.closure({
+                returns = ffi.types.u8,
+                args = {ffi.types.pointer},
+            }, function(callback)
+                counter += 1;
+                local num = ffi.call({
+                    returns = ffi.types.i32,
+                    args = {ffi.types.i32},
+                }, callback, counter);
+                return num == 2556;
+            end)
+
+            expect(lib.double_call(c_func.ptr)).toBe(1);
+            expect(lib.double_call(c_func.ptr)).toBe(0);
         end)
 
         test("Symbol<void check_string(const char*)>", function()
