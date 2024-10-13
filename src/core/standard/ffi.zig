@@ -1155,7 +1155,16 @@ fn ffi_valueFromPtr(L: *Luau) !i32 {
 
 fn ffi_eqlPtr(L: *Luau) i32 {
     const ptr1 = L.checkBuffer(1);
-    const ptr2 = L.checkBuffer(2);
+    const ptr2 = if (L.typeOf(2) == .buffer)
+        L.checkBuffer(2)
+    else {
+        if (@sizeOf(usize) != ptr1.len)
+            L.raiseErrorStr("Invalid buffer size", .{});
+        var nullptr: [@sizeOf(usize)]u8 = undefined;
+        @memset(&nullptr, 0);
+        L.pushBoolean(std.mem.eql(u8, ptr1, &nullptr));
+        return 1;
+    };
 
     const res = blk: {
         if (ptr1.len != ptr2.len)
