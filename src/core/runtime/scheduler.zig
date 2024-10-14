@@ -302,6 +302,7 @@ pub fn run(self: *Self) void {
                     .Continue => {},
                     .ContinueFast => active += 1,
                     .Stop => {
+                        active += 1;
                         _ = self.tasks.orderedRemove(i);
                         task.virtualDtor(task.data, task.state, self);
                     },
