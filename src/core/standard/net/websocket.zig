@@ -20,7 +20,7 @@ const ZUNE_CLIENT_HEADER = "Zune/" ++ zune_info.version;
 
 const Self = @This();
 
-stream: *?VStream,
+stream: ?*VStream,
 establishedLua: ?i32,
 connected: bool,
 handlers: LuaWebSocketClient.Handlers,
@@ -61,14 +61,14 @@ pub const LuaMeta = struct {
         const namecall = L.nameCallAtom() catch return 0;
 
         const ctx = data.ptr orelse return 0;
-        var stream = ctx.stream.* orelse return 0;
+        const stream = ctx.stream orelse return 0;
 
         if (!ctx.connected) return 0;
 
         // TODO: prob should switch to static string map
         if (std.mem.eql(u8, namecall, "close")) {
             const closeCode: u16 = @intCast(L.optInteger(2) orelse 1000);
-            var socket = WebSocket.initV(L.allocator(), &stream);
+            var socket = WebSocket.initV(L.allocator(), stream, true);
             defer socket.deinit();
             socket.close(closeCode) catch |err| {
                 std.debug.print("Error writing close: {}\n", .{err});
@@ -76,7 +76,7 @@ pub const LuaMeta = struct {
             ctx.closeConnection(L, true, closeCode);
         } else if (std.mem.eql(u8, namecall, "send")) {
             const message = L.checkString(2);
-            var socket = WebSocket.initV(L.allocator(), &stream);
+            var socket = WebSocket.initV(L.allocator(), stream, true);
             defer socket.deinit();
             _ = socket.writeText(message) catch |err| L.raiseErrorStr("Failed to write to websocket (%s)", .{@errorName(err).ptr});
         } else if (std.mem.eql(u8, namecall, "bindOpen")) {
@@ -97,16 +97,16 @@ pub const LuaMeta = struct {
 };
 
 pub fn closeConnection(ctx: *Self, L: *Luau, cleanUp: bool, codeCode: ?u16) void {
-    if (ctx.stream.*) |*stream| {
+    if (ctx.stream) |stream| {
         defer {
-            stream.deinit();
+            stream.close();
             ctx.fds[0].fd = context.INVALID_SOCKET;
-            ctx.stream.* = null;
+            ctx.stream = null;
         }
         if (!cleanUp) {
             // send close frame
             if (ctx.establishedLua != null) {
-                var socket = WebSocket.initV(L.allocator(), stream);
+                var socket = WebSocket.initV(L.allocator(), stream, true);
                 defer socket.deinit();
                 socket.close(1001) catch |err| {
                     std.debug.print("Error closing websocket: {}\n", .{err});
@@ -187,7 +187,7 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
     const allocator = L.allocator();
 
     const fds = ctx.fds;
-    var stream = ctx.stream.* orelse return .Stop;
+    const stream = ctx.stream orelse return .Stop;
 
     const nums = context.spoll(fds, 0) catch std.debug.panic("Bad poll (1)", .{});
     if (nums == 0) return .Continue;
@@ -196,7 +196,7 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
     const sockfd = fds[0];
     if (sockfd.revents & (context.POLLIN) != 0) {
         if (ctx.establishedLua == null) {
-            var response = Response.init(allocator, &stream, .{}) catch |err| {
+            var response = Response.init(allocator, stream, .{}) catch |err| {
                 std.debug.print("Error: {}\n", .{err});
                 return .Stop;
             };
@@ -254,13 +254,13 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
                     .pos = 0,
                 };
 
-                var socket = WebSocket.initAnyV(allocator, leftOverStream.reader().any(), stream.writer());
+                var socket = WebSocket.initAnyV(allocator, leftOverStream.reader().any(), stream.writer(), true);
                 defer socket.deinit();
 
                 return ctx.handleSocket(L, &socket);
             }
         } else {
-            var socket = WebSocket.initV(allocator, &stream);
+            var socket = WebSocket.initV(allocator, stream, true);
             defer socket.deinit();
 
             return ctx.handleSocket(L, &socket);
@@ -279,7 +279,8 @@ pub fn dtor(ctx: *Self, L: *Luau, scheduler: *Scheduler) void {
 
         allocator.free(ctx.fds);
         allocator.free(ctx.key);
-        allocator.destroy(ctx.stream);
+        if (ctx.stream) |ptr|
+            allocator.destroy(ptr);
         allocator.destroy(ctx);
     }
 
@@ -346,7 +347,7 @@ pub fn prep(allocator: std.mem.Allocator, L: *Luau, scheduler: *Scheduler, uri: 
         tls = try std.crypto.tls.Client.init(stream, bundle, host);
     }
 
-    var vstream = try VStream.init(allocator, stream, tls);
+    var vstream = VStream.init(stream, tls);
 
     const joined_protocols = try std.mem.join(allocator, ", ", protocols.items);
     defer allocator.free(joined_protocols);
@@ -382,7 +383,7 @@ pub fn prep(allocator: std.mem.Allocator, L: *Luau, scheduler: *Scheduler, uri: 
 
     try vstream.writeAll(request);
 
-    const streamPtr = try allocator.create(?VStream);
+    const streamPtr = try allocator.create(VStream);
     errdefer allocator.destroy(streamPtr);
     streamPtr.* = vstream;
 

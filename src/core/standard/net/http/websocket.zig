@@ -165,28 +165,32 @@ const StreamProvider = union(enum) {
 
 stream: StreamProvider,
 allocator: std.mem.Allocator,
+is_client: bool = false,
 err: ?anyerror = null,
 header: [2]u8 = undefined,
 length: ?[]u8 = null,
 buf: ?[]u8 = null,
 
-pub fn init(allocator: std.mem.Allocator, stream: std.net.Stream) Self {
+pub fn init(allocator: std.mem.Allocator, stream: std.net.Stream, client: bool) Self {
     return Self{
         .allocator = allocator,
+        .is_client = client,
         .stream = .{ .stream = stream },
     };
 }
 
-pub fn initV(allocator: std.mem.Allocator, vstream: *VStream) Self {
+pub fn initV(allocator: std.mem.Allocator, vstream: *VStream, client: bool) Self {
     return Self{
         .allocator = allocator,
+        .is_client = client,
         .stream = .{ .vstream = vstream },
     };
 }
 
-pub fn initAny(allocator: std.mem.Allocator, reader: std.io.AnyReader, writer: std.net.Stream.Writer) Self {
+pub fn initAny(allocator: std.mem.Allocator, reader: std.io.AnyReader, writer: std.net.Stream.Writer, client: bool) Self {
     return Self{
         .allocator = allocator,
+        .is_client = client,
         .stream = .{
             .piped = .{
                 .any_reader = reader,
@@ -196,9 +200,10 @@ pub fn initAny(allocator: std.mem.Allocator, reader: std.io.AnyReader, writer: s
     };
 }
 
-pub fn initAnyV(allocator: std.mem.Allocator, reader: std.io.AnyReader, writer: VStream.Writer) Self {
+pub fn initAnyV(allocator: std.mem.Allocator, reader: std.io.AnyReader, writer: VStream.Writer, client: bool) Self {
     return Self{
         .allocator = allocator,
+        .is_client = client,
         .stream = .{
             .vpiped = .{
                 .any_reader = reader,
@@ -265,7 +270,7 @@ pub fn writeSplitMessage(self: *Self, opcode: Opcode, final: bool, message: []co
         .header = WebsocketHeader{
             .final = final,
             .opcode = opcode,
-            .mask = false, // Server to client is not masked
+            .mask = self.is_client,
             .len = WebsocketHeader.packLength(message.len),
         },
         .data = message,
@@ -283,7 +288,8 @@ pub fn writeDataFrame(self: *Self, dataframe: WebsocketDataFrame) anyerror!usize
 }
 
 pub fn writeDataFrameAny(dataframe: WebsocketDataFrame, stream: anytype) anyerror!usize {
-    if (!dataframe.isValid()) return error.InvalidMessage;
+    if (!dataframe.isValid())
+        return error.InvalidMessage;
 
     try stream.writeInt(u16, @as(u16, @bitCast(dataframe.header)), .big);
 

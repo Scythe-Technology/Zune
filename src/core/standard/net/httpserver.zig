@@ -67,7 +67,7 @@ pub const LuaMeta = struct {
         if (std.mem.eql(u8, namecall, "close")) {
             if (ctx.connections[id]) |connection| {
                 const closeCode: u16 = @intCast(L.optInteger(2) orelse 1000);
-                var socket = WebSocket.init(L.allocator(), connection.stream);
+                var socket = WebSocket.init(L.allocator(), connection.stream, false);
                 defer socket.deinit();
                 socket.close(closeCode) catch |err| {
                     std.debug.print("Error writing close: {}\n", .{err});
@@ -78,7 +78,7 @@ pub const LuaMeta = struct {
             const message = L.checkString(2);
             if (ctx.websockets[id] != null and ctx.connections[id] != null) {
                 const connection = ctx.connections[id] orelse unreachable;
-                var socket = WebSocket.init(L.allocator(), connection.stream);
+                var socket = WebSocket.init(L.allocator(), connection.stream, false);
                 defer socket.deinit();
                 _ = socket.writeText(message) catch |err| L.raiseErrorStr("Failed to write to websocket (%s)", .{@errorName(err).ptr});
             }
@@ -162,7 +162,7 @@ pub fn closeConnection(ctx: *Self, L: *Luau, id: usize, cleanUp: bool) void {
         if (ctx.websockets[id]) |ws| {
             defer ctx.websockets[id] = null;
             if (!cleanUp) {
-                var socket = WebSocket.init(L.allocator(), connection.stream);
+                var socket = WebSocket.init(L.allocator(), connection.stream, false);
                 defer socket.deinit();
                 socket.close(1001) catch |err| {
                     std.debug.print("Error writing close: {}\n", .{err});
@@ -199,7 +199,7 @@ pub fn handleWebSocket(ctx: *Self, L: *Luau, scheduler: *Scheduler, i: usize, co
     const allocator = L.allocator();
     _ = scheduler;
 
-    var socket = WebSocket.init(allocator, connection.stream);
+    var socket = WebSocket.init(allocator, connection.stream, false);
     defer socket.deinit();
 
     const handlers = ctx.websocket_lua_handlers orelse return;
