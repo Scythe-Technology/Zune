@@ -119,7 +119,7 @@ fn task_count(L: *Luau, scheduler: *Scheduler) i32 {
         total += scheduler.deferred.items.len;
         total += scheduler.awaits.items.len;
         total += scheduler.tasks.items.len;
-        L.pushInteger(@intCast(total));
+        L.pushNumber(@floatFromInt(total));
         return 1;
     };
 
@@ -131,19 +131,19 @@ fn task_count(L: *Luau, scheduler: *Scheduler) i32 {
         switch (c) {
             's' => {
                 out += 1;
-                L.pushInteger(@intCast(scheduler.sleeping.items.len));
+                L.pushNumber(@floatFromInt(scheduler.sleeping.items.len));
             },
             'd' => {
                 out += 1;
-                L.pushInteger(@intCast(scheduler.deferred.items.len));
+                L.pushNumber(@floatFromInt(scheduler.deferred.items.len));
             },
             'w' => {
                 out += 1;
-                L.pushInteger(@intCast(scheduler.awaits.items.len));
+                L.pushNumber(@floatFromInt(scheduler.awaits.items.len));
             },
             't' => {
                 out += 1;
-                L.pushInteger(@intCast(scheduler.tasks.items.len));
+                L.pushNumber(@floatFromInt(scheduler.tasks.items.len));
             },
             else => L.raiseErrorStr("Invalid kind", .{}),
         }

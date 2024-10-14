@@ -138,7 +138,7 @@ fn decodeList(L: *Luau, list: yaml.List) void {
     for (list, 1..) |val, key| {
         switch (val) {
             .float => |f| L.pushNumber(f),
-            .int => |i| L.pushInteger(@intCast(i)),
+            .int => |i| L.pushNumber(@floatFromInt(i)),
             .string => |str| L.pushLString(str),
             .map => |m| decodeMap(L, m),
             .list => |ls| decodeList(L, ls),
@@ -160,7 +160,7 @@ fn decodeMap(L: *Luau, map: yaml.Map) void {
         L.pushLString(key);
         switch (value) {
             .float => |f| L.pushNumber(f),
-            .int => |i| L.pushInteger(@intCast(i)),
+            .int => |i| L.pushNumber(@floatFromInt(i)),
             .string => |str| L.pushLString(str),
             .map => |m| decodeMap(L, m),
             .list => |ls| decodeList(L, ls),
@@ -188,7 +188,7 @@ pub fn lua_decode(L: *Luau) !i32 {
 
     switch (raw.docs.items[0]) {
         .float => |f| L.pushNumber(f),
-        .int => |i| L.pushInteger(@intCast(i)),
+        .int => |i| L.pushNumber(@floatFromInt(i)),
         .string => |str| L.pushLString(str),
         .map => |m| decodeMap(L, m),
         .list => |ls| decodeList(L, ls),

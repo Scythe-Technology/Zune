@@ -239,7 +239,7 @@ fn decodeValue(L: *Luau, jsonValue: json.JsonValue, preserve_null: bool) anyerro
             _ = L.getField(luau.REGISTRYINDEX, "_SERDE_JSON_NULL");
         } else L.pushNil(),
         .boolean => |boolean| L.pushBoolean(boolean),
-        .integer => |integer| L.pushInteger(@intCast(integer)),
+        .integer => |integer| L.pushNumber(@floatFromInt(integer)),
         .float => |float| L.pushNumber(float),
         .string, .static_string => |string| L.pushLString(string),
         .object => |object| try decodeObject(L, object, preserve_null),

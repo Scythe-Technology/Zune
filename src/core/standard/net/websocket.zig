@@ -98,15 +98,17 @@ pub const LuaMeta = struct {
 
 pub fn closeConnection(ctx: *Self, L: *Luau, cleanUp: bool, codeCode: ?u16) void {
     if (ctx.stream) |stream| {
+        const allocator = L.allocator();
         defer {
             stream.close();
             ctx.fds[0].fd = context.INVALID_SOCKET;
+            allocator.destroy(stream);
             ctx.stream = null;
         }
         if (!cleanUp) {
             // send close frame
             if (ctx.establishedLua != null) {
-                var socket = WebSocket.initV(L.allocator(), stream, true);
+                var socket = WebSocket.initV(allocator, stream, true);
                 defer socket.deinit();
                 socket.close(1001) catch |err| {
                     std.debug.print("Error closing websocket: {}\n", .{err});

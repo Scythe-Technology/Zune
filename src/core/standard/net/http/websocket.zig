@@ -384,7 +384,8 @@ pub fn readDataFrameInBuffer(
         else => {},
     }
 
-    const buf = try self.allocator.alloc(u8, length);
+    const read_len = length + @as(u64, (if (header.mask) 4 else 0));
+    const buf = try self.allocator.alloc(u8, read_len);
     self.buf = buf;
 
     const start: usize = if (header.mask) 4 else 0;
@@ -397,7 +398,7 @@ pub fn readDataFrameInBuffer(
         .piped => |s| try s.any_reader.read(buf),
         .vpiped => |s| try s.any_reader.read(buf),
     };
-    if (extend_length != length) {
+    if (extend_length != read_len) {
         return error.InvalidMessage;
     }
 
