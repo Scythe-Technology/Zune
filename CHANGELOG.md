@@ -70,6 +70,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Fixed `error.TlsBadRecordMac` error with websockets in `@zcore/net` when using `tls`.
 - Fixed client websocket data sent unmasked in `@zcore/net`.
+- Fixed websocket server not reading masked data properly in `@zcore/net`.
 
 ## `0.4.1` - September 26, 2024
 

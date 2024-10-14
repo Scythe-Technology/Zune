@@ -572,22 +572,25 @@ pub fn handleRequest(ctx: *Self, L: *Luau, scheduler: *Scheduler, i: usize, conn
 }
 
 pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult {
-    if (!ctx.alive) return .Stop;
-    var server = ctx.server.*;
+    if (!ctx.alive)
+        return .Stop;
+    var server = ctx.server;
     var fds = ctx.fds;
     const connections = ctx.connections;
     const websockets = ctx.websockets;
 
-    var nums = context.spoll(fds, 0) catch std.debug.panic("Bad poll (1)", .{});
-    if (nums == 0) return .Continue;
-    if (nums < 0) std.debug.panic("Bad poll (2)", .{});
+    var nums = context.spoll(fds, 1) catch std.debug.panic("Bad poll (1)", .{});
+    if (nums == 0)
+        return .Continue;
+    if (nums < 0)
+        std.debug.panic("Bad poll (2)", .{});
 
     for (1..MAX_SOCKETS) |i| {
-        if (nums == 0) {
+        if (nums == 0)
             break;
-        }
         const sockfd = fds[i];
-        if (sockfd.fd == context.INVALID_SOCKET) continue;
+        if (sockfd.fd == context.INVALID_SOCKET)
+            continue;
         defer if (sockfd.revents != 0) {
             nums -= 1;
         };
@@ -615,7 +618,7 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
     if (fds[0].revents & context.POLLIN != 0 and nums > 0) {
         const client = server.accept() catch |err| {
             std.debug.print("Error accepting client: {}\n", .{err});
-            return .Continue;
+            return .ContinueFast;
         };
         for (1..MAX_SOCKETS) |i| {
             if (fds[i].fd == context.INVALID_SOCKET) {
@@ -628,7 +631,7 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
             }
         }
     }
-    return .Continue;
+    return .ContinueFast;
 }
 
 pub fn dtor(ctx: *Self, L: *Luau, scheduler: *Scheduler) void {

@@ -38,7 +38,7 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
     const fds = ctx.fds;
     const connection = req.connection.?;
 
-    const nums = context.spoll(fds, 0) catch std.debug.panic("Bad poll (1)", .{});
+    const nums = context.spoll(fds, 1) catch std.debug.panic("Bad poll (1)", .{});
     if (nums == 0) {
         if (ctx.start < luau.clock()) {
             ctx.err = error.TimedOut;
@@ -47,7 +47,8 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
         }
         return .Continue;
     }
-    if (nums < 0) std.debug.panic("Bad poll (2)", .{});
+    if (nums < 0)
+        std.debug.panic("Bad poll (2)", .{});
 
     ctx.success = true;
 
@@ -66,7 +67,8 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
     }; // crash
     connection.drop(@intCast(nchecked));
 
-    if (!req.response.parser.state.isContent()) return .Continue;
+    if (!req.response.parser.state.isContent())
+        return .ContinueFast;
 
     req.response.parse(req.response.parser.get()) catch |err| {
         std.debug.print("Error filling connection: {}\n", .{err});
@@ -80,7 +82,7 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
         req.response.parser.reset();
 
         if (req.handle_continue)
-            return .Continue;
+            return .ContinueFast;
 
         std.debug.print("cannot handle continue\n", .{});
         ctx.success = false;
@@ -159,7 +161,7 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
         };
         // ctx.success = false;
         // ctx.err = null;
-        return .Continue;
+        return .ContinueFast;
     }
 
     req.response.skip = false;

@@ -47,6 +47,7 @@ const Self = @This();
 
 pub const TaskResult = enum {
     Continue,
+    ContinueFast,
     Stop,
 };
 
@@ -276,6 +277,7 @@ pub fn cancelThread(self: *Self, thread: *Luau) void {
 }
 
 pub fn run(self: *Self) void {
+    var active: usize = 0;
     while ((self.sleeping.items.len > 0 or self.deferred.items.len > 0 or self.tasks.items.len > 0 or self.awaits.items.len > 0)) {
         const now = luau.clock();
         {
@@ -287,6 +289,7 @@ pub fn run(self: *Self) void {
                     _ = self.awaits.orderedRemove(i);
                     awaiting.resumeFn(awaiting.data, awaiting.state, self);
                     derefThread(awaiting.state, awaiting.ref);
+                    active += 1;
                 }
             }
         }
@@ -295,10 +298,13 @@ pub fn run(self: *Self) void {
             while (i > 0) {
                 i -= 1;
                 const task = self.tasks.items[i];
-                const result = task.virtualFn(task.data, task.state, self);
-                if (result == .Stop) {
-                    _ = self.tasks.orderedRemove(i);
-                    task.virtualDtor(task.data, task.state, self);
+                switch (task.virtualFn(task.data, task.state, self)) {
+                    .Continue => {},
+                    .ContinueFast => active += 1,
+                    .Stop => {
+                        _ = self.tasks.orderedRemove(i);
+                        task.virtualDtor(task.data, task.state, self);
+                    },
                 }
             }
         }
@@ -321,6 +327,7 @@ pub fn run(self: *Self) void {
                     }
                     _ = resumeState(thread, null, args) catch {};
                     derefThread(thread, slept.ref);
+                    active += 1;
                 }
             }
         }
@@ -338,9 +345,14 @@ pub fn run(self: *Self) void {
                 if (status != .ok and status != .yield) continue;
                 _ = resumeState(thread, deferred.from, deferred.args) catch {};
                 derefThread(thread, deferred.ref);
+                active += 1;
             }
         }
-        std.time.sleep(std.time.ns_per_ms * 4);
+        if (active >= 5000)
+            active = 5000;
+        if (active == 0) {
+            std.time.sleep(std.time.ns_per_ms * 2);
+        } else active -= 1;
     }
 }
 

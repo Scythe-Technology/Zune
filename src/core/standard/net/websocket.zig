@@ -191,9 +191,11 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
     const fds = ctx.fds;
     const stream = ctx.stream orelse return .Stop;
 
-    const nums = context.spoll(fds, 0) catch std.debug.panic("Bad poll (1)", .{});
-    if (nums == 0) return .Continue;
-    if (nums < 0) std.debug.panic("Bad poll (2)", .{});
+    const nums = context.spoll(fds, 1) catch std.debug.panic("Bad poll (1)", .{});
+    if (nums == 0)
+        return .Continue;
+    if (nums < 0)
+        std.debug.panic("Bad poll (2)", .{});
 
     const sockfd = fds[0];
     if (sockfd.revents & (context.POLLIN) != 0) {
@@ -245,11 +247,13 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
                 }
 
                 const leftOver = response.buffer[response.pos..response.bufferLen];
-                if (leftOver.len == 0) return .Continue;
+                if (leftOver.len == 0)
+                    return .ContinueFast;
                 // TODO: Handle huge buffers
                 // using MergedStream to handle data over the stream buffer
                 // currently stream.read BLOCKS if no data is available.
-                if (leftOver.len + response.pos == response.buffer.len) return .Continue;
+                if (leftOver.len + response.pos == response.buffer.len)
+                    return .ContinueFast;
 
                 var leftOverStream = std.io.FixedBufferStream([]u8){
                     .buffer = leftOver,
@@ -269,7 +273,7 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
         }
     } else if (sockfd.revents & (context.POLLNVAL | context.POLLERR | context.POLLHUP) != 0) return .Stop;
 
-    return .Continue;
+    return .ContinueFast;
 }
 
 pub fn dtor(ctx: *Self, L: *Luau, scheduler: *Scheduler) void {
