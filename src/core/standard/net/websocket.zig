@@ -99,7 +99,7 @@ pub const LuaMeta = struct {
 pub fn closeConnection(ctx: *Self, L: *Luau, cleanUp: bool, codeCode: ?u16) void {
     if (ctx.stream.*) |*stream| {
         defer {
-            stream.close();
+            stream.deinit();
             ctx.fds[0].fd = context.INVALID_SOCKET;
             ctx.stream.* = null;
         }
@@ -346,7 +346,7 @@ pub fn prep(allocator: std.mem.Allocator, L: *Luau, scheduler: *Scheduler, uri: 
         tls = try std.crypto.tls.Client.init(stream, bundle, host);
     }
 
-    var vstream = VStream.init(stream, tls);
+    var vstream = try VStream.init(allocator, stream, tls);
 
     const joined_protocols = try std.mem.join(allocator, ", ", protocols.items);
     defer allocator.free(joined_protocols);

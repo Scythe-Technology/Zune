@@ -63,9 +63,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ```
 
 ### Changed
-- Updated `luau` to `0.646`.
+- Updated `luau` to `0.647`.
 - Backend formatted print/warn can now call/read `__tostring` metamethods on userdata.
 - Scheduler consumes less CPU.
+
+### Fixed
+- Fixed `error.TlsBadRecordMac` error with websockets in `@zcore/net` when using `tls`.
 
 ## `0.4.1` - September 26, 2024
 

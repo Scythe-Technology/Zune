@@ -27,7 +27,8 @@ pub fn runTest(allocator: std.mem.Allocator, comptime testFile: zune_test_files.
     var L = try Luau.init(&allocator);
     defer L.deinit();
 
-    if (!stdOutEnabled) L.setFieldBoolean(luau.GLOBALSINDEX, "_testing_stdOut", false);
+    if (!stdOutEnabled)
+        L.setFieldBoolean(luau.GLOBALSINDEX, "_testing_stdOut", false);
 
     var scheduler = Scheduler.init(allocator);
     defer scheduler.deinit();
