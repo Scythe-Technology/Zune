@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## `0.4.2` - October 14, 2024
+
 ### Added
 - Added async support to require. You can now do yields in required modules.
 - Added custom error logging, enabled with `runtime.debug.detailedError` in `zune.toml`.
@@ -20,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     | ^^^^^^^^^^^^^
   ```
 - Added `useColor` and `showRecursiveTable` to `resolvers.formatter` in `zune.toml` for configurable output when using `print` and `warn`.
+- Added `readAsync` method to stdin in `@zcore/stdio.
 - Added `json5`, null preservation & pretty print for `json` in `@zcore/serde`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/serde)
 
   Example:

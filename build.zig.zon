@@ -1,6 +1,6 @@
 .{
     .name = "Zune",
-    .version = "0.4.2-dev",
+    .version = "0.4.2",
     .minimum_zig_version = "0.13.0",
     .dependencies = .{
         .json = .{
