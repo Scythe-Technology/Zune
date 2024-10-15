@@ -12,6 +12,7 @@ export type Structure = {
 
 export type Closure = {
     ptr : buffer,
+    callback : (...any) -> any,
 }
 
 export type FunctionDefinition = {

@@ -12,8 +12,15 @@ const Luau = luau.Luau;
 
 pub const LIB_NAME = "@zcore/ffi";
 
+// TODO: Dedicated Pointer as userdata instead of a buffer container.
 const LuaPointer = struct {
     ptr: *anyopaque,
+    ref: i32,
+    caller: *Luau,
+
+    pub fn __dtor(ptr: *LuaPointer) void {
+        ptr.caller.unref(ptr.ref);
+    }
 };
 
 const LuaHandle = struct {
@@ -169,100 +176,150 @@ const LuaStructType = struct {
                     .ffiType => |t| {
                         switch (t) {
                             .void => return error.VoidArg,
-                            .i8 => {
-                                switch (L.typeOf(-1)) {
-                                    .number => {
-                                        const value = L.toInteger(-1) catch unreachable;
-                                        if (value < -128 or value > 127)
-                                            return error.OutOfRange;
-                                        var bytes: [1]u8 = @bitCast(@as(i8, @intCast(value)));
-                                        @memcpy(mem[offset .. offset + 1], &bytes);
-                                    },
-                                    .boolean => {
-                                        var bytes: [1]u8 = @bitCast(@as(i8, if (L.toBoolean(-1)) 1 else 0));
-                                        @memcpy(mem[offset .. offset + 1], &bytes);
-                                    },
-                                    else => return error.InvalidArgType,
-                                }
+                            .i8 => switch (L.typeOf(-1)) {
+                                .number => {
+                                    const value = L.toInteger(-1) catch unreachable;
+                                    if (value < std.math.minInt(i8) or value > std.math.maxInt(i8))
+                                        return error.OutOfRange;
+                                    mem[offset] = @truncate(@as(u32, @intCast(value)));
+                                },
+                                .boolean => mem[offset] = if (L.toBoolean(-1)) 1 else 0,
+                                .buffer => {
+                                    const buf = L.toBuffer(-1) catch unreachable;
+                                    if (buf.len < 1)
+                                        return error.SmallBuffer;
+                                    mem[offset] = buf[0];
+                                },
+                                else => return error.InvalidArgType,
                             },
-                            .u8 => {
-                                switch (L.typeOf(-1)) {
-                                    .number => {
-                                        const value = L.toInteger(-1) catch unreachable;
-                                        if (value < 0 or value > 255)
-                                            return error.OutOfRange;
-                                        var bytes: [1]u8 = @bitCast(@as(u8, @intCast(value)));
-                                        @memcpy(mem[offset .. offset + 1], &bytes);
-                                    },
-                                    .boolean => {
-                                        var bytes: [1]u8 = @bitCast(@as(u8, if (L.toBoolean(-1)) 1 else 0));
-                                        @memcpy(mem[offset .. offset + 1], &bytes);
-                                    },
-                                    else => return error.InvalidArgType,
-                                }
+                            .u8 => switch (L.typeOf(-1)) {
+                                .number => {
+                                    const value = L.toInteger(-1) catch unreachable;
+                                    if (value < std.math.minInt(u8) or value > std.math.maxInt(u8))
+                                        return error.OutOfRange;
+                                    var bytes: [1]u8 = @bitCast(@as(u8, @intCast(value)));
+                                    @memcpy(mem[offset .. offset + 1], &bytes);
+                                },
+                                .boolean => mem[offset] = if (L.toBoolean(-1)) 1 else 0,
+                                .buffer => {
+                                    const buf = L.toBuffer(-1) catch unreachable;
+                                    if (buf.len < 1)
+                                        return error.SmallBuffer;
+                                    mem[offset] = buf[0];
+                                },
+                                else => return error.InvalidArgType,
                             },
-                            .i16 => {
-                                if (L.typeOf(-1) != .number)
-                                    return error.InvalidArgType;
-                                const value = L.toInteger(-1) catch unreachable;
-                                if (value < -32768 or value > 32767)
-                                    return error.OutOfRange;
-                                var bytes: [2]u8 = @bitCast(@as(i16, @intCast(value)));
-                                @memcpy(mem[offset .. offset + 2], &bytes);
+                            .i16 => switch (L.typeOf(-1)) {
+                                .number => {
+                                    const value = L.toInteger(-1) catch unreachable;
+                                    if (value < std.math.minInt(i16) or value > std.math.maxInt(i16))
+                                        return error.OutOfRange;
+                                    var bytes: [2]u8 = @bitCast(@as(i16, @intCast(value)));
+                                    @memcpy(mem[offset .. offset + 2], &bytes);
+                                },
+                                .buffer => {
+                                    const buf = L.toBuffer(-1) catch unreachable;
+                                    if (buf.len < 2)
+                                        return error.SmallBuffer;
+                                    @memcpy(mem[offset .. offset + 2], buf[0..2]);
+                                },
+                                else => return error.InvalidArgType,
                             },
-                            .u16 => {
-                                if (L.typeOf(-1) != .number)
-                                    return error.InvalidArgType;
-                                const value = L.toInteger(-1) catch unreachable;
-                                if (value < 0 or value > 65535)
-                                    return error.OutOfRange;
-                                var bytes: [2]u8 = @bitCast(@as(u16, @intCast(value)));
-                                @memcpy(mem[offset .. offset + 2], &bytes);
+                            .u16 => switch (L.typeOf(-1)) {
+                                .number => {
+                                    const value = L.toInteger(-1) catch unreachable;
+                                    if (value < std.math.minInt(u16) or value > std.math.maxInt(u16))
+                                        return error.OutOfRange;
+                                    var bytes: [2]u8 = @bitCast(@as(u16, @intCast(value)));
+                                    @memcpy(mem[offset .. offset + 2], &bytes);
+                                },
+                                .buffer => {
+                                    const buf = L.toBuffer(-1) catch unreachable;
+                                    if (buf.len < 2)
+                                        return error.SmallBuffer;
+                                    @memcpy(mem[offset .. offset + 2], buf[0..2]);
+                                },
+                                else => return error.InvalidArgType,
                             },
-                            .i32 => {
-                                if (L.typeOf(-1) != .number)
-                                    return error.InvalidArgType;
-                                const value = L.toInteger(-1) catch unreachable;
-                                var bytes: [4]u8 = @bitCast(@as(i32, @intCast(value)));
-                                @memcpy(mem[offset .. offset + 4], &bytes);
+                            .i32 => switch (L.typeOf(-1)) {
+                                .number => {
+                                    const value = L.toInteger(-1) catch unreachable;
+                                    var bytes: [4]u8 = @bitCast(@as(i32, @intCast(value)));
+                                    @memcpy(mem[offset .. offset + 4], &bytes);
+                                },
+                                .buffer => {
+                                    const buf = L.toBuffer(-1) catch unreachable;
+                                    if (buf.len < 4)
+                                        return error.SmallBuffer;
+                                    @memcpy(mem[offset .. offset + 4], buf[0..4]);
+                                },
+                                else => return error.InvalidArgType,
                             },
-                            .u32 => {
-                                if (L.typeOf(-1) != .number)
-                                    return error.InvalidArgType;
-                                const value = L.toInteger(-1) catch unreachable;
-                                var bytes: [4]u8 = @bitCast(@as(u32, @intCast(value)));
-                                @memcpy(mem[offset .. offset + 4], &bytes);
+                            .u32 => switch (L.typeOf(-1)) {
+                                .number => {
+                                    const value = L.toInteger(-1) catch unreachable;
+                                    var bytes: [4]u8 = @bitCast(@as(u32, @intCast(value)));
+                                    @memcpy(mem[offset .. offset + 4], &bytes);
+                                },
+                                .buffer => {
+                                    const buf = L.toBuffer(-1) catch unreachable;
+                                    if (buf.len < 4)
+                                        return error.SmallBuffer;
+                                    @memcpy(mem[offset .. offset + 4], buf[0..4]);
+                                },
+                                else => return error.InvalidArgType,
                             },
-                            .i64 => {
-                                if (L.typeOf(-1) != .number)
-                                    return error.InvalidArgType;
-                                const value = L.toInteger(-1) catch unreachable;
-                                var bytes: [8]u8 = @bitCast(@as(i64, @intCast(value)));
-                                @memcpy(mem[offset .. offset + 8], &bytes);
+                            .i64 => switch (L.typeOf(-1)) {
+                                .number => {
+                                    const value = L.toInteger(-1) catch unreachable;
+                                    var bytes: [8]u8 = @bitCast(@as(i64, @intCast(value)));
+                                    @memcpy(mem[offset .. offset + 8], &bytes);
+                                },
+                                .buffer => {
+                                    const buf = L.toBuffer(-1) catch unreachable;
+                                    if (buf.len < 8)
+                                        return error.SmallBuffer;
+                                    @memcpy(mem[offset .. offset + 8], buf[0..8]);
+                                },
+                                else => return error.InvalidArgType,
                             },
-                            .u64 => {
-                                if (L.typeOf(-1) != .number)
-                                    return error.InvalidArgType;
-                                const value = L.toInteger(-1) catch unreachable;
-                                var bytes: [8]u8 = @bitCast(@as(u64, @intCast(value)));
-                                @memcpy(mem[offset .. offset + 8], &bytes);
+                            .u64 => switch (L.typeOf(-1)) {
+                                .number => {
+                                    const value = L.toInteger(-1) catch unreachable;
+                                    var bytes: [8]u8 = @bitCast(@as(u64, @intCast(value)));
+                                    @memcpy(mem[offset .. offset + 8], &bytes);
+                                },
+                                else => return error.InvalidArgType,
                             },
-                            .float => {
-                                if (L.typeOf(-1) != .number)
-                                    return error.InvalidArgType;
-                                const value = L.toNumber(-1) catch unreachable;
-                                const large: u64 = @bitCast(value);
-                                if (large >= 0x7f800000 and large <= 0x7fffffff)
-                                    return error.OutOfRange;
-                                var bytes: [4]u8 = @bitCast(@as(f32, @floatCast(value)));
-                                @memcpy(mem[offset .. offset + 4], &bytes);
+                            .float => switch (L.typeOf(-1)) {
+                                .number => {
+                                    const value = L.toNumber(-1) catch unreachable;
+                                    if (value < std.math.floatMin(f32) and value > std.math.floatMax(f32))
+                                        return error.OutOfRange;
+                                    var bytes: [4]u8 = @bitCast(@as(f32, @floatCast(value)));
+                                    @memcpy(mem[offset .. offset + 4], &bytes);
+                                },
+                                .buffer => {
+                                    const buf = L.toBuffer(-1) catch unreachable;
+                                    if (buf.len < 4)
+                                        return error.SmallBuffer;
+                                    @memcpy(mem[offset .. offset + 4], buf[0..4]);
+                                },
+                                else => return error.InvalidArgType,
                             },
-                            .double => {
-                                if (L.typeOf(-1) != .number)
-                                    return error.InvalidArgType;
-                                const value = L.toNumber(-1) catch unreachable;
-                                var bytes: [8]u8 = @bitCast(value);
-                                @memcpy(mem[offset .. offset + 8], &bytes);
+                            .double => switch (L.typeOf(-1)) {
+                                .number => {
+                                    const value = L.toNumber(-1) catch unreachable;
+                                    var bytes: [8]u8 = @bitCast(value);
+                                    @memcpy(mem[offset .. offset + 8], &bytes);
+                                },
+                                .buffer => {
+                                    const buf = L.toBuffer(-1) catch unreachable;
+                                    if (buf.len < 8)
+                                        return error.SmallBuffer;
+                                    @memcpy(mem[offset .. offset + 8], buf[0..8]);
+                                },
+                                else => return error.InvalidArgType,
                             },
                             .pointer => {
                                 switch (L.typeOf(-1)) {
@@ -356,139 +413,212 @@ fn load_ffi_args(
         const lua_index: i32 = @intCast(start_idx + i);
         if (ffi.toffiType(ffi_func.argTypes[i])) |t| switch (t) {
             .void => std.debug.panic("Void arg", .{}),
-            .i8 => {
-                switch (L.typeOf(lua_index)) {
-                    .number => {
-                        const value = L.toInteger(lua_index) catch unreachable;
-                        if (value < -128 or value > 127)
-                            return error.OutOfRange;
-                        const v_ptr = try allocator.create(i8);
-                        v_ptr.* = @intCast(value);
-                        args[i] = @alignCast(@ptrCast(v_ptr));
-                    },
-                    .boolean => {
-                        const v_ptr = try allocator.create(i8);
-                        v_ptr.* = if (L.toBoolean(lua_index)) 1 else 0;
-                        args[i] = @alignCast(@ptrCast(v_ptr));
-                    },
-                    else => return error.InvalidArgType,
-                }
+            .i8 => switch (L.typeOf(lua_index)) {
+                .number => {
+                    const value = L.toInteger(lua_index) catch unreachable;
+                    if (value < std.math.minInt(i8) or value > std.math.maxInt(i8))
+                        return error.OutOfRange;
+                    const v_ptr = try allocator.create(i8);
+                    v_ptr.* = @intCast(value);
+                    args[i] = @alignCast(@ptrCast(v_ptr));
+                },
+                .boolean => {
+                    const v_ptr = try allocator.create(i8);
+                    v_ptr.* = if (L.toBoolean(lua_index)) 1 else 0;
+                    args[i] = @alignCast(@ptrCast(v_ptr));
+                },
+                else => return error.InvalidArgType,
             },
-            .u8 => {
-                switch (L.typeOf(lua_index)) {
-                    .number => {
-                        const value = L.toInteger(lua_index) catch unreachable;
-                        if (value < 0 or value > 255)
-                            return error.OutOfRange;
-                        const v_ptr = try allocator.create(u8);
-                        v_ptr.* = @intCast(value);
-                        args[i] = @alignCast(@ptrCast(v_ptr));
-                    },
-                    .boolean => {
-                        const v_ptr = try allocator.create(u8);
-                        v_ptr.* = if (L.toBoolean(lua_index)) 1 else 0;
-                        args[i] = @alignCast(@ptrCast(v_ptr));
-                    },
-                    else => return error.InvalidArgType,
-                }
+            .u8 => switch (L.typeOf(lua_index)) {
+                .number => {
+                    const value = L.toInteger(lua_index) catch unreachable;
+                    if (value < std.math.minInt(u8) or value > std.math.maxInt(u8))
+                        return error.OutOfRange;
+                    const v_ptr = try allocator.create(u8);
+                    v_ptr.* = @intCast(value);
+                    args[i] = @alignCast(@ptrCast(v_ptr));
+                },
+                .boolean => {
+                    const v_ptr = try allocator.create(u8);
+                    v_ptr.* = if (L.toBoolean(lua_index)) 1 else 0;
+                    args[i] = @alignCast(@ptrCast(v_ptr));
+                },
+                .buffer => {
+                    const buf = L.toBuffer(lua_index) catch unreachable;
+                    if (buf.len < 1)
+                        return error.SmallBuffer;
+                    const v_ptr = try allocator.create(u8);
+                    v_ptr.* = buf[0];
+                    args[i] = @alignCast(@ptrCast(v_ptr));
+                },
+                else => return error.InvalidArgType,
             },
-            .i16 => {
-                if (L.typeOf(lua_index) != .number)
+            .i16 => switch (L.typeOf(lua_index)) {
+                .number => {
+                    const value = L.toInteger(lua_index) catch unreachable;
+                    if (value < std.math.minInt(i16) or value > std.math.maxInt(i16))
+                        return error.OutOfRange;
+                    const v_ptr = try allocator.create(i16);
+                    v_ptr.* = @intCast(value);
+                    args[i] = @alignCast(@ptrCast(v_ptr));
+                },
+                .buffer => {
+                    const buf = L.toBuffer(lua_index) catch unreachable;
+                    if (buf.len < 2)
+                        return error.SmallBuffer;
+                    const v_ptr = try allocator.create(i16);
+                    v_ptr.* = std.mem.readVarInt(i16, buf, .little);
+                    args[i] = @alignCast(@ptrCast(v_ptr));
+                },
+                else => return error.InvalidArgType,
+            },
+            .u16 => switch (L.typeOf(lua_index)) {
+                .number => {
+                    const value = L.toInteger(lua_index) catch unreachable;
+                    if (value < std.math.minInt(u16) or value > std.math.maxInt(u16))
+                        return error.OutOfRange;
+                    const v_ptr = try allocator.create(u16);
+                    v_ptr.* = @intCast(value);
+                    args[i] = @alignCast(@ptrCast(v_ptr));
+                },
+                .buffer => {
+                    const buf = L.toBuffer(lua_index) catch unreachable;
+                    if (buf.len < 2)
+                        return error.SmallBuffer;
+                    const v_ptr = try allocator.create(u16);
+                    v_ptr.* = std.mem.readVarInt(u16, buf, .little);
+                    args[i] = @alignCast(@ptrCast(v_ptr));
+                },
+                else => return error.InvalidArgType,
+            },
+            .i32 => switch (L.typeOf(lua_index)) {
+                .number => {
+                    const v_ptr = try allocator.create(i32);
+                    v_ptr.* = @intCast(L.toInteger(lua_index) catch unreachable);
+                    args[i] = @alignCast(@ptrCast(v_ptr));
+                },
+                .buffer => {
+                    const buf = L.toBuffer(lua_index) catch unreachable;
+                    if (buf.len < 4)
+                        return error.SmallBuffer;
+                    const v_ptr = try allocator.create(i32);
+                    v_ptr.* = std.mem.readVarInt(i32, buf, .little);
+                    args[i] = @alignCast(@ptrCast(v_ptr));
+                },
+                else => return error.InvalidArgType,
+            },
+            .u32 => switch (L.typeOf(lua_index)) {
+                .number => {
+                    const v_ptr = try allocator.create(u32);
+                    v_ptr.* = @intCast(L.toInteger(lua_index) catch unreachable);
+                    args[i] = @alignCast(@ptrCast(v_ptr));
+                },
+                .buffer => {
+                    const buf = L.toBuffer(lua_index) catch unreachable;
+                    if (buf.len < 4)
+                        return error.SmallBuffer;
+                    const v_ptr = try allocator.create(u32);
+                    v_ptr.* = std.mem.readVarInt(u32, buf, .little);
+                    args[i] = @alignCast(@ptrCast(v_ptr));
+                },
+                else => return error.InvalidArgType,
+            },
+            .i64 => switch (L.typeOf(lua_index)) {
+                .number => {
+                    const v_ptr = try allocator.create(i64);
+                    v_ptr.* = @intCast(L.toInteger(lua_index) catch unreachable);
+                    args[i] = @alignCast(@ptrCast(v_ptr));
+                },
+                .buffer => {
+                    const buf = L.toBuffer(lua_index) catch unreachable;
+                    if (buf.len < 8)
+                        return error.SmallBuffer;
+                    const v_ptr = try allocator.create(i64);
+                    v_ptr.* = std.mem.readVarInt(i64, buf, .little);
+                    args[i] = @alignCast(@ptrCast(v_ptr));
+                },
+                else => return error.InvalidArgType,
+            },
+            .u64 => switch (L.typeOf(lua_index)) {
+                .number => {
+                    const v_ptr = try allocator.create(u64);
+                    v_ptr.* = @intCast(L.toInteger(lua_index) catch unreachable);
+                    args[i] = @alignCast(@ptrCast(v_ptr));
+                },
+                .buffer => {
+                    const buf = L.toBuffer(lua_index) catch unreachable;
+                    if (buf.len < 8)
+                        return error.SmallBuffer;
+                    const v_ptr = try allocator.create(u64);
+                    v_ptr.* = std.mem.readVarInt(u64, buf, .little);
+                    args[i] = @alignCast(@ptrCast(v_ptr));
+                },
+                else => return error.InvalidArgType,
+            },
+            .float => switch (L.typeOf(lua_index)) {
+                .number => {
+                    const value = L.toNumber(lua_index) catch unreachable;
+                    if (value < std.math.floatMin(f32) or value > std.math.floatMax(f32))
+                        return error.OutOfRange;
+                    const v_ptr = try allocator.create(f32);
+                    v_ptr.* = @floatCast(value);
+                    args[i] = @alignCast(@ptrCast(v_ptr));
+                },
+                .buffer => {
+                    const buf = L.toBuffer(lua_index) catch unreachable;
+                    if (buf.len < 4)
+                        return error.SmallBuffer;
+                    const v_ptr = try allocator.create(f32);
+                    v_ptr.* = @as(f32, @bitCast(std.mem.readVarInt(u32, buf, .little)));
+                    args[i] = @alignCast(@ptrCast(v_ptr));
+                },
+                else => return error.InvalidArgType,
+            },
+            .double => switch (L.typeOf(lua_index)) {
+                .number => {
+                    const v_ptr = try allocator.create(f64);
+                    v_ptr.* = L.toNumber(lua_index) catch unreachable;
+                    args[i] = @alignCast(@ptrCast(v_ptr));
+                },
+                .buffer => {
+                    const buf = L.toBuffer(lua_index) catch unreachable;
+                    if (buf.len < 8)
+                        return error.SmallBuffer;
+                    const v_ptr = try allocator.create(f64);
+                    v_ptr.* = @as(f64, @bitCast(std.mem.readVarInt(u64, buf, .little)));
+                    args[i] = @alignCast(@ptrCast(v_ptr));
+                },
+                else => return error.InvalidArgType,
+            },
+            .pointer => switch (L.typeOf(lua_index)) {
+                .userdata => {
                     return error.InvalidArgType;
-                const value = L.toInteger(lua_index) catch unreachable;
-                if (value < -32768 or value > 32767)
-                    return error.OutOfRange;
-                const v_ptr = try allocator.create(i16);
-                v_ptr.* = @intCast(value);
-                args[i] = @alignCast(@ptrCast(v_ptr));
-            },
-            .u16 => {
-                if (L.typeOf(lua_index) != .number)
-                    return error.InvalidArgType;
-                const value = L.toInteger(lua_index) catch unreachable;
-                if (value < 0 or value > 65535)
-                    return error.OutOfRange;
-                const v_ptr = try allocator.create(u16);
-                v_ptr.* = @intCast(value);
-                args[i] = @alignCast(@ptrCast(v_ptr));
-            },
-            .i32 => {
-                if (L.typeOf(lua_index) != .number)
-                    return error.InvalidArgType;
-                const v_ptr = try allocator.create(i32);
-                v_ptr.* = @intCast(L.toInteger(lua_index) catch unreachable);
-                args[i] = @alignCast(@ptrCast(v_ptr));
-            },
-            .u32 => {
-                if (L.typeOf(lua_index) != .number)
-                    return error.InvalidArgType;
-                const v_ptr = try allocator.create(u32);
-                v_ptr.* = @intCast(L.toInteger(lua_index) catch unreachable);
-                args[i] = @alignCast(@ptrCast(v_ptr));
-            },
-            .i64 => {
-                if (L.typeOf(lua_index) != .number)
-                    return error.InvalidArgType;
-                const v_ptr = try allocator.create(i64);
-                v_ptr.* = @intCast(L.toInteger(lua_index) catch unreachable);
-                args[i] = @alignCast(@ptrCast(v_ptr));
-            },
-            .u64 => {
-                if (L.typeOf(lua_index) != .number)
-                    return error.InvalidArgType;
-                const v_ptr = try allocator.create(u64);
-                v_ptr.* = @intCast(L.toInteger(lua_index) catch unreachable);
-                args[i] = @alignCast(@ptrCast(v_ptr));
-            },
-            .float => {
-                if (L.typeOf(lua_index) != .number)
-                    return error.InvalidArgType;
-                const value = L.toNumber(lua_index) catch unreachable;
-                const large: u64 = @bitCast(value);
-                if (large >= 0x7f800000 and large <= 0x7fffffff)
-                    return error.OutOfRange;
-                const v_ptr = try allocator.create(f32);
-                v_ptr.* = @floatCast(value);
-                args[i] = @alignCast(@ptrCast(v_ptr));
-            },
-            .double => {
-                const v_ptr = try allocator.create(f64);
-                if (L.typeOf(lua_index) != .number)
-                    return error.InvalidArgType;
-                v_ptr.* = L.toNumber(lua_index) catch unreachable;
-                args[i] = @alignCast(@ptrCast(v_ptr));
-            },
-            .pointer => {
-                switch (L.typeOf(lua_index)) {
-                    .userdata => {
+                },
+                .buffer => {
+                    const buf = L.toBuffer(lua_index) catch unreachable;
+                    if (buf.len != @sizeOf(usize))
                         return error.InvalidArgType;
-                    },
-                    .buffer => {
-                        const buf = L.toBuffer(lua_index) catch unreachable;
-                        if (buf.len != @sizeOf(usize))
-                            return error.InvalidArgType;
-                        const ptr_int = std.mem.readVarInt(usize, buf, .little);
-                        if (ptr_int == 0)
-                            return error.NullPtr;
-                        const v_ptr = try allocator.create(*anyopaque);
-                        v_ptr.* = @ptrFromInt(ptr_int);
-                        args[i] = @alignCast(@ptrCast(v_ptr));
-                    },
-                    .string => {
-                        const str: [:0]const u8 = L.toString(lua_index) catch unreachable;
-                        const dup = try allocator.dupeZ(u8, str);
-                        errdefer allocator.free(dup);
-                        const v_ptr = try allocator.create(*anyopaque);
-                        v_ptr.* = @ptrCast(dup.ptr);
-                        args[i] = @alignCast(@ptrCast(v_ptr));
-                    },
-                    .nil => {
-                        const v_ptr = try allocator.create(?*anyopaque);
-                        v_ptr.* = null;
-                        args[i] = @alignCast(@ptrCast(v_ptr));
-                    },
-                    else => return error.InvalidArgType,
-                }
+                    const ptr_int = std.mem.readVarInt(usize, buf, .little);
+                    if (ptr_int == 0)
+                        return error.NullPtr;
+                    const v_ptr = try allocator.create(*anyopaque);
+                    v_ptr.* = @ptrFromInt(ptr_int);
+                    args[i] = @alignCast(@ptrCast(v_ptr));
+                },
+                .string => {
+                    const str: [:0]const u8 = L.toString(lua_index) catch unreachable;
+                    const dup = try allocator.dupeZ(u8, str);
+                    errdefer allocator.free(dup);
+                    const v_ptr = try allocator.create(*anyopaque);
+                    v_ptr.* = @ptrCast(dup.ptr);
+                    args[i] = @alignCast(@ptrCast(v_ptr));
+                },
+                .nil => {
+                    const v_ptr = try allocator.create(?*anyopaque);
+                    v_ptr.* = null;
+                    args[i] = @alignCast(@ptrCast(v_ptr));
+                },
+                else => return error.InvalidArgType,
             },
         } else {
             if (L.typeOf(lua_index) != .buffer)
@@ -781,153 +911,196 @@ fn ffi_closure(L: *Luau) !i32 {
             if (cif.nargs != data.args.items.len)
                 std.debug.panic("Invalid number of arguments", .{});
 
-            data.thread.pushValue(1);
+            const subthread = data.thread.newThread();
+            defer data.thread.pop(1);
+            data.thread.xPush(subthread, 1);
 
             for (data.args.items, 0..) |arg_type, i| {
                 switch (arg_type) {
                     .ffiType => |t| switch (t) {
                         .void => unreachable,
-                        .i8 => data.thread.pushInteger(@intCast(@as(*i8, @ptrCast(ffi_args[i])).*)),
-                        .u8 => data.thread.pushInteger(@intCast(@as(*u8, @ptrCast(ffi_args[i])).*)),
-                        .i16 => data.thread.pushInteger(@intCast(@as(*i16, @alignCast(@ptrCast(ffi_args[i]))).*)),
-                        .u16 => data.thread.pushInteger(@intCast(@as(*u16, @alignCast(@ptrCast(ffi_args[i]))).*)),
-                        .i32 => data.thread.pushInteger(@as(*i32, @alignCast(@ptrCast(ffi_args[i]))).*),
-                        .u32 => data.thread.pushInteger(@intCast(@as(*u32, @alignCast(@ptrCast(ffi_args[i]))).*)),
+                        .i8 => subthread.pushInteger(@intCast(@as(*i8, @ptrCast(ffi_args[i])).*)),
+                        .u8 => subthread.pushInteger(@intCast(@as(*u8, @ptrCast(ffi_args[i])).*)),
+                        .i16 => subthread.pushInteger(@intCast(@as(*i16, @alignCast(@ptrCast(ffi_args[i]))).*)),
+                        .u16 => subthread.pushInteger(@intCast(@as(*u16, @alignCast(@ptrCast(ffi_args[i]))).*)),
+                        .i32 => subthread.pushInteger(@as(*i32, @alignCast(@ptrCast(ffi_args[i]))).*),
+                        .u32 => subthread.pushInteger(@intCast(@as(*u32, @alignCast(@ptrCast(ffi_args[i]))).*)),
                         .i64 => {
                             const bytes: [8]u8 = @bitCast(@as(*i64, @alignCast(@ptrCast(ffi_args[i]))).*);
-                            data.thread.pushBuffer(&bytes) catch |err| std.debug.panic("Failed: {}", .{err});
+                            subthread.pushBuffer(&bytes) catch |err| std.debug.panic("Failed: {}", .{err});
                         },
                         .u64 => {
                             const bytes: [8]u8 = @bitCast(@as(*u64, @alignCast(@ptrCast(ffi_args[i]))).*);
-                            data.thread.pushBuffer(&bytes) catch |err| std.debug.panic("Failed: {}", .{err});
+                            subthread.pushBuffer(&bytes) catch |err| std.debug.panic("Failed: {}", .{err});
                         },
-                        .float => data.thread.pushNumber(@floatCast(@as(f32, @bitCast(@as(*u32, @alignCast(@ptrCast(ffi_args[i]))).*)))),
-                        .double => data.thread.pushNumber(@as(f64, @bitCast(@as(*u64, @alignCast(@ptrCast(ffi_args[i]))).*))),
+                        .float => subthread.pushNumber(@floatCast(@as(f32, @bitCast(@as(*u32, @alignCast(@ptrCast(ffi_args[i]))).*)))),
+                        .double => subthread.pushNumber(@as(f64, @bitCast(@as(*u64, @alignCast(@ptrCast(ffi_args[i]))).*))),
                         .pointer => {
                             const bytes: [@sizeOf(usize)]u8 = @bitCast(@intFromPtr(@as(*[*]u8, @alignCast(@ptrCast(ffi_args[i]))).*));
-                            data.thread.pushBuffer(bytes[0..@sizeOf(usize)]) catch |err| std.debug.panic("Failed: {}", .{err});
+                            subthread.pushBuffer(bytes[0..@sizeOf(usize)]) catch |err| std.debug.panic("Failed: {}", .{err});
                         },
                     },
                     .structType => |t| {
                         const bytes: *[*]u8 = @alignCast(@ptrCast(ffi_args[i]));
-                        data.thread.pushBuffer(bytes.*[0..t.getSize()]) catch |err| std.debug.panic("Failed: {}", .{err});
+                        subthread.pushBuffer(bytes.*[0..t.getSize()]) catch |err| std.debug.panic("Failed: {}", .{err});
                     },
                 }
             }
 
-            const has_return = if (data.returns == .ffiType and data.returns.ffiType == .void) false else true;
+            const has_return = data.returns != .ffiType or data.returns.ffiType != .void;
 
-            data.thread.pcall(@intCast(data.args.items.len), if (has_return) 1 else 0, 0) catch {
-                std.debug.panic("C Closure Runtime Error: {s}", .{data.thread.toString(-1) catch "UnknownError"});
+            subthread.pcall(@intCast(data.args.items.len), if (has_return) 1 else 0, 0) catch {
+                std.debug.panic("C Closure Runtime Error: {s}", .{subthread.toString(-1) catch "UnknownError"});
             };
 
             if (has_return) {
-                defer data.thread.pop(1);
+                defer subthread.pop(1);
                 if (ffi_ret) |ret_ptr| {
                     switch (data.returns) {
                         .ffiType => |t| switch (t) {
                             .void => unreachable,
-                            .i8 => {
-                                switch (data.thread.typeOf(-1)) {
-                                    .number => {
-                                        const value = data.thread.toInteger(-1) catch unreachable;
-                                        if (value < -128 or value > 127)
-                                            return std.debug.panic("Out of range ('{s}')", .{@tagName(t)});
-                                        @as(*i8, @ptrCast(@alignCast(ret_ptr))).* = @intCast(value);
-                                    },
-                                    .boolean => {
-                                        @as(*i8, @ptrCast(@alignCast(ret_ptr))).* = if (data.thread.toBoolean(-1)) 1 else 0;
-                                    },
-                                    else => std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)}),
-                                }
+                            .i8 => switch (subthread.typeOf(-1)) {
+                                .number => {
+                                    const value = subthread.toInteger(-1) catch unreachable;
+                                    if (value < std.math.minInt(i8) or value > std.math.maxInt(i8))
+                                        return std.debug.panic("Out of range ('{s}')", .{@tagName(t)});
+                                    @as(*i8, @ptrCast(@alignCast(ret_ptr))).* = @intCast(value);
+                                },
+                                .boolean => @as(*i8, @ptrCast(@alignCast(ret_ptr))).* = if (subthread.toBoolean(-1)) 1 else 0,
+                                .buffer => {
+                                    const buf = subthread.toBuffer(-1) catch unreachable;
+                                    if (buf.len < 1)
+                                        return std.debug.panic("Small buffer ('{s}')", .{@tagName(t)});
+                                    @as(*i8, @ptrCast(@alignCast(ret_ptr))).* = @intCast(buf[0]);
+                                },
+                                else => std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)}),
                             },
-                            .u8 => {
-                                switch (data.thread.typeOf(-1)) {
-                                    .number => {
-                                        const value = data.thread.toInteger(-1) catch unreachable;
-                                        if (value < 0 or value > 255)
-                                            return std.debug.panic("Out of range ('{s}')", .{@tagName(t)});
-                                        @as(*u8, @ptrCast(@alignCast(ret_ptr))).* = @intCast(value);
-                                    },
-                                    .boolean => {
-                                        @as(*u8, @ptrCast(@alignCast(ret_ptr))).* = if (data.thread.toBoolean(-1)) 1 else 0;
-                                    },
-                                    else => std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)}),
-                                }
+                            .u8 => switch (subthread.typeOf(-1)) {
+                                .number => {
+                                    const value = subthread.toInteger(-1) catch unreachable;
+                                    if (value < std.math.minInt(u8) or value > std.math.maxInt(u8))
+                                        return std.debug.panic("Out of range ('{s}')", .{@tagName(t)});
+                                    @as(*u8, @ptrCast(@alignCast(ret_ptr))).* = @intCast(value);
+                                },
+                                .boolean => @as(*u8, @ptrCast(@alignCast(ret_ptr))).* = if (subthread.toBoolean(-1)) 1 else 0,
+                                else => std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)}),
                             },
-                            .i16 => {
-                                if (data.thread.typeOf(-1) != .number)
-                                    return std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)});
-                                const value = data.thread.toInteger(-1) catch unreachable;
-                                if (value < -32768 or value > 32767)
-                                    return std.debug.panic("Out of range ('{s}')", .{@tagName(t)});
-                                @as(*i16, @ptrCast(@alignCast(ret_ptr))).* = @intCast(value);
+                            .i16 => switch (subthread.typeOf(-1)) {
+                                .number => {
+                                    const value = subthread.toInteger(-1) catch unreachable;
+                                    if (value < std.math.minInt(i16) or value > std.math.maxInt(i16))
+                                        return std.debug.panic("Out of range ('{s}')", .{@tagName(t)});
+                                    @as(*i16, @ptrCast(@alignCast(ret_ptr))).* = @intCast(value);
+                                },
+                                .buffer => {
+                                    const buf = subthread.toBuffer(-1) catch unreachable;
+                                    if (buf.len < 2)
+                                        return std.debug.panic("Small buffer ('{s}')", .{@tagName(t)});
+                                    @as(*i16, @ptrCast(@alignCast(ret_ptr))).* = @intCast(std.mem.readVarInt(i16, buf, .little));
+                                },
+                                else => return std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)}),
                             },
-                            .u16 => {
-                                if (data.thread.typeOf(-1) != .number)
-                                    return std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)});
-                                const value = data.thread.toInteger(-1) catch unreachable;
-                                if (value < 0 or value > 65535)
-                                    return std.debug.panic("Out of range ('{s}')", .{@tagName(t)});
-                                @as(*u16, @ptrCast(@alignCast(ret_ptr))).* = @intCast(value);
+                            .u16 => switch (subthread.typeOf(-1)) {
+                                .number => {
+                                    const value = subthread.toInteger(-1) catch unreachable;
+                                    if (value < std.math.minInt(u16) or value > std.math.maxInt(u16))
+                                        return std.debug.panic("Out of range ('{s}')", .{@tagName(t)});
+                                    @as(*u16, @ptrCast(@alignCast(ret_ptr))).* = @intCast(value);
+                                },
+                                .buffer => {
+                                    const buf = subthread.toBuffer(-1) catch unreachable;
+                                    if (buf.len < 2)
+                                        return std.debug.panic("Small buffer ('{s}')", .{@tagName(t)});
+                                    @as(*u16, @ptrCast(@alignCast(ret_ptr))).* = @intCast(std.mem.readVarInt(u16, buf, .little));
+                                },
+                                else => return std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)}),
                             },
-                            .i32 => {
-                                if (data.thread.typeOf(-1) != .number)
-                                    return std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)});
-                                @as(*i32, @ptrCast(@alignCast(ret_ptr))).* = @intCast(data.thread.toInteger(-1) catch unreachable);
+                            .i32 => switch (subthread.typeOf(-1)) {
+                                .number => @as(*i32, @ptrCast(@alignCast(ret_ptr))).* = @intCast(subthread.toInteger(-1) catch unreachable),
+                                .buffer => {
+                                    const buf = subthread.toBuffer(-1) catch unreachable;
+                                    if (buf.len < 4)
+                                        return std.debug.panic("Small buffer ('{s}')", .{@tagName(t)});
+                                    @as(*i32, @ptrCast(@alignCast(ret_ptr))).* = std.mem.readVarInt(i32, buf, .little);
+                                },
+                                else => return std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)}),
                             },
-                            .u32 => {
-                                if (data.thread.typeOf(-1) != .number)
-                                    return std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)});
-                                @as(*u32, @ptrCast(@alignCast(ret_ptr))).* = @intCast(data.thread.toInteger(-1) catch unreachable);
+                            .u32 => switch (subthread.typeOf(-1)) {
+                                .number => @as(*u32, @ptrCast(@alignCast(ret_ptr))).* = @intCast(subthread.toInteger(-1) catch unreachable),
+                                .buffer => {
+                                    const buf = subthread.toBuffer(-1) catch unreachable;
+                                    if (buf.len < 4)
+                                        return std.debug.panic("Small buffer ('{s}')", .{@tagName(t)});
+                                    @as(*u32, @ptrCast(@alignCast(ret_ptr))).* = @intCast(std.mem.readVarInt(u32, buf, .little));
+                                },
+                                else => return std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)}),
                             },
-                            .i64 => {
-                                if (data.thread.typeOf(-1) != .number)
-                                    return std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)});
-                                @as(*i64, @ptrCast(@alignCast(ret_ptr))).* = @intCast(data.thread.toInteger(-1) catch unreachable);
+                            .i64 => switch (subthread.typeOf(-1)) {
+                                .number => @as(*i64, @ptrCast(@alignCast(ret_ptr))).* = @intCast(subthread.toInteger(-1) catch unreachable),
+                                .buffer => {
+                                    const buf = subthread.toBuffer(-1) catch unreachable;
+                                    if (buf.len < 8)
+                                        return std.debug.panic("Small buffer ('{s}')", .{@tagName(t)});
+                                    @as(*i64, @ptrCast(@alignCast(ret_ptr))).* = std.mem.readVarInt(i64, buf, .little);
+                                },
+                                else => return std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)}),
                             },
-                            .u64 => {
-                                if (data.thread.typeOf(-1) != .number)
-                                    return std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)});
-                                @as(*u64, @ptrCast(@alignCast(ret_ptr))).* = @intCast(data.thread.toInteger(-1) catch unreachable);
+                            .u64 => switch (subthread.typeOf(-1)) {
+                                .number => @as(*u64, @ptrCast(@alignCast(ret_ptr))).* = @intCast(subthread.toInteger(-1) catch unreachable),
+                                .buffer => {
+                                    const buf = subthread.toBuffer(-1) catch unreachable;
+                                    if (buf.len < 8)
+                                        return std.debug.panic("Small buffer ('{s}')", .{@tagName(t)});
+                                    @as(*u64, @ptrCast(@alignCast(ret_ptr))).* = std.mem.readVarInt(u64, buf, .little);
+                                },
+                                else => return std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)}),
                             },
-                            .float => {
-                                if (data.thread.typeOf(-1) != .number)
-                                    return std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)});
-                                const value = data.thread.toNumber(-1) catch unreachable;
-                                const large: u64 = @bitCast(value);
-                                if (large >= 0x7f800000 and large <= 0x7fffffff)
-                                    return std.debug.panic("Out of range ('{s}')", .{@tagName(t)});
-                                @as(*f32, @ptrCast(@alignCast(ret_ptr))).* = @floatCast(value);
+                            .float => switch (subthread.typeOf(-1)) {
+                                .number => {
+                                    const value = subthread.toNumber(-1) catch unreachable;
+                                    if (value < std.math.floatMin(f32) or value > std.math.floatMax(f32))
+                                        return std.debug.panic("Out of range ('{s}')", .{@tagName(t)});
+                                    @as(*f32, @ptrCast(@alignCast(ret_ptr))).* = @floatCast(value);
+                                },
+                                .buffer => {
+                                    const buf = subthread.toBuffer(-1) catch unreachable;
+                                    if (buf.len < 4)
+                                        return std.debug.panic("Small buffer ('{s}')", .{@tagName(t)});
+                                    @as(*f32, @ptrCast(@alignCast(ret_ptr))).* = @as(f32, @bitCast(std.mem.readVarInt(u32, buf, .little)));
+                                },
+                                else => return std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)}),
                             },
-                            .double => {
-                                if (data.thread.typeOf(-1) != .number)
-                                    return std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)});
-                                @as(*f64, @ptrCast(@alignCast(ret_ptr))).* = data.thread.toNumber(-1) catch unreachable;
+                            .double => switch (subthread.typeOf(-1)) {
+                                .number => @as(*f64, @ptrCast(@alignCast(ret_ptr))).* = subthread.toNumber(-1) catch unreachable,
+                                .buffer => {
+                                    const buf = subthread.toBuffer(-1) catch unreachable;
+                                    if (buf.len < 8)
+                                        return std.debug.panic("Small buffer ('{s}')", .{@tagName(t)});
+                                    @as(*f64, @ptrCast(@alignCast(ret_ptr))).* = @as(f64, @bitCast(std.mem.readVarInt(u64, buf, .little)));
+                                },
+                                else => std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)}),
                             },
-                            .pointer => {
-                                switch (data.thread.typeOf(-1)) {
-                                    .buffer => {
-                                        const buf = data.thread.toBuffer(-1) catch unreachable;
-                                        if (buf.len != @sizeOf(usize))
-                                            return std.debug.panic("Invalid return type (expected buffer of size {d} for '{s}')", .{ @sizeOf(usize), @tagName(t) });
-                                        const ptr_int = std.mem.readVarInt(usize, buf, .little);
-                                        if (ptr_int == 0)
-                                            return std.debug.panic("Null pointer", .{});
-                                        @as(*[*]u8, @ptrCast(@alignCast(ret_ptr))).* = @ptrFromInt(ptr_int);
-                                    },
-                                    .string => std.debug.panic("Unsupported return type (use a pointer to a buffer instead)", .{}),
-                                    .nil => {
-                                        @as(*?*anyopaque, @ptrCast(@alignCast(ret_ptr))).* = null;
-                                    },
-                                    else => return std.debug.panic("Invalid return type (expected buffer/nil for '{s}')", .{@tagName(t)}),
-                                }
+                            .pointer => switch (subthread.typeOf(-1)) {
+                                .buffer => {
+                                    const buf = subthread.toBuffer(-1) catch unreachable;
+                                    if (buf.len != @sizeOf(usize))
+                                        return std.debug.panic("Invalid return type (expected buffer of size {d} for '{s}')", .{ @sizeOf(usize), @tagName(t) });
+                                    const ptr_int = std.mem.readVarInt(usize, buf, .little);
+                                    if (ptr_int == 0)
+                                        return std.debug.panic("Null pointer", .{});
+                                    @as(*[*]u8, @ptrCast(@alignCast(ret_ptr))).* = @ptrFromInt(ptr_int);
+                                },
+                                .string => std.debug.panic("Unsupported return type (use a pointer to a buffer instead)", .{}),
+                                .nil => {
+                                    @as(*?*anyopaque, @ptrCast(@alignCast(ret_ptr))).* = null;
+                                },
+                                else => return std.debug.panic("Invalid return type (expected buffer/nil for '{s}')", .{@tagName(t)}),
                             },
                         },
                         .structType => |t| {
-                            if (data.thread.typeOf(-1) != .buffer)
+                            if (subthread.typeOf(-1) != .buffer)
                                 return std.debug.panic("Invalid return type (expected buffer for struct)", .{});
-                            const buf = data.thread.toBuffer(-1) catch unreachable;
+                            const buf = subthread.toBuffer(-1) catch unreachable;
                             if (buf.len != t.getSize())
                                 return std.debug.panic("Invalid return type (expected buffer of size {d} for struct)", .{t.getSize()});
                             @memcpy(@as(*[*]u8, @ptrCast(@alignCast(ret_ptr))).*, buf);
@@ -965,7 +1138,15 @@ fn ffi_closure(L: *Luau) !i32 {
     const bytes: [@sizeOf(usize)]u8 = @bitCast(@intFromPtr(closure_ptr.executable));
     try L.pushBuffer(&bytes);
     L.setField(-2, "ptr");
+
+    L.pushValue(2);
+    L.setField(-2, "callback");
     L.setField(-2, luau.Metamethods.index);
+
+    L.pushValue(-3);
+    L.setField(-2, "thread");
+
+    L.setReadOnly(-1, true);
 
     L.setMetatable(-2);
 

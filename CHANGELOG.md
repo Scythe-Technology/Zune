@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+- Added buffer support as arguments & closure returns for `@zcore/ffi`.
+
+### Fixed
+- Fixed `@zcore/ffi` closures getting garbage collected.
+
 ## `0.4.2` - October 14, 2024
 
 ### Added

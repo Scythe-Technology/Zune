@@ -60,6 +60,12 @@ if (process.os == "windows") then
     static_suffix = "lib";
 end
 
+local function testBufferOfValue(size: number, writer: (b: buffer, o: number, v: number) -> (), value: number): buffer
+    local buf = buffer.create(size);
+    writer(buf, 0, value);
+    return buf;
+end
+
 describe("FFI", function()
     if (not ffi.supported) then
         warn("Skipping 'FFI' tests (Not Supported)");
@@ -130,6 +136,10 @@ describe("FFI", function()
             local ptr2 = ffi.intFromPtr(buffer.create(ffi.sizeOf(ffi.types.pointer)), src);
 
             expect(ffi.eqlPtr(ptr, ptr2)).toBe(true);
+
+            local null_ptr = buffer.create(ffi.sizeOf(ffi.types.pointer));
+            expect(ffi.eqlPtr(null_ptr, nil)).toBe(true);
+            expect(ffi.eqlPtr(null_ptr, ptr)).toBe(false);
         end)
 
         test("Size Of", function()
@@ -162,6 +172,25 @@ describe("FFI", function()
                 expect(ffi.call(add_defintion, c_add_func.ptr, 1, 2)).toBe(3);
                 expect(ffi.call(add_defintion, c_add_func.ptr, 2, 3)).toBe(5);
                 expect(ffi.call(add_defintion, c_add_func.ptr, -4, 4)).toBe(0);
+
+                do
+                    local a = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 1);
+                    local b = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 2);
+                    expect(ffi.call(add_defintion, c_add_func.ptr, a, b)).toBe(3);
+                end
+
+                do
+                    local a = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 2);
+                    local b = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 3);
+                    expect(ffi.call(add_defintion, c_add_func.ptr, a, b)).toBe(5);
+                end
+
+                do
+                    local a = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, -4);
+                    local b = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 4);
+                    expect(ffi.call(add_defintion, c_add_func.ptr, a, b)).toBe(0);
+                end
+                
             end)
 
             test("Lua<f64 add(f64 f64)>", function()
@@ -176,6 +205,24 @@ describe("FFI", function()
                 expect(ffi.call(add_defintion, c_add_func.ptr, 1.123, 2)).toBe(3.123);
                 expect(ffi.call(add_defintion, c_add_func.ptr, 2.25, 3.25)).toBe(5.5);
                 expect(ffi.call(add_defintion, c_add_func.ptr, -4.25, 4.25)).toBe(0);
+
+                do
+                    local a = testBufferOfValue(ffi.sizeOf(ffi.types.double), buffer.writef64, 1.123);
+                    local b = testBufferOfValue(ffi.sizeOf(ffi.types.double), buffer.writef64, 2);
+                    expect(ffi.call(add_defintion, c_add_func.ptr, a, b)).toBe(3.123);
+                end
+
+                do
+                    local a = testBufferOfValue(ffi.sizeOf(ffi.types.double), buffer.writef64, 2.25);
+                    local b = testBufferOfValue(ffi.sizeOf(ffi.types.double), buffer.writef64, 3.25);
+                    expect(ffi.call(add_defintion, c_add_func.ptr, a, b)).toBe(5.5);
+                end
+
+                do
+                    local a = testBufferOfValue(ffi.sizeOf(ffi.types.double), buffer.writef64, -4.25);
+                    local b = testBufferOfValue(ffi.sizeOf(ffi.types.double), buffer.writef64, 4.25);
+                    expect(ffi.call(add_defintion, c_add_func.ptr, a, b)).toBe(0);
+                end
             end)
 
         end)
@@ -217,6 +264,30 @@ describe("FFI", function()
                 expect(buffer.readi32(buf, Foo_struct:offset("x"))).toBe(2_147_483_647);
                 expect(buffer.readi32(buf, Foo_struct:offset("y"))).toBe(-2_147_483_648);
             end
+
+            do
+                local buf = Foo_struct:new {
+                    x = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 1),
+                    y = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 2),
+                };
+
+                expect(buffer.len(buf)).toBe(Foo_struct:size());
+    
+                expect(buffer.readi32(buf, Foo_struct:offset("x"))).toBe(1);
+                expect(buffer.readi32(buf, Foo_struct:offset("y"))).toBe(2);
+            end
+
+            do
+                local buf = Foo_struct:new {
+                    x = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 2_147_483_647),
+                    y = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, -2_147_483_648),
+                };
+
+                expect(buffer.len(buf)).toBe(Foo_struct:size());
+    
+                expect(buffer.readi32(buf, Foo_struct:offset("x"))).toBe(2_147_483_647);
+                expect(buffer.readi32(buf, Foo_struct:offset("y"))).toBe(-2_147_483_648);
+            end
         end)
 
         test("Float Structure", function()
@@ -247,6 +318,30 @@ describe("FFI", function()
                 local buf = Float_struct:new {
                     x = -3.4028234663852886e38,
                     y = -1.7976931348623158e308,
+                };
+
+                expect(buffer.len(buf)).toBe(Float_struct:size());
+    
+                expect(buffer.readf32(buf, Float_struct:offset("x"))).toBe(-3.4028234663852886e38);
+                expect(buffer.readf64(buf, Float_struct:offset("y"))).toBe(-1.7976931348623158e308);
+            end
+
+            do
+                local buf = Float_struct:new {
+                    x = testBufferOfValue(ffi.sizeOf(ffi.types.float), buffer.writef32, 3.4028234663852886e38),
+                    y = testBufferOfValue(ffi.sizeOf(ffi.types.double), buffer.writef64, 1.7976931348623158e308),
+                };
+
+                expect(buffer.len(buf)).toBe(Float_struct:size());
+    
+                expect(buffer.readf32(buf, Float_struct:offset("x"))).toBe(3.4028234663852886e38);
+                expect(buffer.readf64(buf, Float_struct:offset("y"))).toBe(1.7976931348623158e308);
+            end
+
+            do
+                local buf = Float_struct:new {
+                    x = testBufferOfValue(ffi.sizeOf(ffi.types.float), buffer.writef32, -3.4028234663852886e38),
+                    y = testBufferOfValue(ffi.sizeOf(ffi.types.double), buffer.writef64, -1.7976931348623158e308),
                 };
 
                 expect(buffer.len(buf)).toBe(Float_struct:size());
@@ -352,6 +447,9 @@ describe("FFI", function()
 
         test("Symbol<i32 add(i32 i32)>", function()
             expect(lib.add(1, 2)).toBe(3);
+            local a = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 2);
+            local b = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 4);
+            expect(lib.add(a, b)).toBe(6);
         end)
 
         test("Symbol<void add_ptr(*i32, i32)>", function()
@@ -365,6 +463,10 @@ describe("FFI", function()
             lib.add_ptr(ptr, 6);
 
             expect(buffer.readi32(out, 0)).toBe(7);
+
+            lib.add_ptr(ptr, testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 6));
+
+            expect(buffer.readi32(out, 0)).toBe(13);
         end)
         test("Symbol<void add_ptr_ptr(**i32, i32)>", function()
             local out = buffer.create(ffi.sizeOf(ffi.types.i32));
@@ -382,6 +484,11 @@ describe("FFI", function()
 
             expect(ffi.valueFromPtr(ptr, ffi.types.i32)).toBe(7);
             expect(buffer.readi32(out, 0)).toBe(7);
+
+            lib.add_ptr_ptr(ptr_ptr, testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 6));
+
+            expect(ffi.valueFromPtr(ptr, ffi.types.i32)).toBe(13);
+            expect(buffer.readi32(out, 0)).toBe(13);
         end)
 
         test("Symbol<void fire_callback(*void)>", function()
@@ -422,6 +529,15 @@ describe("FFI", function()
         test("Symbol<void check_string(const char*)>", function()
             expect(lib.check_string("hello")).toBe(1);
             expect(lib.check_string("Hello")).toBe(0);
+
+            do
+                local buf = buffer.fromstring("hello\0");
+                expect(lib.check_string(ffi.intFromPtr(buffer.create(ffi.sizeOf(ffi.types.pointer)), buf))).toBe(1);
+            end
+            do
+                local buf_2 = buffer.fromstring("Hello\0");
+                expect(lib.check_string(ffi.intFromPtr(buffer.create(ffi.sizeOf(ffi.types.pointer)), buf_2))).toBe(0);
+            end
         end)
 
         test("Symbol<void check_struct(Foo)>", function()
@@ -438,6 +554,24 @@ describe("FFI", function()
                 local buf = foo_struct:new {
                     x = 2,
                     y = 2,
+                };
+    
+                expect(lib.check_struct(buf)).toBe(0);
+            end
+
+            do
+                local buf = foo_struct:new {
+                    x = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 1),
+                    y = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 2),
+                };
+
+                expect(lib.check_struct(buf)).toBe(1);
+            end
+
+            do
+                local buf = foo_struct:new {
+                    x = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 2),
+                    y = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 2),
                 };
     
                 expect(lib.check_struct(buf)).toBe(0);
