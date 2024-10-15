@@ -16,7 +16,6 @@ Zune is a <a href="https://luau.org/">Luau</a> runtime built with Zig, inspired 
 - **Comprehensive API**: Includes fully featured APIs for filesystem operations, networking, and standard I/O.
 - **Rich Standard Library**: A rich standard library with utilities for basic needs, reducing the need for external dependencies.
 - **Cross-Platform Compatibility**: Fully compatible with **Linux**, **macOS**, and **Windows**, ensuring broad usability across different operating systems.
-- **Static Executable/Minimal Dependency**: A single statically linked executable for linux, or minimal dependency for macos and windows, ensures easy distribution and installation, without the need of many dependencies.
 - **Inspired by Lune**: Inspiration from Lune, providing a familiar environment for developers who have used Lune before.
 
 ## Installation

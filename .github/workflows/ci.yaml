@@ -32,7 +32,7 @@ jobs:
         include:
           - os: ubuntu-latest
             name: Linux x86_64
-            target: x86_64-linux
+            target: x86_64-linux-gnu
           - os: windows-latest
             name: Windows x86_64
             target: x86_64-windows

@@ -66,6 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated `luau` to `0.647`.
 - Backend formatted print/warn can now call/read `__tostring` metamethods on userdata.
 - Scheduler consumes less CPU.
+- Zune for linux build now targets `gnu` instead of `musl`, riscv64 will stay as `musl`.
 
 ### Fixed
 - Fixed `error.TlsBadRecordMac` error with websockets in `@zcore/net` when using `tls`.

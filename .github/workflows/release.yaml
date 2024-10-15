@@ -34,10 +34,10 @@ jobs:
       matrix:
         include:
           - name: Linux x86_64
-            target: x86_64-linux
+            target: x86_64-linux-gnu
             artifact: zune-${{ needs.prep.outputs.version }}-linux-x86_64
           - name: Linux Arm64
-            target: aarch64-linux
+            target: aarch64-linux-gnu
             artifact: zune-${{ needs.prep.outputs.version }}-linux-aarch64
           - name: Linux RISCV64
             target: riscv64-linux
