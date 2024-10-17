@@ -611,7 +611,6 @@ fn load_ffi_args(
             if (buf.len != ffi_func.argTypes[i].*.size)
                 return error.InvalidStructSize;
             const mem = try allocator.dupe(u8, buf);
-            errdefer allocator.free(mem);
             args[i] = @alignCast(@ptrCast(mem.ptr));
         }
         allocatedLen.* += 1;
@@ -938,8 +937,8 @@ fn ffi_closure(L: *Luau) !i32 {
                         },
                     },
                     .structType => |t| {
-                        const bytes: *[*]u8 = @alignCast(@ptrCast(ffi_args[i]));
-                        subthread.pushBuffer(bytes.*[0..t.getSize()]) catch |err| std.debug.panic("Failed: {}", .{err});
+                        const bytes: [*]u8 = @as([*]u8, @alignCast(@ptrCast(ffi_args[i])));
+                        subthread.pushBuffer(bytes[0..t.getSize()]) catch |err| std.debug.panic("Failed: {}", .{err});
                     },
                 }
             }
@@ -1100,7 +1099,7 @@ fn ffi_closure(L: *Luau) !i32 {
                             const buf = subthread.toBuffer(-1) catch unreachable;
                             if (buf.len != t.getSize())
                                 return std.debug.panic("Invalid return type (expected buffer of size {d} for struct)", .{t.getSize()});
-                            @memcpy(@as(*[*]u8, @ptrCast(@alignCast(ret_ptr))).*, buf);
+                            @memcpy(@as([*]u8, @ptrCast(@alignCast(ret_ptr))), buf);
                         },
                     }
                 }

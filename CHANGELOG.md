@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Fixed `@zcore/ffi` closures getting garbage collected.
 - Fixed `zune.toml` crashing when integer values are negative.
+- Fixed `@zcore/ffi` closures reading structs and returning structs crashing.
 
 ## `0.4.2` - October 14, 2024
 
