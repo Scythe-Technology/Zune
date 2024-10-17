@@ -48,9 +48,24 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         return;
     }
 
-    var L = try Luau.init(&allocator);
+    var gpa = std.heap.GeneralPurposeAllocator(.{
+        .safety = true,
+        .stack_trace_frames = 8,
+    }){};
+    defer {
+        const result = gpa.deinit();
+        if (result == .leak) {
+            std.debug.print(" \x1b[1;31m[Memory leaks detected]\x1b[0m\n", .{});
+            std.debug.print(" This is likely a zune bug, report it on the zune repository.\n", .{});
+            std.debug.print(" \x1b[4mhttps://github.com/Scythe-Technology/Zune\x1b[0m\n\n", .{});
+        }
+    }
+
+    const gpa_allocator = gpa.allocator();
+
+    var L = try Luau.init(&gpa_allocator);
     defer L.deinit();
-    var scheduler = Scheduler.init(allocator);
+    var scheduler = Scheduler.init(gpa_allocator);
     defer scheduler.deinit();
 
     try Scheduler.SCHEDULERS.append(&scheduler);
@@ -64,11 +79,11 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     ML.sandboxThread();
 
-    const cwdDirPath = dir.realpathAlloc(allocator, ".") catch return error.FileNotFound;
-    defer allocator.free(cwdDirPath);
+    const cwdDirPath = dir.realpathAlloc(gpa_allocator, ".") catch return error.FileNotFound;
+    defer gpa_allocator.free(cwdDirPath);
 
-    const moduleRelativeName = try std.fs.path.relative(allocator, cwdDirPath, fileName);
-    defer allocator.free(moduleRelativeName);
+    const moduleRelativeName = try std.fs.path.relative(gpa_allocator, cwdDirPath, fileName);
+    defer gpa_allocator.free(moduleRelativeName);
 
     Engine.setLuaFileContext(ML, .{
         .path = fileName,
@@ -76,8 +91,8 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         .source = fileContent,
     });
 
-    const moduleRelativeNameZ = try allocator.dupeZ(u8, moduleRelativeName);
-    defer allocator.free(moduleRelativeNameZ);
+    const moduleRelativeNameZ = try gpa_allocator.dupeZ(u8, moduleRelativeName);
+    defer gpa_allocator.free(moduleRelativeNameZ);
 
     Engine.loadModule(ML, moduleRelativeNameZ, fileContent, null) catch |err| switch (err) {
         error.Syntax => {

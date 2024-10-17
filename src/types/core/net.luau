@@ -124,7 +124,7 @@ network.serve = (nil :: any) :: (options: ServeOptions) -> (boolean, string | Se
 
     Optional options, defaults to GET request.
 
-    *TLS is supported*.
+    *TLS is supported.*
 
     @param host The host to make the request to.
     @param options The options for the request.
@@ -136,7 +136,7 @@ network.request = (nil :: any) :: (host: string, options: RequestOptions?) -> (b
 --[[
     Creates a websocket client.
 
-    *TLS is partially supported.*
+    *TLS is supported.*
 
     @param host The host to connect to.
     @param protocols The protocols to use.

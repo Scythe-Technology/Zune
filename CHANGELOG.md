@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Added buffer support as arguments & closure returns for `@zcore/ffi`.
+- Added memory leak detection for `zune test ...` command
 
 ### Fixed
 - Fixed `@zcore/ffi` closures getting garbage collected.
