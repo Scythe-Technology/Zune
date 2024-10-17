@@ -46,7 +46,7 @@ ffi.sizeOf = (nil :: any) :: (type: Structure | number) -> number;
 ffi.alignOf = (nil :: any) :: (type: Structure | number) -> number;
 ffi.eqlPtr = (nil :: any) :: (a: buffer, b: buffer?) -> boolean;
 
-ffi.intFromPtr = (nil :: any) :: (ptr: buffer, src: buffer) -> buffer;
+ffi.bufferToPtr = (nil :: any) :: (src: buffer) -> buffer;
 ffi.valueFromPtr = (nil :: any) :: (ptr: buffer, type: Structure | number) -> any;
 ffi.readFromPtr = (nil :: any) :: (srcPtr: buffer, srcOffset: number, dest: buffer, destOffset: number, size: number) -> ();
 ffi.spanFromPtr = (nil :: any) :: (srcPtr: buffer, srcOffset: number) -> buffer;

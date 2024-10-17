@@ -1233,18 +1233,12 @@ fn ffi_call(L: *Luau) !i32 {
     return 1;
 }
 
-fn ffi_intFromPtr(L: *Luau) i32 {
-    const dest = L.checkBuffer(1);
-    if (@sizeOf(usize) != dest.len)
-        L.raiseErrorStr("Invalid buffer size", .{});
+fn ffi_bufferToPtr(L: *Luau) !i32 {
+    const src = L.checkBuffer(1);
 
-    const source = L.checkBuffer(2);
+    const bytes: [@sizeOf(usize)]u8 = @bitCast(@intFromPtr(src.ptr));
 
-    const bytes: [@sizeOf(usize)]u8 = @bitCast(@intFromPtr(source.ptr));
-
-    @memcpy(dest, bytes[0..@sizeOf(usize)]);
-
-    L.pushValue(1);
+    try L.pushBuffer(bytes[0..@sizeOf(usize)]);
 
     return 1;
 }
@@ -1426,7 +1420,7 @@ pub fn loadLib(L: *Luau) void {
         L.setFieldBoolean(-1, "supported", false);
     }
 
-    L.setFieldFn(-1, "intFromPtr", ffi_intFromPtr);
+    L.setFieldFn(-1, "bufferToPtr", ffi_bufferToPtr);
     L.setFieldFn(-1, "writeIntoPtr", ffi_writeIntoPtr);
     L.setFieldFn(-1, "readFromPtr", ffi_readFromPtr);
     L.setFieldFn(-1, "spanFromPtr", ffi_spanFromPtr);

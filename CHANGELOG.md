@@ -9,10 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Added buffer support as arguments & closure returns for `@zcore/ffi`.
-- Added memory leak detection for `zune test ...` command
+- Added memory leak detection for `zune test ...` command.
+- Added buffer support to the formatter, now it can display the contents of a buffer as hex with a configurable display limit.
+
+### Changed
+- Formatter now displays `__tostring` metamethods as plain text, instead of as strings.
+- `intFromPtr` in `@zcore/ffi` has been changed to `bufferToPtr` and only takes in one parameter of type `buffer`.
 
 ### Fixed
 - Fixed `@zcore/ffi` closures getting garbage collected.
+- Fixed `zune.toml` crashing when integer values are negative.
 
 ## `0.4.2` - October 14, 2024
 

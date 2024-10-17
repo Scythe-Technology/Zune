@@ -12,6 +12,7 @@ pub var MAX_DEPTH: u8 = 4;
 pub var USE_COLOR: bool = true;
 pub var SHOW_TABLE_ADDRESS: bool = true;
 pub var SHOW_RECURSIVE_TABLE: bool = false;
+pub var DISPLAY_BUFFER_CONTENTS_MAX: usize = 48;
 
 fn finishRequire(L: *Luau) i32 {
     if (L.isString(-1)) L.raiseError();
@@ -33,7 +34,7 @@ fn fmt_tostring(allocator: std.mem.Allocator, L: *Luau, idx: i32) !?[]const u8 {
     return null;
 }
 
-fn fmt_write_metamethod__tostring(L: *Luau, writer: anytype, idx: i32, force_plain: bool) !bool {
+fn fmt_write_metamethod__tostring(L: *Luau, writer: anytype, idx: i32) !bool {
     L.pushValue(idx);
     defer L.pop(1); // drop: value
     if (L.getMetatable(if (idx < 0) idx - 1 else idx)) {
@@ -46,9 +47,7 @@ fn fmt_write_metamethod__tostring(L: *Luau, writer: anytype, idx: i32, force_pla
             }
             if (L.typeOf(-1) != .string) L.raiseErrorStr("'__tostring' must return a string", .{});
             const s = L.toString(-1) catch unreachable;
-            if (force_plain or Parser.isPlainText(s)) {
-                try writer.print("{s}", .{s});
-            } else try fmt_print_value(L, writer, -1, 0, false, null);
+            try writer.print("{s}", .{s});
             return true;
         }
     }
@@ -94,7 +93,7 @@ pub fn fmt_print_value(L: *Luau, writer: anytype, idx: i32, depth: usize, asKey:
                 }
             },
             .table => {
-                if (try fmt_write_metamethod__tostring(L, writer, -1, false))
+                if (try fmt_write_metamethod__tostring(L, writer, -1))
                     return;
                 if (asKey) {
                     const str = fmt_tostring(allocator, L, idx) catch "!ERR!";
@@ -184,8 +183,25 @@ pub fn fmt_print_value(L: *Luau, writer: anytype, idx: i32, depth: usize, asKey:
                 else
                     try writer.print("}}", .{});
             },
+            .buffer => |b| {
+                const ptr: usize = blk: {
+                    break :blk @intFromPtr(L.toPointer(idx) catch break :blk 0);
+                };
+                if (USE_COLOR)
+                    try writer.writeAll("\x1b[95m");
+                try writer.writeAll("<buffer ");
+                if (b.len > DISPLAY_BUFFER_CONTENTS_MAX) {
+                    try writer.print("0x{x} {X}", .{ ptr, b[0..DISPLAY_BUFFER_CONTENTS_MAX] });
+                    try writer.print(" ...{d} truncated", .{(b.len - DISPLAY_BUFFER_CONTENTS_MAX)});
+                } else {
+                    try writer.print("0x{x} {X}", .{ ptr, b });
+                }
+                try writer.writeAll(">");
+                if (USE_COLOR)
+                    try writer.writeAll("\x1b[0m");
+            },
             else => {
-                if (try fmt_write_metamethod__tostring(L, writer, -1, false))
+                if (try fmt_write_metamethod__tostring(L, writer, -1))
                     return;
                 const str = fmt_tostring(allocator, L, idx) catch "!ERR!";
                 if (str) |String| {
@@ -220,7 +236,7 @@ pub fn fmt_print(L: *Luau) !i32 {
             .nil => try writer.print("nil", .{}),
             .string => try writer.print("{s}", .{L.toString(idx) catch @panic("Failed Conversion")}),
             .function, .userdata, .light_userdata, .thread => |t| blk: {
-                if (try fmt_write_metamethod__tostring(L, writer, idx, true))
+                if (try fmt_write_metamethod__tostring(L, writer, idx))
                     break :blk;
                 const str = fmt_tostring(allocator, L, idx) catch "!ERR!";
                 if (str) |String| {

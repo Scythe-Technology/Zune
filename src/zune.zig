@@ -29,6 +29,7 @@ pub var CONFIGURATIONS = .{.format_max_depth};
 const VERSION = "Zune " ++ zune_info.version ++ "+" ++ std.fmt.comptimePrint("{d}.{d}", .{ luau.LUAU_VERSION.major, luau.LUAU_VERSION.minor });
 
 var EXPERIMENTAL_FFI = false;
+
 pub fn loadConfiguration() void {
     const allocator = DEFAULT_ALLOCATOR;
     const config_content = std.fs.cwd().readFileAlloc(allocator, "zune.toml", std.math.maxInt(usize)) catch |err| switch (err) {
@@ -52,13 +53,15 @@ pub fn loadConfiguration() void {
     if (toml.checkOptionTable(zconfig, "resolvers")) |resolvers_config| {
         if (toml.checkOptionTable(resolvers_config, "formatter")) |fmt_config| {
             if (toml.checkOptionInteger(fmt_config, "maxDepth")) |depth|
-                resolvers_fmt.MAX_DEPTH = @truncate(@as(u64, @intCast(depth)));
+                resolvers_fmt.MAX_DEPTH = @truncate(@as(u64, @bitCast(depth)));
             if (toml.checkOptionBool(fmt_config, "useColor")) |enabled|
                 resolvers_fmt.USE_COLOR = enabled;
             if (toml.checkOptionBool(fmt_config, "showTableAddress")) |enabled|
                 resolvers_fmt.SHOW_TABLE_ADDRESS = enabled;
             if (toml.checkOptionBool(fmt_config, "showRecursiveTable")) |enabled|
                 resolvers_fmt.SHOW_RECURSIVE_TABLE = enabled;
+            if (toml.checkOptionInteger(fmt_config, "displayBufferContentsMax")) |max|
+                resolvers_fmt.DISPLAY_BUFFER_CONTENTS_MAX = @bitCast(max);
         }
 
         if (toml.checkOptionTable(resolvers_config, "require")) |require_config| {
@@ -91,9 +94,9 @@ pub fn loadConfiguration() void {
 
     if (toml.checkOptionTable(zconfig, "compiling")) |compiling_config| {
         if (toml.checkOptionInteger(compiling_config, "debugLevel")) |debug_level|
-            runtime_engine.DEBUG_LEVEL = @max(0, @min(2, @as(u2, @truncate(@as(u64, @intCast(debug_level))))));
+            runtime_engine.DEBUG_LEVEL = @max(0, @min(2, @as(u2, @truncate(@as(u64, @bitCast(debug_level))))));
         if (toml.checkOptionInteger(compiling_config, "optimizationLevel")) |opt_level|
-            runtime_engine.OPTIMIZATION_LEVEL = @max(0, @min(2, @as(u2, @truncate(@as(u64, @intCast(opt_level))))));
+            runtime_engine.OPTIMIZATION_LEVEL = @max(0, @min(2, @as(u2, @truncate(@as(u64, @bitCast(opt_level))))));
         if (toml.checkOptionBool(compiling_config, "nativeCodeGen")) |enabled|
             runtime_engine.CODEGEN = enabled;
     }

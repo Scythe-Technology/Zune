@@ -16,7 +16,7 @@ expect(ffi).toBe(
         sizeOf = expect.type("function"),
         alignOf = expect.type("function"),
         eqlPtr = expect.type("function"),
-        intFromPtr = expect.type("function"),
+        bufferToPtr = expect.type("function"),
         valueFromPtr = expect.type("function"),
         writeIntoPtr = expect.type("function"),
         readFromPtr = expect.type("function"),
@@ -88,7 +88,7 @@ describe("FFI", function()
         test("Span From Ptr", function()
             local src = buffer.fromstring("terminated string\0");
 
-            local ptr = ffi.intFromPtr(buffer.create(ffi.sizeOf(ffi.types.pointer)), src);
+            local ptr = ffi.bufferToPtr(src);
 
             local buf = ffi.spanFromPtr(ptr, 0);
             expect(buffer.len(buf)).toBe(buffer.len(src) - 1);
@@ -99,7 +99,7 @@ describe("FFI", function()
             local src = buffer.create(ffi.sizeOf(ffi.types.i32));
             buffer.writei32(src, 0, 42);
 
-            local ptr = ffi.intFromPtr(buffer.create(ffi.sizeOf(ffi.types.pointer)), src);
+            local ptr = ffi.bufferToPtr(src);
 
             local dest = buffer.create(ffi.sizeOf(ffi.types.i32));
             ffi.readFromPtr(ptr, 0, dest, 0, ffi.sizeOf(ffi.types.i32));
@@ -112,7 +112,7 @@ describe("FFI", function()
             buffer.writei32(src, 0, 42);
 
             local out = buffer.create(ffi.sizeOf(ffi.types.i32));
-            local ptr = ffi.intFromPtr(buffer.create(ffi.sizeOf(ffi.types.pointer)), out);
+            local ptr = ffi.bufferToPtr(out);
 
             ffi.writeIntoPtr(ptr, 0, src, 0, ffi.sizeOf(ffi.types.i32));
 
@@ -123,7 +123,7 @@ describe("FFI", function()
             local src = buffer.create(ffi.sizeOf(ffi.types.i32));
             buffer.writei32(src, 0, 42);
 
-            local ptr = ffi.intFromPtr(buffer.create(ffi.sizeOf(ffi.types.pointer)), src);
+            local ptr = ffi.bufferToPtr(src);
 
             expect(ffi.valueFromPtr(ptr, ffi.types.i32)).toBe(42);
         end)
@@ -132,8 +132,8 @@ describe("FFI", function()
             local src = buffer.create(ffi.sizeOf(ffi.types.i32));
             buffer.writei32(src, 0, 42);
 
-            local ptr = ffi.intFromPtr(buffer.create(ffi.sizeOf(ffi.types.pointer)), src);
-            local ptr2 = ffi.intFromPtr(buffer.create(ffi.sizeOf(ffi.types.pointer)), src);
+            local ptr = ffi.bufferToPtr(src);
+            local ptr2 = ffi.bufferToPtr(src);
 
             expect(ffi.eqlPtr(ptr, ptr2)).toBe(true);
 
@@ -154,7 +154,7 @@ describe("FFI", function()
             local src = buffer.create(ffi.sizeOf(ffi.types.i32));
             buffer.writei32(src, 0, 42);
 
-            local ptr = ffi.intFromPtr(buffer.create(ffi.sizeOf(ffi.types.pointer)), src);
+            local ptr = ffi.bufferToPtr(src);
 
             expect(ffi.valueFromPtr(ptr, ffi.types.i32)).toBe(42);
         end)
@@ -454,8 +454,7 @@ describe("FFI", function()
 
         test("Symbol<void add_ptr(*i32, i32)>", function()
             local out = buffer.create(ffi.sizeOf(ffi.types.i32));
-            local ptr = buffer.create(ffi.sizeOf(ffi.types.pointer));
-            ffi.intFromPtr(ptr, out);
+            local ptr = ffi.bufferToPtr(out);
             lib.add_ptr(ptr, 1);
             
             expect(buffer.readi32(out, 0)).toBe(1);
@@ -471,9 +470,8 @@ describe("FFI", function()
         test("Symbol<void add_ptr_ptr(**i32, i32)>", function()
             local out = buffer.create(ffi.sizeOf(ffi.types.i32));
 
-            local ptr = buffer.create(ffi.sizeOf(ffi.types.pointer));
-            ffi.intFromPtr(ptr, out);
-            local ptr_ptr = ffi.intFromPtr(buffer.create(ffi.sizeOf(ffi.types.pointer)), ptr);
+            local ptr = ffi.bufferToPtr(out);
+            local ptr_ptr = ffi.bufferToPtr(ptr);
 
             lib.add_ptr_ptr(ptr_ptr, 1);
             
@@ -532,11 +530,11 @@ describe("FFI", function()
 
             do
                 local buf = buffer.fromstring("hello\0");
-                expect(lib.check_string(ffi.intFromPtr(buffer.create(ffi.sizeOf(ffi.types.pointer)), buf))).toBe(1);
+                expect(lib.check_string(ffi.bufferToPtr(buf))).toBe(1);
             end
             do
                 local buf_2 = buffer.fromstring("Hello\0");
-                expect(lib.check_string(ffi.intFromPtr(buffer.create(ffi.sizeOf(ffi.types.pointer)), buf_2))).toBe(0);
+                expect(lib.check_string(ffi.bufferToPtr(buf_2))).toBe(0);
             end
         end)
 
@@ -587,7 +585,7 @@ describe("FFI", function()
             end).toThrow("NullPtr");
 
             local dummy_value = buffer.create(0);
-            local ptr = ffi.intFromPtr(buffer.create(ffi.sizeOf(ffi.types.pointer)), dummy_value);
+            local ptr = ffi.bufferToPtr(dummy_value);
             expect(lib.check_nullptr(ptr)).toBe(0);
             expect(lib.check_nullptr("")).toBe(0);
         end)

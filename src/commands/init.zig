@@ -22,6 +22,7 @@ const INIT_CONFIG_FILE =
     \\useColor=true
     \\showTableAddress=true
     \\showRecursiveTable=false
+    \\displayBufferContentsMax=48
     \\
     \\# Compiling settings
     \\#  This affects all required files and the main file.
