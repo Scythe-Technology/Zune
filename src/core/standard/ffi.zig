@@ -28,8 +28,6 @@ const LuaHandle = struct {
     open: bool,
     declared: std.StringArrayHashMap(ffi.CallableFunction),
 
-    pub const META = "ffi_dynlib_handle";
-
     pub fn call_ffi(L: *Luau) !i32 {
         const index_idx = Luau.upvalueIndex(1);
         const ptr_idx = Luau.upvalueIndex(2);
@@ -74,20 +72,6 @@ const LuaHandle = struct {
             },
             .structType => try L.pushBuffer(ret),
         }
-
-        return 1;
-    }
-
-    pub fn __index(L: *Luau) i32 {
-        L.checkType(1, .userdata);
-        const index = L.checkString(2);
-        const ptr = L.toUserdata(LuaHandle, 1) catch L.raiseErrorStr("Invalid handle", .{});
-
-        _ = ptr.declared.get(index) orelse L.raiseErrorStr("Unknown ffi member: %s\n", .{index.ptr});
-
-        L.pushValue(2);
-        L.pushValue(1);
-        L.pushClosure(luau.EFntoZigFn(call_ffi), "ffi_func", 2);
 
         return 1;
     }
@@ -807,11 +791,6 @@ fn ffi_dlopen(L: *Luau) !i32 {
 
     const ptr = L.newUserdataDtor(LuaHandle, LuaHandle.__dtor);
 
-    if (L.getMetatableRegistry(LuaHandle.META) == .table)
-        L.setMetatable(-2)
-    else
-        std.debug.panic("InternalError (FFI Metatable not initialized)", .{});
-
     var ffi_func_map = std.StringArrayHashMap(ffi.CallableFunction).init(allocator);
 
     ptr.* = .{ .lib = undefined, .open = false, .declared = ffi_func_map };
@@ -857,6 +836,24 @@ fn ffi_dlopen(L: *Luau) !i32 {
     }
 
     ptr.declared = ffi_func_map;
+
+    L.newTable();
+
+    L.newTable();
+    var iter = ffi_func_map.iterator();
+    while (iter.next()) |entry| {
+        L.pushLString(entry.key_ptr.*);
+        L.pushValue(-1);
+        L.pushValue(-5);
+        L.pushClosure(luau.EFntoZigFn(LuaHandle.call_ffi), "ffi_func", 2);
+        L.setTable(-3);
+    }
+    L.setField(-2, luau.Metamethods.index);
+
+    L.setFieldFn(-1, luau.Metamethods.namecall, LuaHandle.__namecall);
+    L.setFieldString(-1, luau.Metamethods.metatable, "Metatable is locked");
+
+    L.setMetatable(-2);
 
     return 1;
 }
@@ -1385,16 +1382,6 @@ fn is_ffi_struct(L: *Luau, idx: i32) bool {
 }
 
 pub fn loadLib(L: *Luau) void {
-    {
-        L.newMetatable(LuaHandle.META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
-
-        L.setFieldFn(-1, luau.Metamethods.index, LuaHandle.__index); // metatable.__index
-        L.setFieldFn(-1, luau.Metamethods.namecall, LuaHandle.__namecall); // metatable.__namecall
-
-        L.setFieldString(-1, luau.Metamethods.metatable, "Metatable is locked");
-        L.pop(1);
-    }
-
     {
         L.newMetatable(LuaStructType.META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
 

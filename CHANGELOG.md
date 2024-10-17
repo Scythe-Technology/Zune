@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Formatter now displays `__tostring` metamethods as plain text, instead of as strings.
 - `intFromPtr` in `@zcore/ffi` has been changed to `bufferToPtr` and only takes in one parameter of type `buffer`.
+- indexing a ffi function should be more efficient.
 
 ### Fixed
 - Fixed `@zcore/ffi` closures getting garbage collected.
