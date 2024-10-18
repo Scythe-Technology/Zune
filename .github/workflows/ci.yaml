@@ -70,4 +70,4 @@ jobs:
 
     - name: Run tests
       continue-on-error: ${{ matrix.qemu-platform != '' }}
-      run: zig build test -Dtarget=${{ matrix.target }}${{ matrix.qemu-platform != '' && ' -fqemu' || '' }}
+      run: zig build test -Dtarget=${{ matrix.target }}${{ matrix.qemu-platform != '' && ' -fqemu' || '' }} --verbose
