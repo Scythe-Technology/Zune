@@ -7,6 +7,7 @@ const Scheduler = @import("../runtime/scheduler.zig");
 const Parser = @import("../utils/parser.zig");
 
 const luaHelper = @import("../utils/luahelper.zig");
+const sysfd = @import("../utils/sysfd.zig");
 
 const Luau = luau.Luau;
 
@@ -112,6 +113,7 @@ fn internal_process_term(L: *Luau, term: process.Child.Term) void {
 const ProcessChildHandle = struct {
     options: ProcessChildOptions,
     child: process.Child,
+    dead: bool = false,
 };
 
 const ProcessChildOptions = struct {
@@ -215,66 +217,197 @@ const ProcessChildOptions = struct {
         options.deinit();
     }
 
-    pub fn __namecall(L: *Luau) i32 {
+    pub fn __index(L: *Luau) i32 {
         L.checkType(1, .userdata);
-        var handlePtr = L.toUserdata(ProcessChildHandle, 1) catch unreachable;
+        const handlePtr = L.toUserdata(ProcessChildHandle, 1) catch unreachable;
+        const index = L.checkString(2);
+
+        if (std.mem.eql(u8, index, "dead")) {
+            L.pushBoolean(handlePtr.dead);
+            return 1;
+        } else outputError(L, "Unknown index: %s\n", .{index.ptr});
+    }
+
+    pub fn __namecall(L: *Luau, scheduler: *Scheduler) !i32 {
+        L.checkType(1, .userdata);
+        const handlePtr = L.toUserdata(ProcessChildHandle, 1) catch unreachable;
         var childProcess = &handlePtr.child;
 
         const namecall = L.nameCallAtom() catch return 0;
 
         // TODO: prob should switch to static string map
         if (std.mem.eql(u8, namecall, "kill")) {
-            const term = childProcess.kill() catch |err| {
-                std.debug.print("Error: {}\n", .{err});
-                outputError(L, "Error killing process", .{});
-            };
+            const term = try childProcess.kill();
             L.newTable();
             internal_process_term(L, term);
+            handlePtr.dead = true;
             return 1;
         } else if (std.mem.eql(u8, namecall, "wait")) {
-            const term = childProcess.wait() catch |err| {
-                std.debug.print("Error: {}\n", .{err});
-                outputError(L, "Error waiting for process", .{});
-            };
+            const term = try childProcess.wait();
             L.newTable();
             internal_process_term(L, term);
+            handlePtr.dead = true;
             return 1;
         } else if (std.mem.eql(u8, namecall, "readOut")) {
             if (childProcess.stdout == null)
                 return outputError(L, "InternalError (No stdout stream found, did you spawn?)", .{});
             if (childProcess.stdout_behavior != .Pipe)
                 return outputError(L, "InternalError (stdout stream is not a pipe)", .{});
-            const allocator = L.allocator();
             const maxBytes = L.optUnsigned(2) orelse luaHelper.MAX_LUAU_SIZE;
 
-            var buffer = allocator.alloc(u8, maxBytes) catch outputError(L, "OutOfMemory", .{});
+            var fds = [1]sysfd.context.pollfd{.{ .events = sysfd.context.POLLIN, .fd = childProcess.stdout.?.handle, .revents = 0 }};
+
+            const poll = try sysfd.context.poll(&fds, 0);
+            if (poll < 0)
+                std.debug.panic("InternalError (Bad Poll)", .{});
+            if (poll == 0)
+                return 0;
+
+            const allocator = L.allocator();
+
+            var buffer = try allocator.alloc(u8, maxBytes);
             defer allocator.free(buffer);
 
-            const read_bytes = childProcess.stdout.?.read(buffer) catch |err| {
-                std.debug.print("Error: {}\n", .{err});
-                allocator.free(buffer);
-                outputError(L, "Error reading process output", .{});
-            };
-            L.pushLString(buffer[0..read_bytes]);
+            const amount = try childProcess.stdout.?.read(buffer);
+            if (amount == 0 and maxBytes != 0 and !handlePtr.dead) {
+                handlePtr.dead = true;
+                return 0;
+            }
+            L.pushLString(buffer[0..amount]);
+            return 1;
+        } else if (std.mem.eql(u8, namecall, "readOutAsync")) {
+            if (childProcess.stdout == null)
+                return outputError(L, "InternalError (No stdout stream found, did you spawn?)", .{});
+            if (childProcess.stdout_behavior != .Pipe)
+                return outputError(L, "InternalError (stdout stream is not a pipe)", .{});
+
+            var fds = [1]sysfd.context.pollfd{.{ .events = sysfd.context.POLLIN, .fd = childProcess.stdout.?.handle, .revents = 0 }};
+            const maxBytes = L.optUnsigned(2) orelse luaHelper.MAX_LUAU_SIZE;
+
+            const poll = try sysfd.context.poll(&fds, 0);
+            if (poll < 0)
+                std.debug.panic("InternalError (Bad Poll)", .{});
+            if (poll == 0) {
+                const TaskContext = struct { sysfd.context.pollfd, std.fs.File, usize };
+                return try scheduler.addSimpleTask(TaskContext, .{
+                    .{ .events = sysfd.context.POLLIN, .fd = childProcess.stdout.?.handle, .revents = 0 },
+                    childProcess.stdout.?,
+                    maxBytes,
+                }, L, struct {
+                    fn inner(ctx: *TaskContext, l: *Luau, _: *Scheduler) !i32 {
+                        const fd, const file, const max_bytes = ctx.*;
+                        var fds_poll = [1]sysfd.context.pollfd{fd};
+                        const async_poll = try sysfd.context.poll(&fds_poll, 1);
+                        if (async_poll < 0)
+                            std.debug.panic("InternalError (Bad Poll)", .{});
+                        if (async_poll == 0)
+                            return -1;
+
+                        const allocator = l.allocator();
+
+                        var buffer = try allocator.alloc(u8, max_bytes);
+                        defer allocator.free(buffer);
+
+                        const amount = try file.read(buffer);
+
+                        l.pushLString(buffer[0..amount]);
+
+                        return 1;
+                    }
+                }.inner);
+            }
+
+            const allocator = L.allocator();
+
+            var buffer = try allocator.alloc(u8, maxBytes);
+            defer allocator.free(buffer);
+
+            const amount = try childProcess.stdout.?.read(buffer);
+            if (amount == 0 and !handlePtr.dead) {
+                handlePtr.dead = true;
+                return 0;
+            }
+            L.pushLString(buffer[0..amount]);
             return 1;
         } else if (std.mem.eql(u8, namecall, "readErr")) {
             if (childProcess.stderr == null)
                 return outputError(L, "InternalError (No stdout stream found, did you spawn?)", .{});
             if (childProcess.stderr_behavior != .Pipe)
                 return outputError(L, "InternalError (stderr stream is not a pipe)", .{});
-            const allocator = L.allocator();
             const maxBytes = L.optUnsigned(2) orelse luaHelper.MAX_LUAU_SIZE;
 
-            var buffer = allocator.alloc(u8, maxBytes) catch outputError(L, "OutOfMemory", .{});
+            const allocator = L.allocator();
+            var fds = [1]sysfd.context.pollfd{.{ .events = sysfd.context.POLLIN, .fd = childProcess.stderr.?.handle, .revents = 0 }};
+
+            const poll = try sysfd.context.poll(&fds, 0);
+            if (poll < 0)
+                std.debug.panic("InternalError (Bad Poll)", .{});
+            if (poll == 0)
+                return 0;
+
+            var buffer = try allocator.alloc(u8, maxBytes);
             defer allocator.free(buffer);
 
-            const read_bytes = childProcess.stderr.?.read(buffer) catch |err| {
-                std.debug.print("Error: {}\n", .{err});
-                allocator.free(buffer);
-                outputError(L, "Error reading process output", .{});
-            };
+            const amount = try childProcess.stderr.?.read(buffer);
+            if (amount == 0 and maxBytes != 0 and !handlePtr.dead) {
+                handlePtr.dead = true;
+                return 0;
+            }
+            L.pushLString(buffer[0..amount]);
+            return 1;
+        } else if (std.mem.eql(u8, namecall, "readErrAsync")) {
+            if (childProcess.stdout == null)
+                return outputError(L, "InternalError (No stdout stream found, did you spawn?)", .{});
+            if (childProcess.stdout_behavior != .Pipe)
+                return outputError(L, "InternalError (stdout stream is not a pipe)", .{});
 
-            L.pushLString(buffer[0..read_bytes]);
+            var fds = [1]sysfd.context.pollfd{.{ .events = sysfd.context.POLLIN, .fd = childProcess.stdout.?.handle, .revents = 0 }};
+            const maxBytes = L.optUnsigned(2) orelse luaHelper.MAX_LUAU_SIZE;
+
+            const poll = try sysfd.context.poll(&fds, 0);
+            if (poll < 0)
+                std.debug.panic("InternalError (Bad Poll)", .{});
+            if (poll == 0) {
+                const TaskContext = struct { sysfd.context.pollfd, std.fs.File, usize };
+                return try scheduler.addSimpleTask(TaskContext, .{
+                    .{ .events = sysfd.context.POLLIN, .fd = childProcess.stdout.?.handle, .revents = 0 },
+                    childProcess.stdout.?,
+                    maxBytes,
+                }, L, struct {
+                    fn inner(ctx: *TaskContext, l: *Luau, _: *Scheduler) !i32 {
+                        const fd, const file, const max_bytes = ctx.*;
+                        var fds_poll = [1]sysfd.context.pollfd{fd};
+                        const async_poll = try sysfd.context.poll(&fds_poll, 1);
+                        if (async_poll < 0)
+                            std.debug.panic("InternalError (Bad Poll)", .{});
+                        if (async_poll == 0)
+                            return -1;
+
+                        const allocator = l.allocator();
+
+                        var buffer = try allocator.alloc(u8, max_bytes);
+                        defer allocator.free(buffer);
+
+                        const amount = try file.read(buffer);
+
+                        l.pushLString(buffer[0..amount]);
+
+                        return 1;
+                    }
+                }.inner);
+            }
+
+            const allocator = L.allocator();
+
+            var buffer = try allocator.alloc(u8, maxBytes);
+            defer allocator.free(buffer);
+
+            const amount = try childProcess.stdout.?.read(buffer);
+            if (amount == 0 and maxBytes != 0 and !handlePtr.dead) {
+                handlePtr.dead = true;
+                return 0;
+            }
+            L.pushLString(buffer[0..amount]);
             return 1;
         } else if (std.mem.eql(u8, namecall, "writeIn")) {
             if (childProcess.stdin == null)
@@ -283,19 +416,14 @@ const ProcessChildOptions = struct {
                 return outputError(L, "InternalError (stderr stream is not a pipe)", .{});
             const buffer = L.checkString(2);
 
-            childProcess.stdin.?.writeAll(buffer) catch |err| {
-                std.debug.print("Error: {}\n", .{err});
-                outputError(L, "Error writing to process input", .{});
-            };
+            try childProcess.stdin.?.writeAll(buffer);
             return 1;
-        }
-        outputError(L, "Unknown method: %s\n", .{namecall.ptr});
-        return 0;
+        } else outputError(L, "Unknown method: %s\n", .{namecall.ptr});
     }
 
     fn deinit(self: *ProcessChildOptions) void {
-        if (self.env) |env|
-            @constCast(&env).deinit();
+        if (self.env) |*env|
+            env.deinit();
         for (self.tagged.items) |mem|
             self.tagged.allocator.free(mem);
         self.argArray.deinit();
@@ -592,7 +720,8 @@ pub fn loadLib(L: *Luau, args: []const []const u8) !void {
         L.pushValue(-1);
         L.setField(-2, luau.Metamethods.index); // metatable.__index = metatable
 
-        L.setFieldFn(-1, luau.Metamethods.namecall, ProcessChildOptions.__namecall); // metatable.__namecall
+        L.setFieldFn(-1, luau.Metamethods.index, ProcessChildOptions.__index); // metatable.__index
+        L.setFieldFn(-1, luau.Metamethods.namecall, Scheduler.toSchedulerEFn(ProcessChildOptions.__namecall)); // metatable.__namecall
 
         L.setFieldString(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.pop(1);

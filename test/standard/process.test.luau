@@ -303,10 +303,12 @@ describe("ChildProcess", function()
 			expect(success).toBeTruthy();
 			assert(type(result) == "userdata");
 			result:writeIn("Hello World\n");
-			expect(result:readOut(5)).toBe("Hello");
-			expect(result:readOut()).toBe(" World\n");
+			expect(result:readOutAsync(5)).toBe("Hello");
+			expect(result:readOutAsync()).toBe(" World\n");
 
+			expect(result.dead).toBeFalsy();
 			local status = result:kill();
+			expect(result.dead).toBeTruthy();
 			expect(status).toBe(expect.any("table"));
 			expect(status).toBe(expect.similar({
 				ok = false,

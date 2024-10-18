@@ -11,11 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added buffer support as arguments & closure returns for `@zcore/ffi`.
 - Added memory leak detection for `zune test ...` command.
 - Added buffer support to the formatter, now it can display the contents of a buffer as hex with a configurable display limit.
+- Added `readErrAsync`, `readOutAsync` and `dead` to ProcessChild in `@zcore/process`.
 
 ### Changed
 - Formatter now displays `__tostring` metamethods as plain text, instead of as strings.
 - `intFromPtr` in `@zcore/ffi` has been changed to `bufferToPtr` and only takes in one parameter of type `buffer`.
 - indexing a ffi function should be more efficient.
+- Changed `readErr` and `readOut` to non-blocking and return nil or string for ProcessChild in `@zcore/process`.
 
 ### Fixed
 - Fixed `@zcore/ffi` closures getting garbage collected.

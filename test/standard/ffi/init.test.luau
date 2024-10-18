@@ -119,7 +119,7 @@ describe("FFI", function()
             expect(buffer.readi32(out, 0)).toBe(42);
         end)
 
-        test("Int From Ptr", function()
+        test("Buffer To Ptr", function()
             local src = buffer.create(ffi.sizeOf(ffi.types.i32));
             buffer.writei32(src, 0, 42);
 

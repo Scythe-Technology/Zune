@@ -133,6 +133,10 @@ export type ProcessRunResult = ProcessResult & {
 
 export type ProcessChild = {
 	--[[
+		Wether the process is alive or not.
+	]]
+	dead : boolean,
+	--[[
 		Waits for the process to exit. Calls system function.
 
 		Does not yield, **blocks** process.
@@ -158,7 +162,17 @@ export type ProcessChild = {
 		@param size The size of the output to read.
 		@return `string`
 	]]
-	readOut : (self: ProcessChild, size: number?) -> string,
+	readOut : (self: ProcessChild, size: number?) -> string?,
+	--[[
+		Reads the output of the process. Stdout.
+
+		Optional size parameter to read a specific amount of bytes.
+		Nil to read all.
+
+		@param size The size of the output to read.
+		@return `string`
+	]]
+	readOutAsync : (self: ProcessChild, size: number?) -> string,
 	--[[
 		Writes to the input of the process. Stdin.
 
@@ -174,7 +188,17 @@ export type ProcessChild = {
 		@param size The size of the output to read.
 		@return `string`
 	]]
-	readErr : (self: ProcessChild, size: number?) -> string,
+	readErr : (self: ProcessChild, size: number?) -> string?,
+	--[[
+		Reads the error output of the process. Stderr.
+
+		Optional size parameter to read a specific amount of bytes.
+		Nil to read all.
+
+		@param size The size of the output to read.
+		@return `string`
+	]]
+	readErrAsync : (self: ProcessChild, size: number?) -> string,
 }
 
 local process = {};
