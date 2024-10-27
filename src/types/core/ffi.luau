@@ -11,13 +11,38 @@ export type Structure = {
 };
 
 export type Closure = {
-    ptr : buffer,
+    ptr : Pointer,
     callback : (...any) -> any,
 }
 
 export type FunctionDefinition = {
     returns : Structure | number,
     args : { Structure | number }
+};
+
+export type Pointer = {
+    release : (self: Pointer) -> Pointer,
+    retain : (self: Pointer) -> Pointer,
+    drop : (self: Pointer) -> (),
+    offset : (self: Pointer, offset: number) -> Pointer,
+    read : (self: Pointer, srcOffset: number, dest: buffer, destOffset: number, count: number) -> buffer,
+    write : (self: Pointer, destOffset: number, src: buffer, srcOffset: number, count: number) -> (),
+    readi8 : (self: Pointer, offset: number?) -> number,
+    readu8 : (self: Pointer, offset: number?) -> number,
+    readi16 : (self: Pointer, offset: number?) -> number,
+    readu16 : (self: Pointer, offset: number?) -> number,
+    readi32 : (self: Pointer, offset: number?) -> number,
+    readu32 : (self: Pointer, offset: number?) -> number,
+    readi64 : (self: Pointer, offset: number?) -> buffer,
+    readu64 : (self: Pointer, offset: number?) -> buffer,
+    readf32 : (self: Pointer, offset: number?) -> number,
+    readf64 : (self: Pointer, offset: number?) -> number,
+    readPtr : (self: Pointer, offset: number?) -> Pointer,
+    readStruct : (self: Pointer, struct: Structure, offset: number?) -> buffer,
+    isNull : (self: Pointer) -> boolean,
+    setSize : (self: Pointer, size: number) -> (),
+    span : (self: Pointer, offset: number?) -> buffer,
+
 };
 
 local ffi = {}
@@ -44,17 +69,18 @@ ffi.types = (nil :: any) :: {
 
 ffi.sizeOf = (nil :: any) :: (type: Structure | number) -> number;
 ffi.alignOf = (nil :: any) :: (type: Structure | number) -> number;
-ffi.eqlPtr = (nil :: any) :: (a: buffer, b: buffer?) -> boolean;
 
-ffi.bufferToPtr = (nil :: any) :: (src: buffer) -> buffer;
-ffi.valueFromPtr = (nil :: any) :: (ptr: buffer, type: Structure | number) -> any;
-ffi.readFromPtr = (nil :: any) :: (srcPtr: buffer, srcOffset: number, dest: buffer, destOffset: number, size: number) -> ();
-ffi.spanFromPtr = (nil :: any) :: (srcPtr: buffer, srcOffset: number) -> buffer;
+ffi.createPtr = (nil :: any) :: (src: buffer) -> Pointer;
+ffi.getRef = (nil :: any) :: (src: Pointer) -> Pointer;
 
-ffi.writeIntoPtr = (nil :: any) :: (destPtr: buffer, destOffset: number, src: buffer, srcOffset: number, size: number) -> ();
+ffi.alloc = (nil :: any) :: (size: number) -> Pointer;
+ffi.free = (nil :: any) :: (src: Pointer) -> ();
+ffi.dupe = (nil :: any) :: (src: buffer | Pointer) -> Pointer;
+ffi.len = (nil :: any) :: (src: buffer | Pointer) -> number?;
+ffi.copy = (nil :: any) :: (dest: buffer | Pointer, destOffset: number, src: buffer | Pointer, srcOffset: number, count: number) -> ();
 
 ffi.struct = (nil :: any) :: (fields: {{ [string]: Structure | number }}) -> Structure;
-ffi.call = (nil :: any) :: (definition: FunctionDefinition, srcPtr: buffer, ...any) -> any;
+ffi.call = (nil :: any) :: (definition: FunctionDefinition, srcPtr: Pointer, ...any) -> any;
 ffi.closure = (nil :: any) :: (definition: FunctionDefinition, handler: (...any) -> any) -> Closure;
 ffi.dlopen = (nil :: any) :: (path: string, { [string] : FunctionDefinition }) -> Library;
 

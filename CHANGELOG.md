@@ -12,12 +12,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added memory leak detection for `zune test ...` command.
 - Added buffer support to the formatter, now it can display the contents of a buffer as hex with a configurable display limit.
 - Added `readErrAsync`, `readOutAsync` and `dead` to ProcessChild in `@zcore/process`.
+- Added pointer objects to `@zcore/ffi`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/ffi)
+  
+  Currently this is marked as experimental and may change in the future. Api may change.
+  To enable this, you need to set `experimental.ffi` to `true` in `zune.toml`.
+
+  Bugs may occur, please report them.
+
+  Example:
+  ```luau
+  local ffi = require("@zcore/ffi")
+
+  local ptr = ffi.alloc(12)
+  print(ptr) -- <pointer: 0x12345678>
+  print(ffi.len(ptr)) -- 12
+  local data = buffer.create(12);
+  buffer.writei32(data, 0, 123)
+  buffer.writei32(data, 4, 456)
+  buffer.writei32(data, 8, 789)
+
+  ffi.copy(data, 0, ptr, 0, 12);
+  ptr:write(0, data, 0, 12)
+  ```
 
 ### Changed
 - Formatter now displays `__tostring` metamethods as plain text, instead of as strings.
 - `intFromPtr` in `@zcore/ffi` has been changed to `bufferToPtr` and only takes in one parameter of type `buffer`.
 - indexing a ffi function should be more efficient.
 - Changed `readErr` and `readOut` to non-blocking and return nil or string for ProcessChild in `@zcore/process`.
+- Changed `@zcore/ffi`, removed buffers going through as memory blocks of its own, in favor of using the new ffi pointer objects, updated/removed FFI apis.
+- Updated `luau` to `0.649`.
 
 ### Fixed
 - Fixed `@zcore/ffi` closures getting garbage collected.

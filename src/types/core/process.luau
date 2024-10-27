@@ -172,7 +172,7 @@ export type ProcessChild = {
 		@param size The size of the output to read.
 		@return `string`
 	]]
-	readOutAsync : (self: ProcessChild, size: number?) -> string,
+	readOutAsync : (self: ProcessChild, size: number?) -> string?,
 	--[[
 		Writes to the input of the process. Stdin.
 
@@ -198,7 +198,7 @@ export type ProcessChild = {
 		@param size The size of the output to read.
 		@return `string`
 	]]
-	readErrAsync : (self: ProcessChild, size: number?) -> string,
+	readErrAsync : (self: ProcessChild, size: number?) -> string?,
 }
 
 local process = {};

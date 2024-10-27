@@ -15,12 +15,13 @@ expect(ffi).toBe(
         call = expect.type("function"),
         sizeOf = expect.type("function"),
         alignOf = expect.type("function"),
-        eqlPtr = expect.type("function"),
-        bufferToPtr = expect.type("function"),
-        valueFromPtr = expect.type("function"),
-        writeIntoPtr = expect.type("function"),
-        readFromPtr = expect.type("function"),
-        spanFromPtr = expect.type("function"),
+        createPtr = expect.type("function"),
+        getRef = expect.type("function"),
+        alloc = expect.type("function"),
+        free = expect.type("function"),
+        copy = expect.type("function"),
+        len = expect.type("function"),
+        dupe = expect.type("function"),
         prefix = expect.type("string"),
         suffix = expect.type("string"),
         supported = expect.type("boolean"),
@@ -84,62 +85,72 @@ describe("FFI", function()
         end);
     end)
 
-    describe("ffi helpers", function()
-        test("Span From Ptr", function()
-            local src = buffer.fromstring("terminated string\0");
+    describe("Contextual", function()
+        test("Span From Pointer", function()
+            local src = ffi.dupe(buffer.fromstring("terminated string\0"));
+            src:release();
 
-            local ptr = ffi.bufferToPtr(src);
+            local ptr = ffi.getRef(src);
+            local unknown = ptr:readPtr();
 
-            local buf = ffi.spanFromPtr(ptr, 0);
-            expect(buffer.len(buf)).toBe(buffer.len(src) - 1);
-            expect(buffer.tostring(buf)).toBe("terminated string");
+            local buf = unknown:span(0);
+
+            expect(buffer.len(buf)).toBe(ffi.len(src));
+            expect(buffer.tostring(buf)).toBe("terminated string\0");
         end)
 
-        test("Read From Ptr", function()
+        test("Read Pointer", function()
             local src = buffer.create(ffi.sizeOf(ffi.types.i32));
             buffer.writei32(src, 0, 42);
 
-            local ptr = ffi.bufferToPtr(src);
+            local mem = ffi.dupe(src);
+            mem:release();
 
             local dest = buffer.create(ffi.sizeOf(ffi.types.i32));
-            ffi.readFromPtr(ptr, 0, dest, 0, ffi.sizeOf(ffi.types.i32));
+            ffi.copy(dest, 0, mem, 0, ffi.sizeOf(ffi.types.i32));
 
             expect(buffer.readi32(dest, 0)).toBe(42);
         end)
 
-        test("Write Into Ptr", function()
+        test("Write Into Pointer", function()
             local src = buffer.create(ffi.sizeOf(ffi.types.i32));
             buffer.writei32(src, 0, 42);
 
-            local out = buffer.create(ffi.sizeOf(ffi.types.i32));
-            local ptr = ffi.bufferToPtr(out);
+            local ptr = ffi.alloc(ffi.sizeOf(ffi.types.i32));
+            ptr:release();
 
-            ffi.writeIntoPtr(ptr, 0, src, 0, ffi.sizeOf(ffi.types.i32));
+            ffi.copy(ptr, 0, src, 0, ffi.sizeOf(ffi.types.i32));
 
-            expect(buffer.readi32(out, 0)).toBe(42);
+            expect(ptr:readi32()).toBe(42);
         end)
 
-        test("Buffer To Ptr", function()
+        test("Read Casting From Pointer", function()
             local src = buffer.create(ffi.sizeOf(ffi.types.i32));
             buffer.writei32(src, 0, 42);
 
-            local ptr = ffi.bufferToPtr(src);
+            local ptr = ffi.dupe(src);
+            ptr:release();
 
-            expect(ffi.valueFromPtr(ptr, ffi.types.i32)).toBe(42);
+            expect(ptr:readi32()).toBe(42);
         end)
 
-        test("Eql Ptr", function()
+        test("__eql Pointer", function()
             local src = buffer.create(ffi.sizeOf(ffi.types.i32));
             buffer.writei32(src, 0, 42);
 
-            local ptr = ffi.bufferToPtr(src);
-            local ptr2 = ffi.bufferToPtr(src);
+            local mem = ffi.dupe(src);
+            mem:release();
+            local ptr = ffi.getRef(mem):readPtr();
+            local ptr2 = ffi.getRef(mem):readPtr();
 
-            expect(ffi.eqlPtr(ptr, ptr2)).toBe(true);
+            expect(ptr == ptr2).toBe(true);
 
-            local null_ptr = buffer.create(ffi.sizeOf(ffi.types.pointer));
-            expect(ffi.eqlPtr(null_ptr, nil)).toBe(true);
-            expect(ffi.eqlPtr(null_ptr, ptr)).toBe(false);
+            expect(mem:readi32()).toBe(42);
+
+            local null_ptr = ffi.createPtr(buffer.create(ffi.sizeOf(ffi.types.pointer)));
+
+            expect(null_ptr:isNull()).toBe(true);
+            expect(null_ptr == ptr).toBe(false);
         end)
 
         test("Size Of", function()
@@ -150,14 +161,55 @@ describe("FFI", function()
             expect(ffi.alignOf(ffi.types.i32)).toBe(4);
         end)
 
-        test("Value From Ptr", function()
-            local src = buffer.create(ffi.sizeOf(ffi.types.i32));
-            buffer.writei32(src, 0, 42);
-
-            local ptr = ffi.bufferToPtr(src);
-
-            expect(ffi.valueFromPtr(ptr, ffi.types.i32)).toBe(42);
+        test("Alloc", function()
+            local mem = ffi.alloc(24);
+            expect(mem).toBe(expect.type("userdata"));
+            expect(ffi.len(mem)).toBe(24);
+            ffi.free(mem);
         end)
+
+        test("Alloc GC", function()
+            local mem = ffi.alloc(24):release();
+            expect(mem).toBe(expect.type("userdata"));
+            expect(ffi.len(mem)).toBe(24);
+        end)
+
+        test("Alloc Zero", function()
+            local mem = ffi.alloc(24):release();
+            for i = 0, 23 do
+                expect(mem:readu8(i)).toBe(0);
+            end
+            expect(function()
+                mem:readu8(24);
+            end).toThrow("OutOfBounds");
+        end)
+
+        test("Alloc Offset", function()
+            local mem = ffi.alloc(24):release();
+            for i = 1, 23 do
+                local ptr = mem:offset(i);
+                expect(ptr == mem).toBe(false);
+                expect(ffi.len(ptr)).toBe(24 - i);
+                expect(ptr:readu8()).toBe(0);
+            end
+        end)
+
+        test("Static Offset", function()
+            local address = buffer.create(ffi.sizeOf(ffi.types.pointer));
+            local base = ffi.createPtr(address);
+            
+            expect(base == ffi.createPtr(address)).toBe(true);
+            expect(base:isNull()).toBe(true);
+
+            for i = 1, 3 do
+                local ptr = base:offset(i);
+                buffer.writeu8(address, 0, i);
+                local located_ptr = ffi.createPtr(address);
+                expect(ptr == base).toBe(false);
+                expect(ptr == located_ptr).toBe(true);
+                expect(ffi.len(ptr)).toBe(nil);
+            end
+        end);
 
         describe("Generative C Calls", function()
             test("Lua<i32 add(i32 i32)>", function()
@@ -453,40 +505,38 @@ describe("FFI", function()
         end)
 
         test("Symbol<void add_ptr(*i32, i32)>", function()
-            local out = buffer.create(ffi.sizeOf(ffi.types.i32));
-            local ptr = ffi.bufferToPtr(out);
-            lib.add_ptr(ptr, 1);
+            local out = ffi.alloc(ffi.sizeOf(ffi.types.i32));
+            out:release();
+
+            lib.add_ptr(out, 1);
             
-            expect(buffer.readi32(out, 0)).toBe(1);
+            expect(out:readi32()).toBe(1);
 
-            lib.add_ptr(ptr, 6);
+            lib.add_ptr(out, 6);
 
-            expect(buffer.readi32(out, 0)).toBe(7);
+            expect(out:readi32()).toBe(7);
 
-            lib.add_ptr(ptr, testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 6));
+            lib.add_ptr(out, testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 6));
 
-            expect(buffer.readi32(out, 0)).toBe(13);
+            expect(out:readi32()).toBe(13);
         end)
         test("Symbol<void add_ptr_ptr(**i32, i32)>", function()
-            local out = buffer.create(ffi.sizeOf(ffi.types.i32));
+            local out = ffi.alloc(ffi.sizeOf(ffi.types.i32));
+            out:release();
 
-            local ptr = ffi.bufferToPtr(out);
-            local ptr_ptr = ffi.bufferToPtr(ptr);
+            local ptr = ffi.getRef(out);
 
-            lib.add_ptr_ptr(ptr_ptr, 1);
+            lib.add_ptr_ptr(ptr, 1);
             
-            expect(ffi.valueFromPtr(ptr, ffi.types.i32)).toBe(1);
-            expect(buffer.readi32(out, 0)).toBe(1);
+            expect(out:readi32()).toBe(1);
 
-            lib.add_ptr_ptr(ptr_ptr, 6);
+            lib.add_ptr_ptr(ptr, 6);
 
-            expect(ffi.valueFromPtr(ptr, ffi.types.i32)).toBe(7);
-            expect(buffer.readi32(out, 0)).toBe(7);
+            expect(out:readi32()).toBe(7);
 
-            lib.add_ptr_ptr(ptr_ptr, testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 6));
+            lib.add_ptr_ptr(ptr, testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 6));
 
-            expect(ffi.valueFromPtr(ptr, ffi.types.i32)).toBe(13);
-            expect(buffer.readi32(out, 0)).toBe(13);
+            expect(out:readi32()).toBe(13);
         end)
 
         test("Symbol<void fire_callback(*void)>", function()
@@ -529,12 +579,14 @@ describe("FFI", function()
             expect(lib.check_string("Hello")).toBe(0);
 
             do
-                local buf = buffer.fromstring("hello\0");
-                expect(lib.check_string(ffi.bufferToPtr(buf))).toBe(1);
+                local buf = ffi.dupe(buffer.fromstring("hello\0"));
+                buf:release();
+                expect(lib.check_string(buf)).toBe(1);
             end
             do
-                local buf_2 = buffer.fromstring("Hello\0");
-                expect(lib.check_string(ffi.bufferToPtr(buf_2))).toBe(0);
+                local buf_2 = ffi.dupe(buffer.fromstring("Hello\0"));
+                buf_2:release();
+                expect(lib.check_string(buf_2)).toBe(0);
             end
         end)
 
@@ -579,13 +631,11 @@ describe("FFI", function()
         test("Symbol<void check_nullptr(*void)>", function()
             expect(lib.check_nullptr(nil)).toBe(1);
 
-            -- When buffer to refer to a pointer, the pointer cannot be null, better to use "nil"
-            expect(function()
-                lib.check_nullptr(buffer.create(ffi.sizeOf(ffi.types.pointer)));
-            end).toThrow("NullPtr");
+            lib.check_nullptr(buffer.create(ffi.sizeOf(ffi.types.pointer)));
 
-            local dummy_value = buffer.create(0);
-            local ptr = ffi.bufferToPtr(dummy_value);
+            local dummy_value = ffi.dupe(buffer.create(0));
+            dummy_value:release();
+            local ptr = ffi.getRef(dummy_value);
             expect(lib.check_nullptr(ptr)).toBe(0);
             expect(lib.check_nullptr("")).toBe(0);
         end)
@@ -594,21 +644,87 @@ describe("FFI", function()
             local ptr = nil;
             test("Symbol<*i32 new_i32()>", function()
                 ptr = lib.new_i32();
-                expect(ptr).toBe(expect.type("buffer"));
-                expect(buffer.len(ptr)).toBe(ffi.sizeOf(ffi.types.pointer));
+                expect(ptr).toBe(expect.type("userdata"));
 
-                expect(ffi.valueFromPtr(ptr, ffi.types.i32)).toBe(123);
+                expect(ptr:readi32()).toBe(123);
 
                 local src = buffer.create(ffi.sizeOf(ffi.types.i32));
                 buffer.writei32(src, 0, 42);
-                ffi.writeIntoPtr(ptr, 0, src, 0, ffi.sizeOf(ffi.types.i32));
+                ffi.copy(ptr, 0, src, 0, ffi.sizeOf(ffi.types.i32));
 
-                expect(ffi.valueFromPtr(ptr, ffi.types.i32)).toBe(42);
+                expect(ptr:readi32()).toBe(42);
             end)
 
             test("Symbol<void free_i32(*i32)>", function()
                 assert(ptr, "Pointer is nil");
                 lib.free_i32(ptr);
+            end)
+        end)
+
+        describe("Internal Memory Management", function()
+            test("Block", function()
+                local mem = ffi.alloc(24);
+                expect(mem).toBe(expect.type("userdata"));
+
+                expect(ffi.len(mem)).toBe(24);
+
+                expect(function()
+                    ffi.copy(mem, 24, buffer.create(1), 0, 1);
+                end).toThrow("Target OutOfBounds");
+
+                ffi.free(mem);
+            end)
+
+            local block_address = buffer.create(ffi.sizeOf(ffi.types.pointer));
+            test("Leaky Block, Unknown Transform", function()
+                local mem = ffi.alloc(24);
+                expect(mem).toBe(expect.type("userdata"));
+
+                expect(ffi.len(mem)).toBe(24);
+
+                expect(function()
+                    ffi.copy(buffer.create(1), 0, mem, 24, 1);
+                end).toThrow("Source OutOfBounds");
+
+                expect(function()
+                    mem:read(24, buffer.create(1), 0, 1);
+                end).toThrow("Source OutOfBounds");
+
+                local temp = buffer.create(24);
+                buffer.writei32(temp, 0, -42);
+                buffer.writei32(temp, 4, 100);
+                buffer.writei32(temp, 8, 0);
+                buffer.writei32(temp, 12, -10);
+                ffi.copy(mem, 0, temp, 0, 24);
+
+                ffi.copy(block_address, 0, ffi.getRef(mem), 0, ffi.sizeOf(ffi.types.pointer));
+            end)
+
+            test("Leaky Unknown Block, Free", function()
+                local mem = ffi.createPtr(block_address);
+                expect(mem:isNull()).toBe(false);
+                expect(ffi.len(mem)).toBe(nil); -- unknown size
+
+                mem:setSize(24);
+
+                expect(ffi.len(mem)).toBe(24);
+
+                local out = buffer.create(24);
+                ffi.copy(out, 0, mem, 0, 24);
+
+                expect(buffer.readi32(out, 0)).toBe(-42);
+                expect(buffer.readi32(out, 4)).toBe(100);
+                expect(buffer.readi32(out, 8)).toBe(0);
+                expect(buffer.readi32(out, 12)).toBe(-10);
+
+                expect(function()
+                    ffi.copy(buffer.create(1), 0, mem, 24, 1);
+                end).toThrow("Source OutOfBounds");
+                expect(function()
+                    mem:read(24, buffer.create(1), 0, 1);
+                end).toThrow("Source OutOfBounds");
+
+                ffi.free(mem);
             end)
         end)
 
