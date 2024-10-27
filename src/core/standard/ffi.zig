@@ -958,9 +958,9 @@ fn load_ffi_args(
             .pointer => switch (L.typeOf(lua_index)) {
                 .userdata => {
                     const ptr = try LuaPointer.value(L, lua_index);
-                    if (ptr.destroyed or ptr.ptr == null)
+                    if (ptr.destroyed)
                         return error.NoAddressAvailable;
-                    const v_ptr: **anyopaque = if (pre_allocated) @ptrCast(@alignCast(args[i])) else try allocator.create(*anyopaque);
+                    const v_ptr: **allowzero anyopaque = if (pre_allocated) @ptrCast(@alignCast(args[i])) else try allocator.create(*allowzero anyopaque);
                     v_ptr.* = @ptrCast(ptr.ptr);
                     if (!pre_allocated)
                         args[i] = @ptrCast(@alignCast(v_ptr));

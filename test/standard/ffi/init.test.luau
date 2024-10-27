@@ -630,8 +630,9 @@ describe("FFI", function()
 
         test("Symbol<void check_nullptr(*void)>", function()
             expect(lib.check_nullptr(nil)).toBe(1);
-
-            lib.check_nullptr(buffer.create(ffi.sizeOf(ffi.types.pointer)));
+            
+            local null_ptr = ffi.createPtr(buffer.create(ffi.sizeOf(ffi.types.pointer)));
+            expect(lib.check_nullptr(null_ptr)).toBe(1);
 
             local dummy_value = ffi.dupe(buffer.create(0));
             dummy_value:release();
