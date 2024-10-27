@@ -12,7 +12,7 @@ const Luau = luau.Luau;
 
 pub const LIB_NAME = "@zcore/ffi";
 
-inline fn intOutOfRange(comptime T: type, value: c_int) bool {
+inline fn intOutOfRange(comptime T: type, value: anytype) bool {
     return value < std.math.minInt(T) or value > std.math.maxInt(T);
 }
 
@@ -207,7 +207,17 @@ const LuaPointer = struct {
         Readf64,
         ReadPtr,
         Write,
-        ReadStruct,
+        Writei8,
+        Writeu8,
+        Writei16,
+        Writeu16,
+        Writei32,
+        Writeu32,
+        Writei64,
+        Writeu64,
+        Writef32,
+        Writef64,
+        WritePtr,
         IsNull,
         SetSize,
         Span,
@@ -229,7 +239,17 @@ const LuaPointer = struct {
         .{ "readf32", .Readf32 },
         .{ "readf64", .Readf64 },
         .{ "readPtr", .ReadPtr },
-        .{ "readStruct", .ReadStruct },
+        .{ "writei8", .Writei8 },
+        .{ "writeu8", .Writeu8 },
+        .{ "writei16", .Writei16 },
+        .{ "writeu16", .Writeu16 },
+        .{ "writei32", .Writei32 },
+        .{ "writeu32", .Writeu32 },
+        .{ "writei64", .Writei64 },
+        .{ "writeu64", .Writeu64 },
+        .{ "writef32", .Writef32 },
+        .{ "writef64", .Writef64 },
+        .{ "writePtr", .WritePtr },
         .{ "isNull", .IsNull },
         .{ "setSize", .SetSize },
         .{ "span", .Span },
@@ -280,8 +300,11 @@ const LuaPointer = struct {
         }
         const static = try LuaPointer.newStaticPtr(L, @as([*]u8, @ptrCast(ptr.ptr))[offset..], false);
 
-        if (ptr.size) |size|
+        if (ptr.size) |size| {
+            if (size < offset)
+                return L.raiseErrorStr("Offset OutOfBounds", .{});
             static.size = size - offset;
+        }
 
         return 1;
     }
@@ -393,6 +416,39 @@ const LuaPointer = struct {
         }.inner;
     }
 
+    pub fn GenerateWriteMethod(comptime ffiType: ffi.Type) fn (ptr: *LuaPointer, L: *Luau) anyerror!i32 {
+        return struct {
+            fn inner(ptr: *LuaPointer, L: *Luau) !i32 {
+                if (ptr.destroyed or ptr.ptr == null)
+                    return error.NoAddressAvailable;
+                const offset: usize = @intCast(L.optInteger(2) orelse 0);
+
+                const len = ffiType.toSize();
+                if (ptr.size) |size| if (size < len + offset)
+                    return error.OutOfBounds;
+
+                const mem: []u8 = @as([*]u8, @ptrCast(@alignCast(ptr.ptr)))[offset .. offset + len];
+
+                switch (ffiType) {
+                    .void => unreachable,
+                    .i8, .u8, .i16, .u16, .i32, .u32, .i64, .u64, .float, .double => try FFITypeConversion(ffiType, mem, L, 3, 0),
+                    .pointer => switch (L.typeOf(-1)) {
+                        .userdata => {
+                            const lua_ptr = try LuaPointer.value(L, -1);
+                            if (lua_ptr.destroyed)
+                                return error.NoAddressAvailable;
+                            var bytes: [@sizeOf(usize)]u8 = @bitCast(@as(usize, @intFromPtr(lua_ptr.ptr)));
+                            @memcpy(mem[0..@sizeOf(usize)], &bytes);
+                        },
+                        else => return error.InvalidArgType,
+                    },
+                }
+
+                return 1;
+            }
+        }.inner;
+    }
+
     pub const method_readi8 = GenerateReadMethod(.i8);
     pub const method_readu8 = GenerateReadMethod(.u8);
     pub const method_readi16 = GenerateReadMethod(.i16);
@@ -405,27 +461,17 @@ const LuaPointer = struct {
     pub const method_readf64 = GenerateReadMethod(.double);
     pub const method_readPtr = GenerateReadMethod(.pointer);
 
-    pub fn method_readStruct(ptr: *LuaPointer, L: *Luau) !i32 {
-        if (ptr.destroyed or ptr.ptr == null)
-            return error.NoAddressAvailable;
-        const offset: usize = @intCast(L.optInteger(3) orelse 0);
-        if (!isFFIType(L, 2))
-            return error.InvalidType;
-
-        const ffi_type = try toFFIType(L, 2);
-        if (ffi_type == .ffiType)
-            return error.InvalidType;
-
-        const len = ffi_type.getSize();
-        if (ptr.size) |size| if (size < len)
-            return error.OutOfBounds;
-
-        const mem: [*]u8 = @as([*]u8, @ptrCast(@alignCast(ptr.ptr)))[offset..];
-
-        try L.pushBuffer(mem[0..ffi_type.structType.getSize()]);
-
-        return 1;
-    }
+    pub const method_writei8 = GenerateWriteMethod(.i8);
+    pub const method_writeu8 = GenerateWriteMethod(.u8);
+    pub const method_writei16 = GenerateWriteMethod(.i16);
+    pub const method_writeu16 = GenerateWriteMethod(.u16);
+    pub const method_writei32 = GenerateWriteMethod(.i32);
+    pub const method_writeu32 = GenerateWriteMethod(.u32);
+    pub const method_writei64 = GenerateWriteMethod(.i64);
+    pub const method_writeu64 = GenerateWriteMethod(.u64);
+    pub const method_writef32 = GenerateWriteMethod(.float);
+    pub const method_writef64 = GenerateWriteMethod(.double);
+    pub const method_writePtr = GenerateWriteMethod(.pointer);
 
     pub fn method_isNull(ptr: *LuaPointer, L: *Luau) i32 {
         if (ptr.destroyed) {
@@ -491,7 +537,17 @@ const LuaPointer = struct {
             .Readf32 => try ptr.method_readf32(L),
             .Readf64 => try ptr.method_readf64(L),
             .ReadPtr => try ptr.method_readPtr(L),
-            .ReadStruct => try ptr.method_readStruct(L),
+            .Writei8 => try ptr.method_writei8(L),
+            .Writeu8 => try ptr.method_writeu8(L),
+            .Writei16 => try ptr.method_writei16(L),
+            .Writeu16 => try ptr.method_writeu16(L),
+            .Writei32 => try ptr.method_writei32(L),
+            .Writeu32 => try ptr.method_writeu32(L),
+            .Writei64 => try ptr.method_writei64(L),
+            .Writeu64 => try ptr.method_writeu64(L),
+            .Writef32 => try ptr.method_writef32(L),
+            .Writef64 => try ptr.method_writef64(L),
+            .WritePtr => try ptr.method_writePtr(L),
             .IsNull => ptr.method_isNull(L),
             .SetSize => ptr.method_setSize(L),
             .Span => try ptr.method_span(L),
@@ -717,38 +773,6 @@ const LuaStructType = struct {
         return 1;
     }
 
-    pub fn FFITypeConversion(
-        comptime ffiType: ffi.Type,
-        mem: []u8,
-        L: *Luau,
-        index: comptime_int,
-        offset: usize,
-    ) !void {
-        const T = AsType(ffiType);
-        const isFloat = @typeInfo(T) == .Float;
-        switch (L.typeOf(index)) {
-            .number => {
-                const value = if (isFloat) L.toNumber(index) catch unreachable else L.toInteger(index) catch unreachable;
-                if (if (isFloat) floatOutOfRange(T, value) else intOutOfRange(T, value))
-                    return error.OutOfRange;
-                var bytes: [@sizeOf(T)]u8 = @bitCast(@as(T, if (isFloat) @floatCast(value) else @intCast(value)));
-                @memcpy(mem[offset .. offset + @sizeOf(T)], &bytes);
-            },
-            .boolean => {
-                const value = L.toBoolean(index);
-                var bytes: [@sizeOf(T)]u8 = @bitCast(@as(T, if (value) 1 else 0));
-                @memcpy(mem[offset .. offset + @sizeOf(T)], &bytes);
-            },
-            .buffer => {
-                const buf = L.toBuffer(-1) catch unreachable;
-                if (buf.len < @sizeOf(T))
-                    return error.SmallBuffer;
-                @memcpy(mem[offset .. offset + @sizeOf(T)], buf[0..@sizeOf(T)]);
-            },
-            else => return error.InvalidArgType,
-        }
-    }
-
     pub fn method_new(ptr: *LuaStructType, L: *Luau) !i32 {
         L.checkType(2, .table);
         const allocator = L.allocator();
@@ -779,25 +803,15 @@ const LuaStructType = struct {
                         .u64 => try FFITypeConversion(.u64, mem, L, -1, offset),
                         .float => try FFITypeConversion(.float, mem, L, -1, offset),
                         .double => try FFITypeConversion(.double, mem, L, -1, offset),
-                        .pointer => {
-                            switch (L.typeOf(-1)) {
-                                .userdata => {
-                                    const lua_ptr = try LuaPointer.value(L, -1);
-                                    if (lua_ptr.destroyed)
-                                        return error.NoAddressAvailable;
-                                    var bytes: [@sizeOf(usize)]u8 = @bitCast(@as(usize, @intFromPtr(lua_ptr.ptr)));
-                                    @memcpy(mem[offset .. offset + @sizeOf(usize)], &bytes);
-                                },
-                                .buffer => {
-                                    const buf = L.toBuffer(-1) catch unreachable;
-                                    if (buf.len != @sizeOf(usize))
-                                        return error.SmallBuffer;
-                                    const ptr_int = std.mem.readVarInt(usize, buf, .little);
-                                    var bytes: [@sizeOf(usize)]u8 = @bitCast(ptr_int);
-                                    @memcpy(mem[offset .. offset + @sizeOf(usize)], &bytes);
-                                },
-                                else => return error.InvalidArgType,
-                            }
+                        .pointer => switch (L.typeOf(-1)) {
+                            .userdata => {
+                                const lua_ptr = try LuaPointer.value(L, -1);
+                                if (lua_ptr.destroyed)
+                                    return error.NoAddressAvailable;
+                                var bytes: [@sizeOf(usize)]u8 = @bitCast(@as(usize, @intFromPtr(lua_ptr.ptr)));
+                                @memcpy(mem[offset .. offset + @sizeOf(usize)], &bytes);
+                            },
+                            else => return error.InvalidArgType,
                         },
                     }
                 },
@@ -875,6 +889,43 @@ fn toFFIType(L: *Luau, idx: i32) !ffi.GenType {
             };
         },
         else => return error.InvalidType,
+    }
+}
+
+pub fn FFITypeConversion(
+    comptime ffiType: ffi.Type,
+    mem: []u8,
+    L: *Luau,
+    index: comptime_int,
+    offset: usize,
+) !void {
+    const T = AsType(ffiType);
+    const isFloat = @typeInfo(T) == .Float;
+    switch (L.typeOf(index)) {
+        .number => {
+            const value = if (isFloat) L.toNumber(index) catch unreachable else fast: {
+                if (@bitSizeOf(T) > 32)
+                    break :fast @as(u64, @intFromFloat(L.toNumber(index) catch unreachable))
+                else
+                    break :fast L.toInteger(index) catch unreachable;
+            };
+            if (if (isFloat) floatOutOfRange(T, value) else intOutOfRange(T, value))
+                return error.OutOfRange;
+            var bytes: [@sizeOf(T)]u8 = @bitCast(@as(T, if (isFloat) @floatCast(value) else @intCast(value)));
+            @memcpy(mem[offset .. offset + @sizeOf(T)], &bytes);
+        },
+        .boolean => {
+            const value = L.toBoolean(index);
+            var bytes: [@sizeOf(T)]u8 = @bitCast(@as(T, if (value) 1 else 0));
+            @memcpy(mem[offset .. offset + @sizeOf(T)], &bytes);
+        },
+        .buffer => {
+            const buf = L.toBuffer(-1) catch unreachable;
+            if (buf.len < @sizeOf(T))
+                return error.SmallBuffer;
+            @memcpy(mem[offset .. offset + @sizeOf(T)], buf[0..@sizeOf(T)]);
+        },
+        else => return error.InvalidArgType,
     }
 }
 

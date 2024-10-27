@@ -645,6 +645,7 @@ describe("FFI", function()
             local ptr = nil;
             test("Symbol<*i32 new_i32()>", function()
                 ptr = lib.new_i32();
+                ptr:setSize(ffi.sizeOf(ffi.types.i32));
                 expect(ptr).toBe(expect.type("userdata"));
 
                 expect(ptr:readi32()).toBe(123);
@@ -654,6 +655,10 @@ describe("FFI", function()
                 ffi.copy(ptr, 0, src, 0, ffi.sizeOf(ffi.types.i32));
 
                 expect(ptr:readi32()).toBe(42);
+
+                ptr:writei32(0, 24);
+
+                expect(ptr:readi32()).toBe(24);
             end)
 
             test("Symbol<void free_i32(*i32)>", function()
