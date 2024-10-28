@@ -7,6 +7,7 @@ const Engine = @import("../runtime/engine.zig");
 const Scheduler = @import("../runtime/scheduler.zig");
 
 const luaHelper = @import("../utils/luahelper.zig");
+const tagged = @import("../../tagged.zig");
 
 const Luau = luau.Luau;
 
@@ -39,7 +40,6 @@ fn AsType(t: ffi.Type) type {
 
 const LuaPointer = struct {
     ptr: ?*anyopaque,
-    state: *Luau,
     allocator: std.mem.Allocator,
     size: ?usize = null,
     ref: ?i32 = null,
@@ -60,13 +60,12 @@ const LuaPointer = struct {
         if (buf.len < @sizeOf(usize))
             return error.SmallBuffer;
 
-        const ptr = L.newUserdataDtor(LuaPointer, __dtor);
+        const ptr = L.newUserdataTagged(LuaPointer, tagged.FFI_POINTER);
         metatable(L);
         L.setMetatable(-2);
 
         ptr.* = .{
             .ptr = @ptrFromInt(std.mem.readVarInt(usize, buf[0..@sizeOf(usize)], .little)),
-            .state = L.getMainThread(),
             .allocator = L.allocator(),
             .destroyed = false,
             .type = .Static,
@@ -81,13 +80,12 @@ const LuaPointer = struct {
         const mem = try allocator.alloc(u8, size);
         @memset(mem, 0);
 
-        const ptr = L.newUserdataDtor(LuaPointer, __dtor);
+        const ptr = L.newUserdataTagged(LuaPointer, tagged.FFI_POINTER);
         metatable(L);
         L.setMetatable(-2);
 
         ptr.* = .{
             .ptr = @ptrCast(@alignCast(mem.ptr)),
-            .state = L.getMainThread(),
             .allocator = allocator,
             .size = mem.len,
             .destroyed = false,
@@ -100,13 +98,12 @@ const LuaPointer = struct {
     }
 
     pub fn newStaticPtr(L: *Luau, staticPtr: ?*anyopaque, default_retain: bool) !*LuaPointer {
-        const ptr = L.newUserdataDtor(LuaPointer, __dtor);
+        const ptr = L.newUserdataTagged(LuaPointer, tagged.FFI_POINTER);
         metatable(L);
         L.setMetatable(-2);
 
         ptr.* = .{
             .ptr = staticPtr,
-            .state = L.getMainThread(),
             .allocator = L.allocator(),
             .destroyed = false,
             .type = .Static,
@@ -134,7 +131,7 @@ const LuaPointer = struct {
 
         const ref = try L.ref(1);
 
-        const ptr = L.newUserdataDtor(LuaPointer, __dtor);
+        const ptr = L.newUserdataTagged(LuaPointer, tagged.FFI_POINTER);
         metatable(L);
         L.setMetatable(-2);
 
@@ -143,7 +140,6 @@ const LuaPointer = struct {
 
         ptr.* = .{
             .ptr = @ptrCast(@alignCast(mem)),
-            .state = L.getMainThread(),
             .allocator = allocator,
             .ref = ref,
             .destroyed = false,
@@ -166,27 +162,12 @@ const LuaPointer = struct {
             std.debug.panic("InternalError (FFI Metatable not initialized)", .{});
     }
 
-    pub fn is(L: *Luau, idx: i32) bool {
-        if (L.typeOf(idx) != .userdata)
-            return false;
-        if (!L.getMetatable(idx))
-            return false;
-        metatable(L);
-        defer L.pop(2);
-        if (!L.equal(-1, -2))
-            return false;
-        return true;
+    pub inline fn is(L: *Luau, idx: i32) bool {
+        return L.getUserdataTag(idx) == tagged.FFI_POINTER;
     }
 
-    pub fn value(L: *Luau, idx: i32) !*LuaPointer {
-        L.checkType(idx, .userdata);
-        if (!L.getMetatable(idx))
-            return error.InvalidPointer;
-        metatable(L);
-        defer L.pop(2);
-        if (!L.equal(-1, -2))
-            return error.InvalidPointer;
-        return L.toUserdata(LuaPointer, idx) catch unreachable;
+    pub inline fn value(L: *Luau, idx: i32) !*LuaPointer {
+        return L.toUserdataTagged(LuaPointer, idx, tagged.FFI_POINTER);
     }
 
     pub const NamecallMap = std.StaticStringMap(enum {
@@ -287,7 +268,7 @@ const LuaPointer = struct {
             L.unref(ref);
         ptr.local_ref = null;
         if (ptr.ref) |ref|
-            ptr.state.unref(ref);
+            L.unref(ref);
         ptr.ref = null;
         return 1;
     }
@@ -590,10 +571,10 @@ const LuaPointer = struct {
         return 1;
     }
 
-    pub fn __dtor(ptr: *LuaPointer) void {
+    pub fn __dtor(L: *Luau, ptr: *LuaPointer) void {
         if (!ptr.destroyed) {
             if (ptr.ref) |ref|
-                ptr.state.unref(ref);
+                L.unref(ref);
             switch (ptr.type) {
                 .Allocated => {
                     if (!ptr.retained) {
@@ -1817,7 +1798,7 @@ fn ffi_free(L: *Luau) !i32 {
             ptr.local_ref = null;
         }
         if (ptr.ref) |ref|
-            ptr.state.unref(ref);
+            L.unref(ref);
         ptr.ref = null;
         switch (ptr.type) {
             .Allocated => {
@@ -1898,6 +1879,8 @@ pub fn loadLib(L: *Luau) void {
         L.setFieldFn(-1, luau.Metamethods.eq, LuaPointer.__eq); // metatable.__eq
         L.setFieldFn(-1, luau.Metamethods.namecall, LuaPointer.__namecall); // metatable.__namecall
         L.setFieldFn(-1, luau.Metamethods.tostring, LuaPointer.__tostring); // metatable.__tostring
+
+        L.setUserdataDtor(LuaPointer, tagged.FFI_POINTER, LuaPointer.__dtor);
     }
 
     L.newTable();
