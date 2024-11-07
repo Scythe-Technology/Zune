@@ -10,6 +10,7 @@ fn newFile(comptime path: []const u8) File {
     };
 }
 
+pub const @"zune.test" = newFile("zune.test.luau");
 pub const @"require.test" = newFile("engine/require.test.luau");
 
 pub const @"fs.test" = newFile("standard/fs.test.luau");

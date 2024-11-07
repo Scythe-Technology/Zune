@@ -11,7 +11,7 @@ const tagged = @import("../../tagged.zig");
 
 const Luau = luau.Luau;
 
-pub const LIB_NAME = "@zcore/ffi";
+pub const LIB_NAME = "ffi";
 
 inline fn intOutOfRange(comptime T: type, value: anytype) bool {
     return value < std.math.minInt(T) or value > std.math.maxInt(T);

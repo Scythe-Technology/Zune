@@ -8,7 +8,7 @@ const luaHelper = @import("../utils/luahelper.zig");
 
 const Luau = luau.Luau;
 
-pub const LIB_NAME = "@zcore/task";
+pub const LIB_NAME = "task";
 
 fn task_wait(L: *Luau, scheduler: *Scheduler) i32 {
     const time = L.optNumber(1) orelse 0;

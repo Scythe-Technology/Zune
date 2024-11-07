@@ -8,7 +8,7 @@ const Regex = regex.Regex;
 
 const Luau = luau.Luau;
 
-pub const LIB_NAME = "@zcore/regex";
+pub const LIB_NAME = "regex";
 
 fn lua_regexCaptureSearch(L: *Luau, re: *Regex, input: []const u8, index: *usize, captures: *i32, global: bool) !void {
     var relative_index: usize = 0;

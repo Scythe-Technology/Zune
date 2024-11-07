@@ -1,6 +1,6 @@
-local net = require("@zcore/net");
-local task = require("@zcore/task");
-local testing = require("@zcore/testing");
+local net = zune.net;
+local task = zune.task;
+local testing = zune.testing;
 
 local describe = testing.describe;
 local expect = testing.expect;
@@ -12,7 +12,7 @@ assert(version and #version > 0, "No version");
 describe("Server", function()
     test("Basic", function()
         local requests = {};
-        local ok, server = net.serve({
+        local server = net.serve({
             port = 8080,
             reuseAddress = true,
             request = function(req)
@@ -23,12 +23,9 @@ describe("Server", function()
                 }
             end,
         });
-        
-        expect(ok).toBe(true);
         expect(server).toBe(expect.type("userdata"));
 
-        local rOk, rRes = net.request("http://localhost:8080");
-        expect(rOk).toBe(true);
+        local rRes = net.request("http://localhost:8080");
         expect(rRes).toBe(expect.type("table"));
         expect(rRes.ok).toBe(true);
         expect(rRes.statusCode).toBe(200);
@@ -47,10 +44,10 @@ describe("Server", function()
         expect(request.headers["host"]).toBe("localhost:8080");
         expect(request.headers["user-agent"]).toBe("Zune/" .. version);
 
-        local rOk2, rRes2 = net.request("http://localhost:8085");
-        expect(rOk2).toBe(false);
-        expect(rRes2).toBe(expect.type("string"));
-        expect(rRes2).toBe("ConnectionRefused");
+        
+        expect(function()
+            local _ = net.request("http://localhost:8085");
+        end).toThrow("ConnectionRefused");
 
         expect(requests).toHaveLength(1);
 
@@ -62,17 +59,16 @@ describe("Server", function()
 
         expect(requests);
 
-        local rOk3, rRes3 = net.request("http://localhost:8080");
-        expect(rOk3).toBe(false);
-        expect(rRes3).toBe(expect.type("string"));
-        expect(rRes3).toBe("ConnectionRefused");
+        expect(function()
+            local _ = net.request("http://localhost:8080");
+        end).toThrow("ConnectionRefused");
 
         expect(requests).toHaveLength(1);
     end)
 
     test("Basic Table Buffer", function()
         local requests = {};
-        local ok, server = net.serve({
+        local server = net.serve({
             port = 8080,
             reuseAddress = true,
             request = function(req)
@@ -83,12 +79,9 @@ describe("Server", function()
                 }
             end,
         });
-        
-        expect(ok).toBe(true);
         expect(server).toBe(expect.type("userdata"));
 
-        local rOk, rRes = net.request("http://localhost:8080");
-        expect(rOk).toBe(true);
+        local rRes = net.request("http://localhost:8080");
         expect(rRes).toBe(expect.type("table"));
         expect(rRes.ok).toBe(true);
         expect(rRes.statusCode).toBe(200);
@@ -114,7 +107,7 @@ describe("Server", function()
 
     test("Basic Buffer", function()
         local requests = {};
-        local ok, server = net.serve({
+        local server = net.serve({
             port = 8080,
             reuseAddress = true,
             request = function(req)
@@ -122,12 +115,9 @@ describe("Server", function()
                 return buffer.fromstring("Hello Buffer");
             end,
         });
-        
-        expect(ok).toBe(true);
         expect(server).toBe(expect.type("userdata"));
 
-        local rOk, rRes = net.request("http://localhost:8080");
-        expect(rOk).toBe(true);
+        local rRes = net.request("http://localhost:8080");
         expect(rRes).toBe(expect.type("table"));
         expect(rRes.ok).toBe(true);
         expect(rRes.statusCode).toBe(200);
@@ -153,7 +143,7 @@ describe("Server", function()
 
     test("Long Term", function()
         local requests = {};
-        local ok, server = net.serve({
+        local server = net.serve({
             port = 8080,
             reuseAddress = true,
             request = function(req)
@@ -161,17 +151,14 @@ describe("Server", function()
                 return "Hello: " .. #requests;
             end,
         });
-
-        expect(ok).toBe(true);
         expect(server).toBe(expect.type("userdata"));
 
         local requestsMade = 0;
 
         for _ = 1, 10 do
-            local rOk, rRes = net.request("http://localhost:8080");
+            local rRes = net.request("http://localhost:8080");
             requestsMade += 1;
 
-            expect(rOk).toBe(true);
             expect(rRes).toBe(expect.type("table"));
             expect(rRes.ok).toBe(true);
             expect(rRes.statusCode).toBe(200);
@@ -192,10 +179,9 @@ describe("Server", function()
 
         end
 
-        local rOk2, rRes2 = net.request("http://localhost:8085");
-        expect(rOk2).toBe(false);
-        expect(rRes2).toBe(expect.type("string"));
-        expect(rRes2).toBe("ConnectionRefused");
+        expect(function()
+            local _ = net.request("http://localhost:8085");
+        end).toThrow("ConnectionRefused");
 
         expect(requests).toHaveLength(requestsMade);
 
@@ -205,33 +191,29 @@ describe("Server", function()
         server:stop();
         expect(server.stopped).toBe(true);
 
-        local rOk3, rRes3 = net.request("http://localhost:8080");
-        expect(rOk3).toBe(false);
-        expect(rRes3).toBe(expect.type("string"));
-        expect(rRes3).toBe("ConnectionRefused");
+        expect(function()
+            local _ = net.request("http://localhost:8080");
+        end).toThrow("ConnectionRefused");
 
         expect(requests).toHaveLength(requestsMade);
     end)
 
     describe("Server Error", function()
         test("Immediate", function()
-            local ok, server = net.serve({
+            local server = net.serve({
                 port = 8080,
                 reuseAddress = true,
                 request = function(req)
                     error("Server Error");
                 end,
             });
-            
-            expect(ok).toBe(true);
             expect(server).toBe(expect.type("userdata"));
 
             testing.defer(function()
                 server:stop();
             end)
     
-            local rOk, rRes = net.request("http://localhost:8080");
-            expect(rOk).toBe(true);
+            local rRes = net.request("http://localhost:8080");
             expect(rRes).toBe(expect.type("table"));
             expect(rRes.ok).toBe(false);
             expect(rRes.statusCode).toBe(500);
@@ -242,7 +224,7 @@ describe("Server", function()
             expect(rRes.statusReason).toBe("Internal Server Error");
         end)
         test("Yielded", function()
-            local ok, server = net.serve({
+            local server = net.serve({
                 port = 8080,
                 reuseAddress = true,
                 request = function(req)
@@ -250,16 +232,13 @@ describe("Server", function()
                     error("Server Error");
                 end,
             });
-            
-            expect(ok).toBe(true);
             expect(server).toBe(expect.type("userdata"));
 
             testing.defer(function()
                 server:stop();
             end)
     
-            local rOk, rRes = net.request("http://localhost:8080");
-            expect(rOk).toBe(true);
+            local rRes = net.request("http://localhost:8080");
             expect(rRes).toBe(expect.type("table"));
             expect(rRes.ok).toBe(false);
             expect(rRes.statusCode).toBe(500);
@@ -280,7 +259,7 @@ describe("Websockets", function()
         local serverMessageCount = 0;
         local references = {};
         local reqCalled = false;
-        local ok, server = net.serve({
+        local server = net.serve({
             port = 8080,
             reuseAddress = true,
             request = function(req)
@@ -318,16 +297,13 @@ describe("Websockets", function()
                 end,
             },
         });
-
-        expect(ok).toBe(true);
         expect(server).toBe(expect.type("userdata"));
 
         testing.defer(function()
             server:stop();
         end)
 
-        local clientOk, socket = net.websocket("ws://localhost:8080", {});
-        expect(clientOk).toBe(true);
+        local socket = net.websocket("ws://localhost:8080", {});
         expect(socket).toBe(expect.type("userdata"));
         testing.defer(function()
             socket:close();

@@ -15,7 +15,7 @@ const process = std.process;
 
 const native_os = builtin.os.tag;
 
-pub const LIB_NAME = "@zcore/process";
+pub const LIB_NAME = "process";
 
 pub var SIGINT_LUA: ?LuaSigHandler = null;
 
@@ -451,33 +451,69 @@ const ProcessChildOptions = struct {
     }
 };
 
-fn process_run(L: *Luau) !i32 {
+const ProcessAsyncRun = struct {
+    child: process.Child,
+    poller: std.io.Poller(ProcessChildHandle.PollEnum),
+    max_output_bytes: usize = 50 * 1024,
+
+    pub fn update(ctx: *ProcessAsyncRun, L: *Luau, _: *Scheduler) !i32 {
+        if (try ctx.poller.pollTimeout(0)) {
+            errdefer _ = ctx.child.kill() catch {};
+            errdefer ctx.poller.deinit();
+            if (ctx.poller.fifo(.stdout).count > ctx.max_output_bytes)
+                return error.StdoutStreamTooLong;
+            if (ctx.poller.fifo(.stderr).count > ctx.max_output_bytes)
+                return error.StderrStreamTooLong;
+            return -1;
+        }
+        defer ctx.poller.deinit();
+
+        const stdout_fifo = ctx.poller.fifo(.stdout);
+        const stdout = stdout_fifo.readableSliceOfLen(stdout_fifo.count);
+        const stderr_fifo = ctx.poller.fifo(.stderr);
+        const stderr = stderr_fifo.readableSliceOfLen(stderr_fifo.count);
+
+        const term = try ctx.child.wait();
+
+        L.newTable();
+
+        L.setFieldLString(-1, "stdout", stdout);
+        L.setFieldLString(-1, "stderr", stderr);
+
+        internal_process_term(L, term);
+
+        return 1;
+    }
+};
+
+fn process_run(L: *Luau, scheduler: *Scheduler) !i32 {
     const allocator = L.allocator();
 
     var childOptions = try ProcessChildOptions.init(L);
     defer childOptions.deinit();
 
-    const proc = try process.Child.run(.{
-        .allocator = allocator,
-        .argv = childOptions.argArray.items,
-        .env_map = if (childOptions.env) |env|
-            &env
-        else
-            null,
-        .cwd = childOptions.cwd,
+    var child = process.Child.init(childOptions.argArray.items, allocator);
+    child.stdin_behavior = .Ignore;
+    child.stdout_behavior = .Pipe;
+    child.stderr_behavior = .Pipe;
+    child.cwd = childOptions.cwd;
+    child.env_map = if (childOptions.env) |env|
+        &env
+    else
+        null;
+    child.expand_arg0 = .no_expand;
+
+    try child.spawn();
+
+    const poller = std.io.poll(allocator, ProcessChildHandle.PollEnum, .{
+        .stdout = child.stdout.?,
+        .stderr = child.stderr.?,
     });
-    defer allocator.free(proc.stdout);
-    defer allocator.free(proc.stderr);
 
-    L.pushBoolean(true);
-    L.newTable();
-
-    L.setFieldLString(-1, "stdout", proc.stdout);
-    L.setFieldLString(-1, "stderr", proc.stderr);
-
-    internal_process_term(L, proc.term);
-
-    return 2;
+    return scheduler.addSimpleTask(ProcessAsyncRun, .{
+        .child = child,
+        .poller = poller,
+    }, L, ProcessAsyncRun.update);
 }
 
 fn process_create(L: *Luau) !i32 {
@@ -485,7 +521,6 @@ fn process_create(L: *Luau) !i32 {
 
     const childOptions = try ProcessChildOptions.init(L);
 
-    L.pushBoolean(true);
     const handlePtr = L.newUserdataDtor(ProcessChildHandle, ProcessChildHandle.__dtor);
     var childProcess = process.Child.init(childOptions.argArray.items, allocator);
 
@@ -532,7 +567,7 @@ fn process_create(L: *Luau) !i32 {
     else
         std.debug.panic("InternalError (ProcessChild Metatable not initialized)", .{});
 
-    return 2;
+    return 1;
 }
 
 fn process_exit(L: *Luau) i32 {
@@ -780,8 +815,8 @@ pub fn loadLib(L: *Luau, args: []const []const u8) !void {
     }
 
     L.setFieldFn(-1, "exit", process_exit);
-    L.setFieldFn(-1, "run", luaHelper.toSafeZigFunction(process_run));
-    L.setFieldFn(-1, "create", luaHelper.toSafeZigFunction(process_create));
+    L.setFieldFn(-1, "run", Scheduler.toSchedulerEFn(process_run));
+    L.setFieldFn(-1, "create", process_create);
     L.setFieldFn(-1, "onSignal", process_onsignal);
 
     L.newTable();

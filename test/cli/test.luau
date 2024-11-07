@@ -1,4 +1,4 @@
-local testing = require("@zcore/testing");
+local testing = zune.testing;
 
 local describe = testing.describe;
 local expect = testing.expect;

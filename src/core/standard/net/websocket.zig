@@ -213,7 +213,6 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
                 }
             } else return .Stop;
 
-            L.pushBoolean(true);
             const data = L.newUserdata(LuaWebSocketClient);
             data.ptr = ctx;
 
@@ -226,7 +225,7 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
             ctx.connected = response.statusCode == 101;
             ctx.establishedLua = L.ref(-1) catch std.debug.panic("InternalError (WebSocketClient bad ref)", .{});
 
-            _ = Scheduler.resumeState(L, null, 2) catch {};
+            _ = Scheduler.resumeState(L, null, 1) catch {};
 
             if (response.statusCode != 101) {
                 ctx.closeConnection(L, false, null);
@@ -444,18 +443,16 @@ pub fn lua_websocket(L: *Luau, scheduler: *Scheduler) i32 {
     }
 
     const created = prep(allocator, L, scheduler, uriString, protocols) catch |err| {
-        std.debug.print("Error: {}\n", .{err});
-        L.pushBoolean(false);
         L.pushString(@errorName(err));
+        L.raiseError();
         return 2;
     };
 
-    if (created) return L.yield(0);
+    if (created)
+        return L.yield(0);
 
-    L.pushBoolean(false);
     L.pushString("Failed to create websocket");
-
-    return 2;
+    L.raiseError();
 }
 
 pub fn lua_load(L: *Luau) void {

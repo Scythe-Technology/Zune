@@ -1,6 +1,6 @@
 --!strict
-local crypto = require("@zcore/crypto");
-local testing = require("@zcore/testing");
+local crypto = zune.crypto;
+local testing = zune.testing;
 
 local describe = testing.describe;
 local expect = testing.expect;

@@ -246,17 +246,15 @@ pub fn dtor(ctx: *Self, L: *Luau, scheduler: *Scheduler) void {
         const max_append_size = options.max_append_size orelse 2 * 1024 * 1024;
         req.reader().readAllArrayList(&responseBody, max_append_size) catch |err| {
             std.debug.print("Error reading response0: {}\n", .{err});
-            L.pushBoolean(false);
             L.pushString(@errorName(err));
-            _ = Scheduler.resumeState(L, null, 2) catch {};
+            _ = Scheduler.resumeStateError(L, null) catch {};
             return;
         };
 
         if (options.server_header_buffer == null) {
             std.debug.print("Server header buffer is null\n", .{});
-            L.pushBoolean(false);
             L.pushString("InternalError (Header Buffer is null)");
-            _ = Scheduler.resumeState(L, null, 2) catch {};
+            _ = Scheduler.resumeStateError(L, null) catch {};
             return;
         }
 
@@ -271,29 +269,28 @@ pub fn dtor(ctx: *Self, L: *Luau, scheduler: *Scheduler) void {
             .ignoreBody = true,
         }) catch |err| {
             std.debug.print("Error creating response1: {}\n", .{err});
-            L.pushBoolean(false);
             L.pushString(@errorName(err));
-            _ = Scheduler.resumeState(L, null, 2) catch {};
+            _ = Scheduler.resumeStateError(L, null) catch {};
             return;
         };
         defer response.deinit();
 
-        L.pushBoolean(true);
         response.pushToStack(L, responseBody.items) catch |err| {
             L.pop(1); // drop: boolean
             std.debug.print("Error pushing response2: {}\n", .{err});
-            L.pushBoolean(false);
             L.pushString(@errorName(err));
-            _ = Scheduler.resumeState(L, null, 2) catch {};
+            _ = Scheduler.resumeStateError(L, null) catch {};
             return;
         };
 
-        _ = Scheduler.resumeState(L, null, 2) catch {};
+        _ = Scheduler.resumeState(L, null, 1) catch {};
     } else {
         // continue lua with error
-        L.pushBoolean(false);
-        if (ctx.err) |err| L.pushString(@errorName(err)) else L.pushString("Error");
-        _ = Scheduler.resumeState(L, null, 2) catch {};
+        if (ctx.err) |err|
+            L.pushString(@errorName(err))
+        else
+            L.pushString("Error");
+        _ = Scheduler.resumeStateError(L, null) catch {};
     }
 }
 
@@ -463,9 +460,9 @@ pub fn lua_request(L: *Luau, scheduler: *Scheduler) i32 {
     }
 
     const uri = std.Uri.parse(uriString) catch |err| {
-        L.pushBoolean(false);
         L.pushString(@errorName(err));
-        return 2;
+        L.raiseError();
+        return 1;
     };
 
     prep(allocator, L, scheduler, .{
@@ -483,9 +480,9 @@ pub fn lua_request(L: *Luau, scheduler: *Scheduler) i32 {
         .payload = payload,
         .method = method,
     }) catch |err| {
-        L.pushBoolean(false);
         L.pushString(@errorName(err));
-        return 2;
+        L.raiseError();
+        return 1;
     };
 
     return L.yield(0);

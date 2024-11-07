@@ -1,5 +1,5 @@
 --!strict
-local task = require("@zcore/task");
+local task = zune.task;
 
 local testing = {
     running = true,
@@ -343,10 +343,11 @@ local conditionals = {
         if (expected ~= nil) then
             assertExpect(false, not success, "Expected %s to %sthrow an error", readable(self.received), flipTag(self.flipped));
             local stripped = err:match("^%[string \"[^\"]+\"%]:%d+: (.+)$");
-            if (not stripped) then
-                error("Expected error message to be in the format of '[string \"<filename>\"]:<line>: <message>'", 2);
+            if (stripped) then
+                assertExpect(self.flipped, stripped == expected, "Got error %s expected to %sthrow %s", readable(stripped), flipTag(self.flipped), readable(expected));
+            else
+                assertExpect(self.flipped, err == expected, "Got error %s expected to %sthrow %s", readable(err), flipTag(self.flipped), readable(expected));
             end
-            assertExpect(self.flipped, stripped == expected, "Got error %s expected to %sthrow %s", readable(stripped), flipTag(self.flipped), readable(expected));
         else
             assertExpect(self.flipped, not success, "Expected %s to %sthrow an error", readable(self.received), flipTag(self.flipped));
         end
@@ -409,7 +410,7 @@ local expect = setmetatable({
         end
         return Conditional.new(typename, function(value)
             local t = typeof(value);
-            return t == typename, t, `value is supposed to %sbe of type {typename}`;
+            return t == typename, t, `value is supposed to %sbe of type {typename}, got {t}`;
         end)
     end,
     type = function(typename : string)
@@ -418,7 +419,7 @@ local expect = setmetatable({
         end
         return Conditional.new(typename, function(value)
             local t = typeof(value);
-            return t == typename, t, `value is supposed to %sbe of type {typename}`;
+            return t == typename, t, `value is supposed to %sbe of type {typename}, got {t}`;
         end)
     end,
     similar = function(t : {[any]: any})

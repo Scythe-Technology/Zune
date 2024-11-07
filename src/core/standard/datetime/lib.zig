@@ -10,7 +10,7 @@ const Luau = luau.Luau;
 
 const Datetime = time.Datetime;
 
-pub const LIB_NAME = "@zcore/datetime";
+pub const LIB_NAME = "datetime";
 
 const LuaDatetime = struct {
     pub const META = "datetime_instance";

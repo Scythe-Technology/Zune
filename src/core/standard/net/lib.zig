@@ -11,7 +11,7 @@ const HttpServer = @import("httpserver.zig");
 const HttpClient = @import("httpclient.zig");
 const WebSocketClient = @import("websocket.zig");
 
-pub const LIB_NAME = "@zcore/net";
+pub const LIB_NAME = "net";
 
 pub fn loadLib(L: *Luau) void {
     HttpServer.lua_load(L);

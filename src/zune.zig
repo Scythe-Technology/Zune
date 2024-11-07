@@ -110,6 +110,21 @@ pub fn loadConfiguration() void {
 pub fn openZune(L: *luau.Luau, args: []const []const u8, mode: RunMode, flags: Flags) !void {
     L.openLibs();
 
+    L.newTable();
+    L.newTable();
+    L.setFieldFn(-1, luau.Metamethods.index, struct {
+        fn inner(l: *luau.Luau) !i32 {
+            _ = l.findTable(luau.REGISTRYINDEX, "_LIBS", 1);
+            l.pushValue(2);
+            _ = l.getTable(-2);
+            return 1;
+        }
+    }.inner);
+    L.setFieldString(-1, luau.Metamethods.metatable, "This metatable is locked");
+    L.setMetatable(-2);
+    L.setReadOnly(-1, true);
+    L.setGlobal("zune");
+
     L.pushFunction(resolvers_fmt.fmt_print, "zcore_fmt_print");
     L.setGlobal("print");
     L.pushFunction(struct {
@@ -166,4 +181,12 @@ pub fn openZune(L: *luau.Luau, args: []const []const u8, mode: RunMode, flags: F
     }
 
     try resolvers_require.loadAliases(DEFAULT_ALLOCATOR);
+}
+
+test "Zune" {
+    const TestRunner = @import("./core/utils/testrunner.zig");
+
+    const testResult = try TestRunner.runTest(std.testing.allocator, @import("zune-test-files").@"zune.test", &.{}, true);
+
+    try std.testing.expect(testResult.failed == 0);
 }

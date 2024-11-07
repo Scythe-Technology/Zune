@@ -8,9 +8,9 @@ const luaHelper = @import("../utils/luahelper.zig");
 
 const Luau = luau.Luau;
 
-pub const LIB_NAME = "@zcore/luau";
+pub const LIB_NAME = "luau";
 
-fn luau_compile(L: *Luau) i32 {
+fn luau_compile(L: *Luau) !i32 {
     const source = L.checkString(1);
 
     var compileOpts = luau.CompileOptions{
@@ -58,17 +58,19 @@ fn luau_compile(L: *Luau) i32 {
     const bytecode = luau.compile(allocator, source, compileOpts) catch L.raiseErrorStr("OutOfMemory", .{});
     defer allocator.free(bytecode);
 
-    if (bytecode.len < 2) L.raiseErrorStr("Luau Compile Error", .{});
+    if (bytecode.len < 2)
+        return error.LuauCompileError;
 
-    var outBuf = bytecode;
     const version = bytecode[0];
     const success = version != 0;
-    if (!success) outBuf = bytecode[1..];
+    if (!success) {
+        L.pushLString(bytecode[1..]);
+        return error.RaiseLuauError;
+    }
 
-    L.pushBoolean(success);
-    L.pushLString(outBuf);
+    L.pushLString(bytecode);
 
-    return 2;
+    return 1;
 }
 
 fn luau_load(L: *Luau) i32 {
@@ -110,7 +112,8 @@ fn luau_load(L: *Luau) i32 {
         } else L.pop(1);
     }
 
-    if (useCodeGen and luau.CodeGen.Supported()) luau.CodeGen.Compile(L, -1);
+    if (useCodeGen and luau.CodeGen.Supported())
+        luau.CodeGen.Compile(L, -1);
 
     return 1;
 }

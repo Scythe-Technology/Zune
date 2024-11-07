@@ -1,5 +1,5 @@
-local task = require("@zcore/task");
-local testing = require("@zcore/testing");
+local task = zune.task;
+local testing = zune.testing;
 
 local describe = testing.describe;
 local expect = testing.expect;

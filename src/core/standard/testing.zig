@@ -11,7 +11,7 @@ const test_lib_size = @embedFile("../lua/testing_lib.luac").len;
 
 const Luau = luau.Luau;
 
-pub const LIB_NAME = "@zcore/testing";
+pub const LIB_NAME = "testing";
 
 fn testing_debug(L: *Luau) i32 {
     const str = L.checkString(1);
@@ -68,8 +68,8 @@ pub const TestResult = struct {
 pub fn finish_testing(L: *Luau, rawstart: f64) TestResult {
     const end = luau.clock();
 
-    _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
-    if (L.getField(-1, "@zcore/testing") != .table)
+    _ = L.findTable(luau.REGISTRYINDEX, "_LIBS", 1);
+    if (L.getField(-1, LIB_NAME) != .table)
         std.debug.panic("No test framework loaded", .{});
 
     const stdOut = if (L.getField(luau.GLOBALSINDEX, "_testing_stdOut") == .boolean)
@@ -78,13 +78,13 @@ pub fn finish_testing(L: *Luau, rawstart: f64) TestResult {
         true;
     L.pop(1);
 
-    const start = if (L.getField(luau.REGISTRYINDEX, "_START") == .number)
+    const start = if (L.getField(-1, "_START") == .number)
         L.toNumber(-1) catch rawstart
     else
         rawstart;
+    L.pop(1);
 
     const time = end - start;
-    L.pop(1);
     const mainTestCount = if (L.getField(-1, "_COUNT") == .number)
         L.toInteger(-1) catch unreachable
     else

@@ -1,6 +1,6 @@
 --!strict
-local stdio = require("@zcore/stdio");
-local testing = require("@zcore/testing");
+local stdio = zune.stdio;
+local testing = zune.testing;
 
 local describe = testing.describe;
 local expect = testing.expect;

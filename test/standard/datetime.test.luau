@@ -1,6 +1,6 @@
 --!strict
-local datetime = require("@zcore/datetime");
-local testing = require("@zcore/testing");
+local datetime = zune.datetime;
+local testing = zune.testing;
 
 local describe = testing.describe;
 local expect = testing.expect;

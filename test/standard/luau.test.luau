@@ -1,6 +1,6 @@
 --!strict
-local luau = require("@zcore/luau");
-local testing = require("@zcore/testing");
+local luau = zune.luau;
+local testing = zune.testing;
 
 local describe = testing.describe;
 local expect = testing.expect;
@@ -12,41 +12,36 @@ end
 
 describe("Compile", function()
     test("Basic", function()
-        local ok, bytecode = luau.compile("print('Hello, World!')");
-        expect(ok).toBe(true);
+        local bytecode = luau.compile("print('Hello, World!')");
         expect(bytecode).toBe("\x06\x03\x02\x05print\rHello, World!\x00\x01\x02\x00\x00\x01\x02\x00\x06A\x00\x00\x00\f\x00\x01\x00\x00\x00\x00@\x05\x01\x02\x00\x15\x00\x02\x01\x16\x00\x01\x00\x03\x03\x01\x04\x00\x00\x00@\x03\x02\x00\x01\x00\x01\x18\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00");
     end)
 
     test("Options", function()
-        local ok, bytecode = luau.compile("print('Hello!')", {
+        local bytecode = luau.compile("print('Hello!')", {
             optimization_level = 0,
             debug_level = 0,
             coverage_level = 2,
         });
-        local ok2, bytecode2 = luau.compile("print('Hello!')", {
+        local bytecode2 = luau.compile("print('Hello!')", {
             optimization_level = 1,
             debug_level = 1,
             coverage_level = 0,
         });
-        expect(ok).toBe(true);
-        expect(ok2).toBe(true);
         expect(bytecode).toBe("\x06\x03\x02\x05print\x06Hello!\x00\x01\x02\x00\x00\x01\x02\x00\tA\x00\x00\x00E\x00\x00\x00E\x00\x00\x00\a\x00\x00F\x00\x00\x00\x00E\x00\x00\x00\x05\x01\x01\x00\x15\x00\x02\x01\x16\x00\x01\x00\x02\x03\x01\x03\x02\x00\x01\x00\x00\x00\x00");
         expect(bytecode2).toBe("\x06\x03\x02\x05print\x06Hello!\x00\x01\x02\x00\x00\x01\x02\x00\x06A\x00\x00\x00\f\x00\x01\x00\x00\x00\x00@\x05\x01\x02\x00\x15\x00\x02\x01\x16\x00\x01\x00\x03\x03\x01\x04\x00\x00\x00@\x03\x02\x00\x01\x00\x01\x18\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00");
         expect(bytecode).never.toBe(bytecode2);
     end)
 
     test("Error Basic", function()
-        local ok, err = luau.compile(makeLine(1).."a");
-        expect(ok).toBe(false);
-        expect(err).toBe(expect.type("string"));
-        expect(err).toBe(":1: Incomplete statement: expected assignment or a function call");
+        expect(function()
+            local _ = luau.compile(makeLine(1).."a");
+        end).toThrow(":1: Incomplete statement: expected assignment or a function call");
     end)
 
     test("Error Basic (Line)", function()
-        local ok, err = luau.compile(makeLine(1234).."a");
-        expect(ok).toBe(false);
-        expect(err).toBe(expect.type("string"));
-        expect(err).toBe(":1234: Incomplete statement: expected assignment or a function call");
+        expect(function()
+            luau.compile(makeLine(1234).."a");
+        end).toThrow(":1234: Incomplete statement: expected assignment or a function call");
     end)
 end)
 
@@ -61,8 +56,7 @@ local function timeFunction(f: () -> ())
 end
 
 describe("Load", function()
-    local bytecodeOk, bytecode = luau.compile("return 'Hello, World!'");
-    expect(bytecodeOk).toBe(true);
+    local bytecode = luau.compile("return 'Hello, World!'");
     expect(bytecode).toBe(returnStringBytecode "Hello, World!");
     
     test("Basic", function()
@@ -78,8 +72,7 @@ describe("Load", function()
     end)
 
     test("Options", function()
-        local bOk, bCode = luau.compile("return a");
-        expect(bOk).toBe(true);
+        local bCode = luau.compile("return a");
         expect(bCode).toBe("\x06\x03\x01\x01a\x00\x01\x01\x00\x00\x01\x02\x00\x04A\x00\x00\x00\f\x00\x01\x00\x00\x00\x00@\x16\x00\x02\x00\x02\x03\x01\x04\x00\x00\x00@\x00\x01\x00\x01\x18\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00");
         local func = luau.load(bCode, {
             env = {
@@ -91,8 +84,7 @@ describe("Load", function()
     end)
 
     test("Options (2)", function()
-        local bOk, bCode = luau.compile("return a()");
-        expect(bOk).toBe(true);
+        local bCode = luau.compile("return a()");
         expect(bCode).toBe("\x06\x03\x01\x01a\x00\x01\x01\x00\x00\x01\x02\x00\x05A\x00\x00\x00\f\x00\x01\x00\x00\x00\x00@\x15\x00\x01\x00\x16\x00\x00\x00\x02\x03\x01\x04\x00\x00\x00@\x00\x01\x00\x01\x18\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00");
         local func = luau.load(bCode, {
             chunkName = "test",
@@ -109,14 +101,13 @@ describe("Load", function()
                 buffer.writeu8(buf, i - 1, i);
             end
         end
-        local bOk, bCode = luau.compile([[
+        local bCode = luau.compile([[
             local size = 2e5;
             local buf = buffer.create(size);
             for i = 1, size do
                 buffer.writeu8(buf, i - 1, i);
             end
         ]]);
-        expect(bOk).toBe(true);
         local safeNativeTime = timeFunction(native);
         test("Basic (NCG Enabled)", function()
             local func = luau.load(bCode, {
@@ -183,8 +174,7 @@ describe("Load", function()
     end)
 
     test("Environment", function()
-        local bOk, bCode = luau.compile("return require");
-        expect(bOk).toBe(true);
+        local bCode = luau.compile("return require");
         expect(bCode).toBe("\x06\x03\x01\arequire\x00\x01\x01\x00\x00\x01\x02\x00\x04A\x00\x00\x00\f\x00\x01\x00\x00\x00\x00@\x16\x00\x02\x00\x02\x03\x01\x04\x00\x00\x00@\x00\x01\x00\x01\x18\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00");
         local func = luau.load(bCode, {
             chunkName = "test",
@@ -195,8 +185,7 @@ describe("Load", function()
     end)
 
     test("Environment (2)", function()
-        local bOk, bCode = luau.compile("return require");
-        expect(bOk).toBe(true);
+        local bCode = luau.compile("return require");
         expect(bCode).toBe("\x06\x03\x01\arequire\x00\x01\x01\x00\x00\x01\x02\x00\x04A\x00\x00\x00\f\x00\x01\x00\x00\x00\x00@\x16\x00\x02\x00\x02\x03\x01\x04\x00\x00\x00@\x00\x01\x00\x01\x18\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00");
         local env = {};
         local func = luau.load(bCode, {

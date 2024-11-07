@@ -1,13 +1,21 @@
 --!strict
-local serde = require("@zcore/serde");
-local testing = require("@zcore/testing");
+local serde = zune.serde;
+local testing = zune.testing;
 
 local describe = testing.describe;
 local expect = testing.expect;
 local test = testing.test;
 
 describe("Json5", function()
-    -- Encoding tests are the same as json, so we only test decoding
+    -- Encoding tests are the similar to json, so we test some edge cases
+    describe("Encoding", function()
+        test("Number", function()
+            expect(serde.json5.encode(1)).toBe("1");
+            expect(serde.json5.encode(math.huge)).toBe("Infinity");
+            expect(serde.json5.encode(-math.huge)).toBe("-Infinity");
+            expect(serde.json5.encode(0/0)).toBe("NaN");
+        end)
+    end)
 
     describe("Decoding", function()
         test("Number", function()
@@ -61,6 +69,7 @@ describe("Json5", function()
         test("Object/Array", function()
             expect(serde.json5.decode(`\{\}`)).toBe(expect.similar({}));
             expect(serde.json5.decode(`\{"a":1,"b":2,"c":3\}`)).toBe(expect.similar({a = 1, b = 2, c = 3}));
+            expect(serde.json5.decode(`\{a:1,b:2,c:3\}`)).toBe(expect.similar({a = 1, b = 2, c = 3}));
             expect(serde.json5.decode(`[]`)).toBe(expect.similar({}));
             expect(serde.json5.decode(`[1, 2, 3]`)).toBe(expect.similar({1,2,3}));
             expect(serde.json5.decode(`\{// comments \n "a" :1 /*multi\nline\ncomment*/, "b"   : 2,    /*  multi  \n  line  \n  comment */   "c"   :    3       \}`)).toBe(expect.similar({a = 1, b = 2, c = 3}));

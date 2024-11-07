@@ -17,7 +17,7 @@ const lz4 = @import("lz4.zig");
 
 const Luau = luau.Luau;
 
-pub const LIB_NAME = "@zcore/serde";
+pub const LIB_NAME = "serde";
 
 pub fn loadLib(L: *Luau) void {
     L.newTable();
@@ -25,8 +25,8 @@ pub fn loadLib(L: *Luau) void {
     { // Json
         L.newTable();
 
-        L.setFieldFn(-1, "encode", json.lua_encode);
-        L.setFieldFn(-1, "decode", json.lua_decode);
+        L.setFieldFn(-1, "encode", json.LuaEncoder(.JSON));
+        L.setFieldFn(-1, "decode", json.LuaDecoder(.JSON));
 
         json.lua_setprops(L);
 
@@ -36,8 +36,8 @@ pub fn loadLib(L: *Luau) void {
     { // Json5
         L.newTable();
 
-        L.setFieldFn(-1, "encode", json.lua_encode);
-        L.setFieldFn(-1, "decode", json.lua_decode5);
+        L.setFieldFn(-1, "encode", json.LuaEncoder(.JSON5));
+        L.setFieldFn(-1, "decode", json.LuaDecoder(.JSON5));
 
         _ = L.getField(-2, "json");
 

@@ -1,7 +1,7 @@
 --!strict
-local ffi = require("@zcore/ffi");
-local process = require("@zcore/process");
-local testing = require("@zcore/testing");
+local ffi = zune.ffi;
+local process = zune.process;
+local testing = zune.testing;
 
 local test = testing.test;
 local expect = testing.expect;

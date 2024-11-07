@@ -804,21 +804,17 @@ pub fn lua_serve(L: *Luau, scheduler: *Scheduler) i32 {
 
     const allocator = L.allocator();
 
-    L.pushBoolean(true);
-
     prep(allocator, L, scheduler, addressStr, @intCast(port), reuseAddress, requestFunctionRef, .{
         .upgrade = websocketUpgradeFunctionRef,
         .open = websocketOpenFunctionRef,
         .message = websocketMessageFunctionRef,
         .close = websocketCloseFunctionRef,
     }) catch |err| {
-        L.pop(1); // drop true
-        L.pushBoolean(false);
         L.pushString(@errorName(err));
-        return 2;
+        L.raiseError();
     };
 
-    return 2;
+    return 1;
 }
 
 pub fn lua_load(L: *Luau) void {

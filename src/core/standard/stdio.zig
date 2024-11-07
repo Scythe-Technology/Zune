@@ -14,7 +14,7 @@ const Luau = luau.Luau;
 
 const MAX_LUAU_SIZE = 1073741824; // 1 GB
 
-pub const LIB_NAME = "@zcore/stdio";
+pub const LIB_NAME = "stdio";
 
 const CursorMoveKind = enum(u4) {
     Home,

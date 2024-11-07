@@ -1,6 +1,6 @@
 --!strict
-local serde = require("@zcore/serde");
-local testing = require("@zcore/testing");
+local serde = zune.serde;
+local testing = zune.testing;
 
 local expect = testing.expect;
 

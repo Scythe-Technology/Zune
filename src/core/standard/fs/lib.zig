@@ -17,7 +17,7 @@ const HardwareError = error{NotSupported};
 const UnhandledError = error{UnknownError};
 const OpenError = error{ InvalidMode, BadExclusive };
 
-pub const LIB_NAME = "@zcore/fs";
+pub const LIB_NAME = "fs";
 
 fn fs_readFile(L: *Luau) !i32 {
     const allocator = L.allocator();
@@ -25,12 +25,12 @@ fn fs_readFile(L: *Luau) !i32 {
     const useBuffer = L.optBoolean(2) orelse false;
     const data = try fs.cwd().readFileAlloc(allocator, path, luaHelper.MAX_LUAU_SIZE);
     defer allocator.free(data);
-    L.pushBoolean(true);
+
     if (useBuffer) {
         L.pushBuffer(data) catch return BufferError.FailedToCreateBuffer;
     } else L.pushLString(data);
 
-    return 2;
+    return 1;
 }
 
 fn fs_readDir(L: *Luau) !i32 {
@@ -40,20 +40,15 @@ fn fs_readDir(L: *Luau) !i32 {
     });
     defer dir.close();
     var iter = dir.iterate();
-    L.pushBoolean(true);
     L.newTable();
     var i: i32 = 1;
-    while (true) {
-        errdefer L.pop(2); // Drop: table, boolean
-        const entry = try iter.next();
-        if (entry == null)
-            break;
+    while (try iter.next()) |entry| {
         L.pushInteger(i);
-        L.pushLString(entry.?.name);
+        L.pushLString(entry.name);
         L.setTable(-3);
         i += 1;
     }
-    return 2;
+    return 1;
 }
 
 fn fs_writeFile(L: *Luau) !i32 {
@@ -63,8 +58,7 @@ fn fs_writeFile(L: *Luau) !i32 {
         .sub_path = path,
         .data = data,
     });
-    L.pushBoolean(true);
-    return 1;
+    return 0;
 }
 
 fn fs_writeDir(L: *Luau) !i32 {
@@ -75,15 +69,13 @@ fn fs_writeDir(L: *Luau) !i32 {
         cwd.makePath(path)
     else
         cwd.makeDir(path));
-    L.pushBoolean(true);
-    return 1;
+    return 0;
 }
 
 fn fs_removeFile(L: *Luau) !i32 {
     const path = L.checkString(1);
     try fs.cwd().deleteFile(path);
-    L.pushBoolean(true);
-    return 1;
+    return 0;
 }
 
 fn fs_removeDir(L: *Luau) !i32 {
@@ -94,22 +86,17 @@ fn fs_removeDir(L: *Luau) !i32 {
         cwd.deleteTree(path)
     else
         cwd.deleteDir(path));
-    L.pushBoolean(true);
-    return 1;
+    return 0;
 }
 
 fn internal_isDir(srcDir: fs.Dir, path: []const u8) bool {
-    var dir = srcDir.openDir(path, fs.Dir.OpenDirOptions{}) catch return false;
-    dir.close();
-    return true;
+    const stat = srcDir.statFile(path) catch return false;
+    return stat.kind == .directory;
 }
 
 fn internal_isFile(srcDir: fs.Dir, path: []const u8) bool {
-    var file = srcDir.openFile(path, fs.File.OpenFlags{
-        .mode = .read_write,
-    }) catch return false;
-    file.close();
-    return true;
+    const stat = srcDir.statFile(path) catch return false;
+    return stat.kind == .file;
 }
 
 fn fs_isFile(L: *Luau) i32 {
@@ -160,6 +147,7 @@ fn fs_metadata(L: *Luau) !i32 {
     const path = L.checkString(1);
     const allocator = L.allocator();
     const buf = try allocator.alloc(u8, 4096);
+    defer allocator.free(buf);
     const cwd = std.fs.cwd();
     if (internal_isDir(cwd, path)) {
         var dir = try cwd.openDir(path, fs.Dir.OpenDirOptions{});
@@ -171,8 +159,6 @@ fn fs_metadata(L: *Luau) !i32 {
                 isLink = false;
             },
         };
-        allocator.free(buf);
-        L.pushBoolean(true);
         internal_metadata_table(L, metadata, isLink);
     } else if (internal_isFile(cwd, path)) {
         var file = try cwd.openFile(path, fs.File.OpenFlags{
@@ -186,15 +172,9 @@ fn fs_metadata(L: *Luau) !i32 {
                 isLink = false;
             },
         };
-        allocator.free(buf);
-        L.pushBoolean(true);
         internal_metadata_table(L, metadata, isLink);
-    } else {
-        allocator.free(buf);
-
-        return std.fs.File.OpenError.FileNotFound;
-    }
-    return 2;
+    } else return std.fs.File.OpenError.FileNotFound;
+    return 1;
 }
 
 fn fs_move(L: *Luau) !i32 {
@@ -207,8 +187,7 @@ fn fs_move(L: *Luau) !i32 {
             return std.fs.Dir.MakeError.PathAlreadyExists;
     }
     try cwd.rename(fromPath, toPath);
-    L.pushBoolean(true);
-    return 1;
+    return 0;
 }
 
 fn copyDir(fromDir: fs.Dir, toDir: fs.Dir, overwrite: bool) !void {
@@ -267,8 +246,7 @@ fn fs_copy(L: *Luau) !i32 {
         defer toDir.close();
         try copyDir(fromDir, toDir, override);
     }
-    L.pushBoolean(true);
-    return 1;
+    return 0;
 }
 
 fn fs_symlink(L: *Luau) !i32 {
@@ -289,9 +267,8 @@ fn fs_symlink(L: *Luau) !i32 {
     defer allocator.free(fullPath);
 
     try cwd.symLink(fullPath, toPath, fs.Dir.SymLinkFlags{ .is_directory = isDir });
-    L.pushBoolean(true);
 
-    return 1;
+    return 0;
 }
 
 pub fn prepRefType(comptime luaType: luau.LuaType, L: *luau.Luau, ref: i32) bool {
@@ -399,7 +376,8 @@ const LuaWatch = struct {
         defer allocator.destroy(ctx);
 
         ctx.instance.deinit();
-        if (ctx.callback) |ref| L.unref(ref);
+        if (ctx.callback) |ref|
+            L.unref(ref);
     }
 };
 
@@ -550,7 +528,6 @@ fn fs_openFile(L: *Luau) !i32 {
         .mode = mode,
     });
 
-    L.pushBoolean(true);
     const filePtr = L.newUserdataDtor(FileObject, LuaFile.__dtor);
 
     filePtr.* = .{
@@ -558,9 +535,12 @@ fn fs_openFile(L: *Luau) !i32 {
         .open = true,
     };
 
-    if (L.getMetatableRegistry(LuaFile.META) == .table) L.setMetatable(-2) else std.debug.panic("InternalError (File Metatable not initialized)", .{});
+    if (L.getMetatableRegistry(LuaFile.META) == .table)
+        L.setMetatable(-2)
+    else
+        std.debug.panic("InternalError (File Metatable not initialized)", .{});
 
-    return 2;
+    return 1;
 }
 
 fn fs_createFile(L: *Luau) !i32 {
@@ -585,7 +565,6 @@ fn fs_createFile(L: *Luau) !i32 {
         .exclusive = exclusive,
     });
 
-    L.pushBoolean(true);
     const filePtr = L.newUserdataDtor(FileObject, LuaFile.__dtor);
 
     filePtr.* = .{
@@ -598,7 +577,7 @@ fn fs_createFile(L: *Luau) !i32 {
     else
         std.debug.panic("InternalError (File Metatable not initialized)", .{});
 
-    return 2;
+    return 1;
 }
 
 fn fs_watch(L: *Luau, scheduler: *Scheduler) !i32 {
@@ -662,28 +641,28 @@ pub fn loadLib(L: *Luau) void {
     }
     L.newTable();
 
-    L.setFieldFn(-1, "createFile", luaHelper.toSafeZigFunction(fs_createFile));
-    L.setFieldFn(-1, "openFile", luaHelper.toSafeZigFunction(fs_openFile));
+    L.setFieldFn(-1, "createFile", fs_createFile);
+    L.setFieldFn(-1, "openFile", fs_openFile);
 
-    L.setFieldFn(-1, "readFile", luaHelper.toSafeZigFunction(fs_readFile));
-    L.setFieldFn(-1, "readDir", luaHelper.toSafeZigFunction(fs_readDir));
+    L.setFieldFn(-1, "readFile", fs_readFile);
+    L.setFieldFn(-1, "readDir", fs_readDir);
 
-    L.setFieldFn(-1, "writeFile", luaHelper.toSafeZigFunction(fs_writeFile));
-    L.setFieldFn(-1, "writeDir", luaHelper.toSafeZigFunction(fs_writeDir));
+    L.setFieldFn(-1, "writeFile", fs_writeFile);
+    L.setFieldFn(-1, "writeDir", fs_writeDir);
 
-    L.setFieldFn(-1, "removeFile", luaHelper.toSafeZigFunction(fs_removeFile));
-    L.setFieldFn(-1, "removeDir", luaHelper.toSafeZigFunction(fs_removeDir));
+    L.setFieldFn(-1, "removeFile", fs_removeFile);
+    L.setFieldFn(-1, "removeDir", fs_removeDir);
 
     L.setFieldFn(-1, "isFile", fs_isFile);
     L.setFieldFn(-1, "isDir", fs_isDir);
 
-    L.setFieldFn(-1, "metadata", luaHelper.toSafeZigFunction(fs_metadata));
+    L.setFieldFn(-1, "metadata", fs_metadata);
 
-    L.setFieldFn(-1, "move", luaHelper.toSafeZigFunction(fs_move));
+    L.setFieldFn(-1, "move", fs_move);
 
-    L.setFieldFn(-1, "copy", luaHelper.toSafeZigFunction(fs_copy));
+    L.setFieldFn(-1, "copy", fs_copy);
 
-    L.setFieldFn(-1, "symlink", luaHelper.toSafeZigFunction(fs_symlink));
+    L.setFieldFn(-1, "symlink", fs_symlink);
 
     L.setFieldFn(-1, "watch", Scheduler.toSchedulerEFn(fs_watch));
 

@@ -1,6 +1,6 @@
 --!strict
-local regex = require("@zcore/regex");
-local testing = require("@zcore/testing");
+local regex = zune.regex;
+local testing = zune.testing;
 
 local describe = testing.describe;
 local expect = testing.expect;

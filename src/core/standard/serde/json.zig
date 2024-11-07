@@ -61,6 +61,11 @@ fn writeIndent(buf: *std.ArrayList(u8), kind: json.JsonIndent, depth: u32) !void
     }
 }
 
+const JsonKind = enum {
+    JSON,
+    JSON5,
+};
+
 fn encode(
     L: *Luau,
     allocator: std.mem.Allocator,
@@ -68,6 +73,7 @@ fn encode(
     tracked: *std.ArrayList(*const anyopaque),
     kind: json.JsonIndent,
     depth: u32,
+    comptime json_kind: JsonKind,
 ) !void {
     switch (L.typeOf(-1)) {
         .nil => try buf.appendSlice("null"),
@@ -90,7 +96,7 @@ fn encode(
                 if (nextKey) {
                     if (L.typeOf(-2) != .number)
                         return Error.InvalidKey;
-                    try encode(L, allocator, buf, tracked, kind, depth + 1);
+                    try encode(L, allocator, buf, tracked, kind, depth + 1, json_kind);
                     L.pop(1); // drop: value
                     var n: i32 = 1;
                     while (L.next(-2)) {
@@ -101,7 +107,7 @@ fn encode(
                         if (L.typeOf(-2) != .number)
                             return Error.InvalidKey;
 
-                        try encode(L, allocator, buf, tracked, kind, depth + 1);
+                        try encode(L, allocator, buf, tracked, kind, depth + 1, json_kind);
                         L.pop(1); // drop: value
                         n += 1;
                     }
@@ -119,12 +125,12 @@ fn encode(
                 try writeIndent(buf, kind, depth + 1);
 
                 L.pushValue(-2); // push key
-                try encode(L, allocator, buf, tracked, kind, depth + 1);
+                try encode(L, allocator, buf, tracked, kind, depth + 1, json_kind);
                 try buf.append(':');
                 if (kind != .NO_LINE)
                     try buf.append(' ');
                 L.pop(1); // drop: key
-                try encode(L, allocator, buf, tracked, kind, depth + 1);
+                try encode(L, allocator, buf, tracked, kind, depth + 1, json_kind);
                 L.pop(1); // drop: value
 
                 while (L.next(-2)) {
@@ -137,12 +143,12 @@ fn encode(
                     try writeIndent(buf, kind, depth + 1);
 
                     L.pushValue(-2); // push key [copy]
-                    try encode(L, allocator, buf, tracked, kind, depth + 1);
+                    try encode(L, allocator, buf, tracked, kind, depth + 1, json_kind);
                     try buf.append(':');
                     if (kind != .NO_LINE)
                         try buf.append(' ');
                     L.pop(1); // drop: key [copy]
-                    try encode(L, allocator, buf, tracked, kind, depth + 1);
+                    try encode(L, allocator, buf, tracked, kind, depth + 1, json_kind);
                     L.pop(1); // drop: value
                 }
 
@@ -155,7 +161,20 @@ fn encode(
         },
         .number => {
             const num = L.checkNumber(-1);
-            if (std.math.isNan(num) or std.math.isInf(num)) return Error.InvalidNumber;
+            switch (json_kind) {
+                .JSON => if (std.math.isNan(num) or std.math.isInf(num)) return Error.InvalidNumber,
+                .JSON5 => if (std.math.isInf(num)) {
+                    if (num > 0)
+                        try buf.appendSlice("Infinity")
+                    else
+                        try buf.appendSlice("-Infinity");
+                    return;
+                } else if (std.math.isNan(num)) {
+                    try buf.appendSlice("NaN");
+                    return;
+                },
+            }
+
             const str = try L.toString(-1);
             try buf.appendSlice(str);
         },
@@ -171,46 +190,51 @@ fn encode(
     }
 }
 
-pub fn lua_encode(L: *Luau) i32 {
-    const allocator = L.allocator();
+pub fn LuaEncoder(comptime json_kind: JsonKind) fn (L: *Luau) i32 {
+    return struct {
+        fn inner(L: *Luau) i32 {
+            const allocator = L.allocator();
 
-    var kind = json.JsonIndent.NO_LINE;
+            var kind = json.JsonIndent.NO_LINE;
 
-    const config_type = L.typeOf(2);
-    if (!luau.isNoneOrNil(config_type)) {
-        L.checkType(2, .table);
-        const indent_type = L.getField(2, "prettyIndent");
-        if (!luau.isNoneOrNil(indent_type)) {
-            L.checkType(-1, .number);
-            kind = switch (L.toInteger(-1) catch unreachable) {
-                0 => json.JsonIndent.NO_LINE,
-                1 => json.JsonIndent.SPACES_2,
-                2 => json.JsonIndent.SPACES_4,
-                3 => json.JsonIndent.TABS,
-                else => |n| L.raiseErrorStr("Unsupported indent kind %d", .{n}),
+            const config_type = L.typeOf(2);
+            if (!luau.isNoneOrNil(config_type)) {
+                L.checkType(2, .table);
+                const indent_type = L.getField(2, "prettyIndent");
+                if (!luau.isNoneOrNil(indent_type)) {
+                    L.checkType(-1, .number);
+                    kind = switch (L.toInteger(-1) catch unreachable) {
+                        0 => json.JsonIndent.NO_LINE,
+                        1 => json.JsonIndent.SPACES_2,
+                        2 => json.JsonIndent.SPACES_4,
+                        3 => json.JsonIndent.TABS,
+                        else => |n| L.raiseErrorStr("Unsupported indent kind %d", .{n}),
+                    };
+                }
+                L.pop(1);
+            }
+
+            var buf = std.ArrayList(u8).init(allocator);
+            defer buf.deinit();
+
+            var tracked = std.ArrayList(*const anyopaque).init(allocator);
+            defer tracked.deinit();
+
+            L.pushValue(1);
+            encode(L, allocator, &buf, &tracked, kind, 0, json_kind) catch |err| {
+                buf.deinit();
+                tracked.deinit();
+                switch (err) {
+                    Error.InvalidNumber => L.raiseErrorStr("InvalidNumber (Cannot be inf or nan)", .{}),
+                    Error.UnsupportedType => L.raiseErrorStr("Unsupported type %s", .{@tagName(L.typeOf(-1)).ptr}),
+                    else => L.raiseErrorStr("%s", .{@errorName(err).ptr}),
+                }
             };
+            L.pushLString(buf.items);
+
+            return 1;
         }
-        L.pop(1);
-    }
-
-    var buf = std.ArrayList(u8).init(allocator);
-    defer buf.deinit();
-
-    var tracked = std.ArrayList(*const anyopaque).init(allocator);
-    defer tracked.deinit();
-
-    L.pushValue(1);
-    encode(L, allocator, &buf, &tracked, kind, 0) catch |err| {
-        buf.deinit();
-        tracked.deinit();
-        switch (err) {
-            Error.InvalidNumber => L.raiseErrorStr("InvalidNumber (Cannot be inf or nan)", .{}),
-            Error.UnsupportedType => L.raiseErrorStr("Unsupported type %s", .{@tagName(L.typeOf(-1)).ptr}),
-            else => L.raiseErrorStr("%s", .{@errorName(err).ptr}),
-        }
-    };
-    L.pushLString(buf.items);
-    return 1;
+    }.inner;
 }
 
 fn decodeArray(L: *Luau, array: *std.ArrayList(json.JsonValue), preserve_null: bool) !void {
@@ -247,64 +271,41 @@ fn decodeValue(L: *Luau, jsonValue: json.JsonValue, preserve_null: bool) anyerro
     }
 }
 
-pub fn lua_decode(L: *Luau) !i32 {
-    const string = L.checkString(1);
-    if (string.len == 0) {
-        L.pushNil();
-        return 1;
-    }
+pub fn LuaDecoder(comptime json_kind: JsonKind) fn (L: *Luau) anyerror!i32 {
+    return struct {
+        fn inner(L: *Luau) !i32 {
+            const string = L.checkString(1);
+            if (string.len == 0) {
+                L.pushNil();
+                return 1;
+            }
 
-    var preserve_null = false;
+            var preserve_null = false;
 
-    const config_type = L.typeOf(2);
-    if (!luau.isNoneOrNil(config_type)) {
-        L.checkType(2, .table);
-        const preserve_null_type = L.getField(2, "preserveNull");
-        if (!luau.isNoneOrNil(preserve_null_type)) {
-            L.checkType(-1, .boolean);
-            preserve_null = L.toBoolean(-1);
+            const config_type = L.typeOf(2);
+            if (!luau.isNoneOrNil(config_type)) {
+                L.checkType(2, .table);
+                const preserve_null_type = L.getField(2, "preserveNull");
+                if (!luau.isNoneOrNil(preserve_null_type)) {
+                    L.checkType(-1, .boolean);
+                    preserve_null = L.toBoolean(-1);
+                }
+                L.pop(1);
+            }
+
+            const allocator = L.allocator();
+
+            var root = try switch (json_kind) {
+                .JSON => json.parse(allocator, string),
+                .JSON5 => json.parseJson5(allocator, string),
+            };
+            defer root.deinit();
+
+            try decodeValue(L, root.value, preserve_null);
+
+            return 1;
         }
-        L.pop(1);
-    }
-
-    const allocator = L.allocator();
-
-    var root = try json.parse(allocator, string);
-    defer root.deinit();
-
-    try decodeValue(L, root.value, preserve_null);
-
-    return 1;
-}
-
-pub fn lua_decode5(L: *Luau) !i32 {
-    const string = L.checkString(1);
-    if (string.len == 0) {
-        L.pushNil();
-        return 1;
-    }
-
-    var preserve_null = false;
-
-    const config_type = L.typeOf(2);
-    if (!luau.isNoneOrNil(config_type)) {
-        L.checkType(2, .table);
-        const preserve_null_type = L.getField(2, "preserveNull");
-        if (!luau.isNoneOrNil(preserve_null_type)) {
-            L.checkType(-1, .boolean);
-            preserve_null = L.toBoolean(-1);
-        }
-        L.pop(1);
-    }
-
-    const allocator = L.allocator();
-
-    var root = try json.parseJson5(allocator, string);
-    defer root.deinit();
-
-    try decodeValue(L, root.value, preserve_null);
-
-    return 1;
+    }.inner;
 }
 
 pub fn lua_setprops(L: *Luau) void {

@@ -2,9 +2,9 @@
 
 local TEMP_DIR = _G.__test_tempdir::string;
 
-local fs = require("@zcore/fs");
-local process = require("@zcore/process");
-local testing = require("@zcore/testing");
+local fs = zune.fs;
+local process = zune.process;
+local testing = zune.testing;
 
 local describe = testing.describe;
 local expect = testing.expect;
@@ -36,10 +36,10 @@ test("Context", function()
 
 		expect(process.cwd).toBe(`{current_cwd}\\{TEMP_DIR:gsub("/", "\\")}`);
 		expect(process.cwd).never.toBe(current_cwd);
-		assert(fs.writeFile("./test.txt", "Hello World"));
+		fs.writeFile("./test.txt", "Hello World")
 		expect(fs.isFile("./test.txt")).toBeTruthy();
-		expect(select(2, fs.readFile("./test.txt"))).toBe("Hello World");
-		assert(fs.removeFile("./test.txt"));
+		expect(fs.readFile("./test.txt")).toBe("Hello World");
+		fs.removeFile("./test.txt");
 		expect(fs.isFile("./test.txt")).toBeFalsy();
 
 		process.cwd = current_cwd;
@@ -52,10 +52,10 @@ test("Context", function()
 
 		expect(process.cwd).toBe(`{current_cwd}/{TEMP_DIR}`);
 		expect(process.cwd).never.toBe(current_cwd);
-		assert(fs.writeFile("./test.txt", "Hello World"));
+		fs.writeFile("./test.txt", "Hello World")
 		expect(fs.isFile("./test.txt")).toBeTruthy();
-		expect(select(2, fs.readFile("./test.txt"))).toBe("Hello World");
-		assert(fs.removeFile("./test.txt"));
+		expect(fs.readFile("./test.txt")).toBe("Hello World");
+		fs.removeFile("./test.txt")
 		expect(fs.isFile("./test.txt")).toBeFalsy();
 	
 		process.cwd = current_cwd;
@@ -84,7 +84,7 @@ describe("Environment", function()
 		test("Parser", function()
 			-- based on https://github.com/motdotla/dotenv/blob/8ab33066f90a20445d3c41e4fafba6c929c5e1a5/tests/.env
 			-- based on https://github.com/motdotla/dotenv/blob/8ab33066f90a20445d3c41e4fafba6c929c5e1a5/tests/.env-multiline
-			expect({fs.writeFile("./.env", [[
+			fs.writeFile("./.env", [[
 BASIC=basic
 
 # previous line intentionally left blank
@@ -141,7 +141,7 @@ IS
 A
 "MULTILINE'S"
 STRING`
-			]])}).toBe(expect.similar({true}));
+			]]);
 
 			local success, result = pcall(process.loadEnv);
 			expect(success).toBeTruthy();
@@ -187,12 +187,12 @@ STRING`
 			expect(result.MULTI_SINGLE_QUOTED).toBe("THIS\nIS\nA\nMULTILINE\nSTRING");
 			expect(result.MULTI_BACKTICKED).toBe("THIS\nIS\nA\n\"MULTILINE'S\"\nSTRING");
 
-			expect({fs.removeFile("./.env")}).toBe(expect.similar({true}));
+			fs.removeFile("./.env");
 		end)
 
 		test("Priority", function()
-			expect({fs.writeFile("./.env", 'A=2\nB=4')}).toBe(expect.similar({true}));
-			expect({fs.writeFile("./.env.local", 'B=3')}).toBe(expect.similar({true}));
+			fs.writeFile("./.env", 'A=2\nB=4');
+			fs.writeFile("./.env.local", 'B=3');
 
 			local success, result = pcall(process.loadEnv);
 			expect(success).toBeTruthy();
@@ -200,8 +200,8 @@ STRING`
 			expect(result.A).toBe("2");
 			expect(result.B).toBe("3");
 
-			expect({fs.removeFile("./.env")}).toBe(expect.similar({true}));
-			expect({fs.removeFile("./.env.local")}).toBe(expect.similar({true}));
+			fs.removeFile("./.env");
+			fs.removeFile("./.env.local");
 		end)
 	end)
 end)
@@ -229,8 +229,7 @@ end)
 describe("ChildProcess", function()
 	describe("Run", function()
 		test("Echo w/ arguments", function()
-			local success, result = process.run("echo", {"some long message"});
-			expect(success).toBeTruthy();
+			local result = process.run("echo", {"some long message"});
 			expect(result).toBe(expect.similar({
 				ok = true,
 				code = 0,
@@ -244,14 +243,13 @@ describe("ChildProcess", function()
 			-- Windows Powershell requires existing variables to run.
 			local newEnv = table.clone(process.env);
 			newEnv["NAME"] = "Test";
-			local success2, result2 = process.run("echo", {
+			local result = process.run("echo", {
 				if IS_WINDOWS then '"$Env:NAME"' else '"$NAME"',
 			}, {
 				env = newEnv,
 				shell = if IS_WINDOWS then "powershell" else "bash",
 			});
-			expect(success2).toBeTruthy();
-			expect(result2).toBe(expect.similar({
+			expect(result).toBe(expect.similar({
 				ok = true,
 				code = 0,
 				stderr = "",
@@ -261,18 +259,16 @@ describe("ChildProcess", function()
 		end)
 
 		test("Unknown Program/Command", function()
-			local ok, result = process.run("someunknownproc", {});
-			expect(ok).toBeFalsy();
-			expect(result).toBe(expect.any("string"));
-			expect(result).toBe("FileNotFound");
+			expect(function()
+				process.run("someunknownproc", {});
+			end).toThrow("FileNotFound");
 		end)
 
 		test("ExitCode", function()
 			do
-				local success, result = process.run("exit", {"0"}, {
+				local result = process.run("exit", {"0"}, {
 					shell = true,
 				});
-				expect(success).toBeTruthy();
 				expect(result).toBe(expect.similar({
 					ok = true,
 					code = 0,
@@ -282,10 +278,9 @@ describe("ChildProcess", function()
 				}));
 			end
 			for i = 1, 10 do
-				local success, result = process.run("exit", {tostring(i)}, {
+				local result = process.run("exit", {tostring(i)}, {
 					shell = true,
 				});
-				expect(success).toBeTruthy();
 				expect(result).toBe(expect.similar({
 					ok = false,
 					code = i,
@@ -299,9 +294,7 @@ describe("ChildProcess", function()
 
 	describe("Create", function()
 		test("Process Handle", function()
-			local success, result = process.create("cat");
-			expect(success).toBeTruthy();
-			assert(type(result) == "userdata");
+			local result = process.create("cat");
 			result:writeIn("Hello World\n");
 			expect(result:readOutAsync(5)).toBe("Hello");
 			expect(result:readOutAsync()).toBe(" World\n");

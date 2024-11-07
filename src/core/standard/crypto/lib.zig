@@ -16,7 +16,7 @@ const aes = @import("aes.zig");
 const random = @import("random.zig");
 const password = @import("password.zig");
 
-pub const LIB_NAME = "@zcore/crypto";
+pub const LIB_NAME = "crypto";
 
 pub fn loadLib(L: *Luau) void {
     L.newTable();
