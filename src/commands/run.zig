@@ -50,8 +50,10 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const dir = std.fs.cwd();
     const module = run_args[0];
 
+    var maybeResult: ?file.SearchResult([]const u8) = null;
+    defer if (maybeResult) |r| r.deinit();
     var maybeFileName: ?[]const u8 = null;
-    defer if (maybeFileName) |f| allocator.free(f);
+    defer if (maybeResult == null) if (maybeFileName) |f| allocator.free(f);
     var maybeFileContent: ?[]const u8 = null;
     defer if (maybeFileContent) |c| allocator.free(c);
 
@@ -62,7 +64,13 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         maybeFileContent = content;
         maybeFileName = try dir.realpathAlloc(allocator, module);
     } else {
-        maybeFileName = try Engine.findLuauFile(allocator, dir, module);
+        const result = try Engine.findLuauFile(allocator, dir, module);
+        maybeResult = result;
+        switch (result.result) {
+            .exact => |e| maybeFileName = e,
+            .results => |results| maybeFileName = results[0],
+            .none => return error.FileNotFound,
+        }
         maybeFileContent = try std.fs.cwd().readFileAlloc(allocator, maybeFileName.?, std.math.maxInt(usize));
     }
 

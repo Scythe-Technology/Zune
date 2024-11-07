@@ -1,5 +1,5 @@
-local task = require("@zcore/task");
-local testing = require("@zcore/testing");
+local task = zune.task;
+local testing = zune.testing;
 
 local describe = testing.describe;
 local expect = testing.expect;
@@ -8,37 +8,53 @@ local test = testing.test;
 describe("Require", function()
     describe("Good", function()
         test("Known File", function()
-            local ok, res = pcall(require, "samples/simpleLib");
+            local ok, res = pcall(require, "./samples/simpleLib");
             expect(ok).toBeTruthy();
             expect(res).toBe(expect.any("table"));
             expect(res.size).toBe(32);
             expect(res.buffer).toBe(expect.any("buffer"));
         end)
 
-        test("Known Module", function()
-            local ok, res = pcall(require, "@zcore/fs");
+        test("No conflicted name", function()
+            local ok, res = pcall(require, "./generated/duplicate.luau");
             expect(ok).toBeTruthy();
-            expect(res).toBe(expect.any("table"));
+            expect(res).toBe(expect.type("table"));
+
+            local ok2, res2 = pcall(require, "./generated/duplicate.lua");
+            expect(ok2).toBeTruthy();
+            expect(res2).toBe(expect.type("table"));
         end)
     end)
 
     describe("Bad", function()
-        test("Unknown File", function()
+        test("Bad Syntax", function()
             local ok, res = pcall(require, "samples/simpleLib2");
+            expect(ok).toBeFalsy();
+            expect(res).toBe(`must have either "@", "./", or "../" prefix`);
+        end)
+
+        test("Name Conflict", function()
+            local ok, res = pcall(require, "./generated/duplicate");
+            expect(ok).toBeFalsy();
+            expect(res).toBe(`module name conflicted.\n\n- generated/duplicate.luau\n- generated/duplicate.lua`);
+        end)
+
+        test("Name Conflict #2", function()
+            local ok, res = pcall(require, "./generated/duplicate2");
+            expect(ok).toBeFalsy();
+            expect(res).toBe(`module name conflicted.\n\n- generated/duplicate2.luau\n- generated/duplicate2.lua\n- generated/duplicate2/init.luau`);
+        end)
+
+        test("Unknown File", function()
+            local ok, res = pcall(require, "./samples/simpleLib2");
             expect(ok).toBeFalsy();
             expect(res).toBe("FileNotFound");
         end)
 
         test("Unknown File #2", function()
-            local ok, res = pcall(require, "/simpleLib");
+            local ok, res = pcall(require, "./simpleLib");
             expect(ok).toBeFalsy();
             expect(res).toBe("FileNotFound");
-        end)
-
-        test("Unknown Module", function()
-            local ok, res = pcall(require, "@zcore/some-unknown-module");
-            expect(ok).toBeFalsy();
-            expect(res).toBe("ModuleNotFound");
         end)
 
         test("Unknown Alias", function()
@@ -56,38 +72,38 @@ describe("Require Many Value", function()
     end)
     
     test("Require Buffer", function()
-        expect(require(("generated/v1"))).toBe(expect.type("buffer"));
+        expect(require(("./generated/v1"))).toBe(expect.type("buffer"));
     end)
     
     test("Require Number", function()
-        expect(require(("generated/v2"))).toBe(1);
+        expect(require(("./generated/v2"))).toBe(1);
     end)
     
     test("Require String", function()
-        expect(require(("generated/v3"))).toBe("Hello, World!");
+        expect(require(("./generated/v3"))).toBe("Hello, World!");
     end)
     
     test("Require Boolean", function()
-        expect(require(("generated/v4"))).toBe(true);
+        expect(require(("./generated/v4"))).toBe(true);
     end)
 
     test("Require Async", function()
-        expect(require(("generated/v5"))).toBe(true);
+        expect(require(("./generated/v5"))).toBe(true);
     end)
 
     test("Require Async Queue", function()
         local a, b, c;
         local start = os.clock();
         task.spawn(function()
-            a = require(("generated/v6"))
+            a = require(("./generated/v6"))
         end)
         task.spawn(function()
-            b = require(("generated/v6"))
+            b = require(("./generated/v6"))
         end)
         task.spawn(function()
-            c = require(("generated/v6"))
+            c = require(("./generated/v6"))
         end)
-        local res = require(("generated/v6"));
+        local res = require(("./generated/v6"));
         expect(os.clock() - start).toBeCloseTo(1, 0);
 
         expect(a).toBe(res);
@@ -96,24 +112,24 @@ describe("Require Many Value", function()
     end)
 
     test("Require Async Error", function()
-        local success, err = pcall(require, ("generated/yielderror"));
+        local success, err = pcall(require, ("./generated/yielderror"));
         expect(success).toBe(false);
         expect(err).toBe("requested module failed to load");
     end)
     
     test("Require Blank", function()
-        local res = require(("generated/blank"));
+        local res = require(("./generated/blank"));
         expect(res).toBe(nil);
     end)
     
     test("Require TooMany", function()
-        local ok, err = pcall(require, ("generated/toomany"));
+        local ok, err = pcall(require, ("./generated/toomany"));
         expect(ok).toBeFalsy();
         assert((string.find(err, "module must return one value")) ~= nil);
     end)
 
     test("Require Yield TooMany", function()
-        local ok, err = pcall(require, ("generated/yieldtoomany"));
+        local ok, err = pcall(require, ("./generated/yieldtoomany"));
         expect(ok).toBeFalsy();
         assert((string.find(err, "module must return one value")) ~= nil);
     end)
@@ -121,12 +137,12 @@ end)
 
 describe("Require .lua", function()
     test("Require Module", function()
-        expect(require(("legacy"))).toBe(expect.similar({
+        expect(require(("./legacy"))).toBe(expect.similar({
             "Legacy"
         }));
     end)
     test("Require A", function()
-        expect(require(("legacy/A"))).toBe("A-Legacy");
+        expect(require(("./legacy/A"))).toBe("A-Legacy");
     end)
 end)
 

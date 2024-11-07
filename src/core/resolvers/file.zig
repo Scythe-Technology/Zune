@@ -29,33 +29,86 @@ pub fn getAbsolutePathFromCwd(allocator: std.mem.Allocator, path: []const u8) Ab
         return AbsoluteResolveError.CouldNotGetAbsolutePath;
 }
 
-pub const FileSearchError = error{
-    NoFileNameFound,
-};
-pub fn searchForExtensions(allocator: std.mem.Allocator, fileName: []const u8, extensions: []const []const u8) ![]const u8 {
-    const fileExists = try doesFileExist(fileName);
-    if (!fileExists) {
-        for (extensions) |ext| {
-            const result = std.mem.join(allocator, "", &.{ fileName, ext }) catch continue;
-            defer allocator.free(result);
-            if (try doesFileExist(result))
-                return allocator.dupe(u8, result) catch continue;
+pub fn SearchResult(comptime T: type) type {
+    return struct {
+        allocator: std.mem.Allocator,
+        result: Result,
+
+        const Result = union(enum) {
+            exact: T,
+            results: []const T,
+            none: void,
+        };
+
+        const Self = @This();
+
+        pub fn deinit(self: Self) void {
+            switch (self.result) {
+                .exact => |e| self.allocator.free(e),
+                .results => |r| {
+                    for (r) |result| self.allocator.free(result);
+                    self.allocator.free(r);
+                },
+                .none => {},
+            }
         }
-        return FileSearchError.NoFileNameFound;
-    }
-    return allocator.dupe(u8, fileName) catch return FileSearchError.NoFileNameFound;
+    };
 }
 
-pub fn searchForExtensionsZ(allocator: std.mem.Allocator, fileName: []const u8, extensions: []const []const u8) ![:0]const u8 {
+pub fn searchForExtensions(allocator: std.mem.Allocator, fileName: []const u8, extensions: []const []const u8) !SearchResult([]const u8) {
     const fileExists = try doesFileExist(fileName);
     if (!fileExists) {
+        var list = std.ArrayList([]const u8).init(allocator);
+        defer list.deinit();
+        errdefer for (list.items) |value| allocator.free(value);
         for (extensions) |ext| {
             const result = std.mem.join(allocator, "", &.{ fileName, ext }) catch continue;
             defer allocator.free(result);
             if (try doesFileExist(result))
-                return allocator.dupeZ(u8, result) catch continue;
+                try list.append(allocator.dupe(u8, result) catch continue);
         }
-        return FileSearchError.NoFileNameFound;
+        if (list.items.len == 0)
+            return .{ .allocator = allocator, .result = .none };
+        return .{
+            .allocator = allocator,
+            .result = .{
+                .results = try list.toOwnedSlice(),
+            },
+        };
     }
-    return allocator.dupeZ(u8, fileName) catch return FileSearchError.NoFileNameFound;
+    return .{
+        .allocator = allocator,
+        .result = .{
+            .exact = try allocator.dupe(u8, fileName),
+        },
+    };
+}
+
+pub fn searchForExtensionsZ(allocator: std.mem.Allocator, fileName: []const u8, extensions: []const []const u8) !SearchResult([:0]const u8) {
+    const fileExists = try doesFileExist(fileName);
+    if (!fileExists) {
+        var list = std.ArrayList([:0]const u8).init(allocator);
+        defer list.deinit();
+        errdefer for (list.items) |value| allocator.free(value);
+        for (extensions) |ext| {
+            const result = std.mem.join(allocator, "", &.{ fileName, ext }) catch continue;
+            defer allocator.free(result);
+            if (try doesFileExist(result))
+                try list.append(allocator.dupeZ(u8, result) catch continue);
+        }
+        if (list.items.len == 0)
+            return .{ .allocator = allocator, .result = .none };
+        return .{
+            .allocator = allocator,
+            .result = .{
+                .results = try list.toOwnedSlice(),
+            },
+        };
+    }
+    return .{
+        .allocator = allocator,
+        .result = .{
+            .exact = try allocator.dupeZ(u8, fileName),
+        },
+    };
 }

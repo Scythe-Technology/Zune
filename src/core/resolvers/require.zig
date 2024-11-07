@@ -150,169 +150,191 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
     const moduleName = L.checkString(1);
     _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
     var outErr: ?[]const u8 = null;
-    if (moduleName.len > 6 and std.mem.eql(u8, moduleName[0..6], "@zcore")) {
-        if (L.getField(-1, moduleName) == .nil) {
-            L.remove(-2); // drop: _MODULES
-            return RequireError.ModuleNotFound;
-        }
+    var moduleAbsolutePath: [:0]const u8 = undefined;
+    var searchResult: ?file.SearchResult([:0]const u8) = null;
+    defer if (searchResult) |r| r.deinit();
+    if (moduleName.len == 0) {
+        L.pushString("must have either \"@\", \"./\", or \"../\" prefix");
+        return error.RaiseLuauError;
+    }
+
+    const absPath = try std.fs.cwd().realpathAlloc(allocator, ".");
+    defer allocator.free(absPath);
+
+    if (moduleName.len > 2 and moduleName[0] == '@') {
+        const aliases = ALIASES orelse return RequireError.NoAlias;
+        const delimiter = std.mem.indexOfScalar(u8, moduleName, '/') orelse moduleName.len;
+        const alias = moduleName[1..delimiter];
+        const path = aliases.get(alias) orelse return RequireError.NoAlias;
+        const modulePath = if (moduleName.len - delimiter > 1)
+            try std.fs.path.join(allocator, &.{ path, moduleName[delimiter + 1 ..] })
+        else
+            try allocator.dupe(u8, path);
+        defer allocator.free(modulePath);
+
+        searchResult = try Engine.findLuauFileFromPathZ(allocator, absPath, modulePath);
     } else {
-        var moduleAbsolutePath: [:0]const u8 = undefined;
-        if (moduleName.len > 2 and moduleName[0] == '@') {
-            const aliases = ALIASES orelse return RequireError.NoAlias;
-            const delimiter = std.mem.indexOfScalar(u8, moduleName, '/') orelse moduleName.len;
-            const alias = moduleName[1..delimiter];
-            const path = aliases.get(alias) orelse return RequireError.NoAlias;
-            const modulePath = if (moduleName.len - delimiter > 1)
-                try std.fs.path.join(allocator, &.{ path, moduleName[delimiter + 1 ..] })
-            else
-                try allocator.dupe(u8, path);
-            defer allocator.free(modulePath);
+        if ((moduleName.len < 2 or !std.mem.eql(u8, moduleName[0..2], "./")) and (moduleName.len < 3 or !std.mem.eql(u8, moduleName[0..3], "../"))) {
+            L.pushString("must have either \"@\", \"./\", or \"../\" prefix");
+            return error.RaiseLuauError;
+        }
+        if (L.getField(luau.GLOBALSINDEX, "_FILE") != .table)
+            return finishError(L, "InternalError (_FILE is invalid)");
+        if (L.getField(-1, "path") != .string)
+            return finishError(L, "InternalError (_FILE.path is not a string)");
+        const moduleFilePath = L.toString(-1) catch unreachable;
+        L.pop(2); // drop: path, _FILE
+        if (!std.fs.path.isAbsolute(moduleFilePath))
+            return finishError(L, "InternalError (_FILE.path is not absolute)");
 
-            const absPath = try std.fs.cwd().realpathAlloc(allocator, ".");
-            defer allocator.free(absPath);
-
-            moduleAbsolutePath = Engine.findLuauFileFromPathZ(allocator, absPath, modulePath) catch return error.FileNotFound;
-        } else {
-            if (L.getField(luau.GLOBALSINDEX, "_FILE") != .table)
-                return finishError(L, "InternalError (_FILE is invalid)");
-            if (L.getField(-1, "path") != .string)
-                return finishError(L, "InternalError (_FILE.path is not a string)");
-            const moduleFilePath = L.toString(-1) catch unreachable;
-            L.pop(2); // drop: path, _FILE
-            if (!std.fs.path.isAbsolute(moduleFilePath))
-                return finishError(L, "InternalError (_FILE.path is not absolute)");
-
-            if (MODE == .RelativeToFile) {
+        switch (MODE) {
+            .RelativeToFile => {
                 const relativeDirPath = std.fs.path.dirname(moduleFilePath) orelse return error.FileNotFound;
 
-                moduleAbsolutePath = Engine.findLuauFileFromPathZ(allocator, relativeDirPath, moduleName) catch return error.FileNotFound;
-            } else {
-                const absPath = try std.fs.cwd().realpathAlloc(allocator, ".");
-                defer allocator.free(absPath);
-
-                moduleAbsolutePath = Engine.findLuauFileFromPathZ(allocator, absPath, moduleName) catch return error.FileNotFound;
-            }
+                searchResult = try Engine.findLuauFileFromPathZ(allocator, relativeDirPath, moduleName);
+            },
+            .RelativeToCwd => searchResult = try Engine.findLuauFileFromPathZ(allocator, absPath, moduleName),
         }
-        defer allocator.free(moduleAbsolutePath);
+    }
 
-        jmp: {
-            const moduleType = L.getField(-1, moduleAbsolutePath);
-            if (moduleType != .nil) {
-                if (moduleType == .light_userdata) {
-                    const ptr = L.toPointer(-1) catch unreachable;
-                    if (ptr == @as(*const anyopaque, @ptrCast(&ErrorState))) {
-                        L.pop(1);
-                        outErr = "requested module failed to load";
-                        break :jmp;
-                    } else if (ptr == @as(*const anyopaque, @ptrCast(&LoadingState))) {
-                        L.pop(1);
-                        const res = RequireQueueMap.getEntry(moduleAbsolutePath) orelse std.debug.panic("zune_require: queue not found", .{});
-                        try res.value_ptr.append(L);
-                        return L.yield(0);
-                    }
+    switch (searchResult.?.result) {
+        .exact => |e| moduleAbsolutePath = e,
+        .results => |results| {
+            if (results.len > 1) {
+                var buf = std.ArrayList(u8).init(allocator);
+                defer buf.deinit();
+                try buf.appendSlice("module name conflicted.\n");
+                for (results) |res| {
+                    const relative = try std.fs.path.relative(allocator, absPath, res);
+                    defer allocator.free(relative);
+                    try buf.appendSlice("\n- ");
+                    try buf.appendSlice(relative);
                 }
-                L.remove(-2); // drop: _MODULES
-                return 1;
+                L.pushLString(buf.items);
+                return error.RaiseLuauError;
             }
-            L.pop(1); // drop: nil
+            moduleAbsolutePath = results[0];
+        },
+        .none => return error.FileNotFound,
+    }
 
-            const cwdDirPath = std.fs.cwd().realpathAlloc(allocator, ".") catch return error.FileNotFound;
-            defer allocator.free(cwdDirPath);
-
-            const relativeDirPath = std.fs.path.dirname(moduleAbsolutePath) orelse return error.FileNotFound;
-
-            var relativeDir = std.fs.openDirAbsolute(relativeDirPath, std.fs.Dir.OpenDirOptions{}) catch |err| switch (err) {
-                error.AccessDenied, error.FileNotFound => return err,
-                else => {
-                    std.debug.print("error: {}\n", .{err});
-                    outErr = "InternalError (Could not open directory)";
+    jmp: {
+        const moduleType = L.getField(-1, moduleAbsolutePath);
+        if (moduleType != .nil) {
+            if (moduleType == .light_userdata) {
+                const ptr = L.toPointer(-1) catch unreachable;
+                if (ptr == @as(*const anyopaque, @ptrCast(&ErrorState))) {
+                    L.pop(1);
+                    outErr = "requested module failed to load";
                     break :jmp;
-                },
-            };
-            defer relativeDir.close();
-
-            const fileContent = relativeDir.readFileAlloc(allocator, moduleAbsolutePath, std.math.maxInt(usize)) catch |err| switch (err) {
-                error.AccessDenied, error.FileNotFound => return err,
-                else => {
-                    std.debug.print("error: {}\n", .{err});
-                    outErr = "InternalError (Could not read file)";
-                    break :jmp;
-                },
-            };
-            defer allocator.free(fileContent);
-
-            const GL = L.getMainThread();
-            const ML = GL.newThread();
-            GL.xMove(L, 1);
-
-            ML.sandboxThread();
-
-            const moduleRelativeName = try std.fs.path.relative(allocator, cwdDirPath, moduleAbsolutePath);
-            defer allocator.free(moduleRelativeName);
-
-            Engine.setLuaFileContext(ML, .{
-                .path = moduleAbsolutePath,
-                .name = moduleRelativeName,
-                .source = fileContent,
-            });
-
-            const moduleRelativeNameZ = try allocator.dupeZ(u8, moduleRelativeName);
-            defer allocator.free(moduleRelativeNameZ);
-
-            Engine.loadModule(ML, moduleRelativeNameZ, fileContent, null) catch |err| switch (err) {
-                error.Memory, error.OutOfMemory => return error.OutOfMemory,
-                error.Syntax => {
-                    outErr = ML.toString(-1) catch "UnknownError";
-                    break :jmp;
-                },
-            };
-
-            const resumeStatus: ?luau.ResumeStatus = Scheduler.resumeState(ML, L, 0) catch {
-                outErr = "requested module failed to load";
-                break :jmp;
-            };
-            if (resumeStatus) |status| {
-                if (status == .ok) {
-                    const t = ML.getTop();
-                    if (t > 1 or t < 0) {
-                        outErr = "module must return one value";
-                        break :jmp;
-                    } else if (t == 0)
-                        ML.pushNil();
-                } else if (status == .yield) {
-                    L.pushLightUserdata(@ptrCast(&LoadingState));
-                    L.setField(-3, moduleAbsolutePath);
-
-                    const ptr = try allocator.create(RequireContext);
-                    ptr.* = .{
-                        .path = try allocator.dupeZ(u8, moduleAbsolutePath),
-                        .caller = L,
-                    };
-                    try scheduler.awaitResult(RequireContext, ptr, ML, require_finished);
-
-                    var list = std.ArrayList(*Luau).init(allocator);
-                    try list.append(L);
-
-                    try RequireQueueMap.put(try allocator.dupe(u8, moduleAbsolutePath), list);
-
+                } else if (ptr == @as(*const anyopaque, @ptrCast(&LoadingState))) {
+                    L.pop(1);
+                    const res = RequireQueueMap.getEntry(moduleAbsolutePath) orelse std.debug.panic("zune_require: queue not found", .{});
+                    try res.value_ptr.append(L);
                     return L.yield(0);
                 }
             }
+            L.remove(-2); // drop: _MODULES
+            return 1;
+        }
+        L.pop(1); // drop: nil
 
-            ML.xMove(L, 1);
-            L.pushValue(-1);
-            L.setField(-4, moduleAbsolutePath); // SET: _MODULES[moduleName] = module
+        const cwdDirPath = std.fs.cwd().realpathAlloc(allocator, ".") catch return error.FileNotFound;
+        defer allocator.free(cwdDirPath);
+
+        const relativeDirPath = std.fs.path.dirname(moduleAbsolutePath) orelse return error.FileNotFound;
+
+        var relativeDir = std.fs.openDirAbsolute(relativeDirPath, std.fs.Dir.OpenDirOptions{}) catch |err| switch (err) {
+            error.AccessDenied, error.FileNotFound => return err,
+            else => {
+                std.debug.print("error: {}\n", .{err});
+                outErr = "InternalError (Could not open directory)";
+                break :jmp;
+            },
+        };
+        defer relativeDir.close();
+
+        const fileContent = relativeDir.readFileAlloc(allocator, moduleAbsolutePath, std.math.maxInt(usize)) catch |err| switch (err) {
+            error.AccessDenied, error.FileNotFound => return err,
+            else => {
+                std.debug.print("error: {}\n", .{err});
+                outErr = "InternalError (Could not read file)";
+                break :jmp;
+            },
+        };
+        defer allocator.free(fileContent);
+
+        const GL = L.getMainThread();
+        const ML = GL.newThread();
+        GL.xMove(L, 1);
+
+        ML.sandboxThread();
+
+        const moduleRelativeName = try std.fs.path.relative(allocator, cwdDirPath, moduleAbsolutePath);
+        defer allocator.free(moduleRelativeName);
+
+        Engine.setLuaFileContext(ML, .{
+            .path = moduleAbsolutePath,
+            .name = moduleRelativeName,
+            .source = fileContent,
+        });
+
+        const moduleRelativeNameZ = try allocator.dupeZ(u8, moduleRelativeName);
+        defer allocator.free(moduleRelativeNameZ);
+
+        Engine.loadModule(ML, moduleRelativeNameZ, fileContent, null) catch |err| switch (err) {
+            error.Memory, error.OutOfMemory => return error.OutOfMemory,
+            error.Syntax => {
+                outErr = ML.toString(-1) catch "UnknownError";
+                break :jmp;
+            },
+        };
+
+        const resumeStatus: ?luau.ResumeStatus = Scheduler.resumeState(ML, L, 0) catch {
+            outErr = "requested module failed to load";
+            break :jmp;
+        };
+        if (resumeStatus) |status| {
+            if (status == .ok) {
+                const t = ML.getTop();
+                if (t > 1 or t < 0) {
+                    outErr = "module must return one value";
+                    break :jmp;
+                } else if (t == 0)
+                    ML.pushNil();
+            } else if (status == .yield) {
+                L.pushLightUserdata(@ptrCast(&LoadingState));
+                L.setField(-3, moduleAbsolutePath);
+
+                const ptr = try allocator.create(RequireContext);
+                ptr.* = .{
+                    .path = try allocator.dupeZ(u8, moduleAbsolutePath),
+                    .caller = L,
+                };
+                try scheduler.awaitResult(RequireContext, ptr, ML, require_finished);
+
+                var list = std.ArrayList(*Luau).init(allocator);
+                try list.append(L);
+
+                try RequireQueueMap.put(try allocator.dupe(u8, moduleAbsolutePath), list);
+
+                return L.yield(0);
+            }
         }
 
-        if (outErr != null) {
-            L.pushLightUserdata(@ptrCast(&ErrorState));
-            L.setField(-3, moduleAbsolutePath);
-        }
+        ML.xMove(L, 1);
+        L.pushValue(-1);
+        L.setField(-4, moduleAbsolutePath); // SET: _MODULES[moduleName] = module
+    }
+
+    if (outErr != null) {
+        L.pushLightUserdata(@ptrCast(&ErrorState));
+        L.setField(-3, moduleAbsolutePath);
     }
 
     if (outErr) |err| {
         L.pushLString(err);
-        L.raiseError();
+        return error.RaiseLuauError;
     }
 
     return 1;
