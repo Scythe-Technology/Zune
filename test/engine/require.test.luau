@@ -33,16 +33,17 @@ describe("Require", function()
             expect(res).toBe(`must have either "@", "./", or "../" prefix`);
         end)
 
+        local SEP = if (zune.process.os == "windows") then "\\" else "/";
         test("Name Conflict", function()
             local ok, res = pcall(require, "./generated/duplicate");
             expect(ok).toBeFalsy();
-            expect(res).toBe(`module name conflicted.\n\n- generated/duplicate.luau\n- generated/duplicate.lua`);
+            expect(res).toBe(`module name conflicted.\n\n- generated{SEP}duplicate.luau\n- generated{SEP}duplicate.lua`);
         end)
 
         test("Name Conflict #2", function()
             local ok, res = pcall(require, "./generated/duplicate2");
             expect(ok).toBeFalsy();
-            expect(res).toBe(`module name conflicted.\n\n- generated/duplicate2.luau\n- generated/duplicate2.lua\n- generated/duplicate2/init.luau`);
+            expect(res).toBe(`module name conflicted.\n\n- generated{SEP}duplicate2.luau\n- generated{SEP}duplicate2.lua\n- generated{SEP}duplicate2{SEP}init.luau`);
         end)
 
         test("Unknown File", function()
