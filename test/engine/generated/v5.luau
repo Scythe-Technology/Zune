@@ -1,4 +1,4 @@
-local task = require("@zcore/task");
+local task = zune.task;
 
 task.wait(1);
 

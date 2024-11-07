@@ -1,6 +1,6 @@
-local utilB = require("utilB");
+local utilB = require("./utilB");
 
-local testing = require("@zcore/testing");
+local testing = zune.testing;
 
 local describe = testing.describe;
 local expect = testing.expect;
