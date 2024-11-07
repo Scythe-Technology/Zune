@@ -90,6 +90,13 @@ fn fs_removeDir(L: *Luau) !i32 {
 }
 
 fn internal_isDir(srcDir: fs.Dir, path: []const u8) bool {
+    if (comptime builtin.os.tag == .windows) {
+        var dir = srcDir.openDir(path, fs.Dir.OpenDirOptions{
+            .iterate = true,
+        }) catch return false;
+        defer dir.close();
+        return true;
+    }
     const stat = srcDir.statFile(path) catch return false;
     return stat.kind == .directory;
 }
