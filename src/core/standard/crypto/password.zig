@@ -27,7 +27,7 @@ const AlgorithmMap = std.StaticStringMap(AlgorithmUnion).initComptime(.{
     .{ "argon2d", DEFAULT_ALGO },
     .{ "argon2i", .{ .argon2i = .argon2i } },
     .{ "argon2id", .{ .argon2id = .argon2id } },
-    .{ "bcrypt", .{ .bcrypt = @as(void, undefined) } },
+    .{ "bcrypt", .bcrypt },
 });
 
 pub fn lua_hash(L: *Luau) !i32 {
