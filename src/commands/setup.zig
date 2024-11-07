@@ -11,20 +11,6 @@ const typedef = struct {
     content: []const u8,
 };
 
-const typedefs = &[_]typedef{
-    typedef{ .name = "core/fs", .content = @embedFile("../types/core/fs.luau.gz") },
-    typedef{ .name = "core/ffi", .content = @embedFile("../types/core/ffi.luau.gz") },
-    typedef{ .name = "core/net", .content = @embedFile("../types/core/net.luau.gz") },
-    typedef{ .name = "core/task", .content = @embedFile("../types/core/task.luau.gz") },
-    typedef{ .name = "core/luau", .content = @embedFile("../types/core/luau.luau.gz") },
-    typedef{ .name = "core/serde", .content = @embedFile("../types/core/serde.luau.gz") },
-    typedef{ .name = "core/stdio", .content = @embedFile("../types/core/stdio.luau.gz") },
-    typedef{ .name = "core/regex", .content = @embedFile("../types/core/regex.luau.gz") },
-    typedef{ .name = "core/crypto", .content = @embedFile("../types/core/crypto.luau.gz") },
-    typedef{ .name = "core/process", .content = @embedFile("../types/core/process.luau.gz") },
-    typedef{ .name = "core/testing", .content = @embedFile("../types/core/testing.luau.gz") },
-    typedef{ .name = "core/datetime", .content = @embedFile("../types/core/datetime.luau.gz") },
-};
 const luaudefs = &[_]typedef{
     typedef{ .name = "global/zune", .content = @embedFile("../types/global/zune.d.luau.gz") },
 };
@@ -46,7 +32,6 @@ fn setupVscode(allocator: std.mem.Allocator, setupInfo: SetupInfo) !void {
 
     const LUAU_LSP_REQUIRE_MODE = "luau-lsp.require.mode";
     const LUAU_LSP_DEFINITION_FILES = "luau-lsp.types.definitionFiles";
-    const LUAU_LSP_DIRECTORY_ALIASES = "luau-lsp.require.directoryAliases";
 
     const cwd = setupInfo.cwd;
 
@@ -92,16 +77,12 @@ fn setupVscode(allocator: std.mem.Allocator, setupInfo: SetupInfo) !void {
     var settingsObject = settingsRoot.value.asObject();
 
     // Get Values of luau-lsp.require.mode and luau-lsp.require.directoryAliases
-    var directoryAliases = settingsObject.get(LUAU_LSP_DIRECTORY_ALIASES) orelse try settingsRoot.value.setWith(LUAU_LSP_DIRECTORY_ALIASES, try settingsRoot.newObject());
-    _ = directoryAliases.objectOrNull() orelse std.debug.panic("{s} is not a valid Object", .{LUAU_LSP_DIRECTORY_ALIASES});
     const definitionFiles = settingsObject.get(LUAU_LSP_DEFINITION_FILES) orelse try settingsRoot.value.setWith(LUAU_LSP_DEFINITION_FILES, try settingsRoot.newArray());
     var definitionFilesArray = definitionFiles.arrayOrNull() orelse std.debug.panic("{s} is not a valid Array", .{LUAU_LSP_DEFINITION_FILES});
     if (settingsObject.get(LUAU_LSP_REQUIRE_MODE) == null) {
         // Set luau-lsp.require.mode to relativeToFile if it does not exist
         try settingsRoot.value.set(LUAU_LSP_REQUIRE_MODE, .{ .static_string = "relativeToFile" });
     }
-    // Set @zcore/ to ~/.zune/typedefs
-    _ = try directoryAliases.set("@zcore/", .{ .static_string = "~/.zune/typedefs/core" });
 
     for (luaudefs) |typeFile| {
         const fileName = try std.mem.join(allocator, "", &.{ typeFile.name, ".d.luau" });
@@ -140,9 +121,6 @@ fn setupVscode(allocator: std.mem.Allocator, setupInfo: SetupInfo) !void {
         \\Saved configuration to '{s}'
         \\{{
         \\  "luau-lsp.require.mode": "relativeToFile",
-        \\  "luau-lsp.require.directoryAliases": {{
-        \\    "@zcore/": "~/.zune/typedefs/core"
-        \\  }},
         \\  "luau-lsp.types.definitionFiles": [
         \\    "{s}/.zune/typedefs/global/zune.d.luau"
         \\  ]
@@ -211,12 +189,6 @@ fn setupZed(allocator: std.mem.Allocator, setupInfo: SetupInfo) !void {
         try luau_lsp_require.set("mode", .{ .static_string = "relativeToFile" });
     }
 
-    // Set luau-lsp.require.directoryAliases to Json Object
-    var directoryAliases = luau_lsp_require.asObject().get("directoryAliases") orelse try luau_lsp_require.setWith("directoryAliases", try settingsRoot.newObject());
-    _ = directoryAliases.asObject();
-    // Set @zcore/ to ~/.zune/typedefs
-    try directoryAliases.set("@zcore/", .{ .static_string = "~/.zune/typedefs/core" });
-
     var luau_ext = lsp_settings.asObject().get("ext") orelse try lsp_settings.setWith("ext", try settingsRoot.newObject());
 
     var definitionFiles = luau_ext.asObject().get("definitions") orelse try luau_ext.setWith("definitions", try settingsRoot.newArray());
@@ -262,10 +234,7 @@ fn setupZed(allocator: std.mem.Allocator, setupInfo: SetupInfo) !void {
         \\      "settings": {{
         \\        "luau-lsp": {{
         \\          "require": {{
-        \\            "mode": "relativeToFile",
-        \\            "directoryAliases": {{
-        \\              "@zcore/": "~/.zune/typedefs/core"
-        \\            }}
+        \\            "mode": "relativeToFile"
         \\          }}
         \\        }},
         \\        "ext": {{
@@ -299,9 +268,6 @@ fn setupNeovim(allocator: std.mem.Allocator, setupInfo: SetupInfo) !void {
         \\      ["luau-lsp"] = {{
         \\        require = {{
         \\          mode = "relativeToFile",
-        \\          directoryAliases = {{
-        \\            ["@zcore/"] = "~/.zune/typedefs/core",
-        \\          }},
         \\        }},
         \\      }},
         \\    }},
@@ -348,8 +314,7 @@ fn setupEmacs(allocator: std.mem.Allocator, setupInfo: SetupInfo) !void {
     const configInfo = try std.fmt.allocPrint(allocator,
         \\((nil . ((eglot-workspace-configuration
         \\  . (:luau-lsp (:require
-        \\                (:mode "relativeToFile"
-        \\                 :directoryAliases (:@zune/ "~/.zune/typedefs/core/")))))
+        \\                (:mode "relativeToFile"))))
         \\  (eglot-luau-custom-type-files . ("{s}/.zune/typedefs/global/zune.d.luau")))))
         \\
     , .{setupInfo.home});
@@ -415,23 +380,6 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         };
     }
 
-    for (typedefs) |typeFile| {
-        const fileName = try std.mem.join(allocator, "", &.{ typeFile.name, ".luau" });
-        defer allocator.free(fileName);
-        const typePath = try std.fs.path.resolve(allocator, &.{ path, fileName });
-        defer allocator.free(typePath);
-
-        var contentStream = std.io.fixedBufferStream(typeFile.content);
-        var decompressed = std.ArrayList(u8).init(allocator);
-        defer decompressed.deinit();
-
-        try std.compress.gzip.decompress(contentStream.reader(), decompressed.writer());
-
-        try cwd.writeFile(std.fs.Dir.WriteFileOptions{
-            .sub_path = typePath,
-            .data = decompressed.items,
-        });
-    }
     for (luaudefs) |typeFile| {
         const fileName = try std.mem.join(allocator, "", &.{ typeFile.name, ".d.luau" });
         defer allocator.free(fileName);
