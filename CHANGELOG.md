@@ -7,12 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Breaking Changes
+- `fs`, `luau`, `process`, and `net` all functions that returns a boolean & result tuple, now returns only the results or throws a lua error instead.
+- `ffi` api changes are not backwards compatible with `0.4.2`.
+- `require` is now based on **Amended Require Syntax and Resolution Semantics**, thus `require("module/init.luau")` would need to be `require("./module/init.luau")`.
+- Zune libraries has been changed to a global variable instead of a module.
+  - `require("@zcore/fs")` would be `zune.fs`.
+
 ### Added
-- Added buffer support as arguments & closure returns for `@zcore/ffi`.
+- Added buffer support as arguments & closure returns for `ffi`.
 - Added memory leak detection for `zune test ...` command.
 - Added buffer support to the formatter, now it can display the contents of a buffer as hex with a configurable display limit.
-- Added `readErrAsync`, `readOutAsync` and `dead` to ProcessChild in `@zcore/process`.
-- Added pointer objects to `@zcore/ffi`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/ffi)
+- Added `readErrAsync`, `readOutAsync` and `dead` to ProcessChild in `process`.
+- Added pointer objects to `ffi`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/ffi)
   
   Currently this is marked as experimental and may change in the future. Api may change.
   To enable this, you need to set `experimental.ffi` to `true` in `zune.toml`.
@@ -21,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Example:
   ```luau
-  local ffi = require("@zcore/ffi")
+  local ffi = zune.ffi
 
   local ptr = ffi.alloc(12)
   print(ptr) -- <pointer: 0x12345678>
@@ -34,19 +41,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ffi.copy(data, 0, ptr, 0, 12);
   ptr:write(0, data, 0, 12)
   ```
+- Added support for encoding `Infinity` and `NaN` in `serde.json5`.
+- Added non-blocking support for `process.run`.
 
 ### Changed
 - Formatter now displays `__tostring` metamethods as plain text, instead of as strings.
-- `intFromPtr` in `@zcore/ffi` has been changed to `bufferToPtr` and only takes in one parameter of type `buffer`.
+- `intFromPtr` in `ffi` has been changed to `bufferToPtr` and only takes in one parameter of type `buffer`.
 - indexing a ffi function should be more efficient.
-- Changed `readErr` and `readOut` to non-blocking and return nil or string for ProcessChild in `@zcore/process`.
-- Changed `@zcore/ffi`, removed buffers going through as memory blocks of its own, in favor of using the new ffi pointer objects, updated/removed FFI apis.
-- Updated `luau` to `0.649`.
+- Changed `readErr` and `readOut` to non-blocking and return nil or string for ProcessChild in `process`.
+- Changed `ffi`, removed buffers going through as memory blocks of its own, in favor of using the new ffi pointer objects, updated/removed FFI apis.
+- Updated `luau` to `0.650`.
+- `fs`, `luau`, `process`, and `net` all functions that returns a boolean & result tuple, now returns only the results or throws a lua error instead.
+- Zune libraries has been changed to a global variable instead of a module with `require`.
+- `require` is now based on **Amended Require Syntax and Resolution Semantics** [Luau RFC](https://rfcs.luau.org/amended-require-resolution.html).
+- Zune types has moved all type information into one definition file & removed require directory aliases.
 
 ### Fixed
-- Fixed `@zcore/ffi` closures getting garbage collected.
+- Fixed `ffi` closures getting garbage collected.
 - Fixed `zune.toml` crashing when integer values are negative.
-- Fixed `@zcore/ffi` closures reading structs and returning structs crashing.
+- Fixed `ffi` closures reading structs and returning structs crashing.
 
 ## `0.4.2` - October 14, 2024
 
@@ -63,7 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     | ^^^^^^^^^^^^^
   ```
 - Added `useColor` and `showRecursiveTable` to `resolvers.formatter` in `zune.toml` for configurable output when using `print` and `warn`.
-- Added `readAsync` method to stdin in `@zcore/stdio.
+- Added `readAsync` method to stdin in `@zcore/stdio`.
 - Added `json5`, null preservation & pretty print for `json` in `@zcore/serde`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/serde)
 
   Example:
