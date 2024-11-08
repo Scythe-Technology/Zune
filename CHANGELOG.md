@@ -20,34 +20,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added buffer support to the formatter, now it can display the contents of a buffer as hex with a configurable display limit.
 - Added `readErrAsync`, `readOutAsync` and `dead` to ProcessChild in `process`.
 - Added pointer objects to `ffi`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/ffi)
-  
-  Currently this is marked as experimental and may change in the future. Api may change.
+  - Currently this is marked as experimental and may change in the future. Api may change.
   To enable this, you need to set `experimental.ffi` to `true` in `zune.toml`.
-
   Bugs may occur, please report them.
+  - Example:
+    ```luau
+    local ffi = zune.ffi
 
-  Example:
-  ```luau
-  local ffi = zune.ffi
+    local ptr = ffi.alloc(12)
+    print(ptr) -- <pointer: 0x12345678>
+    print(ffi.len(ptr)) -- 12
+    local data = buffer.create(12);
+    buffer.writei32(data, 0, 123)
+    buffer.writei32(data, 4, 456)
+    buffer.writei32(data, 8, 789)
 
-  local ptr = ffi.alloc(12)
-  print(ptr) -- <pointer: 0x12345678>
-  print(ffi.len(ptr)) -- 12
-  local data = buffer.create(12);
-  buffer.writei32(data, 0, 123)
-  buffer.writei32(data, 4, 456)
-  buffer.writei32(data, 8, 789)
-
-  ffi.copy(data, 0, ptr, 0, 12);
-  ptr:write(0, data, 0, 12)
-  ```
+    ffi.copy(data, 0, ptr, 0, 12);
+    ptr:write(0, data, 0, 12)
+    ```
 - Added support for encoding `Infinity` and `NaN` in `serde.json5`.
 - Added non-blocking support for `process.run`.
 
 ### Changed
 - Formatter now displays `__tostring` metamethods as plain text, instead of as strings.
-- `intFromPtr` in `ffi` has been changed to `bufferToPtr` and only takes in one parameter of type `buffer`.
-- indexing a ffi function should be more efficient.
+- `intFromPtr` in `ffi` has been removed.
+- indexing a ffi function from library should be more efficient.
 - Changed `readErr` and `readOut` to non-blocking and return nil or string for ProcessChild in `process`.
 - Changed `ffi`, removed buffers going through as memory blocks of its own, in favor of using the new ffi pointer objects, updated/removed FFI apis.
 - Updated `luau` to `0.650`.
@@ -66,8 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Added async support to require. You can now do yields in required modules.
 - Added custom error logging, enabled with `runtime.debug.detailedError` in `zune.toml`.
-
-  Example:
+  - Example:
   ```shell
   error: Zune
   example.luau:1
@@ -78,46 +74,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `useColor` and `showRecursiveTable` to `resolvers.formatter` in `zune.toml` for configurable output when using `print` and `warn`.
 - Added `readAsync` method to stdin in `@zcore/stdio`.
 - Added `json5`, null preservation & pretty print for `json` in `@zcore/serde`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/serde)
+  - Example:
+    ```lua
+    local serde = require("@zcore/serde")
 
-  Example:
-  ```lua
-  local serde = require("@zcore/serde")
+    local json = [[
+      {
+        "key": null
+      }
+    ]]
 
-  local json = [[
-    {
-      "key": null
-    }
-  ]]
-
-  -- Json5 and Json are very similar, just Json5 has a different decoder.
-  -- serde.json.Values & serde.json.Indents are both the same for Json5, usable for in either one.
-  local decoded = serde.json5.decode(json, {
-      preserveNull = true -- Preserve null values as 'serde.json.Values.Null'
-  })
-  print(serde.json5.encode(decoded, {
-      prettyIndent = serde.json5.Indents.TwoSpaces -- Pretty print with 2 spaces
-  }))
-  ```
+    -- Json5 and Json are very similar, just Json5 has a different decoder.
+    -- serde.json.Values & serde.json.Indents are both the same for Json5, usable for in either one.
+    local decoded = serde.json5.decode(json, {
+        preserveNull = true -- Preserve null values as 'serde.json.Values.Null'
+    })
+    print(serde.json5.encode(decoded, {
+        prettyIndent = serde.json5.Indents.TwoSpaces -- Pretty print with 2 spaces
+    }))
+    ```
 - Added `@zcore/ffi` for FFI support. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/ffi)
-
-  Currently this is marked as experimental and may change in the future. Api may change.
+  - Currently this is marked as experimental and may change in the future. Api may change.
   To enable this, you need to set `experimental.ffi` to `true` in `zune.toml`.
-
   It is also likely this might not work on all platforms.
+  - Example:
+    ```luau
+    local ffi = require("@zcore/ffi")
 
-  Example:
-  ```luau
-  local ffi = require("@zcore/ffi")
+    local lib = ffi.dlopen(`libsample.{ffi.suffix}`, {
+        add = {
+            returns = ffi.types.i32,
+            args = {ffi.types.i32, ffi.types.i32},
+        },
+    })
 
-  local lib = ffi.dlopen(`libsample.{ffi.suffix}`, {
-      add = {
-          returns = ffi.types.i32,
-          args = {ffi.types.i32, ffi.types.i32},
-      },
-  })
-
-  print(lib.add(1, 2))
-  ```
+    print(lib.add(1, 2))
+    ```
 
 ### Changed
 - Updated `luau` to `0.647`.
@@ -172,8 +164,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Added `watch`, `openFile`, and `createFile` to `@zcore/fs`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/fs)
-
-  Example:
+  - Example:
     ```luau
     local fs = require("@zcore/fs")
 
@@ -195,24 +186,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     watcher:stop();
     ```
 - Added `eval` command. Evaluates the first argument as luau code.
-
-  Example:
+  - Example:
     ```shell
     zune --eval "print('Hello World!')"
     -- OR --
     zune -e "print('Hello World!')"
     ```
 - Added stdin input to `run` command if the first argument is `-`.
-
-  Example:
+  - Example:
     ```shell
     echo "print('Hello World!')" | zune run -
     ```
 - Added `--globals` flag to `repl` to load all zune libraries as globals too.
 - Added `warn` global, similar to print but with a warning prefix.
 - Added `random` and `aes` to `@zcore/crypto`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/crypto)
-
-  Example:
+  - Example:
     ```luau
     local crypto = require("@zcore/crypto")
 
@@ -235,8 +223,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     print(decrypted) -- "Hello World!"
     ```
 - Added `getSize` method to `terminal` in `@zcore/stdio`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/serde)
-
-  Example:
+  - Example:
     ```luau
     local stdio = require("@zcore/stdio")
     
@@ -246,8 +233,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     end
     ```
 - Added `base64` to `@zcore/serde`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/serde)
-
-  Example:
+  - Example:
     ```luau
     local serde = require("@zcore/serde")
 
@@ -256,8 +242,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     print(decoded) -- "Hello World!"
     ```
 - Added `.luaurc` support. Alias requires should work.
-
-  Example:
+  - Example:
     ```json
     {
       "aliases": {
@@ -271,12 +256,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     local globals = require("@globals")
     ```
 - Added `captures` method to `Regex` in `@zcore/regex`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/regex)
-
-  Flags
-  - `g` - Global
-  - `m` - Multiline
-
-  Example:
+  - Flags
+    - `g` - Global
+    - `m` - Multiline
+  - Example:
     ```luau
     local regex = require("@zcore/regex")
 
@@ -284,8 +267,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     print(pattern:captures("Hello World!", 'g')) -- {{RegexMatch}, {RegexMatch}}
     ```
 - Added `@zcore/datetime`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/datetime)
-
-  Example:
+  - Example:
     ```luau
     local datetime = require("@zcore/datetime")
 
@@ -293,8 +275,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     print(datetime.now():toIsoDate()) -- ISO Date
     ```
 - Added `onSignal` to `@zcore/process`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/process)
-
-  Example:
+  - Example:
     ```luau
     local process = require("@zcore/process")
 
@@ -319,8 +300,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Added `stdin`, `stdout`, and `stderr` to `@zcore/stdio`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/stdio)
-
-  Example:
+  - Example:
     ```luau
     local stdio = require("@zcore/stdio")
 
@@ -330,12 +310,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     stdio.stderr:write("Error!")
     ```
 - Added `terminal` to `@zcore/stdio`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/stdio)
-
-  This should allow you to write more interactive terminal applications.
-  
-  *note*: If you have weird terminal output in windows, we recommend you to use `enableRawMode` to enable windows console `Virtual Terminal Processing`.
-
-  Example:
+  - This should allow you to write more interactive terminal applications.
+  - *note*: If you have weird terminal output in windows, we recommend you to use `enableRawMode` to enable windows console `Virtual Terminal Processing`.
+  - Example:
     ```luau
     local stdio = require("@zcore/stdio")
 
@@ -346,8 +323,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     end
     ```
 - Added `@zcore/regex`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/regex)
-
-  Example:
+  - Example:
     ```luau
     local regex = require("@zcore/regex")
 
@@ -367,19 +343,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Switched from build optimization from ReleaseSafe to ReleaseFast to improve performance.
-
-  Luau should be faster now.
-
+  - Luau should be faster now.
 - REPL should now restore the terminal mode while executing lua code and return back to raw mode after execution.
-
 - Removed `readIn`, `writeOut`, and `writeErr` functions in `@zcore/stdio`.
 
 ## `0.2.1` - August 31, 2024
 
 ### Added
 - Added buffer support for `@net/server` body response. If a buffer is returned, it will be sent as the response body, works with `{ body = buffer, statusCode = 200 }`.
-  
-  Example:
+  - Example:
     ```luau
     local net = require("@net/net")
 
@@ -391,8 +363,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     })
     ```
 - Added buffer support for `@net/serde` in compress/decompress. If a buffer is passed, it will return a new buffer.
-  
-  Example:
+  - Example:
     ```luau
     local serde = require("@net/serde")
 
@@ -424,16 +395,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Added `@zcore/crypto` built-in library. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/crypto)
+  - Example:
+    ```luau
+    local crypto = require("@zcore/crypto")
+    local hash = crypto.hash.sha2.sha256("Hello World!")
+    local hmac = crypto.hmac.sha2.sha256("Hello World!", "private key")
+    local pass_hash = crypto.password.hash("pass")
 
-  Example:
-  ```luau
-  local crypto = require("@zcore/crypto")
-  local hash = crypto.hash.sha2.sha256("Hello World!")
-  local hmac = crypto.hmac.sha2.sha256("Hello World!", "private key")
-  local pass_hash = crypto.password.hash("pass")
-
-  print(crypto.password.verify("pass", pass_hash))
-  ```
+    print(crypto.password.verify("pass", pass_hash))
+    ```
 
 ### Changed
 - Partial backend code for print formatting.
