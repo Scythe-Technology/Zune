@@ -597,35 +597,34 @@ const LuaHandle = struct {
     declared: std.StringArrayHashMap(ffi.CallableFunction),
     allocated_args: std.StringArrayHashMap([]*anyopaque),
 
+    pub const HandleFunction = struct {
+        lib: *LuaHandle,
+        callable: *ffi.CallableFunction,
+        args: *[]*anyopaque,
+    };
+
     pub fn call_ffi(L: *Luau) !i32 {
-        const index_idx = Luau.upvalueIndex(1);
-        const ptr_idx = Luau.upvalueIndex(2);
+        const allocator = L.allocator();
+        const ffi_func = L.toUserdata(HandleFunction, Luau.upvalueIndex(2)) catch unreachable;
 
-        const index = L.checkString(index_idx);
-        const ptr = L.toUserdata(LuaHandle, ptr_idx) catch L.raiseErrorStr("Invalid handle", .{});
+        const callable = ffi_func.callable;
+        const args = ffi_func.args.*;
 
-        if (!ptr.open)
+        if (!ffi_func.lib.open)
             L.raiseErrorStr("Library closed", .{});
 
-        const allocator = L.allocator();
-
-        const entry = ptr.declared.getEntry(index) orelse std.debug.panic("FFI not found", .{});
-        const args = ptr.allocated_args.get(index) orelse unreachable;
-
-        const ffi_func = entry.value_ptr;
-
-        if (@as(usize, @intCast(L.getTop())) != ffi_func.argTypes.len - 1)
+        if (@as(usize, @intCast(L.getTop())) != args.len)
             L.raiseErrorStr("Invalid number of arguments", .{});
 
         var alloclen: usize = 0;
-        defer free_ffi_args(allocator, L, ffi_func, 1, args, &alloclen, true);
+        defer free_ffi_args(allocator, L, callable, 1, args, &alloclen, true);
 
-        try load_ffi_args(allocator, L, ffi_func, 1, args, &alloclen, true);
+        try load_ffi_args(allocator, L, callable, 1, args, &alloclen, true);
 
-        const ret = try ffi_func.call(@ptrCast(@alignCast(args)));
-        defer ffi_func.free(ret);
+        const ret = try callable.call(@ptrCast(@alignCast(args)));
+        defer callable.free(ret);
 
-        switch (ffi_func.returnType) {
+        switch (callable.returnType) {
             .ffiType => |ffiType| switch (ffiType) {
                 .void => return 0,
                 .i8 => L.pushInteger(@intCast(@as(i8, @bitCast(ret[0])))),
@@ -645,7 +644,7 @@ const LuaHandle = struct {
         return 1;
     }
 
-    pub fn __namecall(L: *Luau) i32 {
+    pub fn __namecall(L: *Luau) !i32 {
         L.checkType(1, .userdata);
         const ptr = L.toUserdata(LuaHandle, 1) catch L.raiseErrorStr("Invalid handle", .{});
 
@@ -657,6 +656,14 @@ const LuaHandle = struct {
         // TODO: prob should switch to static string map
         if (std.mem.eql(u8, namecall, "close")) {
             ptr.__dtor();
+        } else if (std.mem.eql(u8, namecall, "getSymbol")) {
+            const symbol = L.checkString(2);
+            const sym_ptr = ptr.lib.lookup(*anyopaque, symbol) orelse {
+                L.pushNil();
+                return 1;
+            };
+            _ = try LuaPointer.newStaticPtr(L, sym_ptr, false);
+            return 1;
         } else L.raiseErrorStr("Unknown method: %s\n", .{namecall.ptr});
         return 0;
     }
@@ -1073,6 +1080,63 @@ fn free_ffi_args(
     }
 }
 
+fn alloc_ffi_args(allocator: std.mem.Allocator, args: []ffi.GenType) ![]*anyopaque {
+    const alloc_args = try allocator.alloc(*anyopaque, args.len);
+    var alloc_len: usize = 0;
+    errdefer allocator.free(alloc_args);
+    errdefer {
+        for (0..alloc_len) |i| {
+            switch (args[i]) {
+                .ffiType => |t| switch (t) {
+                    .void => unreachable,
+                    .i8 => allocator.destroy(@as(*i8, @ptrCast(alloc_args[i]))),
+                    .u8 => allocator.destroy(@as(*u8, @ptrCast(alloc_args[i]))),
+                    .i16 => allocator.destroy(@as(*i16, @ptrCast(@alignCast(alloc_args[i])))),
+                    .u16 => allocator.destroy(@as(*u16, @ptrCast(@alignCast(alloc_args[i])))),
+                    .i32 => allocator.destroy(@as(*i32, @ptrCast(@alignCast(alloc_args[i])))),
+                    .u32 => allocator.destroy(@as(*u32, @ptrCast(@alignCast(alloc_args[i])))),
+                    .i64 => allocator.destroy(@as(*i64, @ptrCast(@alignCast(alloc_args[i])))),
+                    .u64 => allocator.destroy(@as(*u64, @ptrCast(@alignCast(alloc_args[i])))),
+                    .float => allocator.destroy(@as(*f32, @ptrCast(@alignCast(alloc_args[i])))),
+                    .double => allocator.destroy(@as(*f64, @ptrCast(@alignCast(alloc_args[i])))),
+                    .pointer => allocator.destroy(@as(**anyopaque, @ptrCast(@alignCast(alloc_args[i])))),
+                },
+                .structType => |t| {
+                    const size = t.getSize();
+                    allocator.free(@as([*]u8, @ptrCast(@alignCast(alloc_args[i])))[0..size]);
+                },
+            }
+        }
+    }
+
+    // Allocate space for the arg types
+    for (args, 0..) |arg, i| {
+        switch (arg) {
+            .ffiType => |t| switch (t) {
+                .void => std.debug.panic("Void arg", .{}),
+                .i8 => alloc_args[i] = @ptrCast(@alignCast(try allocator.create(i8))),
+                .u8 => alloc_args[i] = @ptrCast(@alignCast(try allocator.create(u8))),
+                .i16 => alloc_args[i] = @ptrCast(@alignCast(try allocator.create(i16))),
+                .u16 => alloc_args[i] = @ptrCast(@alignCast(try allocator.create(u16))),
+                .i32 => alloc_args[i] = @ptrCast(@alignCast(try allocator.create(i32))),
+                .u32 => alloc_args[i] = @ptrCast(@alignCast(try allocator.create(u32))),
+                .i64 => alloc_args[i] = @ptrCast(@alignCast(try allocator.create(i64))),
+                .u64 => alloc_args[i] = @ptrCast(@alignCast(try allocator.create(u64))),
+                .float => alloc_args[i] = @ptrCast(@alignCast(try allocator.create(f32))),
+                .double => alloc_args[i] = @ptrCast(@alignCast(try allocator.create(f64))),
+                .pointer => alloc_args[i] = @ptrCast(@alignCast(try allocator.create(*anyopaque))),
+            },
+            .structType => |t| {
+                const size = t.getSize();
+                alloc_args[i] = @ptrCast(@alignCast((try allocator.alloc(u8, size)).ptr));
+            },
+        }
+        alloc_len += 1;
+    }
+
+    return alloc_args;
+}
+
 fn ffi_struct(L: *Luau) !i32 {
     L.checkType(1, .table);
 
@@ -1242,68 +1306,11 @@ fn ffi_dlopen(L: *Luau) !i32 {
             const symbol_returns = entry.value_ptr.returns_type;
             const symbol_args = entry.value_ptr.args_type;
 
-            const args = try allocator.alloc(ffi.GenType, symbol_args.len);
-            defer allocator.free(args);
-
-            for (symbol_args, 0..) |arg, i|
-                args[i] = arg;
-
-            var ffi_callback = try ffi.CallableFunction.init(allocator, func, args, symbol_returns);
+            var ffi_callback = try ffi.CallableFunction.init(allocator, func, symbol_args, symbol_returns);
             errdefer ffi_callback.deinit();
 
-            // Allocate space for the arguments
-            const alloc_args = try allocator.alloc(*anyopaque, args.len);
-            var alloc_len: usize = 0;
-            errdefer allocator.free(alloc_args);
-            errdefer {
-                for (0..alloc_len) |i| {
-                    switch (args[i]) {
-                        .ffiType => |t| switch (t) {
-                            .void => unreachable,
-                            .i8 => allocator.destroy(@as(*i8, @ptrCast(alloc_args[i]))),
-                            .u8 => allocator.destroy(@as(*u8, @ptrCast(alloc_args[i]))),
-                            .i16 => allocator.destroy(@as(*i16, @ptrCast(@alignCast(alloc_args[i])))),
-                            .u16 => allocator.destroy(@as(*u16, @ptrCast(@alignCast(alloc_args[i])))),
-                            .i32 => allocator.destroy(@as(*i32, @ptrCast(@alignCast(alloc_args[i])))),
-                            .u32 => allocator.destroy(@as(*u32, @ptrCast(@alignCast(alloc_args[i])))),
-                            .i64 => allocator.destroy(@as(*i64, @ptrCast(@alignCast(alloc_args[i])))),
-                            .u64 => allocator.destroy(@as(*u64, @ptrCast(@alignCast(alloc_args[i])))),
-                            .float => allocator.destroy(@as(*f32, @ptrCast(@alignCast(alloc_args[i])))),
-                            .double => allocator.destroy(@as(*f64, @ptrCast(@alignCast(alloc_args[i])))),
-                            .pointer => allocator.destroy(@as(**anyopaque, @ptrCast(@alignCast(alloc_args[i])))),
-                        },
-                        .structType => |t| {
-                            const size = t.getSize();
-                            allocator.free(@as([*]u8, @ptrCast(@alignCast(alloc_args[i])))[0..size]);
-                        },
-                    }
-                }
-            }
-
             // Allocate space for the arg types
-            for (args, 0..) |arg, i| {
-                switch (arg) {
-                    .ffiType => |t| switch (t) {
-                        .void => std.debug.panic("Void arg", .{}),
-                        .i8 => alloc_args[i] = @ptrCast(@alignCast(try allocator.create(i8))),
-                        .u8 => alloc_args[i] = @ptrCast(@alignCast(try allocator.create(u8))),
-                        .i16 => alloc_args[i] = @ptrCast(@alignCast(try allocator.create(i16))),
-                        .u16 => alloc_args[i] = @ptrCast(@alignCast(try allocator.create(u16))),
-                        .i32 => alloc_args[i] = @ptrCast(@alignCast(try allocator.create(i32))),
-                        .u32 => alloc_args[i] = @ptrCast(@alignCast(try allocator.create(u32))),
-                        .i64 => alloc_args[i] = @ptrCast(@alignCast(try allocator.create(i64))),
-                        .u64 => alloc_args[i] = @ptrCast(@alignCast(try allocator.create(u64))),
-                        .float => alloc_args[i] = @ptrCast(@alignCast(try allocator.create(f32))),
-                        .double => alloc_args[i] = @ptrCast(@alignCast(try allocator.create(f64))),
-                        .pointer => alloc_args[i] = @ptrCast(@alignCast(try allocator.create(*anyopaque))),
-                    },
-                    .structType => |t| {
-                        const size = t.getSize();
-                        alloc_args[i] = @ptrCast(@alignCast((try allocator.alloc(u8, size)).ptr));
-                    },
-                }
-                alloc_len += 1;
-            }
+            const alloc_args = try alloc_ffi_args(allocator, symbol_args);
 
             // Zig owned string to prevent GC from Lua owned strings
             const key = try allocator.dupe(u8, entry.key_ptr.*);
@@ -1322,8 +1329,15 @@ fn ffi_dlopen(L: *Luau) !i32 {
     var iter = ffi_func_map.iterator();
     while (iter.next()) |entry| {
         L.pushLString(entry.key_ptr.*);
-        L.pushValue(-1);
-        L.pushValue(-5);
+        L.pushValue(-4);
+        const callable_entry = ptr.declared.getEntry(entry.key_ptr.*) orelse unreachable;
+        const args_entry = ptr.allocated_args.getEntry(entry.key_ptr.*) orelse unreachable;
+        const data = L.newUserdata(LuaHandle.HandleFunction);
+        data.* = .{
+            .lib = ptr,
+            .args = args_entry.value_ptr,
+            .callable = callable_entry.value_ptr,
+        };
         L.pushClosure(luau.EFntoZigFn(LuaHandle.call_ffi), "ffi_func", 2);
         L.setTable(-3);
     }
@@ -1622,7 +1636,81 @@ fn ffi_closure(L: *Luau) !i32 {
     return 1;
 }
 
-fn ffi_call(L: *Luau) !i32 {
+const FFIFunction = struct {
+    callable: ffi.CallableFunction,
+    args: []*anyopaque,
+    ptr: *anyopaque,
+
+    pub fn __dtor(self: *FFIFunction) void {
+        const allocator = self.callable.allocator;
+        const args = self.args;
+        for (0..args.len) |i| {
+            const argType = self.callable.argTypes[i];
+            if (ffi.toffiType(argType)) |t| switch (t) {
+                .void => std.debug.panic("Void arg", .{}),
+                .i8 => allocator.destroy(@as(*i8, @ptrCast(args[i]))),
+                .u8 => allocator.destroy(@as(*u8, @ptrCast(args[i]))),
+                .i16 => allocator.destroy(@as(*i16, @ptrCast(@alignCast(args[i])))),
+                .u16 => allocator.destroy(@as(*u16, @ptrCast(@alignCast(args[i])))),
+                .i32 => allocator.destroy(@as(*i32, @ptrCast(@alignCast(args[i])))),
+                .u32 => allocator.destroy(@as(*u32, @ptrCast(@alignCast(args[i])))),
+                .i64 => allocator.destroy(@as(*i64, @ptrCast(@alignCast(args[i])))),
+                .u64 => allocator.destroy(@as(*u64, @ptrCast(@alignCast(args[i])))),
+                .float => allocator.destroy(@as(*f32, @ptrCast(@alignCast(args[i])))),
+                .double => allocator.destroy(@as(*f64, @ptrCast(@alignCast(args[i])))),
+                .pointer => allocator.destroy(@as(**anyopaque, @ptrCast(@alignCast(args[i])))),
+            } else {
+                const mem: [*]u8 = @ptrCast(@alignCast(args[i]));
+                const len = argType.*.size;
+                allocator.free(mem[0..len]);
+            }
+        }
+        allocator.free(args);
+
+        self.callable.deinit();
+    }
+};
+
+fn ffi_fn_inner(L: *Luau) !i32 {
+    const allocator = L.allocator();
+    const ffi_func = L.toUserdata(FFIFunction, Luau.upvalueIndex(1)) catch unreachable;
+
+    const callable = &ffi_func.callable;
+
+    const args = ffi_func.args;
+
+    if (@as(usize, @intCast(L.getTop())) != args.len)
+        L.raiseErrorStr("Invalid number of arguments", .{});
+
+    var alloclen: usize = 0;
+    defer free_ffi_args(allocator, L, callable, 1, args, &alloclen, true);
+
+    try load_ffi_args(allocator, L, callable, 1, args, &alloclen, true);
+
+    const ret = try callable.call(args);
+    defer callable.free(ret);
+
+    switch (callable.returnType) {
+        .ffiType => |ffiType| switch (ffiType) {
+            .void => return 0,
+            .i8 => L.pushInteger(@intCast(@as(i8, @intCast(ret[0])))),
+            .u8 => L.pushInteger(@intCast(ret[0])),
+            .i16 => L.pushInteger(@intCast(std.mem.readVarInt(i16, ret, .little))),
+            .u16 => L.pushInteger(@intCast(std.mem.readVarInt(u16, ret, .little))),
+            .i32 => L.pushInteger(@intCast(std.mem.readVarInt(i32, ret, .little))),
+            .u32 => L.pushInteger(@intCast(std.mem.readVarInt(u32, ret, .little))),
+            .i64 => try L.pushBuffer(ret),
+            .u64 => try L.pushBuffer(ret),
+            .float => L.pushNumber(@floatCast(@as(f32, @bitCast(std.mem.readVarInt(u32, ret, .little))))),
+            .double => L.pushNumber(@as(f64, @bitCast(std.mem.readVarInt(u64, ret, .little)))),
+            .pointer => _ = try LuaPointer.newStaticPtr(L, @ptrFromInt(std.mem.readVarInt(usize, ret[0..@sizeOf(usize)], .little)), true),
+        },
+        .structType => try L.pushBuffer(ret),
+    }
+    return 1;
+}
+
+fn ffi_fn(L: *Luau) !i32 {
     L.checkType(1, .table);
     const src = try LuaPointer.value(L, 2);
     switch (src.type) {
@@ -1669,37 +1757,21 @@ fn ffi_call(L: *Luau) !i32 {
         L.pop(1);
     }
 
-    var ffi_func = try ffi.CallableFunction.init(allocator, ptr, args.items, returns);
-    defer ffi_func.deinit();
+    const ffi_func = try ffi.CallableFunction.init(allocator, ptr, args.items, returns);
 
-    const ffi_args = try allocator.alloc(*anyopaque, ffi_func.argTypes.len - 1);
+    // Allocate space for the arguments
+    const alloc_args = try alloc_ffi_args(allocator, args.items);
 
-    var alloclen: usize = 0;
-    defer allocator.free(ffi_args);
-    defer free_ffi_args(allocator, L, &ffi_func, 3, ffi_args, &alloclen, false);
+    const data = L.newUserdataDtor(FFIFunction, FFIFunction.__dtor);
 
-    try load_ffi_args(allocator, L, &ffi_func, 3, ffi_args, &alloclen, false);
+    data.* = .{
+        .args = alloc_args,
+        .callable = ffi_func,
+        .ptr = ptr,
+    };
 
-    const ret = try ffi_func.call(ffi_args);
-    defer ffi_func.free(ret);
+    L.pushClosure(luau.EFntoZigFn(ffi_fn_inner), "ffi_fn", 1);
 
-    switch (ffi_func.returnType) {
-        .ffiType => |ffiType| switch (ffiType) {
-            .void => return 0,
-            .i8 => L.pushInteger(@intCast(@as(i8, @intCast(ret[0])))),
-            .u8 => L.pushInteger(@intCast(ret[0])),
-            .i16 => L.pushInteger(@intCast(std.mem.readVarInt(i16, ret, .little))),
-            .u16 => L.pushInteger(@intCast(std.mem.readVarInt(u16, ret, .little))),
-            .i32 => L.pushInteger(@intCast(std.mem.readVarInt(i32, ret, .little))),
-            .u32 => L.pushInteger(@intCast(std.mem.readVarInt(u32, ret, .little))),
-            .i64 => try L.pushBuffer(ret),
-            .u64 => try L.pushBuffer(ret),
-            .float => L.pushNumber(@floatCast(@as(f32, @bitCast(std.mem.readVarInt(u32, ret, .little))))),
-            .double => L.pushNumber(@as(f64, @bitCast(std.mem.readVarInt(u64, ret, .little)))),
-            .pointer => _ = try LuaPointer.newStaticPtr(L, @ptrFromInt(std.mem.readVarInt(usize, ret[0..@sizeOf(usize)], .little)), true),
-        },
-        .structType => try L.pushBuffer(ret),
-    }
     return 1;
 }
 
@@ -1889,13 +1961,13 @@ pub fn loadLib(L: *Luau) void {
         L.setFieldFn(-1, "dlopen", ffi_dlopen);
         L.setFieldFn(-1, "struct", ffi_struct);
         L.setFieldFn(-1, "closure", ffi_closure);
-        L.setFieldFn(-1, "call", ffi_call);
+        L.setFieldFn(-1, "fn", ffi_fn);
         L.setFieldBoolean(-1, "supported", true);
     } else {
         L.setFieldFn(-1, "dlopen", ffi_unsupported);
         L.setFieldFn(-1, "struct", ffi_unsupported);
         L.setFieldFn(-1, "closure", ffi_unsupported);
-        L.setFieldFn(-1, "call", ffi_unsupported);
+        L.setFieldFn(-1, "fn", ffi_unsupported);
         L.setFieldBoolean(-1, "supported", false);
     }
 
