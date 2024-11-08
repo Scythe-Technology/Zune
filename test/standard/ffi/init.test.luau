@@ -12,7 +12,7 @@ expect(ffi).toBe(
         dlopen = expect.type("function"),
         struct = expect.type("function"),
         closure = expect.type("function"),
-        call = expect.type("function"),
+        fn = expect.type("function"),
         sizeOf = expect.type("function"),
         alignOf = expect.type("function"),
         createPtr = expect.type("function"),
@@ -221,26 +221,35 @@ describe("FFI", function()
                     return a + b;
                 end)
 
-                expect(ffi.call(add_defintion, c_add_func.ptr, 1, 2)).toBe(3);
-                expect(ffi.call(add_defintion, c_add_func.ptr, 2, 3)).toBe(5);
-                expect(ffi.call(add_defintion, c_add_func.ptr, -4, 4)).toBe(0);
+                local addfn = ffi.fn(add_defintion, c_add_func.ptr);
+
+                expect(addfn(1, 2)).toBe(3);
+                expect(addfn(2, 3)).toBe(5);
+                expect(addfn(-4, 4)).toBe(0);
+                
+                expect(ffi.fn(add_defintion, c_add_func.ptr)(1, 2)).toBe(3);
+                expect(ffi.fn(add_defintion, c_add_func.ptr)(2, 3)).toBe(5);
+                expect(ffi.fn(add_defintion, c_add_func.ptr)(-4, 4)).toBe(0);
 
                 do
                     local a = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 1);
                     local b = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 2);
-                    expect(ffi.call(add_defintion, c_add_func.ptr, a, b)).toBe(3);
+                    expect(addfn(a, b)).toBe(3);
+                    expect(ffi.fn(add_defintion, c_add_func.ptr)(a, b)).toBe(3);
                 end
-
+                
                 do
                     local a = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 2);
                     local b = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 3);
-                    expect(ffi.call(add_defintion, c_add_func.ptr, a, b)).toBe(5);
+                    expect(addfn(a, b)).toBe(5);
+                    expect(ffi.fn(add_defintion, c_add_func.ptr)(a, b)).toBe(5);
                 end
-
+                
                 do
                     local a = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, -4);
                     local b = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 4);
-                    expect(ffi.call(add_defintion, c_add_func.ptr, a, b)).toBe(0);
+                    expect(addfn(a, b)).toBe(0);
+                    expect(ffi.fn(add_defintion, c_add_func.ptr)(a, b)).toBe(0);
                 end
                 
             end)
@@ -254,26 +263,35 @@ describe("FFI", function()
                     return a + b;
                 end)
 
-                expect(ffi.call(add_defintion, c_add_func.ptr, 1.123, 2)).toBe(3.123);
-                expect(ffi.call(add_defintion, c_add_func.ptr, 2.25, 3.25)).toBe(5.5);
-                expect(ffi.call(add_defintion, c_add_func.ptr, -4.25, 4.25)).toBe(0);
+                local addfn = ffi.fn(add_defintion, c_add_func.ptr);
 
+                expect(addfn(1.123, 2)).toBe(3.123);
+                expect(addfn(2.25, 3.25)).toBe(5.5);
+                expect(addfn(-4.25, 4.25)).toBe(0);
+
+                expect(ffi.fn(add_defintion, c_add_func.ptr)(1.123, 2)).toBe(3.123);
+                expect(ffi.fn(add_defintion, c_add_func.ptr)(2.25, 3.25)).toBe(5.5);
+                expect(ffi.fn(add_defintion, c_add_func.ptr)(-4.25, 4.25)).toBe(0);
+                
                 do
                     local a = testBufferOfValue(ffi.sizeOf(ffi.types.double), buffer.writef64, 1.123);
                     local b = testBufferOfValue(ffi.sizeOf(ffi.types.double), buffer.writef64, 2);
-                    expect(ffi.call(add_defintion, c_add_func.ptr, a, b)).toBe(3.123);
+                    expect(addfn(a, b)).toBe(3.123);
+                    expect(ffi.fn(add_defintion, c_add_func.ptr)(a, b)).toBe(3.123);
                 end
 
                 do
                     local a = testBufferOfValue(ffi.sizeOf(ffi.types.double), buffer.writef64, 2.25);
                     local b = testBufferOfValue(ffi.sizeOf(ffi.types.double), buffer.writef64, 3.25);
-                    expect(ffi.call(add_defintion, c_add_func.ptr, a, b)).toBe(5.5);
+                    expect(addfn(a, b)).toBe(5.5);
+                    expect(ffi.fn(add_defintion, c_add_func.ptr)(a, b)).toBe(5.5);
                 end
 
                 do
                     local a = testBufferOfValue(ffi.sizeOf(ffi.types.double), buffer.writef64, -4.25);
                     local b = testBufferOfValue(ffi.sizeOf(ffi.types.double), buffer.writef64, 4.25);
-                    expect(ffi.call(add_defintion, c_add_func.ptr, a, b)).toBe(0);
+                    expect(addfn(a, b)).toBe(0);
+                    expect(ffi.fn(add_defintion, c_add_func.ptr)(a, b)).toBe(0);
                 end
             end)
 
@@ -497,6 +515,12 @@ describe("FFI", function()
         });
         expect(lib).toBe(expect.type("userdata"));
 
+        test("Symbol<?>", function()
+            expect(lib:getSymbol("add")).toBe(expect.type("userdata"));
+            expect(lib:getSymbol("add")).toBe(lib:getSymbol("add"));
+            expect(lib:getSymbol("someUnkownSymbol")).toBeNil();
+        end)
+
         test("Symbol<i32 add(i32 i32)>", function()
             expect(lib.add(1, 2)).toBe(3);
             local a = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 2);
@@ -563,10 +587,10 @@ describe("FFI", function()
                 args = {ffi.types.pointer},
             }, function(callback)
                 counter += 1;
-                local num = ffi.call({
+                local num = ffi.fn({
                     returns = ffi.types.i32,
                     args = {ffi.types.i32},
-                }, callback, counter);
+                }, callback)(counter);
                 return num == 2556;
             end)
 

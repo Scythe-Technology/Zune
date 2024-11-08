@@ -37,6 +37,7 @@ pub fn lua_hash(L: *Luau) !i32 {
     var algorithm = DEFAULT_ALGO;
     var cost: u32 = 65536;
     var cost2: u32 = 2;
+    var threads: u24 = 1;
 
     switch (try L.typeOfObjConsumed(2)) {
         .table => {
@@ -56,6 +57,11 @@ pub fn lua_hash(L: *Luau) !i32 {
                         .number => |n| cost2 = @intFromFloat(n),
                         .none, .nil => {},
                         else => L.raiseErrorStr("Invalid 'timeCost' (Number expected)", .{}),
+                    }
+                    switch (try L.getFieldObjConsumed(2, "threads")) {
+                        .number => |n| threads = @intFromFloat(n),
+                        .none, .nil => {},
+                        else => L.raiseErrorStr("Invalid 'threads' (Number expected)", .{}),
                     }
                 },
                 .bcrypt => {
@@ -81,7 +87,7 @@ pub fn lua_hash(L: *Luau) !i32 {
         .argon2d, .argon2i, .argon2id => |mode| {
             const hash = try argon2.strHash(password, .{
                 .allocator = allocator,
-                .params = .{ .m = cost, .t = cost2, .p = 1 },
+                .params = .{ .m = cost, .t = cost2, .p = threads },
                 .mode = mode,
             }, &buf);
             L.pushLString(hash);

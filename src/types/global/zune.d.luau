@@ -1504,6 +1504,8 @@ type Argon2PasswordOptions = {
     timeCost: number?,
     --- Default: 65536
     memoryCost: number?,
+    --- Default: 1
+    threads: number?,
 }
 
 type PasswordOptions = BcryptPasswordOptions | Argon2PasswordOptions
@@ -1707,6 +1709,7 @@ type DatetimeLib = {
 --[======[ FFI ]======]--
 export type Library = {
     close: (self: Library) -> (),
+    getSymbol: (self: Library, symbol: string) -> Pointer,
     [string]: (...any) -> any,
 }
 
@@ -1795,7 +1798,7 @@ type FFILib = {
     copy: (dest: buffer | Pointer, destOffset: number, src: buffer | Pointer, srcOffset: number, count: number) -> (),
     
     struct: (fields: {{ [string]: Structure | number }}) -> Structure,
-    call: (definition: FunctionDefinition, srcPtr: Pointer, ...any) -> any,
+    fn: (definition: FunctionDefinition, srcPtr: Pointer) -> ((...any) -> any),
     closure: (definition: FunctionDefinition, handler: (...any) -> any) -> Closure,
     dlopen: (path: string, { [string]: FunctionDefinition }) -> Library,
 }
