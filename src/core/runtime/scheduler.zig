@@ -319,6 +319,8 @@ pub fn run(self: *Self) void {
                         std.debug.print("Cannot resume thread error status: {}\n", .{status});
                         continue;
                     }
+                    if (thread.isThreadReset())
+                        continue;
                     if (slept.waited) {
                         thread.pushNumber(now - slept.start);
                         args += 1;
