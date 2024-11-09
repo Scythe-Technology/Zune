@@ -14,16 +14,6 @@ describe("Require", function()
             expect(res.size).toBe(32);
             expect(res.buffer).toBe(expect.any("buffer"));
         end)
-
-        test("No conflicted name", function()
-            local ok, res = pcall(require, "./generated/duplicate.luau");
-            expect(ok).toBeTruthy();
-            expect(res).toBe(expect.type("table"));
-
-            local ok2, res2 = pcall(require, "./generated/duplicate.lua");
-            expect(ok2).toBeTruthy();
-            expect(res2).toBe(expect.type("table"));
-        end)
     end)
 
     describe("Bad", function()
@@ -31,6 +21,12 @@ describe("Require", function()
             local ok, res = pcall(require, "samples/simpleLib2");
             expect(ok).toBeFalsy();
             expect(res).toBe(`must have either "@", "./", or "../" prefix`);
+        end)
+
+        test("Bad Syntax #2", function()
+            local ok, res = pcall(require, "./samples/simpleLib2.luau");
+            expect(ok).toBeFalsy();
+            expect(res).toBe(`RedundantFileExtension`);
         end)
 
         local SEP = if (zune.process.os == "windows") then "\\" else "/";

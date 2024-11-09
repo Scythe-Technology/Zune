@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking Changes
 - `fs`, `luau`, `process`, and `net` all functions that returns a boolean & result tuple, now returns only the results or throws a lua error instead.
 - `ffi` api changes are not backwards compatible with `0.4.2`.
-- `require` is now based on **Amended Require Syntax and Resolution Semantics**, thus `require("module/init.luau")` would need to be `require("./module/init.luau")`.
+- `require` is now based on **Amended Require Syntax and Resolution Semantics**, thus `require("module/init.luau")` would need to be `require("./module/init")`.
 - Zune libraries has been changed to a global variable instead of a module.
   - `require("@zcore/fs")` would be `zune.fs`.
 
@@ -47,11 +47,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - indexing a ffi function from library should be more efficient.
 - Changed `readErr` and `readOut` to non-blocking and return nil or string for ProcessChild in `process`.
 - Changed `ffi`, removed buffers going through as memory blocks of its own, in favor of using the new ffi pointer objects, updated/removed FFI apis.
-- Updated `luau` to `0.650`.
+- Updated `luau` to `0.651`.
 - `fs`, `luau`, `process`, and `net` all functions that returns a boolean & result tuple, now returns only the results or throws a lua error instead.
 - Zune libraries has been changed to a global variable instead of a module with `require`.
 - `require` is now based on **Amended Require Syntax and Resolution Semantics** [Luau RFC](https://rfcs.luau.org/amended-require-resolution.html).
 - Zune types has moved all type information into one definition file & removed require directory aliases.
+- `ffi.call` has been changed to `ffi.fn` to define a function pointer for better optimization.
+  - `ffi.fn` returns a function, which can be used in lua to call like a normal function.
 
 ### Fixed
 - Fixed `ffi` closures getting garbage collected.

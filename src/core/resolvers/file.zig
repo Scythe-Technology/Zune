@@ -56,59 +56,41 @@ pub fn SearchResult(comptime T: type) type {
 }
 
 pub fn searchForExtensions(allocator: std.mem.Allocator, fileName: []const u8, extensions: []const []const u8) !SearchResult([]const u8) {
-    const fileExists = try doesFileExist(fileName);
-    if (!fileExists) {
-        var list = std.ArrayList([]const u8).init(allocator);
-        defer list.deinit();
-        errdefer for (list.items) |value| allocator.free(value);
-        for (extensions) |ext| {
-            const result = std.mem.join(allocator, "", &.{ fileName, ext }) catch continue;
-            defer allocator.free(result);
-            if (try doesFileExist(result))
-                try list.append(allocator.dupe(u8, result) catch continue);
-        }
-        if (list.items.len == 0)
-            return .{ .allocator = allocator, .result = .none };
-        return .{
-            .allocator = allocator,
-            .result = .{
-                .results = try list.toOwnedSlice(),
-            },
-        };
+    var list = std.ArrayList([]const u8).init(allocator);
+    defer list.deinit();
+    errdefer for (list.items) |value| allocator.free(value);
+    for (extensions) |ext| {
+        const result = std.mem.join(allocator, "", &.{ fileName, ext }) catch continue;
+        defer allocator.free(result);
+        if (try doesFileExist(result))
+            try list.append(allocator.dupe(u8, result) catch continue);
     }
+    if (list.items.len == 0)
+        return .{ .allocator = allocator, .result = .none };
     return .{
         .allocator = allocator,
         .result = .{
-            .exact = try allocator.dupe(u8, fileName),
+            .results = try list.toOwnedSlice(),
         },
     };
 }
 
 pub fn searchForExtensionsZ(allocator: std.mem.Allocator, fileName: []const u8, extensions: []const []const u8) !SearchResult([:0]const u8) {
-    const fileExists = try doesFileExist(fileName);
-    if (!fileExists) {
-        var list = std.ArrayList([:0]const u8).init(allocator);
-        defer list.deinit();
-        errdefer for (list.items) |value| allocator.free(value);
-        for (extensions) |ext| {
-            const result = std.mem.join(allocator, "", &.{ fileName, ext }) catch continue;
-            defer allocator.free(result);
-            if (try doesFileExist(result))
-                try list.append(allocator.dupeZ(u8, result) catch continue);
-        }
-        if (list.items.len == 0)
-            return .{ .allocator = allocator, .result = .none };
-        return .{
-            .allocator = allocator,
-            .result = .{
-                .results = try list.toOwnedSlice(),
-            },
-        };
+    var list = std.ArrayList([:0]const u8).init(allocator);
+    defer list.deinit();
+    errdefer for (list.items) |value| allocator.free(value);
+    for (extensions) |ext| {
+        const result = std.mem.join(allocator, "", &.{ fileName, ext }) catch continue;
+        defer allocator.free(result);
+        if (try doesFileExist(result))
+            try list.append(allocator.dupeZ(u8, result) catch continue);
     }
+    if (list.items.len == 0)
+        return .{ .allocator = allocator, .result = .none };
     return .{
         .allocator = allocator,
         .result = .{
-            .exact = try allocator.dupeZ(u8, fileName),
+            .results = try list.toOwnedSlice(),
         },
     };
 }

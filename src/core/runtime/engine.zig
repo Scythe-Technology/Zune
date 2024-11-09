@@ -289,6 +289,19 @@ pub fn prepAsync(L: *Luau, sched: *Scheduler, pOpts: PrepOptions, flags: Zune.Fl
     try prep(L, pOpts, flags);
 }
 
+const LuaFileType = enum {
+    Lua,
+    Luau,
+};
+
+pub fn getLuaFileType(path: []const u8) ?LuaFileType {
+    if (path.len >= 4 and std.mem.eql(u8, path[path.len - 4 ..], ".lua"))
+        return .Lua;
+    if (path.len >= 5 and std.mem.eql(u8, path[path.len - 5 ..], ".luau"))
+        return .Luau;
+    return null;
+}
+
 pub fn findLuauFile(allocator: std.mem.Allocator, dir: std.fs.Dir, fileName: []const u8) !file.SearchResult([]const u8) {
     const absPath = try dir.realpathAlloc(allocator, ".");
     defer allocator.free(absPath);
@@ -304,12 +317,16 @@ pub fn findLuauFileZ(allocator: std.mem.Allocator, dir: std.fs.Dir, fileName: []
 pub fn findLuauFileFromPath(allocator: std.mem.Allocator, absPath: []const u8, fileName: []const u8) !file.SearchResult([]const u8) {
     const absF = try std.fs.path.resolve(allocator, &.{ absPath, fileName });
     defer allocator.free(absF);
+    if (getLuaFileType(fileName)) |_|
+        return error.RedundantFileExtension;
     return try file.searchForExtensions(allocator, absF, &require.POSSIBLE_EXTENSIONS);
 }
 
 pub fn findLuauFileFromPathZ(allocator: std.mem.Allocator, absPath: []const u8, fileName: []const u8) !file.SearchResult([:0]const u8) {
     const absF = try std.fs.path.resolve(allocator, &.{ absPath, fileName });
     defer allocator.free(absF);
+    if (getLuaFileType(fileName)) |_|
+        return error.RedundantFileExtension;
     return try file.searchForExtensionsZ(allocator, absF, &require.POSSIBLE_EXTENSIONS);
 }
 
