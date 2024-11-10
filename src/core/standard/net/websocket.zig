@@ -349,7 +349,10 @@ pub fn prep(allocator: std.mem.Allocator, L: *Luau, scheduler: *Scheduler, uri: 
         var bundle = std.crypto.Certificate.Bundle{};
         try bundle.rescan(allocator);
         defer bundle.deinit(allocator);
-        tls = try std.crypto.tls.Client.init(stream, bundle, host);
+        tls = try std.crypto.tls.Client.init(stream, .{
+            .ca = .{ .bundle = bundle },
+            .host = .{ .explicit = host },
+        });
     }
 
     var vstream = VStream.init(stream, tls);
