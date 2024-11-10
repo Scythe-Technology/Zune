@@ -930,7 +930,7 @@ export type ServerRequest = {
     path: string,
     query: {[string]: string},
     headers: {[string]: string},
-    body: string,
+    body: string?,
 }
 
 export type ServerResponse = {

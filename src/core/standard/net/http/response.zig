@@ -276,17 +276,20 @@ pub fn parseBody(self: *Self, pos: usize, contentLength: usize, reader: anytype)
     if (missing < self.buffer.len - self.bufferLen) {
         readLen = try reader.read(self.buffer[self.bufferLen..]);
         self.body = self.buffer[pos .. pos + readLen];
-        if (readLen == 0) return ParseError.ConnectionClosed;
+        if (readLen == 0)
+            return ParseError.ConnectionClosed;
     } else {
         // reallocate buffer, increasing the size by the content length
         self.bodyAllocated = true;
         const bodyBuffer = try self.allocator.alloc(u8, contentLength);
         const bufferChunk = self.buffer[pos..];
         @memcpy(bodyBuffer[0..bufferChunk.len], bufferChunk);
-        if (self.allocator.resize(self.buffer, pos)) self.buffer = self.buffer[0..pos];
+        if (self.allocator.resize(self.buffer, pos))
+            self.buffer = self.buffer[0..pos];
         self.body = bodyBuffer;
         readLen = try reader.read(bodyBuffer[bufferChunk.len..]);
-        if (readLen == 0) return ParseError.ConnectionClosed;
+        if (readLen == 0)
+            return ParseError.ConnectionClosed;
     }
     self.bufferLen += readLen;
     return readLen;
@@ -300,7 +303,6 @@ fn safeStatusCast(int: u10) ?std.http.Status {
 }
 
 pub fn pushToStack(self: *Self, L: *Luau, customBody: ?[]const u8) !void {
-    const allocator = L.allocator();
     L.newTable();
     errdefer L.pop(1);
 
@@ -310,35 +312,29 @@ pub fn pushToStack(self: *Self, L: *Luau, customBody: ?[]const u8) !void {
     if (self.statusReason) |reason| {
         L.setFieldLString(-1, "statusReason", reason);
     } else if (safeStatusCast(self.statusCode)) |status| {
-        if (status.phrase()) |reason| L.setFieldLString(-1, "statusReason", reason);
+        if (status.phrase()) |reason|
+            L.setFieldLString(-1, "statusReason", reason);
     }
 
     if (self.headers) |headers| {
         L.newTable();
         errdefer L.pop(1);
         for (headers) |header| {
-            const zkey = try allocator.dupeZ(u8, header.key);
-            defer allocator.free(zkey);
-
-            const zvalue = try allocator.dupeZ(u8, header.value);
-            defer allocator.free(zvalue);
-
-            L.pushString(zkey);
-            L.pushString(zvalue);
+            L.pushLString(header.key);
+            L.pushLString(header.value);
             L.rawSetTable(-3);
         }
         L.setField(-2, "headers");
     }
 
     if (customBody orelse self.body) |body| {
-        const zbody = try allocator.dupeZ(u8, body);
-        defer allocator.free(zbody);
-        L.setFieldString(-1, "body", zbody);
+        L.setFieldLString(-1, "body", body);
     }
 }
 
 pub fn deinit(self: *Self) void {
-    if (self.headers) |headers| self.allocator.free(headers);
+    if (self.headers) |headers|
+        self.allocator.free(headers);
     if (self.bodyAllocated) {
         self.allocator.free(self.body.?);
     }

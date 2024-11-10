@@ -463,7 +463,6 @@ pub fn canUpgradeWebSocket(self: *Self) !?UpgradeInfo {
 }
 
 pub fn pushToStack(self: *Self, L: *Luau) !void {
-    const allocator = L.allocator();
     L.newTable();
     errdefer L.pop(1);
 
@@ -480,13 +479,9 @@ pub fn pushToStack(self: *Self, L: *Luau) !void {
         errdefer L.pop(1);
         var order: i32 = 1;
         for (queries) |query| {
-            const zkey = try allocator.dupeZ(u8, query.key);
-            defer allocator.free(zkey);
-            L.pushString(zkey);
+            L.pushLString(query.key);
             if (query.value) |value| {
-                const valuez = try allocator.dupeZ(u8, value);
-                defer allocator.free(valuez);
-                L.pushString(valuez);
+                L.pushLString(value);
                 L.rawSetTable(-3);
             } else {
                 L.rawSetIndex(-2, order);
@@ -500,22 +495,15 @@ pub fn pushToStack(self: *Self, L: *Luau) !void {
     if (self.headers) |headers| {
         errdefer L.pop(1);
         for (headers) |header| {
-            const zkey = try allocator.dupeZ(u8, header.key);
-            defer allocator.free(zkey);
-
-            const zvalue = try allocator.dupeZ(u8, header.value);
-            defer allocator.free(zvalue);
-
-            L.pushString(zkey);
-            L.pushString(zvalue);
+            L.pushLString(header.key);
+            L.pushLString(header.value);
             L.rawSetTable(-3);
         }
     }
     L.setField(-2, "headers");
 
-    if (self.body) |body| {
+    if (self.body) |body|
         L.setFieldLString(-1, "body", body);
-    }
 }
 
 pub fn deinit(self: *Self) void {
