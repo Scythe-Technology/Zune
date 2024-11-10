@@ -8,25 +8,16 @@ const Luau = luau.Luau;
 const argon2 = std.crypto.pwhash.argon2;
 const bcrypt = std.crypto.pwhash.bcrypt;
 
-const Algorithm = enum {
-    argon2d,
-    argon2i,
-    argon2id,
-    bcrypt,
-};
-
-const AlgorithmUnion = union(Algorithm) {
-    argon2d: argon2.Mode,
-    argon2i: argon2.Mode,
-    argon2id: argon2.Mode,
+const AlgorithmUnion = union(enum) {
+    argon2: argon2.Mode,
     bcrypt: void,
 };
 
-const DEFAULT_ALGO: AlgorithmUnion = .{ .argon2d = .argon2d };
+const DEFAULT_ALGO: AlgorithmUnion = .{ .argon2 = .argon2d };
 const AlgorithmMap = std.StaticStringMap(AlgorithmUnion).initComptime(.{
     .{ "argon2d", DEFAULT_ALGO },
-    .{ "argon2i", .{ .argon2i = .argon2i } },
-    .{ "argon2id", .{ .argon2id = .argon2id } },
+    .{ "argon2i", AlgorithmUnion{ .argon2 = .argon2i } },
+    .{ "argon2id", AlgorithmUnion{ .argon2 = .argon2id } },
     .{ "bcrypt", .bcrypt },
 });
 
@@ -47,7 +38,7 @@ pub fn lua_hash(L: *Luau) !i32 {
                 else => return L.raiseErrorStr("Invalid `algorithm` (String expected)", .{}),
             }
             switch (algorithm) {
-                .argon2d, .argon2i, .argon2id => {
+                .argon2 => {
                     switch (try L.getFieldObjConsumed(2, "memoryCost")) {
                         .number => |n| cost = @intFromFloat(n),
                         .none, .nil => {},
@@ -84,7 +75,7 @@ pub fn lua_hash(L: *Luau) !i32 {
 
     var buf: [128]u8 = undefined;
     switch (algorithm) {
-        .argon2d, .argon2i, .argon2id => |mode| {
+        .argon2 => |mode| {
             const hash = try argon2.strHash(password, .{
                 .allocator = allocator,
                 .params = .{ .m = cost, .t = cost2, .p = threads },

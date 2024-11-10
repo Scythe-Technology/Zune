@@ -1171,7 +1171,7 @@ fn FFIReturnTypeConversion(
         .number => {
             const value = if (isFloat) L.toNumber(-1) catch unreachable else L.toInteger(-1) catch unreachable;
             if (if (isFloat) floatOutOfRange(T, value) else intOutOfRange(T, value))
-                return std.debug.panic("Out of range ('{s}')", .{@tagName(t)});
+                return std.debug.panic("Out of range ('{s}')", .{@tagName(ffiType)});
             var bytes: [size]u8 = @bitCast(@as(T, if (isFloat) @floatCast(value) else @intCast(value)));
             @memcpy(mem, &bytes);
         },
@@ -1182,10 +1182,10 @@ fn FFIReturnTypeConversion(
         .buffer => {
             const lua_buf = L.toBuffer(-1) catch unreachable;
             if (lua_buf.len < size)
-                return std.debug.panic("Small buffer ('{s}')", .{@tagName(t)});
+                return std.debug.panic("Small buffer ('{s}')", .{@tagName(ffiType)});
             @memcpy(mem, lua_buf[0..size]);
         },
-        else => std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(t)}),
+        else => std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(ffiType)}),
     }
 }
 
