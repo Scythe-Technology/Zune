@@ -69,38 +69,38 @@ describe("Require Many Value", function()
     end)
     
     test("Require Buffer", function()
-        expect(require(("./generated/v1"))).toBe(expect.type("buffer"));
+        expect(require("./generated/v1")).toBe(expect.type("buffer"));
     end)
     
     test("Require Number", function()
-        expect(require(("./generated/v2"))).toBe(1);
+        expect(require("./generated/v2")).toBe(1);
     end)
     
     test("Require String", function()
-        expect(require(("./generated/v3"))).toBe("Hello, World!");
+        expect(require("./generated/v3")).toBe("Hello, World!");
     end)
     
     test("Require Boolean", function()
-        expect(require(("./generated/v4"))).toBe(true);
+        expect(require("./generated/v4")).toBe(true);
     end)
 
     test("Require Async", function()
-        expect(require(("./generated/v5"))).toBe(true);
+        expect(require("./generated/v5")).toBe(true);
     end)
 
     test("Require Async Queue", function()
         local a, b, c;
         local start = os.clock();
         task.spawn(function()
-            a = require(("./generated/v6"))
+            a = require("./generated/v6")
         end)
         task.spawn(function()
-            b = require(("./generated/v6"))
+            b = require("./generated/v6")
         end)
         task.spawn(function()
-            c = require(("./generated/v6"))
+            c = require("./generated/v6")
         end)
-        local res = require(("./generated/v6"));
+        local res = require("./generated/v6");
         expect(os.clock() - start).toBeCloseTo(1, 0);
 
         expect(a).toBe(res);
@@ -115,7 +115,7 @@ describe("Require Many Value", function()
     end)
     
     test("Require Blank", function()
-        local res = require(("./generated/blank"));
+        local res = require(("./generated/blank"))::any;
         expect(res).toBe(nil);
     end)
     
@@ -134,18 +134,18 @@ end)
 
 describe("Require .lua", function()
     test("Require Module", function()
-        expect(require(("./legacy"))).toBe(expect.similar({
+        expect(require("./legacy")).toBe(expect.similar({
             "Legacy"
         }));
     end)
     test("Require A", function()
-        expect(require(("./legacy/A"))).toBe("A-Legacy");
+        expect(require("./legacy/A")).toBe("A-Legacy");
     end)
 end)
 
 describe("Aliases", function()
     test("@Dev", function()
-        local dev = require(("@dev"));
+        local dev = require("@dev")::any;
         expect(dev).toBe(expect.similar({
             Boolean = true,
             Number = 1,
@@ -154,13 +154,13 @@ describe("Aliases", function()
     end)
     
     test("@Module", function()
-        local module = require(("@module"));
+        local module = require("@module")::any;
         expect(module).toBe(expect.type("string"));
         expect(module).toBe("FullModule");
     end)
 
     test("@Module/sub", function()
-        local module = require(("@module/sub"));
+        local module = require("@module/sub")::any;
         expect(module).toBe(expect.similar({
             foo = expect.type("function"),
             bar = expect.type("function"),

@@ -6,7 +6,7 @@ local describe = testing.describe;
 local expect = testing.expect;
 local test = testing.test;
 
-local _, version, _ = _VERSION:match("(Zune) (%d+%.%d+%.%d+.*)+(%d+%.%d+)");
+local _, version, _ = string.match(_VERSION, "(Zune) (%d+%.%d+%.%d+.*)+(%d+%.%d+)");
 assert(version and #version > 0, "No version");
 
 describe("Server", function()
@@ -310,13 +310,13 @@ describe("Websockets", function()
         end)
 
         local openCalled = false;
-        socket:bindOpen(function()
+        socket:onOpen(function()
             expect(upgradeCalled).toBe(true);
             openCalled = true;
         end)
 
         local messageCount = 0;
-        socket:bindMessage(function(message)
+        socket:onMessage(function(message)
             print("Message", message);
             expect(openCalled).toBe(true);
             if (messageCount == 0) then
@@ -332,7 +332,7 @@ describe("Websockets", function()
         end)
 
         local closeCalled = false;
-        socket:bindClose(function(closeCode)
+        socket:onClose(function(closeCode)
             expect(openCalled).toBe(true);
             expect(messageCount).toBe(3);
             expect(closeCode).toBe(1000);

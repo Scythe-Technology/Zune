@@ -903,19 +903,19 @@ declare class NetClientWebSocket extends NetWebSocket
         
         *Only one function can be bound at a time*.
     ]]
-    function bindOpen(self, func: () -> ()): ()
+    function onOpen(self, func: () -> ()): ()
     --[[
         Binds a function to the message event.
 
         *Only one function can be bound at a time*.
     ]]
-    function bindMessage(self, func: (message: string) -> ()): ()
+    function onMessage(self, func: (message: string) -> ()): ()
     --[[
         Binds a function to the close event.
 
         *Only one function can be bound at a time*.
     ]]
-    function bindClose(self, func: () -> ()): ()
+    function onClose(self, func: (closeCode: number?) -> ()): ()
 end
 
 declare class NetServerHandle
@@ -1325,7 +1325,7 @@ export type StdWriter = {
 
         @param `text` The text to write.
     ]]
-    write: (text: string | buffer) -> (),
+    write: (self: StdWriter, text: string | buffer) -> (),
 }
 
 export type StdReader = {
@@ -1337,7 +1337,7 @@ export type StdReader = {
         @param amount The amount of characters to read.
         @return `string`
     ]]
-    read: (amount: number?) -> string,
+    read: (self: StdReader, amount: number?) -> string,
 }
 
 type ColorFunction = (color: "black" | "red" | "green" | "yellow" | "blue" | "magenta" | "cyan" | "white" | "bblack" | "bred" | "bgreen" | "byellow" | "bblue" | "bmagenta" | "bcyan" | "bwhite") -> string
@@ -1478,6 +1478,7 @@ type HashAlgorithms<F> = {
         b128: F,
         b160: F,
         b256: F,
+        b384: F,
         b512: F,
         s128: F,
         s160: F,
@@ -1713,12 +1714,12 @@ export type Library = {
     [string]: (...any) -> any,
 }
 
-export type Structure = {
-    size: (self: Structure) -> number,
-    alignment: (self: Structure) -> number,
-    offset: (self: Structure, field: string) -> number,
-    new: (self: Structure, fields: {{ [string]: buffer | number }}) -> buffer,
-}
+declare class Structure
+    function size(self): number
+    function alignment(self): number
+    function offset(self, field: string): number
+    function new(self, fields: {{ [string]: buffer | number }}): buffer
+end
 
 export type Closure = {
     ptr: Pointer,

@@ -30,7 +30,6 @@ const SetupMap = std.StaticStringMap(*const fn (allocator: std.mem.Allocator, se
 fn setupVscode(allocator: std.mem.Allocator, setupInfo: SetupInfo) !void {
     const vscode = ".vscode";
 
-    const LUAU_LSP_REQUIRE_MODE = "luau-lsp.require.mode";
     const LUAU_LSP_DEFINITION_FILES = "luau-lsp.types.definitionFiles";
 
     const cwd = setupInfo.cwd;
@@ -79,10 +78,6 @@ fn setupVscode(allocator: std.mem.Allocator, setupInfo: SetupInfo) !void {
     // Get Values of luau-lsp.require.mode and luau-lsp.require.directoryAliases
     const definitionFiles = settingsObject.get(LUAU_LSP_DEFINITION_FILES) orelse try settingsRoot.value.setWith(LUAU_LSP_DEFINITION_FILES, try settingsRoot.newArray());
     var definitionFilesArray = definitionFiles.arrayOrNull() orelse std.debug.panic("{s} is not a valid Array", .{LUAU_LSP_DEFINITION_FILES});
-    if (settingsObject.get(LUAU_LSP_REQUIRE_MODE) == null) {
-        // Set luau-lsp.require.mode to relativeToFile if it does not exist
-        try settingsRoot.value.set(LUAU_LSP_REQUIRE_MODE, .{ .static_string = "relativeToFile" });
-    }
 
     for (luaudefs) |typeFile| {
         const fileName = try std.mem.join(allocator, "", &.{ typeFile.name, ".d.luau" });
@@ -120,7 +115,6 @@ fn setupVscode(allocator: std.mem.Allocator, setupInfo: SetupInfo) !void {
     std.debug.print(
         \\Saved configuration to '{s}'
         \\{{
-        \\  "luau-lsp.require.mode": "relativeToFile",
         \\  "luau-lsp.types.definitionFiles": [
         \\    "{s}/.zune/typedefs/global/zune.d.luau"
         \\  ]
@@ -180,15 +174,6 @@ fn setupZed(allocator: std.mem.Allocator, setupInfo: SetupInfo) !void {
 
     var lsp_settings = luau_lsp_ext.asObject().get("settings") orelse try luau_lsp_ext.setWith("settings", try settingsRoot.newObject());
 
-    var luau_lsp_native = lsp_settings.asObject().get("luau-lsp") orelse try lsp_settings.setWith("luau-lsp", try settingsRoot.newObject());
-
-    var luau_lsp_require = luau_lsp_native.asObject().get("require") orelse try luau_lsp_native.setWith("require", try settingsRoot.newObject());
-
-    if (luau_lsp_require.asObject().get("mode") == null) {
-        // Set luau-lsp.require.mode to relativeToFile if it does not exist
-        try luau_lsp_require.set("mode", .{ .static_string = "relativeToFile" });
-    }
-
     var luau_ext = lsp_settings.asObject().get("ext") orelse try lsp_settings.setWith("ext", try settingsRoot.newObject());
 
     var definitionFiles = luau_ext.asObject().get("definitions") orelse try luau_ext.setWith("definitions", try settingsRoot.newArray());
@@ -232,11 +217,6 @@ fn setupZed(allocator: std.mem.Allocator, setupInfo: SetupInfo) !void {
         \\  "lsp": {{
         \\    "luau-lsp": {{
         \\      "settings": {{
-        \\        "luau-lsp": {{
-        \\          "require": {{
-        \\            "mode": "relativeToFile"
-        \\          }}
-        \\        }},
         \\        "ext": {{
         \\          "definitions": [
         \\            "{s}/.zune/typedefs/global/zune.d.luau"
@@ -261,15 +241,6 @@ fn setupNeovim(allocator: std.mem.Allocator, setupInfo: SetupInfo) !void {
         \\  types = {{
         \\    definition_files = {{
         \\      "{s}/.zune/typedefs/global/zune.d.luau"
-        \\    }},
-        \\  }},
-        \\  server = {{
-        \\    settings = {{
-        \\      ["luau-lsp"] = {{
-        \\        require = {{
-        \\          mode = "relativeToFile",
-        \\        }},
-        \\      }},
         \\    }},
         \\  }},
         \\}}
@@ -312,10 +283,7 @@ fn setupEmacs(allocator: std.mem.Allocator, setupInfo: SetupInfo) !void {
     defer allocator.free(settings);
 
     const configInfo = try std.fmt.allocPrint(allocator,
-        \\((nil . ((eglot-workspace-configuration
-        \\  . (:luau-lsp (:require
-        \\                (:mode "relativeToFile"))))
-        \\  (eglot-luau-custom-type-files . ("{s}/.zune/typedefs/global/zune.d.luau")))))
+        \\((nil . ((eglot-luau-custom-type-files . ("{s}/.zune/typedefs/global/zune.d.luau")))))
         \\
     , .{setupInfo.home});
 

@@ -79,15 +79,15 @@ pub const LuaMeta = struct {
             var socket = WebSocket.initV(L.allocator(), stream, true);
             defer socket.deinit();
             _ = socket.writeText(message) catch |err| L.raiseErrorStr("Failed to write to websocket (%s)", .{@errorName(err).ptr});
-        } else if (std.mem.eql(u8, namecall, "bindOpen")) {
+        } else if (std.mem.eql(u8, namecall, "onOpen")) {
             L.checkType(2, .function);
             const fnRef = L.ref(2) catch return 0;
             ctx.handlers.open = fnRef;
-        } else if (std.mem.eql(u8, namecall, "bindMessage")) {
+        } else if (std.mem.eql(u8, namecall, "onMessage")) {
             L.checkType(2, .function);
             const fnRef = L.ref(2) catch return 0;
             ctx.handlers.message = fnRef;
-        } else if (std.mem.eql(u8, namecall, "bindClose")) {
+        } else if (std.mem.eql(u8, namecall, "onClose")) {
             L.checkType(2, .function);
             const fnRef = L.ref(2) catch return 0;
             ctx.handlers.close = fnRef;
@@ -116,10 +116,8 @@ pub fn closeConnection(ctx: *Self, L: *Luau, cleanUp: bool, codeCode: ?u16) void
             }
         }
         if (ctx.handlers.close) |fnRef| {
-            if (!prepRefType(.function, L, fnRef)) {
-                std.debug.print("Function not found\n", .{});
+            if (!prepRefType(.function, L, fnRef))
                 return;
-            }
 
             const thread = L.newThread();
             L.xPush(thread, -2); // push: Function

@@ -49,10 +49,7 @@ fn task_spawn(L: *Luau, scheduler: *Scheduler) i32 {
     for (0..@intCast(args)) |i| L.pushValue(@intCast(i + 2));
     L.xMove(thread, args);
 
-    scheduler.spawnThread(thread, args) catch |err| {
-        Engine.logError(thread, err);
-        return 1;
-    };
+    scheduler.spawnThread(thread, args);
 
     return 1;
 }

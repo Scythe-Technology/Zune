@@ -110,9 +110,9 @@ fn derefThread(L: *luau.Luau, ref: ?i32) void {
     }
 }
 
-pub fn spawnThread(self: *Self, thread: *Luau, args: i32) !void {
+pub fn spawnThread(self: *Self, thread: *Luau, args: i32) void {
     _ = self;
-    _ = try thread.resumeThread(null, args);
+    _ = resumeState(thread, null, args) catch {};
 }
 
 pub fn deferThread(self: *Self, thread: *Luau, from: ?*Luau, args: i32) void {

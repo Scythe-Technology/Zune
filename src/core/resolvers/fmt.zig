@@ -129,6 +129,7 @@ pub fn fmt_print_value(L: *Luau, writer: anytype, idx: i32, depth: usize, asKey:
                     }
                     try tracked.put(ptr, true);
                 }
+                defer _ = if (map) |tracked| tracked.orderedRemove(ptr);
                 if (SHOW_TABLE_ADDRESS) {
                     const tableString = fmt_tostring(allocator, L, idx) catch "!ERR!";
                     if (tableString) |String| {
