@@ -217,19 +217,8 @@ pub fn fmt_print_value(L: *Luau, writer: anytype, idx: i32, depth: usize, asKey:
     }
 }
 
-pub fn fmt_print(L: *Luau) !i32 {
-    const top = L.getTop();
-    const allocator = L.allocator();
-    if (top == 0) {
-        std.debug.print("\n", .{});
-        return 0;
-    }
-    var buffer = std.ArrayList(u8).init(allocator);
-    defer buffer.deinit();
-
-    const writer = buffer.writer();
-
-    for (1..@intCast(top + 1)) |i| {
+fn fmt_write_buffer(L: *Luau, allocator: std.mem.Allocator, writer: anytype, top: usize) !void {
+    for (1..top + 1) |i| {
         if (i > 1)
             try writer.print("\t", .{});
         const idx: i32 = @intCast(i);
@@ -262,6 +251,42 @@ pub fn fmt_print(L: *Luau) !i32 {
             },
         }
     }
+}
+
+pub fn fmt_args(L: *Luau) !i32 {
+    const top = L.getTop();
+    const allocator = L.allocator();
+    if (top == 0) {
+        L.pushLString("");
+        return 1;
+    }
+    var buffer = std.ArrayList(u8).init(allocator);
+    defer buffer.deinit();
+
+    const writer = buffer.writer();
+
+    try fmt_write_buffer(L, allocator, writer, @intCast(top));
+
+    L.pushLString(buffer.items);
+
+    return 1;
+}
+
+pub fn fmt_print(L: *Luau) !i32 {
+    const top = L.getTop();
+    const allocator = L.allocator();
+    if (top == 0) {
+        std.debug.print("\n", .{});
+        return 0;
+    }
+    var buffer = std.ArrayList(u8).init(allocator);
+    defer buffer.deinit();
+
+    const writer = buffer.writer();
+
+    try fmt_write_buffer(L, allocator, writer, @intCast(top));
+
     std.debug.print("{s}\n", .{buffer.items});
+
     return 0;
 }

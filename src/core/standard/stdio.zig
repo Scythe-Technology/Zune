@@ -4,6 +4,7 @@ const builtin = @import("builtin");
 
 const Engine = @import("../runtime/engine.zig");
 const Scheduler = @import("../runtime/scheduler.zig");
+const Formatter = @import("../resolvers/fmt.zig");
 
 const luaHelper = @import("../utils/luahelper.zig");
 
@@ -455,6 +456,7 @@ pub fn loadLib(L: *Luau) void {
     L.setFieldFn(-1, "bgtrueColor", stdio_bgTrueColor);
 
     L.setFieldFn(-1, "cursorMove", stdio_cursorMove);
+    L.setFieldFn(-1, "format", Formatter.fmt_args);
 
     luaHelper.registerModule(L, LIB_NAME);
 }

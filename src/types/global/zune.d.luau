@@ -1435,6 +1435,15 @@ type StdioLib = {
         @return `string`
     ]]
     bgtrueColor: (r: number, g: number, b: number) -> string,
+
+    --[[
+        Formats input to a readable string.
+    
+        @param ... The arguments to format.
+        @return `string`
+    ]]
+    format: (...any) -> string,
+
     --[[
         Terminal.
     ]]
