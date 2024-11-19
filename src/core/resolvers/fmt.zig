@@ -45,7 +45,8 @@ fn fmt_write_metamethod__tostring(L: *Luau, writer: anytype, idx: i32) !bool {
                 L.pushValue(-3);
                 L.call(1, 1);
             }
-            if (L.typeOf(-1) != .string) L.raiseErrorStr("'__tostring' must return a string", .{});
+            if (L.typeOf(-1) != .string)
+                return L.Error("'__tostring' must return a string");
             const s = L.toString(-1) catch unreachable;
             try writer.print("{s}", .{s});
             return true;

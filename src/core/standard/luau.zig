@@ -24,7 +24,7 @@ fn luau_compile(L: *Luau) !i32 {
         if (L.getField(2, "debug_level") == .number) {
             const value: i32 = @intCast(L.toInteger(-1) catch unreachable);
             if (value < 0 or value > 2)
-                L.raiseErrorStr("Invalid debug level", .{});
+                return L.Error("Invalid debug level");
             compileOpts.debug_level = value;
         }
         L.pop(1);
@@ -32,7 +32,7 @@ fn luau_compile(L: *Luau) !i32 {
         if (L.getField(2, "optimization_level") == .number) {
             const value: i32 = @intCast(L.toInteger(-1) catch unreachable);
             if (value < 0 or value > 2)
-                L.raiseErrorStr("Invalid debug level", .{});
+                return L.Error("Invalid debug level");
             compileOpts.optimization_level = value;
         }
         L.pop(1);
@@ -40,7 +40,7 @@ fn luau_compile(L: *Luau) !i32 {
         if (L.getField(2, "coverage_level") == .number) {
             const value: i32 = @intCast(L.toInteger(-1) catch unreachable);
             if (value < 0 or value > 2)
-                L.raiseErrorStr("Invalid debug level", .{});
+                return L.Error("Invalid debug level");
             compileOpts.coverage_level = value;
         }
         L.pop(1);
@@ -55,7 +55,7 @@ fn luau_compile(L: *Luau) !i32 {
     }
 
     const allocator = L.allocator();
-    const bytecode = luau.compile(allocator, source, compileOpts) catch L.raiseErrorStr("OutOfMemory", .{});
+    const bytecode = try luau.compile(allocator, source, compileOpts);
     defer allocator.free(bytecode);
 
     if (bytecode.len < 2)
@@ -73,7 +73,7 @@ fn luau_compile(L: *Luau) !i32 {
     return 1;
 }
 
-fn luau_load(L: *Luau) i32 {
+fn luau_load(L: *Luau) !i32 {
     const bytecode = L.checkString(1);
 
     var useCodeGen = false;
@@ -92,11 +92,11 @@ fn luau_load(L: *Luau) i32 {
         L.pop(1);
     }
 
-    L.loadBytecode(chunkName, bytecode) catch L.raiseErrorStr("Luau Error (Bad Bytecode)", .{});
+    try L.loadBytecode(chunkName, bytecode);
 
     if (L.typeOf(-1) != .function) {
         L.pop(2);
-        L.raiseErrorStr("Luau Error (Bad Load)", .{});
+        return L.Error("Luau Error (Bad Load)");
     }
 
     if (!optsExists) {
@@ -108,7 +108,7 @@ fn luau_load(L: *Luau) i32 {
             }
             if (useCodeGen)
                 L.setSafeEnv(-1, true);
-            L.setfenv(-2) catch L.raiseErrorStr("Luau Error (Bad Env)", .{});
+            L.setfenv(-2) catch return L.Error("Luau Error (Bad Env)");
         } else L.pop(1);
     }
 

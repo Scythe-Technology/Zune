@@ -118,7 +118,7 @@ const LuaRegex = struct {
             defer allocator.free(formatted);
             L.pushLString(formatted);
             return 1;
-        } else L.raiseErrorStr("Unknown method: %s\n", .{namecall.ptr});
+        } else return L.ErrorFmt("Unknown method: {s}\n", .{namecall});
         return 0;
     }
 
@@ -131,13 +131,13 @@ fn regex_new(L: *Luau) !i32 {
     const flags = L.optString(2) orelse "";
 
     if (flags.len > 2)
-        L.raiseErrorStr("Too many flags provided", .{});
+        return L.Error("Too many flags provided");
 
     var flag: c_int = 0;
     for (flags) |f| switch (f) {
         'i' => flag |= regex.FLAG_IGNORECASE,
         'm' => flag |= regex.FLAG_MULTILINE,
-        else => L.raiseErrorStr("Unknown flag: %c", .{f}),
+        else => return L.ErrorFmt("Unknown flag: {c}", .{f}),
     };
 
     const r = try Regex.compile(L.allocator(), L.checkString(1), if (flag == 0) null else flag);

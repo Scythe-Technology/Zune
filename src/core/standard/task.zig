@@ -16,21 +16,21 @@ fn task_wait(L: *Luau, scheduler: *Scheduler) i32 {
     return L.yield(0);
 }
 
-fn task_cancel(L: *Luau, scheduler: *Scheduler) i32 {
+fn task_cancel(L: *Luau, scheduler: *Scheduler) !i32 {
     L.checkType(1, .thread);
-    const thread = L.toThread(1) catch L.raiseErrorStr("Expected thread", .{});
+    const thread = L.toThread(1) catch return L.Error("Expected thread");
     scheduler.cancelThread(thread);
     const status = L.statusThread(thread);
     if (status != .finished and status != .err and status != .suspended)
-        L.raiseErrorStr("Cannot close %s coroutine", .{@tagName(status).ptr});
+        return L.ErrorFmt("Cannot close {s} coroutine", .{@tagName(status)});
     thread.resetThread();
     return 0;
 }
 
-fn task_spawn(L: *Luau, scheduler: *Scheduler) i32 {
+fn task_spawn(L: *Luau, scheduler: *Scheduler) !i32 {
     const fnType = L.typeOf(1);
     if (fnType != luau.LuaType.function and fnType != luau.LuaType.thread)
-        L.raiseErrorStr("Expected function or thread", .{});
+        return L.Error("Expected function or thread");
 
     const top = L.getTop();
     const args = top - 1;
@@ -42,7 +42,7 @@ fn task_spawn(L: *Luau, scheduler: *Scheduler) i32 {
             break :th TL;
         } else {
             L.pushValue(1);
-            break :th L.toThread(-1) catch L.raiseErrorStr("thread failed", .{});
+            break :th L.toThread(-1) catch return L.Error("thread failed");
         }
     };
 
@@ -54,10 +54,10 @@ fn task_spawn(L: *Luau, scheduler: *Scheduler) i32 {
     return 1;
 }
 
-fn task_defer(L: *Luau, scheduler: *Scheduler) i32 {
+fn task_defer(L: *Luau, scheduler: *Scheduler) !i32 {
     const fnType = L.typeOf(1);
     if (fnType != luau.LuaType.function and fnType != luau.LuaType.thread)
-        L.raiseErrorStr("Expected function or thread", .{});
+        return L.Error("Expected function or thread");
 
     const top = L.getTop();
     const args = top - 1;
@@ -69,7 +69,7 @@ fn task_defer(L: *Luau, scheduler: *Scheduler) i32 {
             break :th TL;
         } else {
             L.pushValue(1);
-            break :th L.toThread(-1) catch L.raiseErrorStr("thread failed", .{});
+            break :th L.toThread(-1) catch return L.Error("thread failed");
         }
     };
 
@@ -81,11 +81,11 @@ fn task_defer(L: *Luau, scheduler: *Scheduler) i32 {
     return 1;
 }
 
-fn task_delay(L: *Luau, scheduler: *Scheduler) i32 {
+fn task_delay(L: *Luau, scheduler: *Scheduler) !i32 {
     const time = L.checkNumber(1);
     const fnType = L.typeOf(2);
     if (fnType != luau.LuaType.function and fnType != luau.LuaType.thread)
-        L.raiseErrorStr("Expected function or thread", .{});
+        return L.Error("Expected function or thread");
 
     const top = L.getTop();
     const args = top - 2;
@@ -97,7 +97,7 @@ fn task_delay(L: *Luau, scheduler: *Scheduler) i32 {
             break :th TL;
         } else {
             L.pushValue(2);
-            break :th L.toThread(-1) catch L.raiseErrorStr("thread failed", .{});
+            break :th L.toThread(-1) catch return L.Error("thread failed");
         }
     };
 
@@ -109,7 +109,7 @@ fn task_delay(L: *Luau, scheduler: *Scheduler) i32 {
     return 1;
 }
 
-fn task_count(L: *Luau, scheduler: *Scheduler) i32 {
+fn task_count(L: *Luau, scheduler: *Scheduler) !i32 {
     const kind = L.optString(1) orelse {
         var total: usize = 0;
         total += scheduler.sleeping.items.len;
@@ -124,7 +124,7 @@ fn task_count(L: *Luau, scheduler: *Scheduler) i32 {
 
     for (kind) |c| {
         if (out > 4)
-            L.raiseErrorStr("Too many kinds", .{});
+            return L.Error("Too many kinds");
         switch (c) {
             's' => {
                 out += 1;
@@ -142,7 +142,7 @@ fn task_count(L: *Luau, scheduler: *Scheduler) i32 {
                 out += 1;
                 L.pushNumber(@floatFromInt(scheduler.tasks.items.len));
             },
-            else => L.raiseErrorStr("Invalid kind", .{}),
+            else => return L.Error("Invalid kind"),
         }
     }
 
@@ -153,11 +153,11 @@ pub fn loadLib(L: *Luau) void {
     L.newTable();
 
     L.setFieldFn(-1, "wait", Scheduler.toSchedulerFn(task_wait));
-    L.setFieldFn(-1, "spawn", Scheduler.toSchedulerFn(task_spawn));
-    L.setFieldFn(-1, "defer", Scheduler.toSchedulerFn(task_defer));
-    L.setFieldFn(-1, "delay", Scheduler.toSchedulerFn(task_delay));
-    L.setFieldFn(-1, "cancel", Scheduler.toSchedulerFn(task_cancel));
-    L.setFieldFn(-1, "count", Scheduler.toSchedulerFn(task_count));
+    L.setFieldFn(-1, "spawn", Scheduler.toSchedulerEFn(task_spawn));
+    L.setFieldFn(-1, "defer", Scheduler.toSchedulerEFn(task_defer));
+    L.setFieldFn(-1, "delay", Scheduler.toSchedulerEFn(task_delay));
+    L.setFieldFn(-1, "cancel", Scheduler.toSchedulerEFn(task_cancel));
+    L.setFieldFn(-1, "count", Scheduler.toSchedulerEFn(task_count));
 
     luaHelper.registerModule(L, LIB_NAME);
 }

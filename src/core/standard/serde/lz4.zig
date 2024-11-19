@@ -21,10 +21,10 @@ pub fn lua_compress(L: *Luau) !i32 {
         const levelType = L.getField(2, "level");
         if (!luau.isNoneOrNil(levelType)) {
             if (levelType != .number)
-                L.raiseErrorStr("Options 'level' field must be a number", .{});
+                return L.Error("Options 'level' field must be a number");
             const num = L.toInteger(-1) catch unreachable;
             if (num < 0)
-                L.raiseErrorStr("Options 'level' must not be less than 0", .{});
+                return L.Error("Options 'level' must not be less than 0");
             level = @intCast(num);
         }
         L.pop(1);
@@ -64,7 +64,7 @@ pub fn lua_decompress(L: *Luau) !i32 {
     const string = if (is_buffer) L.checkBuffer(1) else L.checkString(1);
 
     if (string.len < 4)
-        L.raiseErrorStr("InvalidHeader", .{});
+        return L.Error("InvalidHeader");
 
     var decoder = try lz4.Decoder.init(allocator);
     defer decoder.deinit();

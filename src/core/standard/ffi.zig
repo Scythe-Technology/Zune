@@ -260,11 +260,11 @@ const LuaPointer = struct {
         return 1;
     }
 
-    pub fn method_drop(ptr: *LuaPointer, L: *Luau) i32 {
+    pub fn method_drop(ptr: *LuaPointer, L: *Luau) !i32 {
         if (ptr.destroyed or ptr.ptr == null)
             return 0;
         if (ptr.type == .Static)
-            L.raiseErrorStr("Cannot drop a static pointer", .{});
+            return L.Error("Cannot drop a static pointer");
         ptr.destroyed = true;
         if (ptr.local_ref) |ref|
             L.unref(ref);
@@ -285,7 +285,7 @@ const LuaPointer = struct {
 
         if (ptr.size) |size| {
             if (size < offset)
-                return L.raiseErrorStr("Offset OutOfBounds", .{});
+                return L.Error("Offset OutOfBounds");
             static.size = size - offset;
         }
 
@@ -313,16 +313,16 @@ const LuaPointer = struct {
                     dest_bounds = other.size;
                     break :blk @ptrCast(@alignCast(ptr.ptr));
                 },
-                else => L.raiseErrorStr("Invalid type (expected buffer or userdata)", .{}),
+                else => return L.Error("Invalid type (expected buffer or userdata)"),
             }
         };
         const len: usize = @intCast(L.checkInteger(5));
 
         if (dest_bounds) |size| if (size < dest_offset + len)
-            return L.raiseErrorStr("Target OutOfBounds", .{});
+            return L.Error("Target OutOfBounds");
 
         if (ptr.size) |size| if (size < src_offset + len)
-            return L.raiseErrorStr("Source OutOfBounds", .{});
+            return L.Error("Source OutOfBounds");
 
         const src: [*]u8 = @ptrCast(@alignCast(ptr.ptr));
 
@@ -353,16 +353,16 @@ const LuaPointer = struct {
                     src_bounds = other.size;
                     break :blk @ptrCast(@alignCast(ptr.ptr));
                 },
-                else => L.raiseErrorStr("Invalid type (expected buffer or userdata)", .{}),
+                else => return L.Error("Invalid type (expected buffer or userdata)"),
             }
         };
         const len: usize = @intCast(L.checkInteger(5));
 
         if (ptr.size) |size| if (size < dest_offset + len)
-            return L.raiseErrorStr("Target OutOfBounds", .{});
+            return L.Error("Target OutOfBounds");
 
         if (src_bounds) |size| if (size < src_offset + len)
-            return L.raiseErrorStr("Source OutOfBounds", .{});
+            return L.Error("Source OutOfBounds");
 
         const dest: [*]u8 = @ptrCast(@alignCast(ptr.ptr));
         @memcpy(dest[dest_offset .. dest_offset + len], src[src_offset .. src_offset + len]);
@@ -465,13 +465,13 @@ const LuaPointer = struct {
         return 1;
     }
 
-    pub fn method_setSize(ptr: *LuaPointer, L: *Luau) i32 {
+    pub fn method_setSize(ptr: *LuaPointer, L: *Luau) !i32 {
         if (ptr.destroyed or ptr.ptr == null)
-            return L.raiseErrorStr("NoAddressAvailable", .{});
+            return L.Error("NoAddressAvailable");
         const size: usize = @intFromFloat(L.checkNumber(2));
 
         switch (ptr.type) {
-            .Allocated => L.raiseErrorStr("Cannot set size of a known size pointer", .{}),
+            .Allocated => return L.Error("Cannot set size of a known size pointer"),
             .Static => {},
         }
 
@@ -498,11 +498,11 @@ const LuaPointer = struct {
 
     pub fn __namecall(L: *Luau) !i32 {
         L.checkType(1, .userdata);
-        const ptr = L.toUserdata(LuaPointer, 1) catch L.raiseErrorStr("Invalid pointer", .{});
+        const ptr = L.toUserdata(LuaPointer, 1) catch return L.Error("Invalid pointer");
 
         const namecall = L.nameCallAtom() catch return 0;
 
-        return switch (NamecallMap.get(namecall) orelse L.raiseErrorStr("Unknown method: %s\n", .{namecall.ptr})) {
+        return switch (NamecallMap.get(namecall) orelse return L.ErrorFmt("Unknown method: {s}", .{namecall})) {
             .Retain => try ptr.method_retain(L),
             .Release => ptr.method_release(L),
             .Drop => ptr.method_drop(L),
@@ -537,9 +537,9 @@ const LuaPointer = struct {
         };
     }
 
-    pub fn __eq(L: *Luau) i32 {
+    pub fn __eq(L: *Luau) !i32 {
         L.checkType(1, .userdata);
-        const ptr1 = L.toUserdata(LuaPointer, 1) catch L.raiseErrorStr("Invalid pointer", .{});
+        const ptr1 = L.toUserdata(LuaPointer, 1) catch return L.Error("Invalid pointer");
 
         switch (L.typeOf(2)) {
             .userdata => {
@@ -599,12 +599,12 @@ const LuaHandle = struct {
 
     pub fn __namecall(L: *Luau) !i32 {
         L.checkType(1, .userdata);
-        const ptr = L.toUserdata(LuaHandle, 1) catch L.raiseErrorStr("Invalid handle", .{});
+        const ptr = L.toUserdata(LuaHandle, 1) catch return L.Error("Invalid handle");
 
         const namecall = L.nameCallAtom() catch return 0;
 
         if (!ptr.open)
-            L.raiseErrorStr("Library closed", .{});
+            return L.Error("Library closed");
 
         // TODO: prob should switch to static string map
         if (std.mem.eql(u8, namecall, "close")) {
@@ -617,7 +617,7 @@ const LuaHandle = struct {
             };
             _ = try LuaPointer.newStaticPtr(L, sym_ptr, false);
             return 1;
-        } else L.raiseErrorStr("Unknown method: %s\n", .{namecall.ptr});
+        } else return L.ErrorFmt("Unknown method: {s}", .{namecall});
         return 0;
     }
 
@@ -671,7 +671,7 @@ const LuaStructType = struct {
 
     pub fn method_offset(ptr: *LuaStructType, L: *Luau) !i32 {
         const field = L.checkString(2);
-        const order = ptr.fields.getIndex(field) orelse L.raiseErrorStr("Unknown field: %s\n", .{field.ptr});
+        const order = ptr.fields.getIndex(field) orelse return L.ErrorFmt("Unknown field: {s}", .{field});
         L.pushInteger(@intCast(ptr.type.offsets[order]));
         return 1;
     }
@@ -736,11 +736,11 @@ const LuaStructType = struct {
 
     pub fn __namecall(L: *Luau) !i32 {
         L.checkType(1, .userdata);
-        const ptr = L.toUserdata(LuaStructType, 1) catch L.raiseErrorStr("Invalid struct", .{});
+        const ptr = L.toUserdata(LuaStructType, 1) catch return L.Error("Invalid struct");
 
         const namecall = L.nameCallAtom() catch return 0;
 
-        return switch (NamecallMap.get(namecall) orelse L.raiseErrorStr("Unknown method: %s\n", .{namecall.ptr})) {
+        return switch (NamecallMap.get(namecall) orelse return L.ErrorFmt("Unknown method: {s}", .{namecall})) {
             .Size => ptr.method_size(L),
             .Alignment => ptr.method_alignment(L),
             .Offset => ptr.method_offset(L),
@@ -1386,10 +1386,10 @@ const FFIFunction = struct {
 
         if (alloc_args) |args| {
             if (@as(usize, @intCast(L.getTop())) != args.len)
-                L.raiseErrorStr("Invalid number of arguments", .{});
+                return L.Error("Invalid number of arguments");
         } else {
             if (L.getTop() != 0)
-                L.raiseErrorStr("Invalid number of arguments", .{});
+                return L.Error("Invalid number of arguments");
         }
 
         var arena = std.heap.ArenaAllocator.init(allocator);
@@ -1527,13 +1527,13 @@ fn ffi_copy(L: *Luau) !i32 {
                 break :blk @ptrCast(@alignCast(buf.ptr));
             },
             .userdata => {
-                const ptr = LuaPointer.value(L, 1) catch L.raiseErrorStr("Invalid pointer", .{});
+                const ptr = LuaPointer.value(L, 1) catch return L.Error("Invalid pointer");
                 if (ptr.destroyed or ptr.ptr == null)
-                    L.raiseErrorStr("No address available", .{});
+                    return L.Error("No address available");
                 target_bounds = ptr.size;
                 break :blk @ptrCast(@alignCast(ptr.ptr));
             },
-            else => L.raiseErrorStr("Invalid type (expected buffer or userdata)", .{}),
+            else => return L.Error("Invalid type (expected buffer or userdata)"),
         }
     };
     const src_offset: usize = @intFromFloat(L.checkNumber(4));
@@ -1546,22 +1546,22 @@ fn ffi_copy(L: *Luau) !i32 {
                 break :blk @ptrCast(@alignCast(buf.ptr));
             },
             .userdata => {
-                const ptr = LuaPointer.value(L, 3) catch L.raiseErrorStr("Invalid pointer", .{});
+                const ptr = LuaPointer.value(L, 3) catch return L.Error("Invalid pointer");
                 if (ptr.destroyed or ptr.ptr == null)
-                    L.raiseErrorStr("No address available", .{});
+                    return L.Error("No address available");
                 src_bounds = ptr.size;
                 break :blk @ptrCast(@alignCast(ptr.ptr));
             },
-            else => L.raiseErrorStr("Invalid type (expected buffer or userdata)", .{}),
+            else => return L.Error("Invalid type (expected buffer or userdata)"),
         }
     };
     const len: usize = @intCast(L.checkInteger(5));
 
     if (target_bounds) |bounds| if (target_offset + len > bounds)
-        L.raiseErrorStr("Target OutOfBounds", .{});
+        return L.Error("Target OutOfBounds");
 
     if (src_bounds) |bounds| if (src_offset + len > bounds)
-        L.raiseErrorStr("Source OutOfBounds", .{});
+        return L.Error("Source OutOfBounds");
 
     @memcpy(target[target_offset .. target_offset + len], src[src_offset .. src_offset + len]);
 
@@ -1580,9 +1580,8 @@ fn ffi_alignOf(L: *Luau) !i32 {
     return 1;
 }
 
-fn ffi_unsupported(L: *Luau) i32 {
-    L.raiseErrorStr("ffi is not supported on this platform", .{});
-    return 0;
+fn ffi_unsupported(L: *Luau) !i32 {
+    return L.Error("ffi is not supported on this platform");
 }
 
 fn is_ffi_struct(L: *Luau, idx: i32) bool {
@@ -1603,7 +1602,7 @@ fn ffi_alloc(L: *Luau) !i32 {
 }
 
 fn ffi_free(L: *Luau) !i32 {
-    const ptr = LuaPointer.value(L, 1) catch L.raiseErrorStr("Invalid pointer", .{});
+    const ptr = LuaPointer.value(L, 1) catch return L.Error("Invalid pointer");
     if (!ptr.destroyed) {
         const allocator = L.allocator();
         if (ptr.local_ref) |ref| {
@@ -1627,7 +1626,7 @@ fn ffi_free(L: *Luau) !i32 {
                 }
             },
         }
-    } else L.raiseErrorStr("Double free", .{});
+    } else return L.Error("Double free");
     return 0;
 }
 
@@ -1638,15 +1637,15 @@ fn ffi_len(L: *Luau) !i32 {
             L.pushInteger(@intCast(buf.len));
         },
         .userdata => {
-            const ptr = LuaPointer.value(L, 1) catch L.raiseErrorStr("Invalid pointer", .{});
+            const ptr = LuaPointer.value(L, 1) catch return L.Error("Invalid pointer");
             if (ptr.destroyed or ptr.ptr == null)
-                L.raiseErrorStr("No address available", .{});
+                return L.Error("No address available");
             if (ptr.size) |size|
                 L.pushInteger(@intCast(size))
             else
                 L.pushNil();
         },
-        else => L.raiseErrorStr("Invalid type (expected buffer or userdata)", .{}),
+        else => return L.Error("Invalid type (expected buffer or userdata)"),
     }
     return 1;
 }
@@ -1665,14 +1664,14 @@ fn ffi_dupe(L: *Luau) !i32 {
             const ptr = try LuaPointer.value(L, 1);
             if (ptr.destroyed or ptr.ptr == null)
                 return error.NoAddressAvailable;
-            const len = ptr.size orelse L.raiseErrorStr("Unknown sized pointer", .{});
+            const len = ptr.size orelse return L.Error("Unknown sized pointer");
             const dup_ptr = try LuaPointer.allocBlockPtr(L, len);
             @memcpy(
                 @as([*]u8, @ptrCast(@alignCast(dup_ptr.ptr)))[0..len],
                 @as([*]u8, @ptrCast(@alignCast(ptr.ptr)))[0..len],
             );
         },
-        else => L.raiseErrorStr("Invalid type (expected buffer or userdata)", .{}),
+        else => return L.Error("Invalid type (expected buffer or userdata)"),
     }
     return 1;
 }

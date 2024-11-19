@@ -54,7 +54,7 @@ pub const LuaMeta = struct {
 
         return 0;
     }
-    pub fn websocket__namecall(L: *Luau) i32 {
+    pub fn websocket__namecall(L: *Luau) !i32 {
         L.checkType(1, .userdata);
         const data = L.toUserdata(LuaWebSocket, 1) catch unreachable;
 
@@ -80,9 +80,9 @@ pub const LuaMeta = struct {
                 const connection = ctx.connections[id] orelse unreachable;
                 var socket = WebSocket.init(L.allocator(), connection.stream, false);
                 defer socket.deinit();
-                _ = socket.writeText(message) catch |err| L.raiseErrorStr("Failed to write to websocket (%s)", .{@errorName(err).ptr});
+                _ = socket.writeText(message) catch |err| return L.ErrorFmt("Failed to write to websocket ({s})", .{@errorName(err)});
             }
-        } else L.raiseErrorStr("Unknown method: %s\n", .{namecall.ptr});
+        } else return L.ErrorFmt("Unknown method: {s}", .{namecall});
         return 0;
     }
 
@@ -101,7 +101,7 @@ pub const LuaMeta = struct {
         return 0;
     }
 
-    pub fn server__namecall(L: *Luau) i32 {
+    pub fn server__namecall(L: *Luau) !i32 {
         L.checkType(1, .userdata);
         const data = L.toUserdata(LuaServer, 1) catch unreachable;
 
@@ -116,7 +116,7 @@ pub const LuaMeta = struct {
             data.ptr = null;
             scheduler.deferThread(L, null, 0); // resume on next task
             return L.yield(0);
-        } else L.raiseErrorStr("Unknown method: %s\n", .{namecall.ptr});
+        } else return L.ErrorFmt("Unknown method: {s}", .{namecall});
         return 0;
     }
 };

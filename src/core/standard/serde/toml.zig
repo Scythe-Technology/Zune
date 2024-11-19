@@ -767,7 +767,7 @@ pub fn lua_encode(L: *Luau) !i32 {
     return 1;
 }
 
-pub fn lua_decode(L: *Luau) i32 {
+pub fn lua_decode(L: *Luau) !i32 {
     const string = L.checkString(1);
     if (string.len == 0) {
         L.pushNil();
@@ -779,7 +779,7 @@ pub fn lua_decode(L: *Luau) i32 {
     decode(L, string, &info) catch |err| {
         const lineInfo = Parser.getLineInfo(string, info.pos);
         switch (err) {
-            else => L.raiseErrorStr("%s at line %d, col %d", .{ @errorName(err).ptr, lineInfo.line, lineInfo.col }),
+            else => return L.ErrorFmt("{s} at line {d}, col {d}", .{ @errorName(err), lineInfo.line, lineInfo.col }),
         }
     };
 

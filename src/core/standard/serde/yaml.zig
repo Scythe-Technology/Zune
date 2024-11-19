@@ -107,7 +107,7 @@ fn encodeValue(L: *Luau, allocator: std.mem.Allocator, tracked: *std.ArrayList(*
                 return yaml.Value{ .map = map };
             }
         },
-        else => L.raiseErrorStr("UnsupportedType", .{}),
+        else => return L.Error("UnsupportedType"),
     }
 }
 
