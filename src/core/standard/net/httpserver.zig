@@ -122,8 +122,10 @@ pub const LuaMeta = struct {
 };
 
 pub const NetStreamData = struct {
+    server: *Self,
     stream: ?std.net.Stream,
     owned: ?[]?*NetStreamData,
+    upgrade_response: ?[]const u8 = null,
     id: usize,
 };
 
@@ -137,6 +139,7 @@ pub const HandleError = error{
 
 serverRef: i32,
 alive: bool = true,
+max_body_size: usize = 4096,
 request_lua_function: i32,
 websocket_lua_handlers: ?LuaWebSocket.Handlers,
 server: *std.net.Server,
@@ -266,10 +269,11 @@ pub fn responseResumed(responsePtr: *NetStreamData, L: *Luau, scheduler: *Schedu
     _ = scheduler;
     const allocator = L.allocator();
     defer {
-        if (responsePtr.owned) |owned| owned[responsePtr.id] = null;
-        allocator.destroy(responsePtr);
+        if (responsePtr.owned) |owned|
+            owned[responsePtr.id] = null;
     }
-    if (responsePtr.owned == null) return; // Server dead
+    if (responsePtr.owned == null)
+        return; // Server dead
     const stream = responsePtr.stream orelse {
         std.debug.print("Stream is null, connection closed", .{});
         return;
@@ -355,7 +359,10 @@ pub fn responseResumed(responsePtr: *NetStreamData, L: *Luau, scheduler: *Schedu
                 stream.writeAll(HTTP_500) catch return;
                 return;
             }
-            const body = if (bodyType == .buffer) L.checkBuffer(-1) else L.checkString(-1);
+            const body = if (bodyType == .buffer)
+                L.checkBuffer(-1)
+            else
+                L.checkString(-1);
 
             const response = if (headersString.items.len > 0)
                 std.fmt.allocPrint(allocator, "HTTP/1.1 {d} {s}\r\n{s}Content-Length: {d}\r\n\r\n{s}", .{
@@ -406,13 +413,95 @@ pub fn responseResumed(responsePtr: *NetStreamData, L: *Luau, scheduler: *Schedu
     }
 }
 
+pub fn websocket_acceptUpgrade(L: *Luau, ctx: *Self, id: usize, stream: std.net.Stream, res: []const u8) void {
+    stream.writeAll(res) catch |err| {
+        std.debug.print("Error writing response: {}\n", .{err});
+        return;
+    };
+
+    const userdata = L.newUserdata(LuaWebSocket);
+    userdata.ptr = ctx;
+    userdata.id = id;
+
+    if (L.getMetatableRegistry(LuaMeta.WEBSOCKET_META) == .table) {
+        L.setMetatable(-2);
+    } else {
+        std.debug.panic("InternalError (Server Metatable not initialized)", .{});
+    }
+
+    ctx.websockets[id] = .{
+        .ref = L.ref(-1) catch |err| {
+            std.debug.print("Error creating ref: {}\n", .{err});
+            return;
+        },
+    };
+
+    if (ctx.websocket_lua_handlers) |handlers| {
+        if (handlers.open) |fnRef| {
+            if (!prepRefType(.function, L, fnRef)) {
+                std.debug.print("Function not found\n", .{});
+                return;
+            }
+
+            const thread = L.newThread();
+            L.xPush(thread, -2); // push: function
+            L.xPush(thread, -3); // push: Userdata
+            L.pop(2); // drop thread, function
+
+            _ = Scheduler.resumeState(thread, L, 1) catch {};
+        }
+    }
+    L.pop(1); // drop userdata
+}
+
+pub fn websocket_upgradeResumed(responsePtr: *NetStreamData, L: *Luau, _: *Scheduler) void {
+    const allocator = L.allocator();
+    defer {
+        if (responsePtr.owned) |owned|
+            owned[responsePtr.id] = null;
+        if (responsePtr.upgrade_response) |buf|
+            allocator.free(buf);
+    }
+    const upgrade = responsePtr.upgrade_response orelse return;
+    const ctx = responsePtr.server;
+    const id = responsePtr.id;
+    if (responsePtr.owned == null)
+        return; // Server dead
+    const stream = responsePtr.stream orelse {
+        std.debug.print("Stream is null, connection closed", .{});
+        return;
+    };
+    if (L.status() != .ok) {
+        stream.writeAll(HTTP_500) catch |err| {
+            std.debug.print("Error writing response: {}\n", .{err});
+        };
+        return;
+    }
+    if (L.typeOf(-1) != .boolean) {
+        std.debug.print("Function must return a boolean\n", .{});
+        stream.writeAll(HTTP_500) catch |werr| {
+            std.debug.print("Error writing response: {}\n", .{werr});
+        };
+        return;
+    }
+    const allow = L.toBoolean(-1);
+    if (!allow) {
+        stream.writeAll(HTTP_404) catch |err| {
+            std.debug.print("Error writing response: {}\n", .{err});
+        };
+        return;
+    }
+
+    websocket_acceptUpgrade(L, ctx, id, stream, upgrade);
+}
+
 pub fn handleRequest(ctx: *Self, L: *Luau, scheduler: *Scheduler, i: usize, connection: std.net.Server.Connection) HandleError!void {
     const allocator = L.allocator();
 
     const responses = ctx.responses;
 
     var req = Request.init(allocator, connection.stream.reader().any(), .{
-        .maxBodySize = 128,
+        .maxBodySize = ctx.max_body_size,
     }) catch |err| {
         if (err == error.BodyTooLarge) {
             connection.stream.writeAll(HTTP_413) catch |writeErr| {
@@ -432,50 +521,6 @@ pub fn handleRequest(ctx: *Self, L: *Luau, scheduler: *Scheduler, i: usize, conn
             return;
         };
         if (upgradeInfo) |info| {
-            var allow = true;
-            if (handlers.upgrade) |fnRef| {
-                if (prepRefType(.function, L, fnRef)) {
-                    const thread = L.newThread();
-                    L.xPush(thread, -2);
-                    L.pop(2); // drop thread & function
-
-                    req.pushToStack(thread) catch |err| {
-                        std.debug.print("Error pushing request to stack: {}\n", .{err});
-                        connection.stream.writeAll(HTTP_500) catch |werr| {
-                            std.debug.print("Error writing response: {}\n", .{werr});
-                        };
-                        return;
-                    };
-
-                    thread.pcall(1, 1, 0) catch |err| {
-                        Engine.logError(thread, err);
-                        connection.stream.writeAll(HTTP_500) catch |werr| {
-                            std.debug.print("Error writing response: {}\n", .{werr});
-                        };
-                        return;
-                    };
-
-                    if (thread.typeOf(-1) != .boolean) {
-                        std.debug.print("Function must return a boolean\n", .{});
-                        thread.pop(1);
-                        connection.stream.writeAll(HTTP_500) catch |werr| {
-                            std.debug.print("Error writing response: {}\n", .{werr});
-                        };
-                        return;
-                    }
-
-                    allow = thread.toBoolean(-1);
-                } else {
-                    std.debug.print("Function not found\n", .{});
-                }
-            }
-            if (!allow) {
-                connection.stream.writeAll(HTTP_404) catch |err| {
-                    std.debug.print("Error writing response: {}\n", .{err});
-                };
-                return;
-            }
-
             const accept_key = WebSocket.acceptHashKey(allocator, info.key) catch |err| {
                 std.debug.print("Error creating accept hash key: {}\n", .{err});
                 return;
@@ -492,57 +537,46 @@ pub fn handleRequest(ctx: *Self, L: *Luau, scheduler: *Scheduler, i: usize, conn
                 std.debug.print("Error creating response: {}\n", .{err});
                 return;
             };
+            if (handlers.upgrade) |fnRef| {
+                if (prepRefType(.function, L, fnRef)) {
+                    const thread = L.newThread();
+                    L.xPush(thread, -2);
+                    L.pop(2); // drop thread & function
+
+                    req.pushToStack(thread) catch |err| {
+                        std.debug.print("Error pushing request to stack: {}\n", .{err});
+                        connection.stream.writeAll(HTTP_500) catch |werr| {
+                            std.debug.print("Error writing response: {}\n", .{werr});
+                        };
+                        return;
+                    };
+
+                    const awaitRes = scheduler.awaitCall(NetStreamData, .{
+                        .server = ctx,
+                        .stream = connection.stream,
+                        .owned = responses,
+                        .upgrade_response = response,
+                        .id = i,
+                    }, thread, 1, websocket_upgradeResumed, L) catch {
+                        connection.stream.writeAll(HTTP_500) catch |werr| {
+                            std.debug.print("Error writing response: {}\n", .{werr});
+                        };
+                        return;
+                    };
+                    if (awaitRes) |ptr|
+                        responses[i] = ptr;
+                    return;
+                } else {
+                    std.debug.print("Function not found\n", .{});
+                }
+            }
             defer allocator.free(response);
 
-            connection.stream.writeAll(response) catch |err| {
-                std.debug.print("Error writing response: {}\n", .{err});
-                return;
-            };
-
-            const userdata = L.newUserdata(LuaWebSocket);
-            userdata.ptr = ctx;
-            userdata.id = i;
-
-            if (L.getMetatableRegistry(LuaMeta.WEBSOCKET_META) == .table) {
-                L.setMetatable(-2);
-            } else {
-                L.pop(2); //drop table & metatable
-                return;
-            }
-
-            ctx.websockets[i] = .{
-                .ref = L.ref(-1) catch |err| {
-                    std.debug.print("Error creating ref: {}\n", .{err});
-                    return;
-                },
-            };
-
-            if (handlers.open) |fnRef| {
-                if (!prepRefType(.function, L, fnRef)) {
-                    std.debug.print("Function not found\n", .{});
-                    return;
-                }
-
-                const thread = L.newThread();
-                L.xPush(thread, -2); // push: function
-                L.xPush(thread, -3); // push: Table
-                L.pop(3); // drop thread, function & userdata
-
-                _ = Scheduler.resumeState(thread, L, 1) catch {};
-            }
+            websocket_acceptUpgrade(L, ctx, i, connection.stream, response);
             return;
         }
     }
 
-    const responsePtr = allocator.create(NetStreamData) catch |err| {
-        std.debug.print("Error creating stream: {}\n", .{err});
-        return;
-    };
-    responsePtr.* = .{
-        .stream = connection.stream,
-        .owned = responses,
-        .id = i,
-    };
     if (!prepRefType(.function, L, ctx.request_lua_function)) {
         std.debug.print("Function not found\n", .{});
         return HandleError.ShouldEnd;
@@ -554,21 +588,22 @@ pub fn handleRequest(ctx: *Self, L: *Luau, scheduler: *Scheduler, i: usize, conn
 
     req.pushToStack(thread) catch |err| {
         std.debug.print("Error pushing request to stack: {}\n", .{err});
-        allocator.destroy(responsePtr);
         return;
     };
 
-    responses[i] = responsePtr;
-
-    scheduler.awaitCall(NetStreamData, responsePtr, thread, 1, responseResumed, L) catch |err| {
-        Engine.logError(thread, err);
+    const awaitRes = scheduler.awaitCall(NetStreamData, .{
+        .server = ctx,
+        .stream = connection.stream,
+        .owned = responses,
+        .id = i,
+    }, thread, 1, responseResumed, L) catch {
         connection.stream.writeAll(HTTP_500) catch |werr| {
             std.debug.print("Error writing response: {}\n", .{werr});
         };
-        responses[i] = null;
-        allocator.destroy(responsePtr);
         return;
     };
+    if (awaitRes) |ptr|
+        responses[i] = ptr;
 }
 
 pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult {
@@ -676,6 +711,7 @@ pub fn prep(
     port: u16,
     reuseAddress: bool,
     requestFunctionRef: i32,
+    max_body_size: usize,
     websocketHandlers: ?LuaWebSocket.Handlers,
 ) !void {
     const serverPtr = try allocator.create(std.net.Server);
@@ -728,6 +764,7 @@ pub fn prep(
         .serverRef = serverRef,
         .request_lua_function = requestFunctionRef,
         .websocket_lua_handlers = websocketHandlers,
+        .max_body_size = max_body_size,
         .server = serverPtr,
         .connections = connections,
         .responses = responses,
@@ -739,33 +776,47 @@ pub fn prep(
     scheduler.addTask(Self, data, L, update, dtor);
 }
 
-pub fn lua_serve(L: *Luau, scheduler: *Scheduler) i32 {
+pub fn lua_serve(L: *Luau, scheduler: *Scheduler) !i32 {
     L.checkType(1, .table);
 
     var addressStr: []const u8 = "127.0.0.1";
     var reuseAddress: bool = false;
 
-    if (L.getField(1, "port") != .number) L.raiseErrorStr("Expected field 'port' to be a number", .{});
+    if (L.getField(1, "port") != .number)
+        return L.Error("Expected field 'port' to be a number");
     const port = L.toInteger(-1) catch unreachable;
-    if (port < 0 and port > 65535) L.raiseErrorStr("port must be between 0 and 65535", .{});
+    if (port < 0 and port > 65535)
+        return L.Error("port must be between 0 and 65535");
+    L.pop(1);
+
+    const max_body_size_type = L.getField(1, "maxBodySize");
+    if (!luau.isNoneOrNil(max_body_size_type) and max_body_size_type != .number)
+        return L.Error("Expected field 'maxBodySize' to be a number");
+    const body_size = L.optInteger(-1) orelse 4096;
+    if (body_size < 0)
+        return L.Error("Field 'maxBodySize' cannot be less than 0");
+    const max_body_size: usize = @intCast(body_size);
     L.pop(1);
 
     const addressType = L.getField(1, "address");
     if (!luau.isNoneOrNil(addressType)) {
-        if (addressType != .string) L.raiseErrorStr("Expected field 'address' to be a string", .{});
+        if (addressType != .string)
+            return L.Error("Expected field 'address' to be a string");
         addressStr = L.toString(-1) catch unreachable;
     }
     L.pop(1);
 
     const reuseAddressType = L.getField(1, "reuseAddress");
     if (!luau.isNoneOrNil(reuseAddressType)) {
-        if (reuseAddressType != .boolean) L.raiseErrorStr("Expected field 'reuseAddress' to be a boolean", .{});
+        if (reuseAddressType != .boolean)
+            return L.Error("Expected field 'reuseAddress' to be a boolean");
         reuseAddress = L.toBoolean(-1);
     }
     L.pop(1);
 
-    if (L.getField(1, "request") != .function) L.raiseErrorStr("Expected field 'request' to be a function", .{});
-    const requestFunctionRef = L.ref(-1) catch L.raiseErrorStr("InternalError (Failed to create reference)", .{});
+    if (L.getField(1, "request") != .function)
+        return L.Error("Expected field 'request' to be a function");
+    const requestFunctionRef = L.ref(-1) catch unreachable;
     L.pop(1);
 
     var websocketUpgradeFunctionRef: ?i32 = null;
@@ -774,29 +825,34 @@ pub fn lua_serve(L: *Luau, scheduler: *Scheduler) i32 {
     var websocketCloseFunctionRef: ?i32 = null;
     const websocketType = L.getField(1, "websocket");
     if (!luau.isNoneOrNil(websocketType)) {
-        if (websocketType != .table) L.raiseErrorStr("Expected field 'websocket' to be a table", .{});
+        if (websocketType != .table)
+            return L.Error("Expected field 'websocket' to be a table");
         const upgradeType = L.getField(-1, "upgrade");
         if (!luau.isNoneOrNil(upgradeType)) {
-            if (upgradeType != .function) L.raiseErrorStr("Expected field 'upgrade' to be a function", .{});
-            websocketUpgradeFunctionRef = L.ref(-1) catch L.raiseErrorStr("InternalError (Failed to create reference)", .{});
+            if (upgradeType != .function)
+                return L.Error("Expected field 'upgrade' to be a function");
+            websocketUpgradeFunctionRef = L.ref(-1) catch unreachable;
         }
         L.pop(1);
         const openType = L.getField(-1, "open");
         if (!luau.isNoneOrNil(openType)) {
-            if (openType != .function) L.raiseErrorStr("Expected field 'open' to be a function", .{});
-            websocketOpenFunctionRef = L.ref(-1) catch L.raiseErrorStr("InternalError (Failed to create reference)", .{});
+            if (openType != .function)
+                return L.Error("Expected field 'open' to be a function");
+            websocketOpenFunctionRef = L.ref(-1) catch unreachable;
         }
         L.pop(1);
         const messageType = L.getField(-1, "message");
         if (!luau.isNoneOrNil(messageType)) {
-            if (messageType != .function) L.raiseErrorStr("Expected field 'message' to be a function", .{});
-            websocketMessageFunctionRef = L.ref(-1) catch L.raiseErrorStr("InternalError (Failed to create reference)", .{});
+            if (messageType != .function)
+                return L.Error("Expected field 'message' to be a function");
+            websocketMessageFunctionRef = L.ref(-1) catch unreachable;
         }
         L.pop(1);
         const closeType = L.getField(-1, "close");
         if (!luau.isNoneOrNil(closeType)) {
-            if (closeType != .function) L.raiseErrorStr("Expected field 'close' to be a function", .{});
-            websocketCloseFunctionRef = L.ref(-1) catch L.raiseErrorStr("InternalError (Failed to create reference)", .{});
+            if (closeType != .function)
+                return L.Error("Expected field 'close' to be a function");
+            websocketCloseFunctionRef = L.ref(-1) catch unreachable;
         }
         L.pop(1);
     }
@@ -804,12 +860,22 @@ pub fn lua_serve(L: *Luau, scheduler: *Scheduler) i32 {
 
     const allocator = L.allocator();
 
-    prep(allocator, L, scheduler, addressStr, @intCast(port), reuseAddress, requestFunctionRef, .{
-        .upgrade = websocketUpgradeFunctionRef,
-        .open = websocketOpenFunctionRef,
-        .message = websocketMessageFunctionRef,
-        .close = websocketCloseFunctionRef,
-    }) catch |err| {
+    prep(
+        allocator,
+        L,
+        scheduler,
+        addressStr,
+        @intCast(port),
+        reuseAddress,
+        requestFunctionRef,
+        max_body_size,
+        .{
+            .upgrade = websocketUpgradeFunctionRef,
+            .open = websocketOpenFunctionRef,
+            .message = websocketMessageFunctionRef,
+            .close = websocketCloseFunctionRef,
+        },
+    ) catch |err| {
         L.pushString(@errorName(err));
         L.raiseError();
     };

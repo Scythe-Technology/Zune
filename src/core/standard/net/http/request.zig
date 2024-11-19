@@ -421,7 +421,7 @@ const UpgradeError = error{
     InvalidWebSocketVersion,
 };
 
-const UpgradeInfo = struct {
+pub const UpgradeInfo = struct {
     key: []const u8,
     version: []const u8,
     protocols: ?[]const u8,

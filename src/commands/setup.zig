@@ -1,7 +1,6 @@
 const std = @import("std");
 const json = @import("json");
 
-const zune = @import("../zune.zig");
 const command = @import("lib.zig");
 
 const file = @import("../core/resolvers/file.zig");

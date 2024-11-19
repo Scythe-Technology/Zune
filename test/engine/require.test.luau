@@ -168,4 +168,24 @@ describe("Aliases", function()
         expect(module.foo()).toBe("foo");
         expect(module.bar()).toBe("bar");
     end)
+
+    test("@Sub2/kool", function()
+        local module = require("@sub2/kool")::any;
+        expect(module).toBe("Sub library");
+    end)
+
+    test("@Sub/foo (sub-directory, overridden)", function()
+        local module = require("@sub/foo")::any;
+        expect(module).toBe("The bar exam");
+    end)
+
+    test("@Kool (sub-directory .luaurc defined)", function()
+        local module = require("@kool")::any;
+        expect(module).toBe("Sub library");
+    end)
+
+    test("@Foo (sub-directory x2, .luaurc defined)", function()
+        local module = require("@foo")::any;
+        expect(module).toBe("The bar exam");
+    end)
 end)

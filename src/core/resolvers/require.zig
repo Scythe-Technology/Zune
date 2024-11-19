@@ -1,6 +1,5 @@
 const std = @import("std");
 const luau = @import("luau");
-const json = @import("json");
 
 const Zune = @import("../../zune.zig");
 const Engine = @import("../runtime/engine.zig");
@@ -34,58 +33,7 @@ pub fn finishError(L: *Luau, errMsg: [:0]const u8) noreturn {
     L.raiseError();
 }
 
-pub var ALIASES: ?std.StringArrayHashMap([]const u8) = null;
-
-const safeLuauGPA = std.heap.GeneralPurposeAllocator(.{});
-
-pub fn loadAliases(allocator: std.mem.Allocator) !void {
-    // load .luaurc
-    const rcFile = std.fs.cwd().openFile(".luaurc", .{}) catch return;
-    defer rcFile.close();
-
-    const rcContents = try rcFile.readToEndAlloc(allocator, std.math.maxInt(usize));
-    defer allocator.free(rcContents);
-
-    const rcSafeContent = std.mem.trim(u8, rcContents, " \n\t\r");
-    if (rcSafeContent.len == 0) return;
-
-    var rcJsonRoot = json.parse(allocator, rcSafeContent) catch |err| {
-        std.debug.print("Error: .luaurc must be valid JSON: {}\n", .{err});
-        return;
-    };
-    defer rcJsonRoot.deinit();
-
-    const root = rcJsonRoot.value.objectOrNull() orelse return std.debug.print("Error: .luaurc must be an object\n", .{});
-
-    const aliases = root.get("aliases") orelse return std.debug.print("Error: .luaurc must have an 'aliases' field\n", .{});
-
-    const aliasesObj = aliases.objectOrNull() orelse return std.debug.print("Error: .luaurc 'aliases' field must be an object\n", .{});
-
-    ALIASES = std.StringArrayHashMap([]const u8).init(allocator);
-
-    for (aliasesObj.keys()) |key| {
-        const value = aliasesObj.get(key) orelse continue;
-        const valueStr = if (value == .string) value.asString() else {
-            std.debug.print("Warning: .luaurc -> aliases '{s}' field must be a string\n", .{key});
-            continue;
-        };
-        const keyCopy = try allocator.dupe(u8, key);
-        errdefer allocator.free(keyCopy);
-        const valueCopy = try allocator.dupe(u8, valueStr);
-        errdefer allocator.free(valueCopy);
-        try ALIASES.?.put(keyCopy, valueCopy);
-    }
-}
-
-pub fn freeAliases() void {
-    var aliases = ALIASES orelse return;
-    var iter = aliases.iterator();
-    while (iter.next()) |entry| {
-        aliases.allocator.free(entry.key_ptr.*);
-        aliases.allocator.free(entry.value_ptr.*);
-    }
-    aliases.deinit();
-}
+pub var ALIASES: std.StringArrayHashMap([]const u8) = std.StringArrayHashMap([]const u8).init(Zune.DEFAULT_ALLOCATOR);
 
 const States = enum {
     Error,
@@ -162,10 +110,9 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
     defer allocator.free(absPath);
 
     if (moduleName.len > 2 and moduleName[0] == '@') {
-        const aliases = ALIASES orelse return RequireError.NoAlias;
         const delimiter = std.mem.indexOfScalar(u8, moduleName, '/') orelse moduleName.len;
         const alias = moduleName[1..delimiter];
-        const path = aliases.get(alias) orelse return RequireError.NoAlias;
+        const path = ALIASES.get(alias) orelse return RequireError.NoAlias;
         const modulePath = if (moduleName.len - delimiter > 1)
             try std.fs.path.join(allocator, &.{ path, moduleName[delimiter + 1 ..] })
         else
@@ -306,12 +253,15 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
                 L.pushLightUserdata(@ptrCast(&LoadingState));
                 L.setField(-3, moduleAbsolutePath);
 
-                const ptr = try allocator.create(RequireContext);
-                ptr.* = .{
-                    .path = try allocator.dupeZ(u8, moduleAbsolutePath),
-                    .caller = L,
-                };
-                try scheduler.awaitResult(RequireContext, ptr, ML, require_finished);
+                {
+                    const path = try allocator.dupeZ(u8, moduleAbsolutePath);
+                    errdefer allocator.free(path);
+
+                    _ = scheduler.awaitResult(RequireContext, .{
+                        .path = path,
+                        .caller = L,
+                    }, ML, require_finished);
+                }
 
                 var list = std.ArrayList(*Luau).init(allocator);
                 try list.append(L);

@@ -9,12 +9,23 @@ const Luau = luau.Luau;
 pub var SCHEDULERS = std.ArrayList(*Self).init(Zune.DEFAULT_ALLOCATOR);
 
 pub fn KillScheduler(scheduler: *Self, cleanUp: bool) void {
-    var i = scheduler.tasks.items.len;
-    while (i > 0) {
-        i -= 1;
-        const task = scheduler.tasks.items[i];
-        task.virtualDtor(task.data, task.state, scheduler);
-        _ = scheduler.tasks.orderedRemove(i);
+    {
+        var i = scheduler.tasks.items.len;
+        while (i > 0) {
+            i -= 1;
+            const task = scheduler.tasks.items[i];
+            task.virtualDtor(task.data, task.state, scheduler);
+            _ = scheduler.tasks.orderedRemove(i);
+        }
+    }
+    {
+        var i = scheduler.awaits.items.len;
+        while (i > 0) {
+            i -= 1;
+            const awaiting = scheduler.awaits.items[i];
+            awaiting.virtualDtor(awaiting.data, awaiting.state, scheduler);
+            _ = scheduler.awaits.orderedRemove(i);
+        }
     }
     if (cleanUp) for (SCHEDULERS.items, 0..) |o, p| if (scheduler == o) {
         _ = SCHEDULERS.orderedRemove(p);
@@ -23,7 +34,8 @@ pub fn KillScheduler(scheduler: *Self, cleanUp: bool) void {
 }
 
 pub fn KillSchedulers() void {
-    for (SCHEDULERS.items) |scheduler| KillScheduler(scheduler, false);
+    for (SCHEDULERS.items) |scheduler|
+        KillScheduler(scheduler, false);
     SCHEDULERS.deinit();
 }
 
@@ -61,6 +73,7 @@ pub fn TaskObject(comptime T: type) type {
         state: *Luau,
         virtualFn: *const TaskFn,
         virtualDtor: *const TaskFnDtor,
+        ref: ?i32,
     };
 }
 
@@ -69,6 +82,7 @@ pub fn AwaitingObject(comptime T: type) type {
         data: *T,
         state: *Luau,
         resumeFn: *const AwaitedFn,
+        virtualDtor: *const TaskFnDtor,
         ref: ?i32,
     };
 }
@@ -105,7 +119,8 @@ fn refThread(L: *luau.Luau) ?i32 {
 fn derefThread(L: *luau.Luau, ref: ?i32) void {
     if (ref) |r| {
         const GL = L.getMainThread();
-        if (GL == L) return;
+        if (GL == L)
+            return;
         GL.unref(r);
     }
 }
@@ -156,6 +171,7 @@ pub fn addTask(self: *Self, comptime T: type, data: *T, L: *Luau, comptime handl
         .state = L,
         .virtualFn = virtualFn,
         .virtualDtor = virtualDtor,
+        .ref = refThread(L),
     }) catch |err| std.debug.panic("Error: {}\n", .{err});
 }
 
@@ -204,16 +220,24 @@ pub fn addSimpleTask(self: *Self, comptime T: type, data: T, L: *Luau, comptime 
         .state = L,
         .virtualFn = virtualFn,
         .virtualDtor = virtualDtor,
+        .ref = refThread(L),
     }) catch |err| std.debug.panic("Error: {}\n", .{err});
 
     return L.yield(0);
 }
 
-pub fn awaitResult(self: *Self, comptime T: type, data: *T, L: *Luau, comptime handler: *const fn (ctx: *T, L: *Luau, scheduler: *Self) void) !void {
+pub fn awaitResult(self: *Self, comptime T: type, data: T, L: *Luau, comptime handler: *const fn (ctx: *T, L: *Luau, scheduler: *Self) void) ?*T {
+    const allocator = L.allocator();
+
+    const ptr = allocator.create(T) catch |err| std.debug.panic("Error: {}\n", .{err});
+
+    ptr.* = data;
+
     const status = L.status();
     if (status != .yield) {
-        handler(data, L, self);
-        return;
+        defer allocator.destroy(ptr);
+        handler(ptr, L, self);
+        return null;
     }
 
     const resumeFn = struct {
@@ -222,17 +246,34 @@ pub fn awaitResult(self: *Self, comptime T: type, data: *T, L: *Luau, comptime h
         }
     }.inner;
 
+    const virtualDtor = struct {
+        fn inner(ctx: *anyopaque, l: *Luau, _: *Self) void {
+            l.allocator().destroy(@as(*T, @alignCast(@ptrCast(ctx))));
+        }
+    }.inner;
+
     self.awaits.append(.{
-        .data = @ptrCast(data),
+        .data = @ptrCast(ptr),
         .state = L,
         .resumeFn = resumeFn,
+        .virtualDtor = virtualDtor,
         .ref = refThread(L),
     }) catch |err| std.debug.panic("Error: {}\n", .{err});
+
+    return ptr;
 }
 
-pub fn awaitCall(self: *Self, comptime T: type, data: *T, L: *Luau, args: i32, comptime handler: *const fn (ctx: *T, L: *Luau, scheduler: *Self) void, from: ?*Luau) !void {
-    _ = try L.resumeThread(from, args);
-    try awaitResult(self, T, data, L, handler);
+pub fn awaitCall(
+    self: *Self,
+    comptime T: type,
+    data: T,
+    L: *Luau,
+    args: i32,
+    comptime handler: *const fn (ctx: *T, L: *Luau, scheduler: *Self) void,
+    from: ?*Luau,
+) !?*T {
+    _ = try resumeState(L, from, args);
+    return awaitResult(self, T, data, L, handler);
 }
 
 pub fn resumeState(state: *Luau, from: ?*Luau, args: i32) !luau.ResumeStatus {
@@ -284,9 +325,11 @@ pub fn run(self: *Self) void {
                 const awaiting = self.awaits.items[i];
                 if (awaiting.state.status() != .yield) {
                     _ = self.awaits.orderedRemove(i);
-                    awaiting.resumeFn(awaiting.data, awaiting.state, self);
+                    const state = awaiting.state;
+                    const data = awaiting.data;
+                    awaiting.resumeFn(data, state, self);
+                    awaiting.virtualDtor(data, state, self);
                     derefThread(awaiting.state, awaiting.ref);
-                    active += 1;
                 }
             }
         }
@@ -299,9 +342,10 @@ pub fn run(self: *Self) void {
                     .Continue => {},
                     .ContinueFast => active += 1,
                     .Stop => {
-                        active += 1;
                         _ = self.tasks.orderedRemove(i);
                         task.virtualDtor(task.data, task.state, self);
+                        derefThread(task.state, task.ref);
+                        active += 1;
                     },
                 }
             }

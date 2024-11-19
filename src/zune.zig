@@ -1,5 +1,6 @@
 const std = @import("std");
 const luau = @import("luau");
+const json = @import("json");
 
 const toml = @import("libraries/toml.zig");
 
@@ -11,6 +12,7 @@ pub const DEFAULT_ALLOCATOR = std.heap.c_allocator;
 
 pub const runtime_engine = @import("core/runtime/engine.zig");
 const resolvers_require = @import("core/resolvers/require.zig");
+const resolvers_file = @import("core/resolvers/file.zig");
 const resolvers_fmt = @import("core/resolvers/fmt.zig");
 
 const zune_info = @import("zune-info");
@@ -21,7 +23,7 @@ pub const RunMode = enum {
 };
 
 pub const Flags = struct {
-    load_as_global: bool = false,
+    mode: RunMode,
 };
 
 pub var CONFIGURATIONS = .{.format_max_depth};
@@ -107,7 +109,57 @@ pub fn loadConfiguration() void {
     }
 }
 
-pub fn openZune(L: *luau.Luau, args: []const []const u8, mode: RunMode, flags: Flags) !void {
+pub fn loadLuaurc(allocator: std.mem.Allocator, dir: std.fs.Dir) anyerror!void {
+    const rcFile = dir.openFile(".luaurc", .{}) catch return;
+    defer rcFile.close();
+
+    const rcContents = try rcFile.readToEndAlloc(allocator, std.math.maxInt(usize));
+    defer allocator.free(rcContents);
+
+    const rcSafeContent = std.mem.trim(u8, rcContents, " \n\t\r");
+    if (rcSafeContent.len == 0)
+        return;
+
+    var rcJsonRoot = json.parse(allocator, rcSafeContent) catch |err| {
+        std.debug.print("Error: .luaurc must be valid JSON: {}\n", .{err});
+        return;
+    };
+    defer rcJsonRoot.deinit();
+
+    const root = rcJsonRoot.value.objectOrNull() orelse return std.debug.print("Error: .luaurc must be an object\n", .{});
+    const aliases = root.get("aliases") orelse return std.debug.print("Error: .luaurc must have an 'aliases' field\n", .{});
+    const aliases_obj = aliases.objectOrNull() orelse return std.debug.print("Error: .luaurc 'aliases' field must be an object\n", .{});
+
+    const dir_path = try dir.realpathAlloc(allocator, ".");
+    defer allocator.free(dir_path);
+    for (aliases_obj.keys()) |key| {
+        const value = aliases_obj.get(key) orelse continue;
+        const valueStr = if (value == .string) value.asString() else {
+            std.debug.print("Warning: .luaurc -> aliases '{s}' field must be a string\n", .{key});
+            continue;
+        };
+        const keyCopy = try allocator.dupe(u8, key);
+        errdefer allocator.free(keyCopy);
+        const valuePath = std.fs.path.resolve(allocator, &.{ dir_path, valueStr }) catch |err| {
+            std.debug.print("Warning: .luaurc -> aliases '{s}' field must be a valid path: {}\n", .{ key, err });
+            allocator.free(keyCopy);
+            continue;
+        };
+        errdefer allocator.free(valuePath);
+        try resolvers_require.ALIASES.put(keyCopy, valuePath);
+    }
+
+    for (aliases_obj.keys()) |key| {
+        const path = resolvers_require.ALIASES.get(key) orelse continue;
+        var sub_dir = dir.openDir(path, .{
+            .access_sub_paths = true,
+        }) catch continue;
+        defer sub_dir.close();
+        try loadLuaurc(allocator, sub_dir);
+    }
+}
+
+pub fn openZune(L: *luau.Luau, args: []const []const u8, flags: Flags) !void {
     L.openLibs();
 
     L.newTable();
@@ -139,6 +191,8 @@ pub fn openZune(L: *luau.Luau, args: []const []const u8, mode: RunMode, flags: F
 
     L.setGlobalLString("_VERSION", VERSION);
 
+    L.setSafeEnv(luau.GLOBALSINDEX, true);
+
     corelib.fs.loadLib(L);
     corelib.task.loadLib(L);
     corelib.luau.loadLib(L);
@@ -153,34 +207,9 @@ pub fn openZune(L: *luau.Luau, args: []const []const u8, mode: RunMode, flags: F
     if (EXPERIMENTAL_FFI)
         corelib.ffi.loadLib(L);
 
-    corelib.testing.loadLib(L, mode == .Test);
+    corelib.testing.loadLib(L, flags.mode == .Test);
 
-    if (flags.load_as_global) {
-        _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
-        for ([_][:0]const u8{
-            corelib.fs.LIB_NAME,
-            corelib.task.LIB_NAME,
-            corelib.luau.LIB_NAME,
-            corelib.serde.LIB_NAME,
-            corelib.stdio.LIB_NAME,
-            corelib.crypto.LIB_NAME,
-            corelib.regex.LIB_NAME,
-            corelib.net.LIB_NAME,
-            corelib.process.LIB_NAME,
-            corelib.datetime.LIB_NAME,
-        }) |lib| {
-            const t = L.getField(-1, lib);
-            defer L.pop(1);
-            if (t == .table) {
-                const start = (std.mem.indexOfScalar(u8, lib, '/') orelse continue) + 1;
-                if (lib.len < start) continue;
-                L.pushValue(-1);
-                L.setGlobal(lib[start..]);
-            }
-        }
-    }
-
-    try resolvers_require.loadAliases(DEFAULT_ALLOCATOR);
+    try loadLuaurc(DEFAULT_ALLOCATOR, std.fs.cwd());
 }
 
 test "Zune" {

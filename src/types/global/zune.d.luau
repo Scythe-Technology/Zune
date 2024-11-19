@@ -897,27 +897,6 @@ declare class NetWebSocket
     function close(self): ()
 end
 
-declare class NetClientWebSocket extends NetWebSocket
-    --[[
-        Binds a function to the open event.
-        
-        *Only one function can be bound at a time*.
-    ]]
-    function onOpen(self, func: () -> ()): ()
-    --[[
-        Binds a function to the message event.
-
-        *Only one function can be bound at a time*.
-    ]]
-    function onMessage(self, func: (message: string) -> ()): ()
-    --[[
-        Binds a function to the close event.
-
-        *Only one function can be bound at a time*.
-    ]]
-    function onClose(self, func: (closeCode: number?) -> ()): ()
-end
-
 declare class NetServerHandle
     --[[
         Closes the server.
@@ -988,6 +967,12 @@ export type ServeOptions = {
     reuseAddress: boolean?,
 
     --[[
+        The maximum body size to accept.
+        - Default: `4096`
+    ]]
+    maxBodySize: number?,
+
+    --[[
         The function to handle requests.
     ]]
     request: (request: ServerRequest) -> buffer | string | ServerResponse,
@@ -1031,6 +1016,33 @@ type BodyRequestOptions = {
 
 export type RequestOptions = BareRequestOptions | BodyRequestOptions
 
+export type WebSocketOptions = {
+    --[[
+        The protocols to use.
+    ]]
+    protocols: {string}?,
+    --[[
+        Timeout for the connection.
+
+        *Default: 30*
+        
+        *Negative number for indefinite*
+    ]]
+    timeout: number?,
+    --[[
+        WebSocket open event.
+    ]]
+    open: (socket: NetWebSocket) -> (),
+    --[[
+        WebSocket close event.
+    ]]
+    close: (socket: NetWebSocket, close: number?) -> (),
+    --[[
+        WebSocket message event.
+    ]]
+    message: (socket: NetWebSocket, message: string) -> (),
+}
+
 type NetworkLib = {
     --[[
         Starts a server on the specified port.
@@ -1061,11 +1073,11 @@ type NetworkLib = {
         *TLS is supported.*
     
         @param host The host to connect to.
-        @param protocols The protocols to use.
+        @param opts The options for the websocket.
         @return `ClientWebSocket`
         @error `WebSocketError`
     ]]
-    websocket: (host: string, protocols: {string}?) -> NetClientWebSocket,
+    websocket: (host: string, opts: WebSocketOptions) -> NetWebSocket,
 }
 --[======[ Network ]======]--
 

@@ -25,7 +25,8 @@ fn testing_droptasks(L: *Luau, scheduler: *Scheduler) i32 {
     var awaitsSize = scheduler.awaits.items.len;
     while (awaitsSize > 0) {
         awaitsSize -= 1;
-        _ = scheduler.awaits.swapRemove(awaitsSize);
+        const awaiting = scheduler.awaits.swapRemove(awaitsSize);
+        awaiting.virtualDtor(awaiting.data, awaiting.state, scheduler);
     }
 
     var tasksSize = scheduler.tasks.items.len;

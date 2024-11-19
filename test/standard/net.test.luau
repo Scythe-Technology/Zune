@@ -269,6 +269,7 @@ describe("Websockets", function()
             websocket = {
                 upgrade = function(req)
                     upgradeCalled = true;
+                    task.wait();
                     return true;
                 end,
                 open = function(ws)
@@ -303,40 +304,39 @@ describe("Websockets", function()
             server:stop();
         end)
 
-        local socket = net.websocket("ws://localhost:8080", {});
+        local openCalled = false;
+        local messageCount = 0;
+        local closeCalled = false;
+        local socket = net.websocket("ws://localhost:8080", {
+            timeout = 1,
+            open = function(socket)
+                expect(upgradeCalled).toBe(true);
+                openCalled = true;
+            end,
+            message = function(socket, message)
+                print("Message", message);
+                expect(openCalled).toBe(true);
+                if (messageCount == 0) then
+                    expect(message).toBe("Hello");
+                elseif (messageCount == 1) then
+                    expect(message).toBe("Echo: Test 1");
+                elseif (messageCount == 2) then
+                    expect(message).toBe("Echo: Test 2");
+                else
+                    error("Unexpected message: " .. message);
+                end
+                messageCount += 1;
+            end,
+            close = function(socket, closeCode)
+                expect(openCalled).toBe(true);
+                expect(messageCount).toBe(3);
+                expect(closeCode).toBe(1000);
+                closeCalled = true;
+            end,
+        });
         expect(socket).toBe(expect.type("userdata"));
         testing.defer(function()
             socket:close();
-        end)
-
-        local openCalled = false;
-        socket:onOpen(function()
-            expect(upgradeCalled).toBe(true);
-            openCalled = true;
-        end)
-
-        local messageCount = 0;
-        socket:onMessage(function(message)
-            print("Message", message);
-            expect(openCalled).toBe(true);
-            if (messageCount == 0) then
-                expect(message).toBe("Hello");
-            elseif (messageCount == 1) then
-                expect(message).toBe("Echo: Test 1");
-            elseif (messageCount == 2) then
-                expect(message).toBe("Echo: Test 2");
-            else
-                error("Unexpected message: " .. message);
-            end
-            messageCount += 1;
-        end)
-
-        local closeCalled = false;
-        socket:onClose(function(closeCode)
-            expect(openCalled).toBe(true);
-            expect(messageCount).toBe(3);
-            expect(closeCode).toBe(1000);
-            closeCalled = true;
         end)
 
         expect(socket).toBe(expect.type("userdata"));
@@ -346,7 +346,7 @@ describe("Websockets", function()
         expect(serverMessageCount).toBe(0);
         expect(serverClosed).toBe(false);
 
-        expect(openCalled).toBe(false);
+        expect(openCalled).toBe(true);
         expect(messageCount).toBe(0);
         task.wait();
         expect(openCalled).toBe(true);
@@ -354,7 +354,7 @@ describe("Websockets", function()
         
         socket:send("Test 1");
         expect(messageCount).toBe(1);
-        
+
         socket:send("Test 2");
         expect(messageCount).toBe(1);
 

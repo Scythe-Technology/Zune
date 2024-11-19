@@ -19,9 +19,9 @@ pub fn loadLib(L: *Luau) void {
 
     L.newTable();
 
-    L.setFieldFn(-1, "serve", Scheduler.toSchedulerFn(HttpServer.lua_serve));
+    L.setFieldFn(-1, "serve", Scheduler.toSchedulerEFn(HttpServer.lua_serve));
     L.setFieldFn(-1, "request", Scheduler.toSchedulerFn(HttpClient.lua_request));
-    L.setFieldFn(-1, "websocket", Scheduler.toSchedulerFn(WebSocketClient.lua_websocket));
+    L.setFieldFn(-1, "websocket", Scheduler.toSchedulerEFn(WebSocketClient.lua_websocket));
 
     luaHelper.registerModule(L, LIB_NAME);
 }

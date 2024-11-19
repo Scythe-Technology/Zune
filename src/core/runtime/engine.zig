@@ -272,14 +272,14 @@ pub fn checkStatus(L: *Luau) !luau.Status {
 
 const PrepOptions = struct {
     args: []const []const u8,
-    mode: Zune.RunMode,
 };
 
 pub fn prep(L: *Luau, pOpts: PrepOptions, flags: Zune.Flags) !void {
-    if (luau.CodeGen.Supported()) luau.CodeGen.Create(L);
+    if (luau.CodeGen.Supported())
+        luau.CodeGen.Create(L);
 
     L.openLibs();
-    try Zune.openZune(L, pOpts.args, pOpts.mode, flags);
+    try Zune.openZune(L, pOpts.args, flags);
 }
 
 pub fn prepAsync(L: *Luau, sched: *Scheduler, pOpts: PrepOptions, flags: Zune.Flags) !void {

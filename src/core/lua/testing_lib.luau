@@ -94,12 +94,16 @@ function testing.test(name : string, fn: () -> (), timeout : number?)
         then `{table.concat(scope_stack, "/")} `
         else "";
 
-    for _, v in fn_defer do
-        v();
+    for i = #fn_defer, 1, -1 do
+        local v = fn_defer[i];
+        local success, result = pcall(v);
+        if (not success) then
+            print(`\x1b[1;33mDeferred function failed:\x1b[0m\n    \x1b[1;31m{result}\x1b[0m`);
+        end
     end
     table.clear(fn_defer);
 
-    local a = os.clock() + 1.5;
+    local a = os.clock() + 5;
     while (task.count() > 0) do
         task.wait(0.25);
         if (a < os.clock()) then
