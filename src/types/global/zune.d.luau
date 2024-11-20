@@ -897,7 +897,32 @@ declare class NetWebSocket
     function close(self): ()
 end
 
+declare class NetUDPSocket
+    --[[
+        Port used
+    ]]
+    port: number
+    --[[
+        Whether the socket is active
+    ]]
+    stopped: boolean
+    --[[
+        Send a UDP datagram message to remote host.
+    ]]
+    function send(self, message: string, port: number, address: string): ()
+    --[[
+        Closes the Socket.
+    ]]
+    function close(self): ()
+end
+
+
 declare class NetServerHandle
+    --[[
+        Whether the socket is active
+    ]]
+    stopped: boolean
+
     --[[
         Closes the server.
     ]]
@@ -954,7 +979,7 @@ export type ServeOptions = {
 
     --[[
         The address to bind to.
-        - Default: `0.0.0.0`
+        - Default: `127.0.0.1`
     ]]
     address: string?,
 
@@ -1043,6 +1068,26 @@ export type WebSocketOptions = {
     message: (socket: NetWebSocket, message: string) -> (),
 }
 
+export type UDPSocketOptions = {
+    --[[
+        The port to bind to.
+
+        *Nil or None lets the system pick.*
+    ]]
+    port: number?,
+
+    --[[
+        The address to bind to.
+        - Default: `127.0.0.1`
+    ]]
+    address: string?,
+
+    --[[
+        Callback to handle UDP datagram
+    ]]
+    data: (socket: NetUDPSocket, buffer: string, port: number, address: string) -> (),
+}
+
 type NetworkLib = {
     --[[
         Starts a server on the specified port.
@@ -1078,6 +1123,14 @@ type NetworkLib = {
         @error `WebSocketError`
     ]]
     websocket: (host: string, opts: WebSocketOptions) -> NetWebSocket,
+
+    --[[
+        Creates a UDP Socket.
+    
+        @param opts The options for the UDP Socket.
+        @return `UDPSocket`
+    ]]
+    udpsocket: (opts: UDPSocketOptions) -> NetUDPSocket,
 }
 --[======[ Network ]======]--
 

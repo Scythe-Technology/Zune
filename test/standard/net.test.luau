@@ -370,3 +370,47 @@ describe("Websockets", function()
         expect(reqCalled).toBe(false);
     end)
 end)
+
+describe("UDP", function()
+    test("Generic", function()
+        local server;
+        local client;
+
+        local pass_server = false;
+        local pass_client = false;
+
+        server = net.udpsocket({
+            data = function(socket, msg, port, address)
+                expect(socket).toBe(server);
+                expect(msg).toBe("test from client");
+                expect(address).toBe("127.0.0.1");
+                expect(port).toBe(client.port);
+                socket:send("test from server", port, address);
+                pass_server = true;
+            end
+        });
+        testing.defer(function()
+            server:stop();
+        end)
+
+        client = net.udpsocket({
+            data = function(socket, msg, port, address)
+                expect(socket).toBe(client);
+                expect(msg).toBe("test from server");
+                expect(address).toBe("127.0.0.1");
+                expect(port).toBe(server.port);
+                pass_client = true;
+            end
+        });
+        testing.defer(function()
+            client:stop();
+        end)
+
+        client:send("test from client", server.port, "127.0.0.1")
+
+        task.wait(0.5);
+
+        expect(pass_server).toBe(true);
+        expect(pass_client).toBe(true);
+    end);
+end)

@@ -425,9 +425,7 @@ pub fn websocket_acceptUpgrade(L: *Luau, ctx: *Self, id: usize, stream: std.net.
 
     if (L.getMetatableRegistry(LuaMeta.WEBSOCKET_META) == .table) {
         L.setMetatable(-2);
-    } else {
-        std.debug.panic("InternalError (Server Metatable not initialized)", .{});
-    }
+    } else std.debug.panic("InternalError (Server Metatable not initialized)", .{});
 
     ctx.websockets[id] = .{
         .ref = L.ref(-1) catch |err| {
@@ -662,7 +660,8 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
                 break;
             }
             if (i == MAX_SOCKETS - 1) {
-                std.debug.panic("Too many clients", .{});
+                client.stream.close(); // Close the client
+                // std.debug.panic("Too many clients", .{});
             }
         }
     }
@@ -783,15 +782,15 @@ pub fn lua_serve(L: *Luau, scheduler: *Scheduler) !i32 {
     var reuseAddress: bool = false;
 
     if (L.getField(1, "port") != .number)
-        return L.Error("Expected field 'port' to be a number");
+        return L.Error("Field 'port' must be a number");
     const port = L.toInteger(-1) catch unreachable;
     if (port < 0 and port > 65535)
-        return L.Error("port must be between 0 and 65535");
+        return L.Error("Field 'port' must be between 0 and 65535");
     L.pop(1);
 
     const max_body_size_type = L.getField(1, "maxBodySize");
     if (!luau.isNoneOrNil(max_body_size_type) and max_body_size_type != .number)
-        return L.Error("Expected field 'maxBodySize' to be a number");
+        return L.Error("Field 'maxBodySize' must be a number");
     const body_size = L.optInteger(-1) orelse 4096;
     if (body_size < 0)
         return L.Error("Field 'maxBodySize' cannot be less than 0");
