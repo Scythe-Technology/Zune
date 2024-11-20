@@ -51,7 +51,6 @@ const RequireContext = struct {
 };
 fn require_finished(ctx: *RequireContext, ML: *Luau, _: *Scheduler) void {
     const allocator = ctx.caller.allocator();
-    defer allocator.destroy(ctx);
     defer allocator.free(ctx.path);
 
     var outErr: ?[]const u8 = null;

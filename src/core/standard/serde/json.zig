@@ -85,7 +85,8 @@ fn encode(
                 return;
             };
 
-            for (tracked.items) |t| if (t == tablePtr) return Error.CircularReference;
+            for (tracked.items) |t|
+                if (t == tablePtr) return Error.CircularReference;
             try tracked.append(tablePtr);
 
             const tableSize = L.objLen(-1);
@@ -222,8 +223,6 @@ pub fn LuaEncoder(comptime json_kind: JsonKind) fn (L: *Luau) anyerror!i32 {
 
             L.pushValue(1);
             encode(L, allocator, &buf, &tracked, kind, 0, json_kind) catch |err| {
-                buf.deinit();
-                tracked.deinit();
                 switch (err) {
                     Error.InvalidNumber => return L.Error("InvalidNumber (Cannot be inf or nan)"),
                     Error.UnsupportedType => return L.ErrorFmt("Unsupported type {s}", .{@tagName(L.typeOf(-1))}),
