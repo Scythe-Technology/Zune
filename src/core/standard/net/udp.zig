@@ -136,35 +136,33 @@ pub fn lua_udpsocket(L: *Luau, scheduler: *Scheduler) !i32 {
     var port: u16 = 0;
     var data_ref: ?i32 = null;
 
-    if (!L.isNoneOrNil(1)) {
-        L.checkType(1, .table);
-        const addressType = L.getField(1, "address");
-        if (!luau.isNoneOrNil(addressType)) {
-            if (addressType != .string)
-                return L.Error("Field 'address' must be a string");
-            address_ip = L.toString(-1) catch unreachable;
-        }
-        L.pop(1);
-
-        const portType = L.getField(1, "port");
-        if (!luau.isNoneOrNil(portType)) {
-            if (portType != .number)
-                return L.Error("Field 'port' must be a number");
-            const lport = L.toInteger(-1) catch unreachable;
-            if (lport < 0 and lport > 65535)
-                return L.Error("Field 'port' must be between 0 and 65535");
-            port = @truncate(@as(u32, @intCast(lport)));
-        }
-        L.pop(1);
-
-        const dataType = L.getField(1, "data");
-        if (!luau.isNoneOrNil(dataType)) {
-            if (dataType != .function)
-                return L.Error("Field 'data' must be a function");
-            data_ref = L.ref(-1) catch unreachable;
-        }
-        L.pop(1);
+    L.checkType(1, .table);
+    const addressType = L.getField(1, "address");
+    if (!luau.isNoneOrNil(addressType)) {
+        if (addressType != .string)
+            return L.Error("Field 'address' must be a string");
+        address_ip = L.toString(-1) catch unreachable;
     }
+    L.pop(1);
+
+    const portType = L.getField(1, "port");
+    if (!luau.isNoneOrNil(portType)) {
+        if (portType != .number)
+            return L.Error("Field 'port' must be a number");
+        const lport = L.toInteger(-1) catch unreachable;
+        if (lport < 0 and lport > 65535)
+            return L.Error("Field 'port' must be between 0 and 65535");
+        port = @truncate(@as(u32, @intCast(lport)));
+    }
+    L.pop(1);
+
+    const dataType = L.getField(1, "data");
+    if (!luau.isNoneOrNil(dataType)) {
+        if (dataType != .function)
+            return L.Error("Field 'data' must be a function");
+        data_ref = L.ref(-1) catch unreachable;
+    }
+    L.pop(1);
 
     const address = try std.net.Address.parseIp4(address_ip, port);
     const sock: std.posix.socket_t = try std.posix.socket(std.posix.AF.INET, std.posix.SOCK.DGRAM | std.posix.SOCK.NONBLOCK, 0);

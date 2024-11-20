@@ -1057,15 +1057,15 @@ export type WebSocketOptions = {
     --[[
         WebSocket open event.
     ]]
-    open: (socket: NetWebSocket) -> (),
+    open: ((socket: NetWebSocket) -> ())?,
     --[[
         WebSocket close event.
     ]]
-    close: (socket: NetWebSocket, close: number?) -> (),
+    close: ((socket: NetWebSocket, close: number?) -> ())?,
     --[[
         WebSocket message event.
     ]]
-    message: (socket: NetWebSocket, message: string) -> (),
+    message: ((socket: NetWebSocket, message: string) -> ())?,
 }
 
 export type UDPSocketOptions = {
@@ -1085,7 +1085,7 @@ export type UDPSocketOptions = {
     --[[
         Callback to handle UDP datagram
     ]]
-    data: (socket: NetUDPSocket, buffer: string, port: number, address: string) -> (),
+    data: ((socket: NetUDPSocket, buffer: string, port: number, address: string) -> ())?,
 }
 
 type NetworkLib = {

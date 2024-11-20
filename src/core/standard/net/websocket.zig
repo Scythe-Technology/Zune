@@ -482,68 +482,65 @@ pub fn lua_websocket(L: *Luau, scheduler: *Scheduler) !i32 {
     var timeout: ?f64 = 30;
     var protocols = std.ArrayList([]const u8).init(allocator);
 
-    if (!L.isNoneOrNil(2)) {
-        L.checkType(2, .table);
-
-        const openType = L.getField(2, "open");
-        if (!luau.isNoneOrNil(openType)) {
-            if (openType != .function)
-                return L.Error("open must be a function");
-            const fnRef = L.ref(-1) catch unreachable;
-            openFnRef = fnRef;
-        }
-        L.pop(1);
-
-        const closeType = L.getField(2, "close");
-        if (!luau.isNoneOrNil(closeType)) {
-            if (closeType != .function)
-                return L.Error("open must be a function");
-            const fnRef = L.ref(-1) catch unreachable;
-            closeFnRef = fnRef;
-        }
-        L.pop(1);
-
-        const messageType = L.getField(2, "message");
-        if (!luau.isNoneOrNil(messageType)) {
-            if (messageType != .function)
-                return L.Error("open must be a function");
-            const fnRef = L.ref(-1) catch unreachable;
-            messageFnRef = fnRef;
-        }
-        L.pop(1);
-
-        const timeoutType = L.getField(2, "timeout");
-        if (!luau.isNoneOrNil(timeoutType)) {
-            if (timeoutType != .number)
-                return L.Error("timeout must be a number");
-            timeout = L.toNumber(-1) catch unreachable;
-            if (timeout.? < 0)
-                timeout = null; // indefinite
-        }
-        L.pop(1);
-
-        const protocolsType = L.getField(2, "protocols");
-        if (!luau.isNoneOrNil(protocolsType)) {
-            if (protocolsType != .table)
-                return L.Error("protocols must be a table");
-            var order: c_int = 1;
-            while (L.next(-1)) {
-                const keyType = L.typeOf(-2);
-                const valueType = L.typeOf(-1);
-                if (keyType != luau.LuaType.number)
-                    return L.Error("Table is not an array");
-                if (L.toInteger(-2) catch unreachable != order)
-                    return L.Error("Table is not an array");
-                if (valueType != luau.LuaType.string)
-                    return L.Error("Value must be a string");
-                const value = L.toString(-1) catch unreachable;
-                try protocols.append(value);
-                order += 1;
-                L.pop(1);
-            }
-        }
-        L.pop(1);
+    L.checkType(2, .table);
+    const openType = L.getField(2, "open");
+    if (!luau.isNoneOrNil(openType)) {
+        if (openType != .function)
+            return L.Error("open must be a function");
+        const fnRef = L.ref(-1) catch unreachable;
+        openFnRef = fnRef;
     }
+    L.pop(1);
+
+    const closeType = L.getField(2, "close");
+    if (!luau.isNoneOrNil(closeType)) {
+        if (closeType != .function)
+            return L.Error("open must be a function");
+        const fnRef = L.ref(-1) catch unreachable;
+        closeFnRef = fnRef;
+    }
+    L.pop(1);
+
+    const messageType = L.getField(2, "message");
+    if (!luau.isNoneOrNil(messageType)) {
+        if (messageType != .function)
+            return L.Error("open must be a function");
+        const fnRef = L.ref(-1) catch unreachable;
+        messageFnRef = fnRef;
+    }
+    L.pop(1);
+
+    const timeoutType = L.getField(2, "timeout");
+    if (!luau.isNoneOrNil(timeoutType)) {
+        if (timeoutType != .number)
+            return L.Error("timeout must be a number");
+        timeout = L.toNumber(-1) catch unreachable;
+        if (timeout.? < 0)
+            timeout = null; // indefinite
+    }
+    L.pop(1);
+
+    const protocolsType = L.getField(2, "protocols");
+    if (!luau.isNoneOrNil(protocolsType)) {
+        if (protocolsType != .table)
+            return L.Error("protocols must be a table");
+        var order: c_int = 1;
+        while (L.next(-1)) {
+            const keyType = L.typeOf(-2);
+            const valueType = L.typeOf(-1);
+            if (keyType != luau.LuaType.number)
+                return L.Error("Table is not an array");
+            if (L.toInteger(-2) catch unreachable != order)
+                return L.Error("Table is not an array");
+            if (valueType != luau.LuaType.string)
+                return L.Error("Value must be a string");
+            const value = L.toString(-1) catch unreachable;
+            try protocols.append(value);
+            order += 1;
+            L.pop(1);
+        }
+    }
+    L.pop(1);
 
     const created = prep(
         allocator,
