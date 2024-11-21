@@ -106,12 +106,14 @@ describe("Require Many Value", function()
         expect(a).toBe(res);
         expect(b).toBe(res);
         expect(c).toBe(res);
+        task.wait(0.2);
     end)
 
     test("Require Async Error", function()
         local success, err = pcall(require, ("./generated/yielderror"));
         expect(success).toBe(false);
         expect(err).toBe("requested module failed to load");
+        task.wait(0.2);
     end)
     
     test("Require Blank", function()
@@ -129,6 +131,7 @@ describe("Require Many Value", function()
         local ok, err = pcall(require, ("./generated/yieldtoomany"));
         expect(ok).toBeFalsy();
         assert((string.find(err, "module must return one value")) ~= nil);
+        task.wait(0.2);
     end)
 end)
 

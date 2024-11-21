@@ -1808,7 +1808,7 @@ export type FunctionDefinition = {
 export type Pointer = {
     release: (self: Pointer) -> Pointer,
     retain: (self: Pointer) -> Pointer,
-    drop: (self: Pointer) -> (),
+    drop: (self: Pointer) -> Pointer,
     offset: (self: Pointer, offset: number) -> Pointer,
     read: (self: Pointer, srcOffset: number, dest: buffer, destOffset: number, count: number) -> buffer,
     write: (self: Pointer, destOffset: number, src: buffer, srcOffset: number, count: number) -> (),

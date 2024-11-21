@@ -62,12 +62,10 @@ const LuaPointer = struct {
         if (buf.len < @sizeOf(usize))
             return error.SmallBuffer;
 
-        const ptr = L.newUserdataTagged(LuaPointer, tagged.FFI_POINTER);
-        metatable(L);
-        L.setMetatable(-2);
+        const ptr = L.newUserdataTaggedWithMetatable(LuaPointer, tagged.FFI_POINTER);
 
         ptr.* = .{
-            .ptr = @ptrFromInt(std.mem.readVarInt(usize, buf[0..@sizeOf(usize)], .little)),
+            .ptr = @ptrFromInt(std.mem.readVarInt(usize, buf[0..@sizeOf(usize)], cpu_endian)),
             .allocator = L.allocator(),
             .destroyed = false,
             .type = .Static,
@@ -82,9 +80,7 @@ const LuaPointer = struct {
         const mem = try allocator.alloc(u8, size);
         @memset(mem, 0);
 
-        const ptr = L.newUserdataTagged(LuaPointer, tagged.FFI_POINTER);
-        metatable(L);
-        L.setMetatable(-2);
+        const ptr = L.newUserdataTaggedWithMetatable(LuaPointer, tagged.FFI_POINTER);
 
         ptr.* = .{
             .ptr = @ptrCast(@alignCast(mem.ptr)),
@@ -100,9 +96,7 @@ const LuaPointer = struct {
     }
 
     pub fn newStaticPtr(L: *Luau, staticPtr: ?*anyopaque, default_retain: bool) !*LuaPointer {
-        const ptr = L.newUserdataTagged(LuaPointer, tagged.FFI_POINTER);
-        metatable(L);
-        L.setMetatable(-2);
+        const ptr = L.newUserdataTaggedWithMetatable(LuaPointer, tagged.FFI_POINTER);
 
         ptr.* = .{
             .ptr = staticPtr,
@@ -131,11 +125,7 @@ const LuaPointer = struct {
         const ref_ptr = try value(L, 1);
         const allocator = L.allocator();
 
-        const ref = try L.ref(1);
-
-        const ptr = L.newUserdataTagged(LuaPointer, tagged.FFI_POINTER);
-        metatable(L);
-        L.setMetatable(-2);
+        const ptr = L.newUserdataTaggedWithMetatable(LuaPointer, tagged.FFI_POINTER);
 
         const mem = try allocator.create(*anyopaque);
         mem.* = @ptrCast(@alignCast(ref_ptr.ptr));
@@ -143,25 +133,23 @@ const LuaPointer = struct {
         ptr.* = .{
             .ptr = @ptrCast(@alignCast(mem)),
             .allocator = allocator,
-            .ref = ref,
             .destroyed = false,
             .type = .Allocated,
         };
+
+        try retain(ptr, L);
 
         return 1;
     }
 
     pub fn retain(ptr: *LuaPointer, L: *Luau) !void {
-        if (ptr.local_ref != null)
+        if (ptr.local_ref != null) {
+            ptr.retained = true;
             return;
+        }
         const local = try L.ref(-1);
         ptr.retained = true;
         ptr.local_ref = local;
-    }
-
-    pub fn metatable(L: *Luau) void {
-        if (L.getMetatableRegistry(META) != .table)
-            std.debug.panic("InternalError (FFI Metatable not initialized)", .{});
     }
 
     pub inline fn is(L: *Luau, idx: i32) bool {
@@ -239,22 +227,18 @@ const LuaPointer = struct {
     });
 
     pub fn method_retain(ptr: *LuaPointer, L: *Luau) !i32 {
-        if (ptr.destroyed or ptr.ptr == null)
-            return 0;
-        try retain(ptr, L);
         L.pushValue(1);
+        try retain(ptr, L);
         return 1;
     }
 
     pub fn method_release(ptr: *LuaPointer, L: *Luau) i32 {
-        if (ptr.destroyed or ptr.ptr == null)
-            return 0;
         ptr.retained = false;
-        const local_ref = ptr.local_ref orelse {
-            L.pushValue(1);
-            return 1;
-        };
-        L.unref(local_ref);
+        if (ptr.ref) |ref|
+            L.unref(ref);
+        ptr.ref = null;
+        if (ptr.local_ref) |ref|
+            L.unref(ref);
         ptr.local_ref = null;
         L.pushValue(1);
         return 1;
@@ -391,7 +375,7 @@ const LuaPointer = struct {
                     .u64 => try L.pushBuffer(mem[0..8]),
                     .float => L.pushNumber(@floatCast(@as(f32, @bitCast(std.mem.readVarInt(u32, mem[0..4], .little))))),
                     .double => L.pushNumber(@as(f64, @bitCast(std.mem.readVarInt(u64, mem[0..8], .little)))),
-                    .pointer => _ = try LuaPointer.newStaticPtr(L, @ptrFromInt(std.mem.readVarInt(usize, mem[0..@sizeOf(usize)], .little)), true),
+                    .pointer => _ = try LuaPointer.newStaticPtr(L, @ptrFromInt(std.mem.readVarInt(usize, mem[0..@sizeOf(usize)], .little)), false),
                 }
 
                 return 1;
@@ -1263,7 +1247,7 @@ fn ffi_closure(L: *Luau) !i32 {
                         },
                         .float => subthread.pushNumber(@floatCast(@as(f32, @bitCast(@as(*u32, @ptrCast(@alignCast(ffi_args[i]))).*)))),
                         .double => subthread.pushNumber(@as(f64, @bitCast(@as(*u64, @ptrCast(@alignCast(ffi_args[i]))).*))),
-                        .pointer => _ = LuaPointer.newStaticPtr(subthread, @as(*[*]u8, @ptrCast(@alignCast(ffi_args[i]))).*, true) catch |err| std.debug.panic("Failed: {}", .{err}),
+                        .pointer => _ = LuaPointer.newStaticPtr(subthread, @as(*[*]u8, @ptrCast(@alignCast(ffi_args[i]))).*, false) catch |err| std.debug.panic("Failed: {}", .{err}),
                     },
                     .structType => |t| {
                         const bytes: [*]u8 = @ptrCast(@alignCast(ffi_args[i]));
@@ -1346,7 +1330,8 @@ fn ffi_closure(L: *Luau) !i32 {
     L.newTable();
 
     L.newTable();
-    _ = try LuaPointer.newStaticPtrWithRef(L, closure_ptr.executable, -3);
+    const ptr = try LuaPointer.newStaticPtrWithRef(L, closure_ptr.executable, -3);
+    ptr.retained = false; // Keep reference but don't retain
     L.setField(-2, "ptr");
 
     L.pushValue(2);
@@ -1413,7 +1398,7 @@ const FFIFunction = struct {
                     .u64 => try L.pushBuffer(ret),
                     .float => L.pushNumber(@floatCast(@as(f32, @bitCast(std.mem.readVarInt(u32, ret, cpu_endian))))),
                     .double => L.pushNumber(@as(f64, @bitCast(std.mem.readVarInt(u64, ret, cpu_endian)))),
-                    .pointer => _ = try LuaPointer.newStaticPtr(L, @ptrFromInt(std.mem.readVarInt(usize, ret[0..@sizeOf(usize)], cpu_endian)), true),
+                    .pointer => _ = try LuaPointer.newStaticPtr(L, @ptrFromInt(std.mem.readVarInt(usize, ret[0..@sizeOf(usize)], cpu_endian)), false),
                 },
                 .structType => try L.pushBuffer(ret),
             }
@@ -1693,6 +1678,7 @@ pub fn loadLib(L: *Luau) void {
         L.setFieldFn(-1, luau.Metamethods.tostring, LuaPointer.__tostring); // metatable.__tostring
 
         L.setUserdataDtor(LuaPointer, tagged.FFI_POINTER, LuaPointer.__dtor);
+        L.setUserdataMetatable(tagged.FFI_POINTER, -1);
     }
 
     L.newTable();

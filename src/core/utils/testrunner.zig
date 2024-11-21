@@ -30,7 +30,7 @@ pub fn runTest(allocator: std.mem.Allocator, comptime testFile: zune_test_files.
     if (!stdOutEnabled)
         L.setFieldBoolean(luau.GLOBALSINDEX, "_testing_stdOut", false);
 
-    var scheduler = Scheduler.init(allocator);
+    var scheduler = Scheduler.init(allocator, L);
     defer scheduler.deinit();
 
     const temporaryDir = std.testing.tmpDir(std.fs.Dir.OpenDirOptions{

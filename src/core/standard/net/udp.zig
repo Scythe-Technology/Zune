@@ -128,6 +128,8 @@ pub fn update(ctx: *Self, L: *Luau, _: *Scheduler) Scheduler.TaskResult {
 
 pub fn dtor(ctx: *Self, L: *Luau, _: *Scheduler) void {
     std.posix.close(ctx.socket);
+    if (ctx.handlers.message) |ref|
+        L.unref(ref);
     L.unref(ctx.ref);
 }
 

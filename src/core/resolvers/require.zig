@@ -48,7 +48,7 @@ const QueueItem = struct {
     ref: ?i32,
 };
 
-var RequireQueueMap = std.StringArrayHashMap(std.ArrayList(QueueItem)).init(Zune.DEFAULT_ALLOCATOR);
+var REQUIRE_QUEUE_MAP = std.StringArrayHashMap(std.ArrayList(QueueItem)).init(Zune.DEFAULT_ALLOCATOR);
 
 const RequireContext = struct {
     caller: *Luau,
@@ -60,7 +60,7 @@ fn require_finished(ctx: *RequireContext, ML: *Luau, _: *Scheduler) void {
 
     var outErr: ?[]const u8 = null;
 
-    const queue = RequireQueueMap.getEntry(ctx.path) orelse std.debug.panic("require_finished: queue not found", .{});
+    const queue = REQUIRE_QUEUE_MAP.getEntry(ctx.path) orelse std.debug.panic("require_finished: queue not found", .{});
     defer {
         for (queue.value_ptr.items) |item|
             Scheduler.derefThread(item.state, item.ref);
@@ -183,7 +183,7 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
                     break :jmp;
                 } else if (ptr == @as(*const anyopaque, @ptrCast(&LoadingState))) {
                     L.pop(1);
-                    const res = RequireQueueMap.getEntry(moduleAbsolutePath) orelse std.debug.panic("zune_require: queue not found", .{});
+                    const res = REQUIRE_QUEUE_MAP.getEntry(moduleAbsolutePath) orelse std.debug.panic("zune_require: queue not found", .{});
                     try res.value_ptr.append(.{
                         .state = L,
                         .ref = Scheduler.refThread(L),
@@ -279,7 +279,7 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
                     .ref = Scheduler.refThread(L),
                 });
 
-                try RequireQueueMap.put(try allocator.dupe(u8, moduleAbsolutePath), list);
+                try REQUIRE_QUEUE_MAP.put(try allocator.dupe(u8, moduleAbsolutePath), list);
 
                 return L.yield(0);
             }
