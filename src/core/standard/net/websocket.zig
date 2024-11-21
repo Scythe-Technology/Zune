@@ -109,8 +109,8 @@ pub fn closeConnection(ctx: *Self, L: *Luau, cleanUp: bool, codeCode: ?u16) void
                 };
             }
         }
-        if (ctx.handlers.close) |fnRef| {
-            if (!prepRefType(.function, L, fnRef))
+        if (ctx.handlers.close) |fn_ref| {
+            if (!prepRefType(.function, L, fn_ref))
                 return;
 
             const thread = L.newThread();
@@ -161,8 +161,8 @@ pub fn handleSocket(ctx: *Self, L: *Luau, socket: *WebSocket) Scheduler.TaskResu
             return .Stop;
         },
         .Text, .Binary => {
-            if (ctx.handlers.message) |fnRef| {
-                if (!prepRefType(.function, L, fnRef)) {
+            if (ctx.handlers.message) |fn_ref| {
+                if (!prepRefType(.function, L, fn_ref)) {
                     std.debug.print("Function not found\n", .{});
                     return .Stop;
                 }
@@ -197,8 +197,8 @@ pub fn update(ctx: *Self, L: *Luau, _: *Scheduler) Scheduler.TaskResult {
     if (ctx.establishedLua == null) {
         if (ctx.timeout) |end| {
             if (luau.clock() > end) {
-                if (ctx.handlers.close) |fnRef| {
-                    L.unref(fnRef);
+                if (ctx.handlers.close) |fn_ref| {
+                    L.unref(fn_ref);
                     ctx.handlers.close = null;
                 }
                 L.pushLString("WebSocket Error (Timeout)");
@@ -250,8 +250,8 @@ pub fn update(ctx: *Self, L: *Luau, _: *Scheduler) Scheduler.TaskResult {
             ctx.establishedLua = L.ref(-1) catch unreachable;
 
             if (response.statusCode != 101) {
-                if (ctx.handlers.close) |fnRef| {
-                    L.unref(fnRef);
+                if (ctx.handlers.close) |fn_ref| {
+                    L.unref(fn_ref);
                     ctx.handlers.close = null;
                 }
                 ctx.closeConnection(L, false, null);
@@ -259,8 +259,8 @@ pub fn update(ctx: *Self, L: *Luau, _: *Scheduler) Scheduler.TaskResult {
                 _ = Scheduler.resumeStateError(L, null) catch {};
                 return .Stop;
             } else {
-                if (ctx.handlers.open) |fnRef| {
-                    if (!prepRefType(.function, L, fnRef)) {
+                if (ctx.handlers.open) |fn_ref| {
+                    if (!prepRefType(.function, L, fn_ref)) {
                         L.pushLString("WebSocket Error (Open function missing unexpectedly)");
                         _ = Scheduler.resumeStateError(L, null) catch {};
                     }
@@ -376,9 +376,9 @@ pub fn prep(
     scheduler: *Scheduler,
     uri: []const u8,
     protocols: std.ArrayList([]const u8),
-    openFnRef: ?i32,
-    closeFnRef: ?i32,
-    messageFnRef: ?i32,
+    open_fn_ref: ?i32,
+    close_fn_ref: ?i32,
+    message_fn_ref: ?i32,
     timeout: ?f64,
 ) !bool {
     errdefer protocols.deinit();
@@ -461,9 +461,9 @@ pub fn prep(
         .protocols = protocols,
         .timeout = if (timeout) |duration| luau.clock() + duration else null,
         .handlers = .{
-            .open = openFnRef,
-            .close = closeFnRef,
-            .message = messageFnRef,
+            .open = open_fn_ref,
+            .close = close_fn_ref,
+            .message = message_fn_ref,
         },
     };
 
@@ -476,19 +476,22 @@ pub fn lua_websocket(L: *Luau, scheduler: *Scheduler) !i32 {
     const uriString = L.checkString(1);
     const allocator = L.allocator();
 
-    var openFnRef: ?i32 = null;
-    var closeFnRef: ?i32 = null;
-    var messageFnRef: ?i32 = null;
     var timeout: ?f64 = 30;
     var protocols = std.ArrayList([]const u8).init(allocator);
+
+    var open_fn_ref: ?i32 = null;
+    errdefer if (open_fn_ref) |ref| L.unref(ref);
+    var close_fn_ref: ?i32 = null;
+    errdefer if (close_fn_ref) |ref| L.unref(ref);
+    var message_fn_ref: ?i32 = null;
+    errdefer if (message_fn_ref) |ref| L.unref(ref);
 
     L.checkType(2, .table);
     const openType = L.getField(2, "open");
     if (!luau.isNoneOrNil(openType)) {
         if (openType != .function)
             return L.Error("open must be a function");
-        const fnRef = L.ref(-1) catch unreachable;
-        openFnRef = fnRef;
+        open_fn_ref = L.ref(-1) catch unreachable;
     }
     L.pop(1);
 
@@ -496,8 +499,7 @@ pub fn lua_websocket(L: *Luau, scheduler: *Scheduler) !i32 {
     if (!luau.isNoneOrNil(closeType)) {
         if (closeType != .function)
             return L.Error("open must be a function");
-        const fnRef = L.ref(-1) catch unreachable;
-        closeFnRef = fnRef;
+        close_fn_ref = L.ref(-1) catch unreachable;
     }
     L.pop(1);
 
@@ -505,8 +507,7 @@ pub fn lua_websocket(L: *Luau, scheduler: *Scheduler) !i32 {
     if (!luau.isNoneOrNil(messageType)) {
         if (messageType != .function)
             return L.Error("open must be a function");
-        const fnRef = L.ref(-1) catch unreachable;
-        messageFnRef = fnRef;
+        message_fn_ref = L.ref(-1) catch unreachable;
     }
     L.pop(1);
 
@@ -542,20 +543,17 @@ pub fn lua_websocket(L: *Luau, scheduler: *Scheduler) !i32 {
     }
     L.pop(1);
 
-    const created = prep(
+    const created = try prep(
         allocator,
         L,
         scheduler,
         uriString,
         protocols,
-        openFnRef,
-        closeFnRef,
-        messageFnRef,
+        open_fn_ref,
+        close_fn_ref,
+        message_fn_ref,
         timeout,
-    ) catch |err| {
-        L.pushLString(@errorName(err));
-        return error.RaiseLuauError;
-    };
+    );
 
     if (created)
         return L.yield(0);

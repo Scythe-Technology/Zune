@@ -593,7 +593,8 @@ fn fs_watch(L: *Luau, scheduler: *Scheduler) !i32 {
 
     const allocator = L.allocator();
 
-    const ref = L.ref(2) catch return L.Error("InternalError (Failed to create reference)");
+    const ref = L.ref(2) catch unreachable;
+    errdefer L.unref(ref);
 
     var dir = fs.cwd().openDir(path, .{}) catch |err| switch (err) {
         error.FileNotFound => return error.FileNotFound,

@@ -22,10 +22,6 @@ const MAX_SOCKETS = 512;
 
 const Self = @This();
 
-pub const LuaServer = struct {
-    ptr: ?*Self,
-};
-
 pub const LuaWebSocket = struct {
     ptr: ?*Self,
     id: ?usize,
@@ -89,13 +85,13 @@ pub const LuaMeta = struct {
     pub const SERVER_META = "net_server_instance";
     pub fn server__index(L: *Luau) i32 {
         L.checkType(1, .userdata);
-        const data = L.toUserdata(LuaServer, 1) catch unreachable;
+        const self = L.toUserdata(Self, 1) catch unreachable;
 
         const arg = L.checkString(2);
 
         // TODO: prob should switch to static string map
         if (std.mem.eql(u8, arg, "stopped")) {
-            L.pushBoolean(data.ptr == null);
+            L.pushBoolean(self.alive == false);
             return 1;
         }
         return 0;
@@ -103,7 +99,7 @@ pub const LuaMeta = struct {
 
     pub fn server__namecall(L: *Luau) !i32 {
         L.checkType(1, .userdata);
-        const data = L.toUserdata(LuaServer, 1) catch unreachable;
+        const self = L.toUserdata(Self, 1) catch unreachable;
 
         const namecall = L.nameCallAtom() catch return 0;
 
@@ -111,9 +107,10 @@ pub const LuaMeta = struct {
 
         // TODO: prob should switch to static string map
         if (std.mem.eql(u8, namecall, "stop")) {
-            const ctx = data.ptr orelse return 0;
-            ctx.alive = false;
-            data.ptr = null;
+            self.alive = false;
+            if (self.ref) |ref|
+                L.unref(ref);
+            self.ref = null;
             scheduler.deferThread(L, null, 0); // resume on next task
             return L.yield(0);
         } else return L.ErrorFmt("Unknown method: {s}", .{namecall});
@@ -137,7 +134,7 @@ pub const HandleError = error{
     ShouldEnd,
 };
 
-serverRef: i32,
+ref: ?i32,
 alive: bool = true,
 max_body_size: usize = 4096,
 request_lua_function: i32,
@@ -681,25 +678,25 @@ pub fn dtor(ctx: *Self, L: *Luau, scheduler: *Scheduler) void {
         ctx.server.deinit();
 
         allocator.destroy(ctx.server);
-        allocator.destroy(ctx);
     }
 
     for (0..MAX_SOCKETS) |i| ctx.closeConnection(L, i, false);
 
     L.unref(ctx.request_lua_function);
     if (ctx.websocket_lua_handlers) |handlers| {
-        if (handlers.upgrade) |function| L.unref(function);
-        if (handlers.open) |function| L.unref(function);
-        if (handlers.message) |function| L.unref(function);
-        if (handlers.close) |function| L.unref(function);
+        if (handlers.upgrade) |ref|
+            L.unref(ref);
+        if (handlers.open) |ref|
+            L.unref(ref);
+        if (handlers.message) |ref|
+            L.unref(ref);
+        if (handlers.close) |ref|
+            L.unref(ref);
     }
 
-    if (prepRefType(.userdata, L, ctx.serverRef)) {
-        const server = L.toUserdata(LuaServer, -1) catch unreachable;
-        server.ptr = null;
-        L.pop(1);
-    }
-    L.unref(ctx.serverRef);
+    if (ctx.ref) |ref|
+        L.unref(ref);
+    ctx.ref = null;
 }
 
 pub fn prep(
@@ -709,22 +706,19 @@ pub fn prep(
     addressStr: []const u8,
     port: u16,
     reuseAddress: bool,
-    requestFunctionRef: i32,
+    request_fn_ref: i32,
     max_body_size: usize,
     websocketHandlers: ?LuaWebSocket.Handlers,
 ) !void {
-    const serverPtr = try allocator.create(std.net.Server);
-    errdefer allocator.destroy(serverPtr);
+    const server = try allocator.create(std.net.Server);
+    errdefer allocator.destroy(server);
 
     const address = try std.net.Address.parseIp4(addressStr, port);
 
-    serverPtr.* = try address.listen(.{
+    server.* = try address.listen(.{
         .reuse_address = reuseAddress,
         .force_nonblocking = true,
     });
-
-    const data = try allocator.create(Self);
-    errdefer allocator.destroy(data);
 
     var connections = try allocator.alloc(?std.net.Server.Connection, MAX_SOCKETS);
     errdefer allocator.free(connections);
@@ -745,11 +739,9 @@ pub fn prep(
         responses[i] = null;
         websockets[i] = null;
     }
+    fds[0].fd = server.*.stream.handle;
 
-    fds[0].fd = serverPtr.*.stream.handle;
-
-    const server = L.newUserdata(LuaServer);
-    server.ptr = data;
+    const self = L.newUserdata(Self);
 
     if (L.getMetatableRegistry(LuaMeta.SERVER_META) == .table) {
         L.setMetatable(-2);
@@ -757,14 +749,14 @@ pub fn prep(
         std.debug.panic("InternalError (Server Metatable not initialized)", .{});
     }
 
-    const serverRef = try L.ref(-1);
+    const ref = L.ref(-1) catch unreachable;
 
-    data.* = Self{
-        .serverRef = serverRef,
-        .request_lua_function = requestFunctionRef,
+    self.* = Self{
+        .ref = ref,
+        .request_lua_function = request_fn_ref,
         .websocket_lua_handlers = websocketHandlers,
         .max_body_size = max_body_size,
-        .server = serverPtr,
+        .server = server,
         .connections = connections,
         .responses = responses,
         .websockets = websockets,
@@ -772,7 +764,7 @@ pub fn prep(
         .alive = true,
     };
 
-    scheduler.addTask(Self, data, L, update, dtor);
+    scheduler.addTask(Self, self, L, update, dtor);
 }
 
 pub fn lua_serve(L: *Luau, scheduler: *Scheduler) !i32 {
@@ -815,13 +807,18 @@ pub fn lua_serve(L: *Luau, scheduler: *Scheduler) !i32 {
 
     if (L.getField(1, "request") != .function)
         return L.Error("Expected field 'request' to be a function");
-    const requestFunctionRef = L.ref(-1) catch unreachable;
+    const request_fn_ref = L.ref(-1) catch unreachable;
+    errdefer L.unref(request_fn_ref);
     L.pop(1);
 
-    var websocketUpgradeFunctionRef: ?i32 = null;
-    var websocketOpenFunctionRef: ?i32 = null;
-    var websocketMessageFunctionRef: ?i32 = null;
-    var websocketCloseFunctionRef: ?i32 = null;
+    var websocket_upgrade_fn_ref: ?i32 = null;
+    errdefer if (websocket_upgrade_fn_ref) |ref| L.unref(ref);
+    var websocket_open_fn_ref: ?i32 = null;
+    errdefer if (websocket_open_fn_ref) |ref| L.unref(ref);
+    var websocket_message_fn_ref: ?i32 = null;
+    errdefer if (websocket_message_fn_ref) |ref| L.unref(ref);
+    var websocket_close_fn_ref: ?i32 = null;
+    errdefer if (websocket_close_fn_ref) |ref| L.unref(ref);
     const websocketType = L.getField(1, "websocket");
     if (!luau.isNoneOrNil(websocketType)) {
         if (websocketType != .table)
@@ -830,28 +827,28 @@ pub fn lua_serve(L: *Luau, scheduler: *Scheduler) !i32 {
         if (!luau.isNoneOrNil(upgradeType)) {
             if (upgradeType != .function)
                 return L.Error("Expected field 'upgrade' to be a function");
-            websocketUpgradeFunctionRef = L.ref(-1) catch unreachable;
+            websocket_upgrade_fn_ref = L.ref(-1) catch unreachable;
         }
         L.pop(1);
         const openType = L.getField(-1, "open");
         if (!luau.isNoneOrNil(openType)) {
             if (openType != .function)
                 return L.Error("Expected field 'open' to be a function");
-            websocketOpenFunctionRef = L.ref(-1) catch unreachable;
+            websocket_open_fn_ref = L.ref(-1) catch unreachable;
         }
         L.pop(1);
         const messageType = L.getField(-1, "message");
         if (!luau.isNoneOrNil(messageType)) {
             if (messageType != .function)
                 return L.Error("Expected field 'message' to be a function");
-            websocketMessageFunctionRef = L.ref(-1) catch unreachable;
+            websocket_message_fn_ref = L.ref(-1) catch unreachable;
         }
         L.pop(1);
         const closeType = L.getField(-1, "close");
         if (!luau.isNoneOrNil(closeType)) {
             if (closeType != .function)
                 return L.Error("Expected field 'close' to be a function");
-            websocketCloseFunctionRef = L.ref(-1) catch unreachable;
+            websocket_close_fn_ref = L.ref(-1) catch unreachable;
         }
         L.pop(1);
     }
@@ -859,25 +856,22 @@ pub fn lua_serve(L: *Luau, scheduler: *Scheduler) !i32 {
 
     const allocator = L.allocator();
 
-    prep(
+    try prep(
         allocator,
         L,
         scheduler,
         addressStr,
         @intCast(port),
         reuseAddress,
-        requestFunctionRef,
+        request_fn_ref,
         max_body_size,
         .{
-            .upgrade = websocketUpgradeFunctionRef,
-            .open = websocketOpenFunctionRef,
-            .message = websocketMessageFunctionRef,
-            .close = websocketCloseFunctionRef,
+            .upgrade = websocket_upgrade_fn_ref,
+            .open = websocket_open_fn_ref,
+            .message = websocket_message_fn_ref,
+            .close = websocket_close_fn_ref,
         },
-    ) catch |err| {
-        L.pushString(@errorName(err));
-        L.raiseError();
-    };
+    );
 
     return 1;
 }

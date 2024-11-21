@@ -137,6 +137,7 @@ pub fn lua_udpsocket(L: *Luau, scheduler: *Scheduler) !i32 {
     var address_ip: []const u8 = "127.0.0.1";
     var port: u16 = 0;
     var data_ref: ?i32 = null;
+    errdefer if (data_ref) |ref| L.unref(ref);
 
     L.checkType(1, .table);
     const addressType = L.getField(1, "address");
