@@ -62,8 +62,11 @@ pub fn searchForExtensions(allocator: std.mem.Allocator, fileName: []const u8, e
     for (extensions) |ext| {
         const result = std.mem.join(allocator, "", &.{ fileName, ext }) catch continue;
         defer allocator.free(result);
-        if (try doesFileExist(result))
-            try list.append(allocator.dupe(u8, result) catch continue);
+        if (try doesFileExist(result)) {
+            const copy = try allocator.dupe(u8, result);
+            errdefer allocator.free(copy);
+            try list.append(copy);
+        }
     }
     if (list.items.len == 0)
         return .{ .allocator = allocator, .result = .none };
@@ -82,8 +85,11 @@ pub fn searchForExtensionsZ(allocator: std.mem.Allocator, fileName: []const u8, 
     for (extensions) |ext| {
         const result = std.mem.join(allocator, "", &.{ fileName, ext }) catch continue;
         defer allocator.free(result);
-        if (try doesFileExist(result))
-            try list.append(allocator.dupeZ(u8, result) catch continue);
+        if (try doesFileExist(result)) {
+            const copy = try allocator.dupeZ(u8, result);
+            errdefer allocator.free(copy);
+            try list.append(copy);
+        }
     }
     if (list.items.len == 0)
         return .{ .allocator = allocator, .result = .none };

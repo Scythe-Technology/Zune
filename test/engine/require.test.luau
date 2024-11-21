@@ -133,6 +133,14 @@ describe("Require Many Value", function()
         assert((string.find(err, "module must return one value")) ~= nil);
         task.wait(0.2);
     end)
+
+    test("Require Cyclic Dependency", function()
+        local ok, err = pcall(require, ("./samples/cyclic"));
+        expect(ok).toBeFalsy();
+        -- Cyclic dependency error message is printed in console.
+        expect(err).toBe("requested module failed to load");
+        task.wait(0.2);
+    end)
 end)
 
 describe("Require .lua", function()

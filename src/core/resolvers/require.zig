@@ -28,20 +28,17 @@ pub const POSSIBLE_EXTENSIONS = [_][]const u8{
     "/init.lua",
 };
 
-pub fn finishError(L: *Luau, errMsg: [:0]const u8) noreturn {
-    L.pushString(errMsg);
-    L.raiseError();
-}
-
 pub var ALIASES: std.StringArrayHashMap([]const u8) = std.StringArrayHashMap([]const u8).init(Zune.DEFAULT_ALLOCATOR);
 
 const States = enum {
     Error,
-    Loading,
+    Waiting,
+    Preloaded,
 };
 
 var ErrorState = States.Error;
-var LoadingState = States.Loading;
+var WaitingState = States.Waiting;
+var PreloadedState = States.Preloaded;
 
 const QueueItem = struct {
     state: *Luau,
@@ -108,10 +105,8 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
     var moduleAbsolutePath: [:0]const u8 = undefined;
     var searchResult: ?file.SearchResult([:0]const u8) = null;
     defer if (searchResult) |r| r.deinit();
-    if (moduleName.len == 0) {
-        L.pushString("must have either \"@\", \"./\", or \"../\" prefix");
-        return error.RaiseLuauError;
-    }
+    if (moduleName.len == 0)
+        return L.Error("must have either \"@\", \"./\", or \"../\" prefix");
 
     const absPath = try std.fs.cwd().realpathAlloc(allocator, ".");
     defer allocator.free(absPath);
@@ -128,18 +123,16 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
 
         searchResult = try Engine.findLuauFileFromPathZ(allocator, absPath, modulePath);
     } else {
-        if ((moduleName.len < 2 or !std.mem.eql(u8, moduleName[0..2], "./")) and (moduleName.len < 3 or !std.mem.eql(u8, moduleName[0..3], "../"))) {
-            L.pushString("must have either \"@\", \"./\", or \"../\" prefix");
-            return error.RaiseLuauError;
-        }
+        if ((moduleName.len < 2 or !std.mem.eql(u8, moduleName[0..2], "./")) and (moduleName.len < 3 or !std.mem.eql(u8, moduleName[0..3], "../")))
+            return L.Error("must have either \"@\", \"./\", or \"../\" prefix");
         if (L.getField(luau.GLOBALSINDEX, "_FILE") != .table)
-            return finishError(L, "InternalError (_FILE is invalid)");
+            return L.Error("InternalError (_FILE is invalid)");
         if (L.getField(-1, "path") != .string)
-            return finishError(L, "InternalError (_FILE.path is not a string)");
+            return L.Error("InternalError (_FILE.path is not a string)");
         const moduleFilePath = L.toString(-1) catch unreachable;
         L.pop(2); // drop: path, _FILE
         if (!std.fs.path.isAbsolute(moduleFilePath))
-            return finishError(L, "InternalError (_FILE.path is not absolute)");
+            return L.Error("InternalError (_FILE.path is not absolute)");
 
         switch (MODE) {
             .RelativeToFile => {
@@ -181,7 +174,7 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
                     L.pop(1);
                     outErr = "requested module failed to load";
                     break :jmp;
-                } else if (ptr == @as(*const anyopaque, @ptrCast(&LoadingState))) {
+                } else if (ptr == @as(*const anyopaque, @ptrCast(&WaitingState))) {
                     L.pop(1);
                     const res = REQUIRE_QUEUE_MAP.getEntry(moduleAbsolutePath) orelse std.debug.panic("zune_require: queue not found", .{});
                     try res.value_ptr.append(.{
@@ -189,6 +182,10 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
                         .ref = Scheduler.refThread(L),
                     });
                     return L.yield(0);
+                } else if (ptr == @as(*const anyopaque, @ptrCast(&PreloadedState))) {
+                    L.pop(1);
+                    outErr = "Cyclic dependency detected";
+                    break :jmp;
                 }
             }
             L.remove(-2); // drop: _MODULES
@@ -242,12 +239,17 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
         Engine.loadModule(ML, moduleRelativeNameZ, fileContent, null) catch |err| switch (err) {
             error.Memory, error.OutOfMemory => return error.OutOfMemory,
             error.Syntax => {
+                L.pop(1); // drop: thread
                 outErr = ML.toString(-1) catch "UnknownError";
                 break :jmp;
             },
         };
 
+        L.pushLightUserdata(@ptrCast(&PreloadedState));
+        L.setField(-3, moduleAbsolutePath);
+
         const resumeStatus: ?luau.ResumeStatus = Scheduler.resumeState(ML, L, 0) catch {
+            L.pop(1); // drop: thread
             outErr = "requested module failed to load";
             break :jmp;
         };
@@ -255,12 +257,13 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
             if (status == .ok) {
                 const t = ML.getTop();
                 if (t > 1 or t < 0) {
+                    L.pop(1); // drop: thread
                     outErr = "module must return one value";
                     break :jmp;
                 } else if (t == 0)
                     ML.pushNil();
             } else if (status == .yield) {
-                L.pushLightUserdata(@ptrCast(&LoadingState));
+                L.pushLightUserdata(@ptrCast(&WaitingState));
                 L.setField(-3, moduleAbsolutePath);
 
                 {
@@ -292,7 +295,7 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
 
     if (outErr != null) {
         L.pushLightUserdata(@ptrCast(&ErrorState));
-        L.setField(-3, moduleAbsolutePath);
+        L.setField(-2, moduleAbsolutePath);
     }
 
     if (outErr) |err| {

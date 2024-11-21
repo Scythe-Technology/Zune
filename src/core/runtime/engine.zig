@@ -33,7 +33,8 @@ pub fn loadModuleBytecode(L: *Luau, moduleName: [:0]const u8, bytecode: []const 
     L.loadBytecode(moduleName, bytecode) catch {
         return LuauCompileError.Syntax;
     };
-    if (luau.CodeGen.Supported() and CODEGEN) luau.CodeGen.Compile(L, -1);
+    if (luau.CodeGen.Supported() and CODEGEN)
+        luau.CodeGen.Compile(L, -1);
 }
 
 pub fn loadModule(L: *Luau, name: [:0]const u8, content: []const u8, cOpts: ?luau.CompileOptions) !void {
