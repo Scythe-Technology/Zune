@@ -103,9 +103,10 @@ pub fn init(allocator: std.mem.Allocator) Self {
     };
 }
 
-fn refThread(L: *luau.Luau) ?i32 {
+pub fn refThread(L: *luau.Luau) ?i32 {
     const GL = L.getMainThread();
-    if (GL == L) return null;
+    if (GL == L)
+        return null;
     if (L.pushThread()) {
         L.pop(1);
         return null;
@@ -116,7 +117,7 @@ fn refThread(L: *luau.Luau) ?i32 {
     return ref;
 }
 
-fn derefThread(L: *luau.Luau, ref: ?i32) void {
+pub fn derefThread(L: *luau.Luau, ref: ?i32) void {
     if (ref) |r| {
         const GL = L.getMainThread();
         if (GL == L)
@@ -330,6 +331,7 @@ pub fn run(self: *Self) void {
                     awaiting.resumeFn(data, state, self);
                     awaiting.virtualDtor(data, state, self);
                     derefThread(awaiting.state, awaiting.ref);
+                    active += 1;
                 }
             }
         }

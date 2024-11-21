@@ -43,7 +43,12 @@ const States = enum {
 var ErrorState = States.Error;
 var LoadingState = States.Loading;
 
-var RequireQueueMap = std.StringArrayHashMap(std.ArrayList(*Luau)).init(Zune.DEFAULT_ALLOCATOR);
+const QueueItem = struct {
+    state: *Luau,
+    ref: ?i32,
+};
+
+var RequireQueueMap = std.StringArrayHashMap(std.ArrayList(QueueItem)).init(Zune.DEFAULT_ALLOCATOR);
 
 const RequireContext = struct {
     caller: *Luau,
@@ -57,6 +62,8 @@ fn require_finished(ctx: *RequireContext, ML: *Luau, _: *Scheduler) void {
 
     const queue = RequireQueueMap.getEntry(ctx.path) orelse std.debug.panic("require_finished: queue not found", .{});
     defer {
+        for (queue.value_ptr.items) |item|
+            Scheduler.derefThread(item.state, item.ref);
         queue.value_ptr.deinit();
         allocator.free(queue.key_ptr.*);
     }
@@ -79,7 +86,8 @@ fn require_finished(ctx: *RequireContext, ML: *Luau, _: *Scheduler) void {
 
     ctx.caller.pop(1); // drop: _MODULES
 
-    for (queue.value_ptr.*.items) |L| {
+    for (queue.value_ptr.*.items) |item| {
+        const L = item.state;
         if (outErr) |msg| {
             L.pushLString(msg);
             _ = Scheduler.resumeStateError(L, null) catch {};
@@ -176,7 +184,10 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
                 } else if (ptr == @as(*const anyopaque, @ptrCast(&LoadingState))) {
                     L.pop(1);
                     const res = RequireQueueMap.getEntry(moduleAbsolutePath) orelse std.debug.panic("zune_require: queue not found", .{});
-                    try res.value_ptr.append(L);
+                    try res.value_ptr.append(.{
+                        .state = L,
+                        .ref = Scheduler.refThread(L),
+                    });
                     return L.yield(0);
                 }
             }
@@ -262,8 +273,11 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
                     }, ML, require_finished);
                 }
 
-                var list = std.ArrayList(*Luau).init(allocator);
-                try list.append(L);
+                var list = std.ArrayList(QueueItem).init(allocator);
+                try list.append(.{
+                    .state = L,
+                    .ref = Scheduler.refThread(L),
+                });
 
                 try RequireQueueMap.put(try allocator.dupe(u8, moduleAbsolutePath), list);
 
