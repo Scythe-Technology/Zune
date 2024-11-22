@@ -413,4 +413,270 @@ describe("UDP", function()
         expect(pass_server).toBe(true);
         expect(pass_client).toBe(true);
     end);
+
+    test("Double Datagram", function()
+        local server;
+        local client1;
+        local client2;
+
+        local pass_server = false;
+        local pass_client1 = false;
+        local pass_client2 = false;
+
+        server = net.udpsocket({
+            data = function(socket, msg, port, address)
+                expect(socket).toBe(server);
+                expect(msg).toBe("test from client");
+                expect(address).toBe("127.0.0.1");
+                socket:send("test from server ".. port, port, address);
+                pass_server = true;
+            end
+        });
+        testing.defer(function()
+            server:stop();
+        end)
+
+        client1 = net.udpsocket({
+            data = function(socket, msg, port, address)
+                expect(socket).toBe(client1);
+                expect(msg).toBe("test from server ".. client1.port);
+                expect(address).toBe("127.0.0.1");
+                expect(port).toBe(server.port);
+                pass_client1 = true;
+            end
+        });
+        testing.defer(function()
+            client1:stop();
+        end)
+
+        client2 = net.udpsocket({
+            data = function(socket, msg, port, address)
+                expect(socket).toBe(client2);
+                expect(msg).toBe("test from server " .. client2.port);
+                expect(address).toBe("127.0.0.1");
+                expect(port).toBe(server.port);
+                pass_client2 = true;
+            end
+        });
+        testing.defer(function()
+            client2:stop();
+        end)
+
+        client1:send("test from client", server.port, "127.0.0.1")
+        client2:send("test from client", server.port, "127.0.0.1")
+
+        task.wait(0.5);
+
+        expect(pass_server).toBe(true);
+        expect(pass_client1).toBe(true);
+        expect(pass_client2).toBe(true);
+    end);
+end)
+
+describe("TCP", function()
+    test("Generic", function()
+        local server;
+        local client;
+
+        local pass_server = {
+            open = false,
+            message = false,
+            close = false,
+        };
+        local pass_client = {
+            open = false,
+            message = false,
+            close = false,
+        };
+
+        server = net.tcphost({
+            address = "127.0.0.1",
+            port = 8088,
+            reuseAddress = true,
+            open = function(socket)
+                expect(socket).toBe(expect.type("userdata"));
+                pass_server.open = true;
+            end,
+            data = function(socket, msg)
+                expect(socket).toBe(expect.type("userdata"));
+                expect(msg).toBe("test from client");
+                pass_server.message = true;
+                socket:send("test from server");
+            end,
+            close = function(socket)
+                expect(socket).toBe(expect.type("userdata"));
+                pass_server.close = true;
+            end
+        });
+        testing.defer(function()
+            server:stop();
+        end)
+
+        client = net.tcpconnect({
+            address = "127.0.0.1",
+            port = 8088,
+            open = function(socket)
+                expect(socket).toBe(client);
+                pass_client.open = true;
+            end,
+            data = function(socket, msg)
+                expect(socket).toBe(client);
+                expect(msg).toBe("test from server");
+                pass_client.message = true;
+            end,
+            close = function(socket)
+                expect(socket).toBe(client);
+                pass_client.close = true;
+            end
+        });
+
+        testing.defer(function()
+            client:stop();
+        end)
+
+        task.wait(0.2);
+
+        expect(pass_server).toBe(expect.similar({ open = true, message = false, close = false }));
+        expect(pass_client).toBe(expect.similar({ open = true, message = false, close = false }));
+
+        client:send("test from client");
+
+        task.wait(0.2);
+
+        expect(pass_server).toBe(expect.similar({ open = true, message = true, close = false }));
+        expect(pass_client).toBe(expect.similar({ open = true, message = true, close = false }));
+
+        client:stop();
+        client:stop();
+        client:stop();
+
+        expect(pass_server).toBe(expect.similar({ open = true, message = true, close = false }));
+        expect(pass_client).toBe(expect.similar({ open = true, message = true, close = false }));
+
+        task.wait(0.2);
+
+        expect(pass_server).toBe(expect.similar({ open = true, message = true, close = true }));
+        expect(pass_client).toBe(expect.similar({ open = true, message = true, close = true }));
+    end);
+
+    test("Double Client Socket", function()
+        local server;
+        local client1;
+        local client2;
+
+        local events = {};
+
+        local pass_server = {
+            open = 0,
+            message = 0,
+            close = 0,
+        };
+        local pass_client1 = {
+            open = false,
+            message = false,
+            close = false,
+        };
+        local pass_client2 = {
+            open = false,
+            message = false,
+            close = false,
+        };
+
+        server = net.tcphost({
+            address = "127.0.0.1",
+            port = 8088,
+            reuseAddress = true,
+            open = function(socket)
+                expect(socket).toBe(expect.type("userdata"));
+                pass_server.open += 1;
+            end,
+            data = function(socket, msg)
+                expect(socket).toBe(expect.type("userdata"));
+                expect(msg).toBe("test from client " .. pass_server.message + 1);
+                pass_server.message += 1;
+                socket:send("test from server");
+            end,
+            close = function(socket)
+                expect(socket).toBe(expect.type("userdata"));
+                pass_server.close += 1;
+            end
+        });
+        testing.defer(function()
+            server:stop();
+        end)
+
+        client1 = net.tcpconnect({
+            address = "127.0.0.1",
+            port = 8088,
+            open = function(socket)
+                expect(socket).toBe(client1);
+                pass_client1.open = true;
+            end,
+            data = function(socket, msg)
+                expect(socket).toBe(client1);
+                expect(msg).toBe("test from server");
+                pass_client1.message = true;
+            end,
+            close = function(socket)
+                expect(socket).toBe(client1);
+                pass_client1.close = true;
+            end
+        });
+
+        testing.defer(function()
+            client1:stop();
+        end)
+
+        client2 = net.tcpconnect({
+            address = "127.0.0.1",
+            port = 8088,
+            open = function(socket)
+                expect(socket).toBe(client2);
+                pass_client2.open = true;
+            end,
+            data = function(socket, msg)
+                expect(socket).toBe(client2);
+                expect(msg).toBe("test from server");
+                pass_client2.message = true;
+            end,
+            close = function(socket)
+                expect(socket).toBe(client2);
+                pass_client2.close = true;
+            end
+        });
+
+        testing.defer(function()
+            client2:stop();
+        end)
+
+        task.wait(0.2);
+
+        expect(pass_server).toBe(expect.similar({ open = 2, message = 0, close = 0 }));
+        expect(pass_client1).toBe(expect.similar({ open = true, message = false, close = false }));
+        expect(pass_client2).toBe(expect.similar({ open = true, message = false, close = false }));
+
+        client1:send("test from client 1");
+        client2:send("test from client 2");
+
+        task.wait(0.2);
+
+        expect(pass_server).toBe(expect.similar({ open = 2, message = 2, close = 0 }));
+        expect(pass_client1).toBe(expect.similar({ open = true, message = true, close = false }));
+        expect(pass_client2).toBe(expect.similar({ open = true, message = true, close = false }));
+
+        client1:stop();
+        client2:stop();
+        client1:stop();
+        client2:stop();
+
+        expect(pass_server).toBe(expect.similar({ open = 2, message = 2, close = 0 }));
+        expect(pass_client1).toBe(expect.similar({ open = true, message = true, close = false }));
+        expect(pass_client2).toBe(expect.similar({ open = true, message = true, close = false }));
+
+        task.wait(0.2);
+
+        expect(pass_server).toBe(expect.similar({ open = 2, message = 2, close = 2 }));
+        expect(pass_client1).toBe(expect.similar({ open = true, message = true, close = true }));
+        expect(pass_client2).toBe(expect.similar({ open = true, message = true, close = true }));
+    end);
 end)
