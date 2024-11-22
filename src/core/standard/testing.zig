@@ -1,8 +1,12 @@
 const std = @import("std");
 const luau = @import("luau");
 
+const Zune = @import("../../zune.zig");
+
 const Engine = @import("../runtime/engine.zig");
 const Scheduler = @import("../runtime/scheduler.zig");
+
+const Formatter = @import("../resolvers/fmt.zig");
 
 const luaHelper = @import("../utils/luahelper.zig");
 
@@ -19,13 +23,51 @@ fn testing_debug(L: *Luau) i32 {
     return 0;
 }
 
+var REF_LEAKED_HEAD: usize = 0;
+var REF_LEAKED_STACK = std.ArrayList(u8).init(Zune.DEFAULT_ALLOCATOR);
+var REF_LEAKED_CACHE = std.ArrayList(bool).init(Zune.DEFAULT_ALLOCATOR);
+
+fn testing_checkLeakedReferences(L: *Luau) !i32 {
+    const scope = L.checkString(1);
+    const allocator = L.allocator();
+    const writer = REF_LEAKED_STACK.writer();
+
+    L.pushValue(luau.REGISTRYINDEX);
+
+    var scope_leaked = false;
+    const references = L.objLen(-1);
+    try REF_LEAKED_CACHE.ensureTotalCapacityPrecise(@intCast(references));
+    REF_LEAKED_CACHE.expandToCapacity();
+    for (1..@as(usize, @intCast(references))) |index| {
+        defer L.pop(1);
+        if (L.rawGetIndex(-1, @intCast(index)) == .number) {
+            REF_LEAKED_CACHE.items[index] = false;
+            continue;
+        }
+
+        if (REF_LEAKED_CACHE.items[index])
+            continue;
+
+        if (!scope_leaked) {
+            try writer.writeByte('\n');
+            try writer.writeAll(scope);
+        }
+        scope_leaked = true;
+        REF_LEAKED_CACHE.items[index] = true;
+        try writer.print("\n  \x1b[96m{}\x1b[0m \x1b[2m-\x1b[0m ", .{index});
+        try Formatter.fmt_write_idx(allocator, L, writer, -1);
+    }
+    return 0;
+}
+
 fn testing_droptasks(L: *Luau, scheduler: *Scheduler) i32 {
     _ = L;
 
     var awaitsSize = scheduler.awaits.items.len;
     while (awaitsSize > 0) {
         awaitsSize -= 1;
-        _ = scheduler.awaits.swapRemove(awaitsSize);
+        const awaiting = scheduler.awaits.swapRemove(awaitsSize);
+        awaiting.virtualDtor(awaiting.data, awaiting.state, scheduler);
     }
 
     var tasksSize = scheduler.tasks.items.len;
@@ -96,6 +138,14 @@ pub fn finish_testing(L: *Luau, rawstart: f64) TestResult {
         0;
     L.pop(1);
 
+    if (REF_LEAKED_STACK.items.len > 0) {
+        std.debug.print("\n", .{});
+        std.debug.print("\x1b[1;34mLEAK\x1b[0m Runtime leaked references (Information may not be accurate)\x1b[0m", .{});
+        std.debug.print("{s}", .{REF_LEAKED_STACK.items});
+        std.debug.print("\n", .{});
+        REF_LEAKED_STACK.clearAndFree();
+    }
+
     if (stdOut) {
         std.debug.print("\n", .{});
         if (mainFailedCount > 0) {
@@ -132,6 +182,7 @@ pub fn loadLib(L: *Luau, enabled: bool) void {
         } else ML.setFieldFn(luau.GLOBALSINDEX, "print", testing_debug);
         L.pop(1);
         ML.setFieldFn(luau.GLOBALSINDEX, "declare_safeEnv", testing_declareSafeEnv);
+        ML.setFieldFn(luau.GLOBALSINDEX, "stepcheck_references", testing_checkLeakedReferences);
         ML.setFieldFn(luau.GLOBALSINDEX, "scheduler_droptasks", Scheduler.toSchedulerFn(testing_droptasks));
         ML.setFieldBoolean(luau.GLOBALSINDEX, "_FILE", false);
 

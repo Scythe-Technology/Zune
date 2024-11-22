@@ -4,6 +4,7 @@ const builtin = @import("builtin");
 
 const Engine = @import("../runtime/engine.zig");
 const Scheduler = @import("../runtime/scheduler.zig");
+const Formatter = @import("../resolvers/fmt.zig");
 
 const luaHelper = @import("../utils/luahelper.zig");
 
@@ -94,7 +95,7 @@ const EraseActionMap = std.StaticStringMap(EraseKind).initComptime(.{
 fn stdio_color(L: *Luau) !i32 {
     const color = L.checkString(1);
 
-    const code = ColorMap.get(color) orelse L.raiseErrorStr("UnknownColor", .{});
+    const code = ColorMap.get(color) orelse return L.Error("UnknownColor");
 
     try L.pushFmtString("\x1b[{d}m", .{code});
 
@@ -103,7 +104,7 @@ fn stdio_color(L: *Luau) !i32 {
 fn stdio_bgColor(L: *Luau) !i32 {
     const color = L.checkString(1);
 
-    const code = ColorMap.get(color) orelse L.raiseErrorStr("UnknownColor", .{});
+    const code = ColorMap.get(color) orelse return L.Error("UnknownColor");
 
     try L.pushFmtString("\x1b[{d}m", .{code + 10});
 
@@ -114,7 +115,7 @@ fn stdio_color256(L: *Luau) !i32 {
     const code = L.checkInteger(1);
 
     if (code < 0 or code > 255)
-        L.raiseErrorStr("Code must be between 0 to 255", .{});
+        return L.Error("Code must be between 0 to 255");
 
     try L.pushFmtString("\x1b[38;5;{d}m", .{code});
 
@@ -124,7 +125,7 @@ fn stdio_bgColor256(L: *Luau) !i32 {
     const code = L.checkInteger(1);
 
     if (code < 0 or code > 255)
-        L.raiseErrorStr("Code must be between 0 to 255", .{});
+        return L.Error("Code must be between 0 to 255");
 
     try L.pushFmtString("\x1b[48;5;{d}m", .{code});
 
@@ -137,11 +138,11 @@ fn stdio_trueColor(L: *Luau) !i32 {
     const b = L.checkInteger(3);
 
     if (r < 0 or r > 255)
-        L.raiseErrorStr("R must be between 0 to 255", .{});
+        return L.Error("R must be between 0 to 255");
     if (g < 0 or g > 255)
-        L.raiseErrorStr("G must be between 0 to 255", .{});
+        return L.Error("G must be between 0 to 255");
     if (b < 0 or b > 255)
-        L.raiseErrorStr("B must be between 0 to 255", .{});
+        return L.Error("B must be between 0 to 255");
 
     try L.pushFmtString("\x1b[38;2;{d};{d};{d}m", .{ r, g, b });
 
@@ -153,11 +154,11 @@ fn stdio_bgTrueColor(L: *Luau) !i32 {
     const b = L.checkInteger(3);
 
     if (r < 0 or r > 255)
-        L.raiseErrorStr("R must be between 0 to 255", .{});
+        return L.Error("R must be between 0 to 255");
     if (g < 0 or g > 255)
-        L.raiseErrorStr("G must be between 0 to 255", .{});
+        return L.Error("G must be between 0 to 255");
     if (b < 0 or b > 255)
-        L.raiseErrorStr("B must be between 0 to 255", .{});
+        return L.Error("B must be between 0 to 255");
 
     try L.pushFmtString("\x1b[48;2;{d};{d};{d}m", .{ r, g, b });
 
@@ -167,7 +168,7 @@ fn stdio_bgTrueColor(L: *Luau) !i32 {
 fn stdio_style(L: *Luau) !i32 {
     const color = L.checkString(1);
 
-    const code = StyleMap.get(color) orelse L.raiseErrorStr("UnknownStyle", .{});
+    const code = StyleMap.get(color) orelse return L.Error("UnknownStyle");
 
     try L.pushFmtString("\x1b[{d}m", .{code});
 
@@ -192,7 +193,7 @@ fn stdio_reset(L: *Luau) !i32 {
 fn stdio_cursorMove(L: *Luau) !i32 {
     const action = L.checkString(1);
 
-    const kind = CursorActionMap.get(action) orelse L.raiseErrorStr("UnknownKind", .{});
+    const kind = CursorActionMap.get(action) orelse return L.Error("UnknownKind");
 
     switch (kind) {
         .Home => try L.pushFmtString("\x1b[H", .{}),
@@ -212,7 +213,7 @@ fn stdio_cursorMove(L: *Luau) !i32 {
 fn stdio_erase(L: *Luau) !i32 {
     const action = L.checkString(1);
 
-    const kind = EraseActionMap.get(action) orelse L.raiseErrorStr("UnknownKind", .{});
+    const kind = EraseActionMap.get(action) orelse return L.Error("UnknownKind");
 
     const str = switch (kind) {
         .UntilEndOf => "0J",
@@ -293,7 +294,7 @@ const LuaStdIn = struct {
                     return 1;
                 }
             }.inner);
-        } else L.raiseErrorStr("Unknown method: %s\n", .{namecall.ptr});
+        } else return L.ErrorFmt("Unknown method: {s}", .{namecall});
         return 0;
     }
 };
@@ -318,7 +319,7 @@ const LuaStdOut = struct {
             const string = if (L.typeOf(2) == .buffer) L.checkBuffer(2) else L.checkString(2);
 
             try file_ptr.writeAll(string);
-        } else L.raiseErrorStr("Unknown method: %s\n", .{namecall.ptr});
+        } else return L.ErrorFmt("Unknown method: {s}", .{namecall});
         return 0;
     }
 };
@@ -343,7 +344,7 @@ const LuaTerminal = struct {
     pub fn __namecall(L: *Luau) !i32 {
         L.checkType(1, .light_userdata);
         const ud_term = L.toUserdata(?Terminal, 1) catch unreachable;
-        const term_ptr = &(ud_term.* orelse L.raiseErrorStr("Terminal not initialized", .{}));
+        const term_ptr = &(ud_term.* orelse return L.Error("Terminal not initialized"));
 
         const namecall = L.nameCallAtom() catch return 0;
 
@@ -362,7 +363,7 @@ const LuaTerminal = struct {
             L.pushInteger(x);
             L.pushInteger(y);
             return 2;
-        } else L.raiseErrorStr("Unknown method: %s\n", .{namecall.ptr});
+        } else return L.ErrorFmt("Unknown method: {s}", .{namecall});
         return 0;
     }
 };
@@ -455,6 +456,7 @@ pub fn loadLib(L: *Luau) void {
     L.setFieldFn(-1, "bgtrueColor", stdio_bgTrueColor);
 
     L.setFieldFn(-1, "cursorMove", stdio_cursorMove);
+    L.setFieldFn(-1, "format", Formatter.fmt_args);
 
     luaHelper.registerModule(L, LIB_NAME);
 }

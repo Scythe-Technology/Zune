@@ -1,6 +1,5 @@
 const std = @import("std");
 const luau = @import("luau");
-const json = @import("json");
 
 const Zune = @import("../../zune.zig");
 const Engine = @import("../runtime/engine.zig");
@@ -29,73 +28,24 @@ pub const POSSIBLE_EXTENSIONS = [_][]const u8{
     "/init.lua",
 };
 
-pub fn finishError(L: *Luau, errMsg: [:0]const u8) noreturn {
-    L.pushString(errMsg);
-    L.raiseError();
-}
-
-pub var ALIASES: ?std.StringArrayHashMap([]const u8) = null;
-
-const safeLuauGPA = std.heap.GeneralPurposeAllocator(.{});
-
-pub fn loadAliases(allocator: std.mem.Allocator) !void {
-    // load .luaurc
-    const rcFile = std.fs.cwd().openFile(".luaurc", .{}) catch return;
-    defer rcFile.close();
-
-    const rcContents = try rcFile.readToEndAlloc(allocator, std.math.maxInt(usize));
-    defer allocator.free(rcContents);
-
-    const rcSafeContent = std.mem.trim(u8, rcContents, " \n\t\r");
-    if (rcSafeContent.len == 0) return;
-
-    var rcJsonRoot = json.parse(allocator, rcSafeContent) catch |err| {
-        std.debug.print("Error: .luaurc must be valid JSON: {}\n", .{err});
-        return;
-    };
-    defer rcJsonRoot.deinit();
-
-    const root = rcJsonRoot.value.objectOrNull() orelse return std.debug.print("Error: .luaurc must be an object\n", .{});
-
-    const aliases = root.get("aliases") orelse return std.debug.print("Error: .luaurc must have an 'aliases' field\n", .{});
-
-    const aliasesObj = aliases.objectOrNull() orelse return std.debug.print("Error: .luaurc 'aliases' field must be an object\n", .{});
-
-    ALIASES = std.StringArrayHashMap([]const u8).init(allocator);
-
-    for (aliasesObj.keys()) |key| {
-        const value = aliasesObj.get(key) orelse continue;
-        const valueStr = if (value == .string) value.asString() else {
-            std.debug.print("Warning: .luaurc -> aliases '{s}' field must be a string\n", .{key});
-            continue;
-        };
-        const keyCopy = try allocator.dupe(u8, key);
-        errdefer allocator.free(keyCopy);
-        const valueCopy = try allocator.dupe(u8, valueStr);
-        errdefer allocator.free(valueCopy);
-        try ALIASES.?.put(keyCopy, valueCopy);
-    }
-}
-
-pub fn freeAliases() void {
-    var aliases = ALIASES orelse return;
-    var iter = aliases.iterator();
-    while (iter.next()) |entry| {
-        aliases.allocator.free(entry.key_ptr.*);
-        aliases.allocator.free(entry.value_ptr.*);
-    }
-    aliases.deinit();
-}
+pub var ALIASES: std.StringArrayHashMap([]const u8) = std.StringArrayHashMap([]const u8).init(Zune.DEFAULT_ALLOCATOR);
 
 const States = enum {
     Error,
-    Loading,
+    Waiting,
+    Preloaded,
 };
 
 var ErrorState = States.Error;
-var LoadingState = States.Loading;
+var WaitingState = States.Waiting;
+var PreloadedState = States.Preloaded;
 
-var RequireQueueMap = std.StringArrayHashMap(std.ArrayList(*Luau)).init(Zune.DEFAULT_ALLOCATOR);
+const QueueItem = struct {
+    state: *Luau,
+    ref: ?i32,
+};
+
+var REQUIRE_QUEUE_MAP = std.StringArrayHashMap(std.ArrayList(QueueItem)).init(Zune.DEFAULT_ALLOCATOR);
 
 const RequireContext = struct {
     caller: *Luau,
@@ -103,13 +53,14 @@ const RequireContext = struct {
 };
 fn require_finished(ctx: *RequireContext, ML: *Luau, _: *Scheduler) void {
     const allocator = ctx.caller.allocator();
-    defer allocator.destroy(ctx);
     defer allocator.free(ctx.path);
 
     var outErr: ?[]const u8 = null;
 
-    const queue = RequireQueueMap.getEntry(ctx.path) orelse std.debug.panic("require_finished: queue not found", .{});
+    const queue = REQUIRE_QUEUE_MAP.getEntry(ctx.path) orelse std.debug.panic("require_finished: queue not found", .{});
     defer {
+        for (queue.value_ptr.items) |item|
+            Scheduler.derefThread(item.state, item.ref);
         queue.value_ptr.deinit();
         allocator.free(queue.key_ptr.*);
     }
@@ -132,7 +83,8 @@ fn require_finished(ctx: *RequireContext, ML: *Luau, _: *Scheduler) void {
 
     ctx.caller.pop(1); // drop: _MODULES
 
-    for (queue.value_ptr.*.items) |L| {
+    for (queue.value_ptr.*.items) |item| {
+        const L = item.state;
         if (outErr) |msg| {
             L.pushLString(msg);
             _ = Scheduler.resumeStateError(L, null) catch {};
@@ -153,19 +105,16 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
     var moduleAbsolutePath: [:0]const u8 = undefined;
     var searchResult: ?file.SearchResult([:0]const u8) = null;
     defer if (searchResult) |r| r.deinit();
-    if (moduleName.len == 0) {
-        L.pushString("must have either \"@\", \"./\", or \"../\" prefix");
-        return error.RaiseLuauError;
-    }
+    if (moduleName.len == 0)
+        return L.Error("must have either \"@\", \"./\", or \"../\" prefix");
 
     const absPath = try std.fs.cwd().realpathAlloc(allocator, ".");
     defer allocator.free(absPath);
 
     if (moduleName.len > 2 and moduleName[0] == '@') {
-        const aliases = ALIASES orelse return RequireError.NoAlias;
         const delimiter = std.mem.indexOfScalar(u8, moduleName, '/') orelse moduleName.len;
         const alias = moduleName[1..delimiter];
-        const path = aliases.get(alias) orelse return RequireError.NoAlias;
+        const path = ALIASES.get(alias) orelse return RequireError.NoAlias;
         const modulePath = if (moduleName.len - delimiter > 1)
             try std.fs.path.join(allocator, &.{ path, moduleName[delimiter + 1 ..] })
         else
@@ -174,18 +123,16 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
 
         searchResult = try Engine.findLuauFileFromPathZ(allocator, absPath, modulePath);
     } else {
-        if ((moduleName.len < 2 or !std.mem.eql(u8, moduleName[0..2], "./")) and (moduleName.len < 3 or !std.mem.eql(u8, moduleName[0..3], "../"))) {
-            L.pushString("must have either \"@\", \"./\", or \"../\" prefix");
-            return error.RaiseLuauError;
-        }
+        if ((moduleName.len < 2 or !std.mem.eql(u8, moduleName[0..2], "./")) and (moduleName.len < 3 or !std.mem.eql(u8, moduleName[0..3], "../")))
+            return L.Error("must have either \"@\", \"./\", or \"../\" prefix");
         if (L.getField(luau.GLOBALSINDEX, "_FILE") != .table)
-            return finishError(L, "InternalError (_FILE is invalid)");
+            return L.Error("InternalError (_FILE is invalid)");
         if (L.getField(-1, "path") != .string)
-            return finishError(L, "InternalError (_FILE.path is not a string)");
+            return L.Error("InternalError (_FILE.path is not a string)");
         const moduleFilePath = L.toString(-1) catch unreachable;
         L.pop(2); // drop: path, _FILE
         if (!std.fs.path.isAbsolute(moduleFilePath))
-            return finishError(L, "InternalError (_FILE.path is not absolute)");
+            return L.Error("InternalError (_FILE.path is not absolute)");
 
         switch (MODE) {
             .RelativeToFile => {
@@ -227,11 +174,18 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
                     L.pop(1);
                     outErr = "requested module failed to load";
                     break :jmp;
-                } else if (ptr == @as(*const anyopaque, @ptrCast(&LoadingState))) {
+                } else if (ptr == @as(*const anyopaque, @ptrCast(&WaitingState))) {
                     L.pop(1);
-                    const res = RequireQueueMap.getEntry(moduleAbsolutePath) orelse std.debug.panic("zune_require: queue not found", .{});
-                    try res.value_ptr.append(L);
+                    const res = REQUIRE_QUEUE_MAP.getEntry(moduleAbsolutePath) orelse std.debug.panic("zune_require: queue not found", .{});
+                    try res.value_ptr.append(.{
+                        .state = L,
+                        .ref = Scheduler.refThread(L),
+                    });
                     return L.yield(0);
+                } else if (ptr == @as(*const anyopaque, @ptrCast(&PreloadedState))) {
+                    L.pop(1);
+                    outErr = "Cyclic dependency detected";
+                    break :jmp;
                 }
             }
             L.remove(-2); // drop: _MODULES
@@ -285,12 +239,17 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
         Engine.loadModule(ML, moduleRelativeNameZ, fileContent, null) catch |err| switch (err) {
             error.Memory, error.OutOfMemory => return error.OutOfMemory,
             error.Syntax => {
+                L.pop(1); // drop: thread
                 outErr = ML.toString(-1) catch "UnknownError";
                 break :jmp;
             },
         };
 
+        L.pushLightUserdata(@ptrCast(&PreloadedState));
+        L.setField(-3, moduleAbsolutePath);
+
         const resumeStatus: ?luau.ResumeStatus = Scheduler.resumeState(ML, L, 0) catch {
+            L.pop(1); // drop: thread
             outErr = "requested module failed to load";
             break :jmp;
         };
@@ -298,25 +257,32 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
             if (status == .ok) {
                 const t = ML.getTop();
                 if (t > 1 or t < 0) {
+                    L.pop(1); // drop: thread
                     outErr = "module must return one value";
                     break :jmp;
                 } else if (t == 0)
                     ML.pushNil();
             } else if (status == .yield) {
-                L.pushLightUserdata(@ptrCast(&LoadingState));
+                L.pushLightUserdata(@ptrCast(&WaitingState));
                 L.setField(-3, moduleAbsolutePath);
 
-                const ptr = try allocator.create(RequireContext);
-                ptr.* = .{
-                    .path = try allocator.dupeZ(u8, moduleAbsolutePath),
-                    .caller = L,
-                };
-                try scheduler.awaitResult(RequireContext, ptr, ML, require_finished);
+                {
+                    const path = try allocator.dupeZ(u8, moduleAbsolutePath);
+                    errdefer allocator.free(path);
 
-                var list = std.ArrayList(*Luau).init(allocator);
-                try list.append(L);
+                    _ = scheduler.awaitResult(RequireContext, .{
+                        .path = path,
+                        .caller = L,
+                    }, ML, require_finished);
+                }
 
-                try RequireQueueMap.put(try allocator.dupe(u8, moduleAbsolutePath), list);
+                var list = std.ArrayList(QueueItem).init(allocator);
+                try list.append(.{
+                    .state = L,
+                    .ref = Scheduler.refThread(L),
+                });
+
+                try REQUIRE_QUEUE_MAP.put(try allocator.dupe(u8, moduleAbsolutePath), list);
 
                 return L.yield(0);
             }
@@ -329,7 +295,7 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
 
     if (outErr != null) {
         L.pushLightUserdata(@ptrCast(&ErrorState));
-        L.setField(-3, moduleAbsolutePath);
+        L.setField(-2, moduleAbsolutePath);
     }
 
     if (outErr) |err| {

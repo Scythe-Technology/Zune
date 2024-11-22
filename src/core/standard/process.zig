@@ -34,10 +34,6 @@ const ProcessEnvError = error{
     InvalidValueType,
 };
 
-fn outputError(L: *Luau, status: [:0]const u8, args: anytype) noreturn {
-    L.raiseErrorStr(status, args);
-}
-
 fn internal_process_getargs(L: *Luau, array: *std.ArrayList([]const u8), idx: i32) !void {
     L.checkType(idx, luau.LuaType.table);
     L.pushValue(idx);
@@ -277,9 +273,9 @@ const ProcessChildHandle = struct {
     fn method_writeIn(self: *ProcessChildHandle, L: *Luau) !i32 {
         const buffer = L.checkString(2);
         if (self.child.stdin == null)
-            return outputError(L, "InternalError (No stdin stream found, did you spawn?)", .{});
+            return L.Error("InternalError (No stdin stream found)");
         if (self.child.stdin_behavior != .Pipe)
-            return outputError(L, "InternalError (stdin stream is not a pipe)", .{});
+            return L.Error("InternalError (stdin stream is not a pipe)");
 
         try self.child.stdin.?.writeAll(buffer);
         return 1;
@@ -308,7 +304,7 @@ const ProcessChildHandle = struct {
         const ptr = L.toUserdata(ProcessChildHandle, 1) catch unreachable;
         const namecall = L.nameCallAtom() catch unreachable;
 
-        return switch (NamecallMap.get(namecall) orelse L.raiseErrorStr("Unknown method: %s", .{namecall.ptr})) {
+        return switch (NamecallMap.get(namecall) orelse return L.ErrorFmt("Unknown method: {s}", .{namecall})) {
             .Kill => method_kill(ptr, L),
             .Wait => method_wait(ptr, L),
             .ReadOut => method_readOut(ptr, L),
@@ -325,12 +321,12 @@ const ProcessChildHandle = struct {
         .{ "dead", .Dead },
     });
 
-    pub fn __index(L: *Luau) i32 {
+    pub fn __index(L: *Luau) !i32 {
         L.checkType(1, .userdata);
         const handlePtr = L.toUserdata(ProcessChildHandle, 1) catch unreachable;
         const index = L.checkString(2);
 
-        switch (IndexMap.get(index) orelse L.raiseErrorStr("Unknown index: %s", .{index.ptr})) {
+        switch (IndexMap.get(index) orelse return L.ErrorFmt("Unknown index: {s}", .{index})) {
             .Dead => L.pushBoolean(handlePtr.dead),
         }
 
@@ -375,7 +371,7 @@ const ProcessChildOptions = struct {
             if (!luau.isNoneOrNil(cwdType)) {
                 if (cwdType == .string) {
                     childOptions.cwd = L.toString(-1) catch null;
-                } else outputError(L, "invalid cwd (string expected, got %s)", .{L.typeName(cwdType).ptr});
+                } else return L.ErrorFmt("invalid cwd (string expected, got {s})", .{L.typeName(cwdType)});
             }
             L.pop(1);
 
@@ -384,11 +380,11 @@ const ProcessChildOptions = struct {
                 if (envType == .table) {
                     childOptions.env = std.process.EnvMap.init(allocator);
                     internal_process_envmap(L, &childOptions.env.?, -1) catch |err| switch (err) {
-                        ProcessEnvError.InvalidKeyType => outputError(L, "Invalid environment key", .{}),
-                        ProcessEnvError.InvalidValueType => outputError(L, "Invalid environment value", .{}),
-                        else => outputError(L, "Unknown Error", .{}),
+                        ProcessEnvError.InvalidKeyType => return L.Error("Invalid environment key"),
+                        ProcessEnvError.InvalidValueType => return L.Error("Invalid environment value"),
+                        else => return L.Error("Unknown Error"),
                     };
-                } else outputError(L, "Invalid environment (table expected, got %s)", .{L.typeName(envType).ptr});
+                } else return L.ErrorFmt("Invalid environment (table expected, got {s})", .{L.typeName(envType)});
             }
             L.pop(1);
 
@@ -419,7 +415,7 @@ const ProcessChildOptions = struct {
                             else => childOptions.shell = "/bin/sh",
                         }
                     }
-                } else outputError(L, "Invalid shell (string or boolean expected, got %s)", .{L.typeName(shellType).ptr});
+                } else return L.ErrorFmt("Invalid shell (string or boolean expected, got {s})", .{L.typeName(shellType)});
             }
             L.pop(1);
         }
@@ -678,10 +674,10 @@ fn decodeEnvironment(L: *Luau, string: []const u8) !void {
     };
 }
 
-fn tryLoadEnvironment(L: *Luau, allocator: std.mem.Allocator, file: []const u8) void {
+fn loadEnvironment(L: *Luau, allocator: std.mem.Allocator, file: []const u8) !void {
     const bytes: []const u8 = std.fs.cwd().readFileAlloc(allocator, file, std.math.maxInt(usize)) catch |err| switch (err) {
         error.FileNotFound => return,
-        else => L.raiseErrorStr("InternalError (%s)", .{@errorName(err).ptr}),
+        else => return L.ErrorFmt("InternalError ({s})", .{@errorName(err)}),
     };
     defer allocator.free(bytes);
 
@@ -690,12 +686,12 @@ fn tryLoadEnvironment(L: *Luau, allocator: std.mem.Allocator, file: []const u8) 
     };
 }
 
-fn process_loadEnv(L: *Luau) i32 {
+fn process_loadEnv(L: *Luau) !i32 {
     const allocator = L.allocator();
     L.newTable();
 
-    const env_map = allocator.create(std.process.EnvMap) catch outputError(L, "OutOfMemory", .{});
-    env_map.* = std.process.getEnvMap(allocator) catch outputError(L, "OutOfMemory", .{});
+    const env_map = try allocator.create(std.process.EnvMap);
+    env_map.* = std.process.getEnvMap(allocator) catch return L.Error("OutOfMemory");
     defer {
         env_map.deinit();
         allocator.destroy(env_map);
@@ -703,8 +699,8 @@ fn process_loadEnv(L: *Luau) i32 {
 
     var iterator = env_map.iterator();
     while (iterator.next()) |entry| {
-        const zkey = allocator.dupeZ(u8, entry.key_ptr.*) catch outputError(L, "OutOfMemory", .{});
-        const zvalue = allocator.dupeZ(u8, entry.value_ptr.*) catch outputError(L, "OutOfMemory", .{});
+        const zkey = try allocator.dupeZ(u8, entry.key_ptr.*);
+        const zvalue = try allocator.dupeZ(u8, entry.value_ptr.*);
         defer {
             allocator.free(zkey);
             allocator.free(zvalue);
@@ -712,17 +708,17 @@ fn process_loadEnv(L: *Luau) i32 {
         L.setFieldString(-1, zkey, zvalue);
     }
 
-    tryLoadEnvironment(L, allocator, ".env");
+    try loadEnvironment(L, allocator, ".env");
     if (env_map.get("LUAU_ENV")) |value| {
         if (std.mem.eql(u8, value, "PRODUCTION")) {
-            tryLoadEnvironment(L, allocator, ".env.production");
+            try loadEnvironment(L, allocator, ".env.production");
         } else if (std.mem.eql(u8, value, "DEVELOPMENT")) {
-            tryLoadEnvironment(L, allocator, ".env.development");
+            try loadEnvironment(L, allocator, ".env.development");
         } else if (std.mem.eql(u8, value, "TEST")) {
-            tryLoadEnvironment(L, allocator, ".env.test");
+            try loadEnvironment(L, allocator, ".env.test");
         }
     }
-    tryLoadEnvironment(L, allocator, ".env.local");
+    try loadEnvironment(L, allocator, ".env.local");
 
     return 1;
 }
@@ -736,7 +732,7 @@ fn process_onsignal(L: *Luau) !i32 {
         if (GL != L)
             L.xPush(GL, 2);
 
-        const ref = GL.ref(if (GL != L) -1 else 2) catch L.raiseErrorStr("Failed to create reference", .{});
+        const ref = GL.ref(if (GL != L) -1 else 2) catch return L.Error("Failed to create reference");
         if (GL != L)
             GL.pop(1);
 
@@ -747,7 +743,7 @@ fn process_onsignal(L: *Luau) !i32 {
             .state = GL,
             .ref = ref,
         };
-    } else L.raiseErrorStr("Unknown signal: %s", .{sig.ptr});
+    } else return L.ErrorFmt("Unknown signal: {s}", .{sig});
 
     return 0;
 }
@@ -769,7 +765,7 @@ fn lib__newindex(L: *Luau) !i32 {
 
         L.pushLString(path);
         L.setField(process_lib, "cwd");
-    } else L.raiseErrorStr("Cannot change field (%s)", .{index.ptr});
+    } else return L.ErrorFmt("Cannot change field ({s})", .{index});
 
     return 0;
 }
@@ -804,7 +800,7 @@ pub fn loadLib(L: *Luau, args: []const []const u8) !void {
         L.setField(-2, "args");
     }
 
-    _ = process_loadEnv(L);
+    _ = try process_loadEnv(L);
     L.setField(-2, "env");
     L.setFieldFn(-1, "loadEnv", process_loadEnv);
 

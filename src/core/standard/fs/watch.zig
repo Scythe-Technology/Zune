@@ -110,9 +110,9 @@ const DarwinAttributes = struct {
                             .data = 0,
                             .udata = @intCast(sub_file.handle),
                             .ident = @intCast(sub_file.handle),
-                            .filter = std.c.EVFILT_VNODE,
-                            .flags = std.c.EV_ADD | std.c.EV_ONESHOT | std.c.EV_ENABLE,
-                            .fflags = std.c.NOTE_DELETE | std.c.NOTE_WRITE | std.c.NOTE_EXTEND | std.c.NOTE_ATTRIB | std.c.NOTE_RENAME | std.c.NOTE_LINK,
+                            .filter = std.c.EVFILT.VNODE,
+                            .flags = std.c.EV.ADD | std.c.EV.ONESHOT | std.c.EV.ENABLE,
+                            .fflags = std.c.NOTE.DELETE | std.c.NOTE.WRITE | std.c.NOTE.EXTEND | std.c.NOTE.ATTRIB | std.c.NOTE.RENAME | std.c.NOTE.LINK,
                         });
                         try temp_files.put(copy_path, .{
                             .id = @intCast(sub_file.handle),
@@ -135,9 +135,9 @@ const DarwinAttributes = struct {
                             .data = 0,
                             .udata = @intCast(sub_dir.fd),
                             .ident = @intCast(sub_dir.fd),
-                            .filter = std.c.EVFILT_VNODE,
-                            .flags = std.c.EV_ADD | std.c.EV_ONESHOT | std.c.EV_ENABLE,
-                            .fflags = std.c.NOTE_DELETE | std.c.NOTE_RENAME | std.c.NOTE_ATTRIB,
+                            .filter = std.c.EVFILT.VNODE,
+                            .flags = std.c.EV.ADD | std.c.EV.ONESHOT | std.c.EV.ENABLE,
+                            .fflags = std.c.NOTE.DELETE | std.c.NOTE.RENAME | std.c.NOTE.ATTRIB,
                         });
                         try temp_files.put(copy_path, .{
                             .id = @intCast(sub_dir.fd),
@@ -250,7 +250,12 @@ const WindowsAttributes = struct {
             &self.buf,
             self.buf.len,
             0,
-            std.os.windows.FILE_NOTIFY_CHANGE_FILE_NAME | std.os.windows.FILE_NOTIFY_CHANGE_DIR_NAME | std.os.windows.FILE_NOTIFY_CHANGE_LAST_WRITE | std.os.windows.FILE_NOTIFY_CHANGE_CREATION,
+            .{
+                .creation = true,
+                .dir_name = true,
+                .file_name = true,
+                .last_write = true,
+            },
             null,
             &self.overlapped,
             null,
@@ -368,7 +373,7 @@ pub const FileSystemWatcher = struct {
         var list = &list_arr;
 
         const kevents = map.values();
-        var timespec = std.posix.timespec{ .tv_sec = 0, .tv_nsec = 0 };
+        var timespec = std.posix.timespec{ .sec = 0, .nsec = 0 };
         const count = std.posix.system.kevent(
             fd,
             @as([*]DarwinAttributes.kevent, kevents.ptr),
@@ -555,9 +560,9 @@ pub const FileSystemWatcher = struct {
             .data = 0,
             .udata = 0,
             .ident = @intCast(dir.fd),
-            .filter = std.c.EVFILT_VNODE,
-            .flags = std.c.EV_ADD | std.c.EV_ONESHOT | std.c.EV_ENABLE,
-            .fflags = std.c.NOTE_DELETE | std.c.NOTE_WRITE | std.c.NOTE_RENAME | std.c.NOTE_EXTEND | std.c.NOTE_ATTRIB,
+            .filter = std.c.EVFILT.VNODE,
+            .flags = std.c.EV.ADD | std.c.EV.ONESHOT | std.c.EV.ENABLE,
+            .fflags = std.c.NOTE.DELETE | std.c.NOTE.WRITE | std.c.NOTE.RENAME | std.c.NOTE.EXTEND | std.c.NOTE.ATTRIB,
         });
 
         self.darwin.files = files;
@@ -609,10 +614,10 @@ pub const FileSystemWatcher = struct {
             std.debug.print("[Win32] Failed to open directory for watching: {s}\n", .{@tagName(rc)});
             return error.CreateFileFailed;
         }
-        errdefer _ = std.os.windows.kernel32.CloseHandle(handle);
+        errdefer _ = std.os.windows.CloseHandle(handle);
 
         const iocp = try std.os.windows.CreateIoCompletionPort(handle, null, 0, 1);
-        errdefer _ = std.os.windows.kernel32.CloseHandle(iocp);
+        errdefer _ = std.os.windows.CloseHandle(iocp);
 
         self.windows.handle = handle;
         self.windows.iocp = iocp;

@@ -15,12 +15,12 @@ pub fn lua_aes128_encrypt(L: *Luau) !i32 {
     const key = if (L.typeOf(2) == .buffer) L.checkBuffer(2) else L.checkString(2);
 
     if (key.len != Aes128Gcm.key_length)
-        L.raiseErrorStr("InvalidKeyLength (key length != 16)", .{});
+        return L.Error("InvalidKeyLength (key length != 16)");
 
     const nonce = if (L.typeOf(3) == .buffer) L.checkBuffer(3) else L.checkString(3);
 
     if (nonce.len != Aes128Gcm.nonce_length)
-        L.raiseErrorStr("InvalidNonceLength (nonce length != 12)", .{});
+        return L.Error("InvalidNonceLength (nonce length != 12)");
 
     var tag: [Aes128Gcm.tag_length]u8 = undefined;
     const c = try allocator.alloc(u8, msg.len);
@@ -48,17 +48,17 @@ pub fn lua_aes128_decrypt(L: *Luau) !i32 {
     const tag = if (L.typeOf(2) == .buffer) L.checkBuffer(2) else L.checkString(2);
 
     if (tag.len != Aes128Gcm.tag_length)
-        L.raiseErrorStr("InvalidTagLength (tag length != 16)", .{});
+        return L.Error("InvalidTagLength (tag length != 16)");
 
     const key = if (L.typeOf(3) == .buffer) L.checkBuffer(3) else L.checkString(3);
 
     if (key.len != Aes128Gcm.key_length)
-        L.raiseErrorStr("InvalidKeyLength (key length != 16)", .{});
+        return L.Error("InvalidKeyLength (key length != 16)");
 
     const nonce = if (L.typeOf(4) == .buffer) L.checkBuffer(4) else L.checkString(4);
 
     if (nonce.len != Aes128Gcm.nonce_length)
-        L.raiseErrorStr("InvalidNonceLength (nonce length != 12)", .{});
+        return L.Error("InvalidNonceLength (nonce length != 12)");
 
     const msg = try allocator.alloc(u8, cipher.len);
     defer allocator.free(msg);
@@ -84,12 +84,12 @@ pub fn lua_aes256_encrypt(L: *Luau) !i32 {
     const key = if (L.typeOf(2) == .buffer) L.checkBuffer(2) else L.checkString(2);
 
     if (key.len != Aes256Gcm.key_length)
-        L.raiseErrorStr("InvalidKeyLength (key length != 32)", .{});
+        return L.Error("InvalidKeyLength (key length != 32)");
 
     const nonce = if (L.typeOf(3) == .buffer) L.checkBuffer(3) else L.checkString(3);
 
     if (nonce.len != Aes256Gcm.nonce_length)
-        L.raiseErrorStr("InvalidNonceLength (nonce length != 12)", .{});
+        return L.Error("InvalidNonceLength (nonce length != 12)");
 
     var tag: [Aes256Gcm.tag_length]u8 = undefined;
     const c = try allocator.alloc(u8, msg.len);
@@ -117,17 +117,17 @@ pub fn lua_aes256_decrypt(L: *Luau) !i32 {
     const tag = if (L.typeOf(2) == .buffer) L.checkBuffer(2) else L.checkString(2);
 
     if (tag.len != Aes256Gcm.tag_length)
-        L.raiseErrorStr("InvalidTagLength (tag length != 16)", .{});
+        return L.Error("InvalidTagLength (tag length != 16)");
 
     const key = if (L.typeOf(3) == .buffer) L.checkBuffer(3) else L.checkString(3);
 
     if (key.len != Aes256Gcm.key_length)
-        L.raiseErrorStr("InvalidKeyLength (key length != 32)", .{});
+        return L.Error("InvalidKeyLength (key length != 32)");
 
     const nonce = if (L.typeOf(4) == .buffer) L.checkBuffer(4) else L.checkString(4);
 
     if (nonce.len != Aes256Gcm.nonce_length)
-        L.raiseErrorStr("InvalidNonceLength (nonce length != 12)", .{});
+        return L.Error("InvalidNonceLength (nonce length != 12)");
 
     const msg = try allocator.alloc(u8, cipher.len);
     defer allocator.free(msg);

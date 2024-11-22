@@ -100,7 +100,7 @@ const LuaDatetime = struct {
             L.pushLString(buf.items);
 
             return 1;
-        } else L.raiseErrorStr("Unknown method: %s\n", .{namecall.ptr});
+        } else return L.ErrorFmt("Unknown method: {s}", .{namecall});
         return 0;
     }
 

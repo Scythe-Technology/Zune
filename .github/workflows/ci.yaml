@@ -19,7 +19,7 @@ jobs:
     - name: Setup Zig
       uses: mlugg/setup-zig@v1
       with:
-        version: 0.13.0
+        version: 0.14.0-dev.2198+e5f5229fd
         use-cache: false
 
     - name: Run fmt
@@ -61,7 +61,7 @@ jobs:
     - name: Setup Zig
       uses: mlugg/setup-zig@v1
       with:
-        version: 0.13.0
+        version: 0.14.0-dev.2198+e5f5229fd
         use-cache: false
 
     - name: Setup QEMU

@@ -9,12 +9,23 @@ const Luau = luau.Luau;
 pub var SCHEDULERS = std.ArrayList(*Self).init(Zune.DEFAULT_ALLOCATOR);
 
 pub fn KillScheduler(scheduler: *Self, cleanUp: bool) void {
-    var i = scheduler.tasks.items.len;
-    while (i > 0) {
-        i -= 1;
-        const task = scheduler.tasks.items[i];
-        task.virtualDtor(task.data, task.state, scheduler);
-        _ = scheduler.tasks.orderedRemove(i);
+    {
+        var i = scheduler.tasks.items.len;
+        while (i > 0) {
+            i -= 1;
+            const task = scheduler.tasks.items[i];
+            task.virtualDtor(task.data, task.state, scheduler);
+            _ = scheduler.tasks.orderedRemove(i);
+        }
+    }
+    {
+        var i = scheduler.awaits.items.len;
+        while (i > 0) {
+            i -= 1;
+            const awaiting = scheduler.awaits.items[i];
+            awaiting.virtualDtor(awaiting.data, awaiting.state, scheduler);
+            _ = scheduler.awaits.orderedRemove(i);
+        }
     }
     if (cleanUp) for (SCHEDULERS.items, 0..) |o, p| if (scheduler == o) {
         _ = SCHEDULERS.orderedRemove(p);
@@ -23,7 +34,8 @@ pub fn KillScheduler(scheduler: *Self, cleanUp: bool) void {
 }
 
 pub fn KillSchedulers() void {
-    for (SCHEDULERS.items) |scheduler| KillScheduler(scheduler, false);
+    for (SCHEDULERS.items) |scheduler|
+        KillScheduler(scheduler, false);
     SCHEDULERS.deinit();
 }
 
@@ -61,6 +73,7 @@ pub fn TaskObject(comptime T: type) type {
         state: *Luau,
         virtualFn: *const TaskFn,
         virtualDtor: *const TaskFnDtor,
+        ref: ?i32,
     };
 }
 
@@ -69,18 +82,21 @@ pub fn AwaitingObject(comptime T: type) type {
         data: *T,
         state: *Luau,
         resumeFn: *const AwaitedFn,
+        virtualDtor: *const TaskFnDtor,
         ref: ?i32,
     };
 }
 
+state: *Luau,
 allocator: std.mem.Allocator,
 sleeping: std.ArrayList(SleepingThread),
 deferred: std.ArrayList(DeferredThread),
 tasks: std.ArrayList(TaskObject(anyopaque)),
 awaits: std.ArrayList(AwaitingObject(anyopaque)),
 
-pub fn init(allocator: std.mem.Allocator) Self {
+pub fn init(allocator: std.mem.Allocator, state: *Luau) Self {
     return .{
+        .state = state,
         .allocator = allocator,
         .sleeping = std.ArrayList(SleepingThread).init(allocator),
         .deferred = std.ArrayList(DeferredThread).init(allocator),
@@ -89,9 +105,10 @@ pub fn init(allocator: std.mem.Allocator) Self {
     };
 }
 
-fn refThread(L: *luau.Luau) ?i32 {
+pub fn refThread(L: *luau.Luau) ?i32 {
     const GL = L.getMainThread();
-    if (GL == L) return null;
+    if (GL == L)
+        return null;
     if (L.pushThread()) {
         L.pop(1);
         return null;
@@ -102,17 +119,17 @@ fn refThread(L: *luau.Luau) ?i32 {
     return ref;
 }
 
-fn derefThread(L: *luau.Luau, ref: ?i32) void {
+pub fn derefThread(L: *luau.Luau, ref: ?i32) void {
     if (ref) |r| {
-        const GL = L.getMainThread();
-        if (GL == L) return;
-        GL.unref(r);
+        if (r <= 0)
+            return;
+        L.getMainThread().unref(r);
     }
 }
 
-pub fn spawnThread(self: *Self, thread: *Luau, args: i32) !void {
+pub fn spawnThread(self: *Self, thread: *Luau, args: i32) void {
     _ = self;
-    _ = try thread.resumeThread(null, args);
+    _ = resumeState(thread, null, args) catch {};
 }
 
 pub fn deferThread(self: *Self, thread: *Luau, from: ?*Luau, args: i32) void {
@@ -156,6 +173,7 @@ pub fn addTask(self: *Self, comptime T: type, data: *T, L: *Luau, comptime handl
         .state = L,
         .virtualFn = virtualFn,
         .virtualDtor = virtualDtor,
+        .ref = refThread(L),
     }) catch |err| std.debug.panic("Error: {}\n", .{err});
 }
 
@@ -204,16 +222,24 @@ pub fn addSimpleTask(self: *Self, comptime T: type, data: T, L: *Luau, comptime 
         .state = L,
         .virtualFn = virtualFn,
         .virtualDtor = virtualDtor,
+        .ref = refThread(L),
     }) catch |err| std.debug.panic("Error: {}\n", .{err});
 
     return L.yield(0);
 }
 
-pub fn awaitResult(self: *Self, comptime T: type, data: *T, L: *Luau, comptime handler: *const fn (ctx: *T, L: *Luau, scheduler: *Self) void) !void {
+pub fn awaitResult(self: *Self, comptime T: type, data: T, L: *Luau, comptime handler: *const fn (ctx: *T, L: *Luau, scheduler: *Self) void) ?*T {
+    const allocator = L.allocator();
+
+    const ptr = allocator.create(T) catch |err| std.debug.panic("Error: {}\n", .{err});
+
+    ptr.* = data;
+
     const status = L.status();
     if (status != .yield) {
-        handler(data, L, self);
-        return;
+        defer allocator.destroy(ptr);
+        handler(ptr, L, self);
+        return null;
     }
 
     const resumeFn = struct {
@@ -222,17 +248,34 @@ pub fn awaitResult(self: *Self, comptime T: type, data: *T, L: *Luau, comptime h
         }
     }.inner;
 
+    const virtualDtor = struct {
+        fn inner(ctx: *anyopaque, l: *Luau, _: *Self) void {
+            l.allocator().destroy(@as(*T, @alignCast(@ptrCast(ctx))));
+        }
+    }.inner;
+
     self.awaits.append(.{
-        .data = @ptrCast(data),
+        .data = @ptrCast(ptr),
         .state = L,
         .resumeFn = resumeFn,
+        .virtualDtor = virtualDtor,
         .ref = refThread(L),
     }) catch |err| std.debug.panic("Error: {}\n", .{err});
+
+    return ptr;
 }
 
-pub fn awaitCall(self: *Self, comptime T: type, data: *T, L: *Luau, args: i32, comptime handler: *const fn (ctx: *T, L: *Luau, scheduler: *Self) void, from: ?*Luau) !void {
-    _ = try L.resumeThread(from, args);
-    try awaitResult(self, T, data, L, handler);
+pub fn awaitCall(
+    self: *Self,
+    comptime T: type,
+    data: T,
+    L: *Luau,
+    args: i32,
+    comptime handler: *const fn (ctx: *T, L: *Luau, scheduler: *Self) void,
+    from: ?*Luau,
+) !?*T {
+    _ = try resumeState(L, from, args);
+    return awaitResult(self, T, data, L, handler);
 }
 
 pub fn resumeState(state: *Luau, from: ?*Luau, args: i32) !luau.ResumeStatus {
@@ -260,14 +303,16 @@ pub fn cancelThread(self: *Self, thread: *Luau) void {
     const sleeping_items = self.sleeping.items;
     for (sleeping_items, 0..) |item, i| {
         if (item.thread == thread) {
-            _ = self.sleeping.orderedRemove(i);
+            const slept = self.sleeping.orderedRemove(i);
+            derefThread(thread, slept.ref);
             return;
         }
     }
     const deferred_items = self.deferred.items;
     for (deferred_items, 0..) |item, i| {
         if (item.thread == thread) {
-            _ = self.deferred.orderedRemove(i);
+            const deferred = self.deferred.orderedRemove(i);
+            derefThread(thread, deferred.ref);
             return;
         }
     }
@@ -284,8 +329,11 @@ pub fn run(self: *Self) void {
                 const awaiting = self.awaits.items[i];
                 if (awaiting.state.status() != .yield) {
                     _ = self.awaits.orderedRemove(i);
-                    awaiting.resumeFn(awaiting.data, awaiting.state, self);
+                    const state = awaiting.state;
+                    const data = awaiting.data;
                     derefThread(awaiting.state, awaiting.ref);
+                    awaiting.resumeFn(data, state, self);
+                    awaiting.virtualDtor(data, state, self);
                     active += 1;
                 }
             }
@@ -299,9 +347,10 @@ pub fn run(self: *Self) void {
                     .Continue => {},
                     .ContinueFast => active += 1,
                     .Stop => {
-                        active += 1;
                         _ = self.tasks.orderedRemove(i);
+                        derefThread(task.state, task.ref);
                         task.virtualDtor(task.data, task.state, self);
+                        active += 1;
                     },
                 }
             }
@@ -315,6 +364,7 @@ pub fn run(self: *Self) void {
                     var args = slept.args;
                     var thread = slept.thread;
                     const status = thread.status();
+                    derefThread(thread, slept.ref);
                     if (status != .ok and status != .yield) {
                         std.debug.print("Cannot resume thread error status: {}\n", .{status});
                         continue;
@@ -326,7 +376,6 @@ pub fn run(self: *Self) void {
                         args += 1;
                     }
                     _ = resumeState(thread, null, args) catch {};
-                    derefThread(thread, slept.ref);
                     active += 1;
                 }
             }
@@ -342,9 +391,10 @@ pub fn run(self: *Self) void {
                 const deferred = deferredArray.swapRemove(i);
                 var thread = deferred.thread;
                 const status = thread.status();
-                if (status != .ok and status != .yield) continue;
-                _ = resumeState(thread, deferred.from, deferred.args) catch {};
                 derefThread(thread, deferred.ref);
+                if (status != .ok and status != .yield)
+                    continue;
+                _ = resumeState(thread, deferred.from, deferred.args) catch {};
                 active += 1;
             }
         }

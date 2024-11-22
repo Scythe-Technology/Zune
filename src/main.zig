@@ -27,7 +27,7 @@ pub fn main() !void {
                     shutdown();
                 }
             }.handler;
-            try std.posix.sigaction(std.posix.SIG.INT, &.{
+            std.posix.sigaction(std.posix.SIG.INT, &.{
                 .handler = .{ .handler = handle },
                 .mask = std.posix.empty_sigset,
                 .flags = 0,

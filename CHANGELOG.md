@@ -11,15 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `fs`, `luau`, `process`, and `net` all functions that returns a boolean & result tuple, now returns only the results or throws a lua error instead.
 - `ffi` api changes are not backwards compatible with `0.4.2`.
 - `require` is now based on **Amended Require Syntax and Resolution Semantics**, thus `require("module/init.luau")` would need to be `require("./module/init")`.
+- `websocket` api changes are not backwards compatible.
 - Zune libraries has been changed to a global variable instead of a module.
   - `require("@zcore/fs")` would be `zune.fs`.
 
 ### Added
-- Added buffer support as arguments & closure returns for `ffi`.
+- Added buffer support as arguments & closure returns for `zune.ffi`.
 - Added memory leak detection for `zune test ...` command.
 - Added buffer support to the formatter, now it can display the contents of a buffer as hex with a configurable display limit.
-- Added `readErrAsync`, `readOutAsync` and `dead` to ProcessChild in `process`.
-- Added pointer objects to `ffi`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/ffi)
+- Added `readErrAsync`, `readOutAsync` and `dead` to ProcessChild in `zune.process`.
+- Added pointer objects to `zune.ffi`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/ffi)
   - Currently this is marked as experimental and may change in the future. Api may change.
   To enable this, you need to set `experimental.ffi` to `true` in `zune.toml`.
   Bugs may occur, please report them.
@@ -40,6 +41,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     ```
 - Added support for encoding `Infinity` and `NaN` in `serde.json5`.
 - Added non-blocking support for `process.run`.
+- Added FFI support for `aarch64 macOs`.
+- Added support for `.luaurc` in subdirectories from `.luaurc`.
+- Added `format` in `zune.stdio`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/stdio)
+  - Example:
+    ```luau
+    local stdio = zune.stdio
+
+    print(stdio.format({"Array"}, 123, newproxy())) -- ... custom output
+    ```
+- Added `maxBodySize` option to HTTP server in `zune.net`.
+- Added `udpSocket` to `zune.net`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/net)
+  - Example:
+    ```luau
+    local net = zune.net
+
+    local udp = net.udpSocket({
+      port = 8080,
+      data = function(socket, msg, port, address)
+        print(msg, port, address) -- print datagram recieved.
+      end
+    })
+
+    udp:send("Hello World!", 12345, "ip address here") -- Send datagram to address
+    ```
+- Added `tcpConnect` & `tcpHost` to `zune.net`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/net)
+  - Example:
+    ```luau
+    local net = zune.net
+
+    local server = net.tcpHost({
+      port = 8080,
+      address = "127.0.0.1",
+      open = function(socket)
+        print("Client connected")
+      end,
+      data = function(socket, msg)
+        print(msg) -- print message recieved.
+      end,
+      close = function(socket)
+        print("Client disconnected")
+      end,
+    })
+
+    local client = net.tcpConnect({
+      port = 8080,
+      address = "127.0.0.1",
+      open = function(socket)
+        print("Connected to server")
+        socket:send("Hello World!")
+      end,
+      data = function(socket, msg)
+        print(msg) -- print message recieved.
+      end,
+      close = function(socket)
+        print("Disconnected from server")
+      end,
+    })
+    ```
 
 ### Changed
 - Formatter now displays `__tostring` metamethods as plain text, instead of as strings.
@@ -47,18 +106,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - indexing a ffi function from library should be more efficient.
 - Changed `readErr` and `readOut` to non-blocking and return nil or string for ProcessChild in `process`.
 - Changed `ffi`, removed buffers going through as memory blocks of its own, in favor of using the new ffi pointer objects, updated/removed FFI apis.
-- Updated `luau` to `0.651`.
+- Updated `luau` to `0.652`.
 - `fs`, `luau`, `process`, and `net` all functions that returns a boolean & result tuple, now returns only the results or throws a lua error instead.
 - Zune libraries has been changed to a global variable instead of a module with `require`.
 - `require` is now based on **Amended Require Syntax and Resolution Semantics** [Luau RFC](https://rfcs.luau.org/amended-require-resolution.html).
 - Zune types has moved all type information into one definition file & removed require directory aliases.
 - `ffi.call` has been changed to `ffi.fn` to define a function pointer for better optimization.
   - `ffi.fn` returns a function, which can be used in lua to call like a normal function.
+- `net.websocket` now only accepts the callbacks within the options table, `bindMessage` & etc have been removed.
+- `net.serve` websocket upgrade callback is now async.
 
 ### Fixed
 - Fixed `ffi` closures getting garbage collected.
 - Fixed `zune.toml` crashing when integer values are negative.
 - Fixed `ffi` closures reading structs and returning structs crashing.
+- Fixed zune tasks `threads` getting garbage collected.
 
 ## `0.4.2` - October 14, 2024
 

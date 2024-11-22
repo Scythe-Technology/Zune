@@ -108,4 +108,13 @@ describe("Test", function()
             expect(stdio.bgtrueColor(r, g, b)).toBe("\27[48;2;" .. r .. ";" .. g .. ";" .. b .. "m");
         end
     end)
+    test("Format", function()
+        expect(stdio.format("test")).toBe("test");
+        expect(stdio.format(123)).toBe("\x1B[96m123\x1B[0m");
+        local res : string = stdio.format({[" "] = 1});
+        local start : number = (res:find(">")) or error("Bad format");
+        start += 1;
+        expect(res:sub(start)).toBe(" {\x1B[0m\n    \x1B[2m[\x1B[0m\x1B[32m\" \"\x1B[0m\x1B[2m]\x1B[0m\x1B[2m = \x1B[0m\x1B[96m1\x1B[0m\x1B[2m,\x1B[0m \n\x1B[2m}\x1B[0m");
+        expect((res:sub(1,start)):find("\x1B%[2m<table: 0x.+>")).never.toBeNil();
+    end)
 end)

@@ -315,7 +315,7 @@ const LuaWatch = struct {
             if (obj.ptr) |ptr|
                 ptr.active = false;
             obj.ptr = null;
-        } else L.raiseErrorStr("Unknown method: %s\n", .{namecall.ptr});
+        } else return L.ErrorFmt("Unknown method: {s}", .{namecall});
         return 0;
     }
 
@@ -493,7 +493,7 @@ const LuaFile = struct {
         } else if (std.mem.eql(u8, namecall, "close")) {
             if (file_ptr.open) file_ptr.handle.close();
             file_ptr.open = false;
-        } else L.raiseErrorStr("Unknown method: %s\n", .{namecall.ptr});
+        } else return L.ErrorFmt("Unknown method: {s}", .{namecall});
         return 0;
     }
 
@@ -593,7 +593,8 @@ fn fs_watch(L: *Luau, scheduler: *Scheduler) !i32 {
 
     const allocator = L.allocator();
 
-    const ref = L.ref(2) catch L.raiseErrorStr("InternalError (Failed to create reference)", .{});
+    const ref = L.ref(2) catch unreachable;
+    errdefer L.unref(ref);
 
     var dir = fs.cwd().openDir(path, .{}) catch |err| switch (err) {
         error.FileNotFound => return error.FileNotFound,

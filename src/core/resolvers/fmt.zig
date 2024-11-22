@@ -45,7 +45,8 @@ fn fmt_write_metamethod__tostring(L: *Luau, writer: anytype, idx: i32) !bool {
                 L.pushValue(-3);
                 L.call(1, 1);
             }
-            if (L.typeOf(-1) != .string) L.raiseErrorStr("'__tostring' must return a string", .{});
+            if (L.typeOf(-1) != .string)
+                return L.Error("'__tostring' must return a string");
             const s = L.toString(-1) catch unreachable;
             try writer.print("{s}", .{s});
             return true;
@@ -129,6 +130,7 @@ pub fn fmt_print_value(L: *Luau, writer: anytype, idx: i32, depth: usize, asKey:
                     }
                     try tracked.put(ptr, true);
                 }
+                defer _ = if (map) |tracked| tracked.orderedRemove(ptr);
                 if (SHOW_TABLE_ADDRESS) {
                     const tableString = fmt_tostring(allocator, L, idx) catch "!ERR!";
                     if (tableString) |String| {
@@ -216,6 +218,65 @@ pub fn fmt_print_value(L: *Luau, writer: anytype, idx: i32, depth: usize, asKey:
     }
 }
 
+pub fn fmt_write_idx(allocator: std.mem.Allocator, L: *Luau, writer: anytype, idx: i32) !void {
+    switch (L.typeOf(idx)) {
+        .nil => try writer.print("nil", .{}),
+        .string => try writer.print("{s}", .{L.toString(idx) catch @panic("Failed Conversion")}),
+        .function, .userdata, .light_userdata, .thread => |t| blk: {
+            if (try fmt_write_metamethod__tostring(L, writer, idx))
+                break :blk;
+            const str = fmt_tostring(allocator, L, idx) catch "!ERR!";
+            if (str) |String| {
+                defer allocator.free(String);
+                if (USE_COLOR)
+                    try writer.print("\x1b[95m<{s}>\x1b[0m", .{String})
+                else
+                    try writer.print("<{s}>", .{String});
+            } else {
+                if (USE_COLOR)
+                    try writer.print("\x1b[95m<{s}>\x1b[0m", .{L.typeName(t)})
+                else
+                    try writer.print("<{s}>", .{L.typeName(t)});
+            }
+        },
+        else => {
+            if (!SHOW_RECURSIVE_TABLE) {
+                var map = std.AutoArrayHashMap(usize, bool).init(allocator);
+                defer map.deinit();
+                try fmt_print_value(L, writer, idx, 0, false, &map);
+            } else try fmt_print_value(L, writer, idx, 0, false, null);
+        },
+    }
+}
+
+fn fmt_write_buffer(L: *Luau, allocator: std.mem.Allocator, writer: anytype, top: usize) !void {
+    for (1..top + 1) |i| {
+        if (i > 1)
+            try writer.print("\t", .{});
+        const idx: i32 = @intCast(i);
+        try fmt_write_idx(allocator, L, writer, idx);
+    }
+}
+
+pub fn fmt_args(L: *Luau) !i32 {
+    const top = L.getTop();
+    const allocator = L.allocator();
+    if (top == 0) {
+        L.pushLString("");
+        return 1;
+    }
+    var buffer = std.ArrayList(u8).init(allocator);
+    defer buffer.deinit();
+
+    const writer = buffer.writer();
+
+    try fmt_write_buffer(L, allocator, writer, @intCast(top));
+
+    L.pushLString(buffer.items);
+
+    return 1;
+}
+
 pub fn fmt_print(L: *Luau) !i32 {
     const top = L.getTop();
     const allocator = L.allocator();
@@ -228,39 +289,9 @@ pub fn fmt_print(L: *Luau) !i32 {
 
     const writer = buffer.writer();
 
-    for (1..@intCast(top + 1)) |i| {
-        if (i > 1)
-            try writer.print("\t", .{});
-        const idx: i32 = @intCast(i);
-        switch (L.typeOf(idx)) {
-            .nil => try writer.print("nil", .{}),
-            .string => try writer.print("{s}", .{L.toString(idx) catch @panic("Failed Conversion")}),
-            .function, .userdata, .light_userdata, .thread => |t| blk: {
-                if (try fmt_write_metamethod__tostring(L, writer, idx))
-                    break :blk;
-                const str = fmt_tostring(allocator, L, idx) catch "!ERR!";
-                if (str) |String| {
-                    defer allocator.free(String);
-                    if (USE_COLOR)
-                        try writer.print("\x1b[95m<{s}>\x1b[0m", .{String})
-                    else
-                        try writer.print("<{s}>", .{String});
-                } else {
-                    if (USE_COLOR)
-                        try writer.print("\x1b[95m<{s}>\x1b[0m", .{L.typeName(t)})
-                    else
-                        try writer.print("<{s}>", .{L.typeName(t)});
-                }
-            },
-            else => {
-                if (!SHOW_RECURSIVE_TABLE) {
-                    var map = std.AutoArrayHashMap(usize, bool).init(allocator);
-                    defer map.deinit();
-                    try fmt_print_value(L, writer, idx, 0, false, &map);
-                } else try fmt_print_value(L, writer, idx, 0, false, null);
-            },
-        }
-    }
+    try fmt_write_buffer(L, allocator, writer, @intCast(top));
+
     std.debug.print("{s}\n", .{buffer.items});
+
     return 0;
 }

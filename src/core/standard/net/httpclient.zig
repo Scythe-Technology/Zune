@@ -407,7 +407,7 @@ pub fn prep(allocator: std.mem.Allocator, L: *Luau, scheduler: *Scheduler, optio
     scheduler.addTask(Self, netClientPtr, L, update, dtor);
 }
 
-pub fn lua_request(L: *Luau, scheduler: *Scheduler) i32 {
+pub fn lua_request(L: *Luau, scheduler: *Scheduler) !i32 {
     const uriString = L.checkString(1);
     const allocator = L.allocator();
 
@@ -422,38 +422,44 @@ pub fn lua_request(L: *Luau, scheduler: *Scheduler) i32 {
     const optionsType = L.typeOf(2);
     if (optionsType != .nil and optionsType != .none) {
         L.checkType(2, .table);
-        if (L.getField(2, "method") != .string) L.raiseErrorStr("Expected field 'method' to be a string", .{});
+        if (L.getField(2, "method") != .string)
+            return L.Error("Expected field 'method' to be a string");
         const methodStr = L.checkString(-1);
         L.pop(1);
         const headersType = L.getField(2, "headers");
         if (!luau.isNoneOrNil(headersType)) {
-            if (headersType != .table) L.raiseErrorStr("Expected field 'headers' to be a table", .{});
+            if (headersType != .table)
+                return L.Error("Expected field 'headers' to be a table");
             Common.read_headers(L, &headers, -1) catch |err| switch (err) {
                 error.InvalidKeyType => {
                     L.pop(1);
-                    L.raiseErrorStr("Header key must be a string", .{});
+                    return L.Error("Header key must be a string");
                 },
                 error.InvalidValueType => {
                     L.pop(1);
-                    L.raiseErrorStr("Header value must be a string", .{});
+                    return L.Error("Header value must be a string");
                 },
-                else => L.raiseErrorStr("UnknownError", .{}),
+                else => return L.Error("UnknownError"),
             };
         }
         const allowRedirectsType = L.getField(2, "allowRedirects");
         if (!luau.isNoneOrNil(allowRedirectsType)) {
-            if (allowRedirectsType != .boolean) L.raiseErrorStr("Expected field 'allowRedirects' to be a boolean", .{});
-            if (!L.toBoolean(-1)) redirectBehavior = .not_allowed;
+            if (allowRedirectsType != .boolean)
+                return L.Error("Expected field 'allowRedirects' to be a boolean");
+            if (!L.toBoolean(-1))
+                redirectBehavior = .not_allowed;
         }
         const maxBodySizeType = L.getField(2, "maxBodySize");
         if (!luau.isNoneOrNil(maxBodySizeType)) {
-            if (maxBodySizeType != .number) L.raiseErrorStr("Expected field 'maxBodySize' to be a number", .{});
+            if (maxBodySizeType != .number)
+                return L.Error("Expected field 'maxBodySize' to be a number");
             maxBodySize = @intCast(L.toInteger(-1) catch unreachable);
         }
         L.pop(1);
         if (std.mem.eql(u8, methodStr, "POST")) {
             method = .POST;
-            if (L.getField(2, "body") != .string) L.raiseErrorStr("Expected field 'body' to be a string", .{});
+            if (L.getField(2, "body") != .string)
+                return L.Error("Expected field 'body' to be a string");
             payload = L.checkString(-1);
             L.pop(1);
         }

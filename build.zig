@@ -105,7 +105,6 @@ fn prebuild(b: *std.Build, step: *std.Build.Step) !void {
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
-
     const optimize = b.standardOptimizeOption(.{});
 
     const dep_json = b.dependency("json", .{ .target = target, .optimize = optimize });

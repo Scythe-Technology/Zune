@@ -87,11 +87,10 @@ describe("FFI", function()
 
     describe("Contextual", function()
         test("Span From Pointer", function()
-            local src = ffi.dupe(buffer.fromstring("terminated string\0"));
-            src:release();
+            local src = ffi.dupe(buffer.fromstring("terminated string\0")):release();
 
-            local ptr = ffi.getRef(src);
-            local unknown = ptr:readPtr();
+            local ptr = ffi.getRef(src):release();
+            local unknown = ptr:readPtr():release();
 
             local buf = unknown:span(0);
 
@@ -140,8 +139,8 @@ describe("FFI", function()
 
             local mem = ffi.dupe(src);
             mem:release();
-            local ptr = ffi.getRef(mem):readPtr();
-            local ptr2 = ffi.getRef(mem):readPtr();
+            local ptr = ffi.getRef(mem):release():readPtr();
+            local ptr2 = ffi.getRef(mem):release():readPtr();
 
             expect(ptr == ptr2).toBe(true);
 
@@ -221,6 +220,8 @@ describe("FFI", function()
                     return a + b;
                 end)
 
+                c_add_func.ptr:release();
+
                 local addfn = ffi.fn(add_defintion, c_add_func.ptr);
 
                 expect(addfn(1, 2)).toBe(3);
@@ -262,6 +263,8 @@ describe("FFI", function()
                 local c_add_func = ffi.closure(add_defintion, function(a, b)
                     return a + b;
                 end)
+
+                c_add_func.ptr:release();
 
                 local addfn = ffi.fn(add_defintion, c_add_func.ptr);
 
@@ -529,8 +532,7 @@ describe("FFI", function()
         end)
 
         test("Symbol<void add_ptr(*i32, i32)>", function()
-            local out = ffi.alloc(ffi.sizeOf(ffi.types.i32));
-            out:release();
+            local out = ffi.alloc(ffi.sizeOf(ffi.types.i32)):release();
 
             lib.add_ptr(out, 1);
             
@@ -548,7 +550,7 @@ describe("FFI", function()
             local out = ffi.alloc(ffi.sizeOf(ffi.types.i32));
             out:release();
 
-            local ptr = ffi.getRef(out);
+            local ptr = ffi.getRef(out):release();
 
             lib.add_ptr_ptr(ptr, 1);
             
@@ -576,6 +578,8 @@ describe("FFI", function()
                 return if (counter == 1) then -1 else 1;
             end)
 
+            c_func.ptr:release();
+
             expect(lib.fire_callback(c_func.ptr)).toBe(1);
             expect(lib.fire_callback(c_func.ptr)).toBe(0);
         end)
@@ -593,6 +597,7 @@ describe("FFI", function()
                 }, callback)(counter);
                 return num == 2556;
             end)
+            c_func.ptr:release();
 
             expect(lib.double_call(c_func.ptr)).toBe(1);
             expect(lib.double_call(c_func.ptr)).toBe(0);
@@ -603,13 +608,11 @@ describe("FFI", function()
             expect(lib.check_string("Hello")).toBe(0);
 
             do
-                local buf = ffi.dupe(buffer.fromstring("hello\0"));
-                buf:release();
+                local buf = ffi.dupe(buffer.fromstring("hello\0")):release();
                 expect(lib.check_string(buf)).toBe(1);
             end
             do
-                local buf_2 = ffi.dupe(buffer.fromstring("Hello\0"));
-                buf_2:release();
+                local buf_2 = ffi.dupe(buffer.fromstring("Hello\0")):release();
                 expect(lib.check_string(buf_2)).toBe(0);
             end
         end)
@@ -660,7 +663,7 @@ describe("FFI", function()
 
             local dummy_value = ffi.dupe(buffer.create(0));
             dummy_value:release();
-            local ptr = ffi.getRef(dummy_value);
+            local ptr = ffi.getRef(dummy_value):release();
             expect(lib.check_nullptr(ptr)).toBe(0);
             expect(lib.check_nullptr("")).toBe(0);
         end)
@@ -727,7 +730,9 @@ describe("FFI", function()
                 buffer.writei32(temp, 12, -10);
                 ffi.copy(mem, 0, temp, 0, 24);
 
-                ffi.copy(block_address, 0, ffi.getRef(mem), 0, ffi.sizeOf(ffi.types.pointer));
+                ffi.copy(block_address, 0, ffi.getRef(mem):release(), 0, ffi.sizeOf(ffi.types.pointer));
+
+                mem:drop();
             end)
 
             test("Leaky Unknown Block, Free", function()

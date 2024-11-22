@@ -85,7 +85,8 @@ fn encode(
                 return;
             };
 
-            for (tracked.items) |t| if (t == tablePtr) return Error.CircularReference;
+            for (tracked.items) |t|
+                if (t == tablePtr) return Error.CircularReference;
             try tracked.append(tablePtr);
 
             const tableSize = L.objLen(-1);
@@ -190,9 +191,9 @@ fn encode(
     }
 }
 
-pub fn LuaEncoder(comptime json_kind: JsonKind) fn (L: *Luau) i32 {
+pub fn LuaEncoder(comptime json_kind: JsonKind) fn (L: *Luau) anyerror!i32 {
     return struct {
-        fn inner(L: *Luau) i32 {
+        fn inner(L: *Luau) anyerror!i32 {
             const allocator = L.allocator();
 
             var kind = json.JsonIndent.NO_LINE;
@@ -208,7 +209,7 @@ pub fn LuaEncoder(comptime json_kind: JsonKind) fn (L: *Luau) i32 {
                         1 => json.JsonIndent.SPACES_2,
                         2 => json.JsonIndent.SPACES_4,
                         3 => json.JsonIndent.TABS,
-                        else => |n| L.raiseErrorStr("Unsupported indent kind %d", .{n}),
+                        else => |n| return L.ErrorFmt("Unsupported indent kind {d}", .{n}),
                     };
                 }
                 L.pop(1);
@@ -222,12 +223,10 @@ pub fn LuaEncoder(comptime json_kind: JsonKind) fn (L: *Luau) i32 {
 
             L.pushValue(1);
             encode(L, allocator, &buf, &tracked, kind, 0, json_kind) catch |err| {
-                buf.deinit();
-                tracked.deinit();
                 switch (err) {
-                    Error.InvalidNumber => L.raiseErrorStr("InvalidNumber (Cannot be inf or nan)", .{}),
-                    Error.UnsupportedType => L.raiseErrorStr("Unsupported type %s", .{@tagName(L.typeOf(-1)).ptr}),
-                    else => L.raiseErrorStr("%s", .{@errorName(err).ptr}),
+                    Error.InvalidNumber => return L.Error("InvalidNumber (Cannot be inf or nan)"),
+                    Error.UnsupportedType => return L.ErrorFmt("Unsupported type {s}", .{@tagName(L.typeOf(-1))}),
+                    else => return L.ErrorFmt("{s}", .{@errorName(err)}),
                 }
             };
             L.pushLString(buf.items);

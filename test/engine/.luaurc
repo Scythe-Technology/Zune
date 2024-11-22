@@ -1,6 +1,8 @@
 {
   "aliases": {
     "module": "./module",
-    "dev": "./dev"
+    "dev": "./dev",
+    "sub": "./sublibrary",
+    "sub2": "./sublibrary"
   }
 }

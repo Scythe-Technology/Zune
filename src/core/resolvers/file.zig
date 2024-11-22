@@ -1,7 +1,5 @@
 const std = @import("std");
 
-const zune = @import("../../zune.zig");
-
 const fs = std.fs;
 
 const FileError = error{
@@ -9,13 +7,15 @@ const FileError = error{
 };
 
 pub fn doesFileExist(path: []const u8) !bool {
-    if (!fs.path.isAbsolute(path)) return FileError.NotAbsolute;
-    var buf: [1]u8 = undefined;
-    _ = fs.cwd().readFile(path, &buf) catch |err| switch (err) {
-        error.FileNotFound, error.IsDir => return false,
+    if (!fs.path.isAbsolute(path))
+        return FileError.NotAbsolute;
+    var dir = fs.openDirAbsolute(path, .{}) catch |err| switch (err) {
+        error.NotDir => return true,
+        error.FileNotFound => return false,
         else => return err,
     };
-    return true;
+    defer dir.close();
+    return false;
 }
 
 pub const AbsoluteResolveError = error{
@@ -62,8 +62,11 @@ pub fn searchForExtensions(allocator: std.mem.Allocator, fileName: []const u8, e
     for (extensions) |ext| {
         const result = std.mem.join(allocator, "", &.{ fileName, ext }) catch continue;
         defer allocator.free(result);
-        if (try doesFileExist(result))
-            try list.append(allocator.dupe(u8, result) catch continue);
+        if (try doesFileExist(result)) {
+            const copy = try allocator.dupe(u8, result);
+            errdefer allocator.free(copy);
+            try list.append(copy);
+        }
     }
     if (list.items.len == 0)
         return .{ .allocator = allocator, .result = .none };
@@ -82,8 +85,11 @@ pub fn searchForExtensionsZ(allocator: std.mem.Allocator, fileName: []const u8, 
     for (extensions) |ext| {
         const result = std.mem.join(allocator, "", &.{ fileName, ext }) catch continue;
         defer allocator.free(result);
-        if (try doesFileExist(result))
-            try list.append(allocator.dupeZ(u8, result) catch continue);
+        if (try doesFileExist(result)) {
+            const copy = try allocator.dupeZ(u8, result);
+            errdefer allocator.free(copy);
+            try list.append(copy);
+        }
     }
     if (list.items.len == 0)
         return .{ .allocator = allocator, .result = .none };

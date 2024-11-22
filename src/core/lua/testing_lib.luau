@@ -1,5 +1,6 @@
 --!strict
 local task = zune.task;
+local stdio = zune.stdio;
 
 local testing = {
     running = true,
@@ -12,8 +13,9 @@ local fn_defer = {}::{()->()};
 
 local GLOBAL = getfenv();
 
-local scheduler_droptasks = GLOBAL.scheduler_droptasks :: () -> ();
 local declare_safeEnv = GLOBAL.declare_safeEnv :: () -> ();
+local scheduler_droptasks = GLOBAL.scheduler_droptasks :: () -> ();
+local stepcheck_references = GLOBAL.stepcheck_references :: (scope: string) -> ();
 
 declare_safeEnv();
 
@@ -25,7 +27,7 @@ local CL2 = if (USE_PLAIN) then "|-" else "└─";
 
 function testing.describe(name, fn)
     table.insert(scope_stack, name);
-    local ok, err = pcall(fn);
+    local ok, err = pcall(fn::any);
     table.remove(scope_stack);
     if (not ok) then
         testing._FAILED += 1;
@@ -94,18 +96,24 @@ function testing.test(name : string, fn: () -> (), timeout : number?)
         then `{table.concat(scope_stack, "/")} `
         else "";
 
-    for _, v in fn_defer do
-        v();
+    for i = #fn_defer, 1, -1 do
+        local v = fn_defer[i];
+        local success, result = pcall(v);
+        if (not success) then
+            print(`\x1b[1;33mDeferred function failed:\x1b[0m\n    \x1b[1;31m{result}\x1b[0m`);
+        end
     end
     table.clear(fn_defer);
 
-    local a = os.clock() + 1.5;
+    local a = os.clock() + 5;
     while (task.count() > 0) do
         task.wait(0.25);
         if (a < os.clock()) then
             break;
         end
     end
+
+    stepcheck_references(` -- \x1b[2m{scope}\x1b[0m(\x1b[1m{name}\x1b[0m)`);
 
     if (ok) then
         if (task.count() == 0) then

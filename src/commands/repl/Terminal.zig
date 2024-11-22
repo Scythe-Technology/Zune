@@ -64,7 +64,7 @@ pub fn getSize(self: *Terminal) !struct { u16, u16 } {
     } else {
         var buf: std.posix.system.winsize = undefined;
         switch (std.posix.errno(std.posix.system.ioctl(self.stdout_file.handle, std.posix.T.IOCGWINSZ, @intFromPtr(&buf)))) {
-            .SUCCESS => return .{ buf.ws_col, buf.ws_row },
+            .SUCCESS => return .{ buf.col, buf.row },
             else => return error.IoctlError,
         }
     }

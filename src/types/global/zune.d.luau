@@ -897,32 +897,61 @@ declare class NetWebSocket
     function close(self): ()
 end
 
-declare class NetClientWebSocket extends NetWebSocket
+declare class NetUDPSocket
     --[[
-        Binds a function to the open event.
-        
-        *Only one function can be bound at a time*.
+        Port used
     ]]
-    function bindOpen(self, func: () -> ()): ()
+    port: number
     --[[
-        Binds a function to the message event.
+        Whether the socket is active
+    ]]
+    stopped: boolean
+    --[[
+        Send a UDP datagram message to remote host.
+    ]]
+    function send(self, message: string, port: number, address: string): ()
+    --[[
+        Stops the Socket.
+    ]]
+    function stop(self): ()
+end
 
-        *Only one function can be bound at a time*.
-    ]]
-    function bindMessage(self, func: (message: string) -> ()): ()
+declare class NetTCPConnection
     --[[
-        Binds a function to the close event.
-
-        *Only one function can be bound at a time*.
+        Whether the socket is active
     ]]
-    function bindClose(self, func: () -> ()): ()
+    stopped: boolean
+    --[[
+        Send a message to remote host.
+    ]]
+    function send(self, message: string): ()
+    --[[
+        Stops the socket.
+    ]]
+    function close(self): ()
+end
+
+declare class NetTCPServer
+    --[[
+        Whether the socket is active
+    ]]
+    stopped: boolean
+    --[[
+        Stops the socket.
+    ]]
+    function stop(self): ()
 end
 
 declare class NetServerHandle
     --[[
-        Closes the server.
+        Whether the socket is active
     ]]
-    function close(self): ()
+    stopped: boolean
+
+    --[[
+        Stops the server.
+    ]]
+    function stop(self): ()
 end
 
 export type ServerRequest = {
@@ -975,7 +1004,7 @@ export type ServeOptions = {
 
     --[[
         The address to bind to.
-        - Default: `0.0.0.0`
+        - Default: `127.0.0.1`
     ]]
     address: string?,
 
@@ -986,6 +1015,12 @@ export type ServeOptions = {
         Default: `false`
     ]]
     reuseAddress: boolean?,
+
+    --[[
+        The maximum body size to accept.
+        - Default: `4096`
+    ]]
+    maxBodySize: number?,
 
     --[[
         The function to handle requests.
@@ -1031,6 +1066,115 @@ type BodyRequestOptions = {
 
 export type RequestOptions = BareRequestOptions | BodyRequestOptions
 
+export type WebSocketOptions = {
+    --[[
+        The protocols to use.
+    ]]
+    protocols: {string}?,
+    --[[
+        Timeout for the connection.
+
+        *Default: 30*
+        
+        *Negative number for indefinite*
+    ]]
+    timeout: number?,
+    --[[
+        WebSocket open event.
+    ]]
+    open: ((socket: NetWebSocket) -> ())?,
+    --[[
+        WebSocket close event.
+    ]]
+    close: ((socket: NetWebSocket, close: number?) -> ())?,
+    --[[
+        WebSocket message event.
+    ]]
+    message: ((socket: NetWebSocket, message: string) -> ())?,
+}
+
+export type UDPSocketOptions = {
+    --[[
+        The port to bind to.
+
+        *Nil or None lets the system pick.*
+    ]]
+    port: number?,
+
+    --[[
+        The address to bind to.
+        - Default: `127.0.0.1`
+    ]]
+    address: string?,
+
+    --[[
+        Callback to handle UDP datagram
+    ]]
+    data: ((socket: NetUDPSocket, buffer: string, port: number, address: string) -> ())?,
+}
+
+export type TCPClientOptions = {
+    --[[
+        The port to connect with.
+    ]]
+    port: number,
+
+    --[[
+        The address to bind to.
+    ]]
+    address: string,
+
+    --[[
+        Callbacks for open event.
+    ]]
+    open: ((socket: NetTCPConnection) -> ())?,
+    --[[
+        Callbacks for data event.
+    ]]
+    data: ((socket: NetTCPConnection, buffer: string) -> ())?,
+    --[[
+        Callbacks for close event.
+    ]]
+    close: ((socket: NetTCPConnection) -> ())?,
+}
+
+export type TCPServerOptions = {
+    --[[
+        The port to bind to.
+
+        *Nil or None lets the system pick.*
+    ]]
+    port: number?,
+
+    --[[
+        The address to bind to.
+        
+        *Default: `127.0.0.1`*
+    ]]
+    address: string?,
+
+    --[[
+        Whether to reuse the address.
+        - Useful for multi-threaded servers.
+        
+        Default: `false`
+    ]]
+    reuseAddress: boolean?,
+
+    --[[
+        Callback for open event.
+    ]]
+    open: ((socket: NetTCPConnection) -> ())?,
+    --[[
+        Callback for data event.
+    ]]
+    data: ((socket: NetTCPConnection, buffer: string) -> ())?,
+    --[[
+        Callback for close event.
+    ]]
+    close: ((socket: NetTCPConnection) -> ())?,
+}
+
 type NetworkLib = {
     --[[
         Starts a server on the specified port.
@@ -1061,11 +1205,34 @@ type NetworkLib = {
         *TLS is supported.*
     
         @param host The host to connect to.
-        @param protocols The protocols to use.
+        @param opts The options for the websocket.
         @return `ClientWebSocket`
         @error `WebSocketError`
     ]]
-    websocket: (host: string, protocols: {string}?) -> NetClientWebSocket,
+    websocket: (host: string, opts: WebSocketOptions) -> NetWebSocket,
+    --[[
+        Creates a UDP Socket.
+    
+        @param opts The options for the UDP Socket.
+        @return `UDPSocket`
+    ]]
+    udpSocket: (opts: UDPSocketOptions) -> NetUDPSocket,
+
+    --[[
+        Creates a TCP Client.
+    
+        @param opts The options for the TCP Client.
+        @return `TCPClient`
+    ]]
+    tcpConnect: (opts: TCPClientOptions) -> NetTCPConnection,
+
+    --[[
+        Creates a TCP Server.
+    
+        @param opts The options for the TCP Server.
+        @return `TCPServer`
+    ]]
+    tcpHost: (opts: TCPServerOptions) -> NetTCPServer,
 }
 --[======[ Network ]======]--
 
@@ -1325,7 +1492,7 @@ export type StdWriter = {
 
         @param `text` The text to write.
     ]]
-    write: (text: string | buffer) -> (),
+    write: (self: StdWriter, text: string | buffer) -> (),
 }
 
 export type StdReader = {
@@ -1337,7 +1504,7 @@ export type StdReader = {
         @param amount The amount of characters to read.
         @return `string`
     ]]
-    read: (amount: number?) -> string,
+    read: (self: StdReader, amount: number?) -> string,
 }
 
 type ColorFunction = (color: "black" | "red" | "green" | "yellow" | "blue" | "magenta" | "cyan" | "white" | "bblack" | "bred" | "bgreen" | "byellow" | "bblue" | "bmagenta" | "bcyan" | "bwhite") -> string
@@ -1435,6 +1602,15 @@ type StdioLib = {
         @return `string`
     ]]
     bgtrueColor: (r: number, g: number, b: number) -> string,
+
+    --[[
+        Formats input to a readable string.
+    
+        @param ... The arguments to format.
+        @return `string`
+    ]]
+    format: (...any) -> string,
+
     --[[
         Terminal.
     ]]
@@ -1478,6 +1654,7 @@ type HashAlgorithms<F> = {
         b128: F,
         b160: F,
         b256: F,
+        b384: F,
         b512: F,
         s128: F,
         s160: F,
@@ -1713,12 +1890,12 @@ export type Library = {
     [string]: (...any) -> any,
 }
 
-export type Structure = {
-    size: (self: Structure) -> number,
-    alignment: (self: Structure) -> number,
-    offset: (self: Structure, field: string) -> number,
-    new: (self: Structure, fields: {{ [string]: buffer | number }}) -> buffer,
-}
+declare class Structure
+    function size(self): number
+    function alignment(self): number
+    function offset(self, field: string): number
+    function new(self, fields: {{ [string]: buffer | number }}): buffer
+end
 
 export type Closure = {
     ptr: Pointer,
@@ -1733,7 +1910,7 @@ export type FunctionDefinition = {
 export type Pointer = {
     release: (self: Pointer) -> Pointer,
     retain: (self: Pointer) -> Pointer,
-    drop: (self: Pointer) -> (),
+    drop: (self: Pointer) -> Pointer,
     offset: (self: Pointer, offset: number) -> Pointer,
     read: (self: Pointer, srcOffset: number, dest: buffer, destOffset: number, count: number) -> buffer,
     write: (self: Pointer, destOffset: number, src: buffer, srcOffset: number, count: number) -> (),
