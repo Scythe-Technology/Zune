@@ -911,11 +911,36 @@ declare class NetUDPSocket
     ]]
     function send(self, message: string, port: number, address: string): ()
     --[[
-        Closes the Socket.
+        Stops the Socket.
+    ]]
+    function stop(self): ()
+end
+
+declare class NetTCPConnection
+    --[[
+        Whether the socket is active
+    ]]
+    stopped: boolean
+    --[[
+        Send a message to remote host.
+    ]]
+    function send(self, message: string): ()
+    --[[
+        Stops the socket.
     ]]
     function close(self): ()
 end
 
+declare class NetTCPServer
+    --[[
+        Whether the socket is active
+    ]]
+    stopped: boolean
+    --[[
+        Stops the socket.
+    ]]
+    function stop(self): ()
+end
 
 declare class NetServerHandle
     --[[
@@ -924,9 +949,9 @@ declare class NetServerHandle
     stopped: boolean
 
     --[[
-        Closes the server.
+        Stops the server.
     ]]
-    function close(self): ()
+    function stop(self): ()
 end
 
 export type ServerRequest = {
@@ -1088,6 +1113,68 @@ export type UDPSocketOptions = {
     data: ((socket: NetUDPSocket, buffer: string, port: number, address: string) -> ())?,
 }
 
+export type TCPClientOptions = {
+    --[[
+        The port to connect with.
+    ]]
+    port: number,
+
+    --[[
+        The address to bind to.
+    ]]
+    address: string,
+
+    --[[
+        Callbacks for open event.
+    ]]
+    open: ((socket: NetTCPConnection) -> ())?,
+    --[[
+        Callbacks for data event.
+    ]]
+    data: ((socket: NetTCPConnection, buffer: string) -> ())?,
+    --[[
+        Callbacks for close event.
+    ]]
+    close: ((socket: NetTCPConnection) -> ())?,
+}
+
+export type TCPServerOptions = {
+    --[[
+        The port to bind to.
+
+        *Nil or None lets the system pick.*
+    ]]
+    port: number?,
+
+    --[[
+        The address to bind to.
+        
+        *Default: `127.0.0.1`*
+    ]]
+    address: string?,
+
+    --[[
+        Whether to reuse the address.
+        - Useful for multi-threaded servers.
+        
+        Default: `false`
+    ]]
+    reuseAddress: boolean?,
+
+    --[[
+        Callback for open event.
+    ]]
+    open: ((socket: NetTCPConnection) -> ())?,
+    --[[
+        Callback for data event.
+    ]]
+    data: ((socket: NetTCPConnection, buffer: string) -> ())?,
+    --[[
+        Callback for close event.
+    ]]
+    close: ((socket: NetTCPConnection) -> ())?,
+}
+
 type NetworkLib = {
     --[[
         Starts a server on the specified port.
@@ -1123,14 +1210,29 @@ type NetworkLib = {
         @error `WebSocketError`
     ]]
     websocket: (host: string, opts: WebSocketOptions) -> NetWebSocket,
-
     --[[
         Creates a UDP Socket.
     
         @param opts The options for the UDP Socket.
         @return `UDPSocket`
     ]]
-    udpsocket: (opts: UDPSocketOptions) -> NetUDPSocket,
+    udpSocket: (opts: UDPSocketOptions) -> NetUDPSocket,
+
+    --[[
+        Creates a TCP Client.
+    
+        @param opts The options for the TCP Client.
+        @return `TCPClient`
+    ]]
+    tcpConnect: (opts: TCPClientOptions) -> NetTCPConnection,
+
+    --[[
+        Creates a TCP Server.
+    
+        @param opts The options for the TCP Server.
+        @return `TCPServer`
+    ]]
+    tcpHost: (opts: TCPServerOptions) -> NetTCPServer,
 }
 --[======[ Network ]======]--
 

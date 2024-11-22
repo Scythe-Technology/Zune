@@ -23,9 +23,9 @@ pub fn loadLib(L: *Luau) void {
 
     L.newTable();
 
-    L.setFieldFn(-1, "udpsocket", Scheduler.toSchedulerEFn(UDP.lua_udpsocket));
-    L.setFieldFn(-1, "tcpconnect", Scheduler.toSchedulerEFn(TCP.lua_tcp_client));
-    L.setFieldFn(-1, "tcphost", Scheduler.toSchedulerEFn(TCP.lua_tcp_server));
+    L.setFieldFn(-1, "udpSocket", Scheduler.toSchedulerEFn(UDP.lua_udpsocket));
+    L.setFieldFn(-1, "tcpConnect", Scheduler.toSchedulerEFn(TCP.lua_tcp_client));
+    L.setFieldFn(-1, "tcpHost", Scheduler.toSchedulerEFn(TCP.lua_tcp_server));
 
     L.setFieldFn(-1, "serve", Scheduler.toSchedulerEFn(HttpServer.lua_serve));
     L.setFieldFn(-1, "request", Scheduler.toSchedulerEFn(HttpClient.lua_request));

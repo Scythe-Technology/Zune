@@ -1,3 +1,4 @@
+--!strict
 local net = zune.net;
 local task = zune.task;
 local testing = zune.testing;
@@ -11,7 +12,7 @@ assert(version and #version > 0, "No version");
 
 describe("Server", function()
     test("Basic", function()
-        local requests = {};
+        local requests: {ServerRequest} = {};
         local server = net.serve({
             port = 8080,
             reuseAddress = true,
@@ -379,7 +380,7 @@ describe("UDP", function()
         local pass_server = false;
         local pass_client = false;
 
-        server = net.udpsocket({
+        server = net.udpSocket({
             data = function(socket, msg, port, address)
                 expect(socket).toBe(server);
                 expect(msg).toBe("test from client");
@@ -393,7 +394,7 @@ describe("UDP", function()
             server:stop();
         end)
 
-        client = net.udpsocket({
+        client = net.udpSocket({
             data = function(socket, msg, port, address)
                 expect(socket).toBe(client);
                 expect(msg).toBe("test from server");
@@ -423,7 +424,7 @@ describe("UDP", function()
         local pass_client1 = false;
         local pass_client2 = false;
 
-        server = net.udpsocket({
+        server = net.udpSocket({
             data = function(socket, msg, port, address)
                 expect(socket).toBe(server);
                 expect(msg).toBe("test from client");
@@ -435,8 +436,9 @@ describe("UDP", function()
         testing.defer(function()
             server:stop();
         end)
+        expect(server.stopped).toBe(false);
 
-        client1 = net.udpsocket({
+        client1 = net.udpSocket({
             data = function(socket, msg, port, address)
                 expect(socket).toBe(client1);
                 expect(msg).toBe("test from server ".. client1.port);
@@ -448,8 +450,9 @@ describe("UDP", function()
         testing.defer(function()
             client1:stop();
         end)
+        expect(client1.stopped).toBe(false);
 
-        client2 = net.udpsocket({
+        client2 = net.udpSocket({
             data = function(socket, msg, port, address)
                 expect(socket).toBe(client2);
                 expect(msg).toBe("test from server " .. client2.port);
@@ -461,6 +464,7 @@ describe("UDP", function()
         testing.defer(function()
             client2:stop();
         end)
+        expect(client2.stopped).toBe(false);
 
         client1:send("test from client", server.port, "127.0.0.1")
         client2:send("test from client", server.port, "127.0.0.1")
@@ -489,7 +493,7 @@ describe("TCP", function()
             close = false,
         };
 
-        server = net.tcphost({
+        server = net.tcpHost({
             address = "127.0.0.1",
             port = 8088,
             reuseAddress = true,
@@ -511,8 +515,9 @@ describe("TCP", function()
         testing.defer(function()
             server:stop();
         end)
+        expect(server.stopped).toBe(false);
 
-        client = net.tcpconnect({
+        client = net.tcpConnect({
             address = "127.0.0.1",
             port = 8088,
             open = function(socket)
@@ -529,10 +534,10 @@ describe("TCP", function()
                 pass_client.close = true;
             end
         });
-
         testing.defer(function()
             client:stop();
         end)
+        expect(client.stopped).toBe(false);
 
         task.wait(0.2);
 
@@ -546,9 +551,11 @@ describe("TCP", function()
         expect(pass_server).toBe(expect.similar({ open = true, message = true, close = false }));
         expect(pass_client).toBe(expect.similar({ open = true, message = true, close = false }));
 
+        expect(client.stopped).toBe(false);
         client:stop();
         client:stop();
         client:stop();
+        expect(client.stopped).toBe(true);
 
         expect(pass_server).toBe(expect.similar({ open = true, message = true, close = false }));
         expect(pass_client).toBe(expect.similar({ open = true, message = true, close = false }));
@@ -563,8 +570,6 @@ describe("TCP", function()
         local server;
         local client1;
         local client2;
-
-        local events = {};
 
         local pass_server = {
             open = 0,
@@ -582,7 +587,7 @@ describe("TCP", function()
             close = false,
         };
 
-        server = net.tcphost({
+        server = net.tcpHost({
             address = "127.0.0.1",
             port = 8088,
             reuseAddress = true,
@@ -604,8 +609,9 @@ describe("TCP", function()
         testing.defer(function()
             server:stop();
         end)
+        expect(server.stopped).toBe(false);
 
-        client1 = net.tcpconnect({
+        client1 = net.tcpConnect({
             address = "127.0.0.1",
             port = 8088,
             open = function(socket)
@@ -622,12 +628,12 @@ describe("TCP", function()
                 pass_client1.close = true;
             end
         });
-
         testing.defer(function()
             client1:stop();
         end)
+        expect(client1.stopped).toBe(false);
 
-        client2 = net.tcpconnect({
+        client2 = net.tcpConnect({
             address = "127.0.0.1",
             port = 8088,
             open = function(socket)
@@ -644,10 +650,10 @@ describe("TCP", function()
                 pass_client2.close = true;
             end
         });
-
         testing.defer(function()
             client2:stop();
         end)
+        expect(client2.stopped).toBe(false);
 
         task.wait(0.2);
 
@@ -664,10 +670,14 @@ describe("TCP", function()
         expect(pass_client1).toBe(expect.similar({ open = true, message = true, close = false }));
         expect(pass_client2).toBe(expect.similar({ open = true, message = true, close = false }));
 
+        expect(client2.stopped).toBe(false);
+        expect(client2.stopped).toBe(false);
         client1:stop();
         client2:stop();
         client1:stop();
         client2:stop();
+        expect(client1.stopped).toBe(true);
+        expect(client2.stopped).toBe(true);
 
         expect(pass_server).toBe(expect.similar({ open = 2, message = 2, close = 0 }));
         expect(pass_client1).toBe(expect.similar({ open = true, message = true, close = false }));
