@@ -51,12 +51,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     print(stdio.format({"Array"}, 123, newproxy())) -- ... custom output
     ```
 - Added `maxBodySize` option to HTTP server in `zune.net`.
-- Added `udpsocket` to `zune.net`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/net)
+- Added `udpSocket` to `zune.net`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/net)
   - Example:
     ```luau
     local net = zune.net
 
-    local udp = net.udpsocket({
+    local udp = net.udpSocket({
       port = 8080,
       data = function(socket, msg, port, address)
         print(msg, port, address) -- print datagram recieved.
@@ -64,6 +64,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     })
 
     udp:send("Hello World!", 12345, "ip address here") -- Send datagram to address
+    ```
+- Added `tcpConnect` & `tcpHost` to `zune.net`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/net)
+  - Example:
+    ```luau
+    local net = zune.net
+
+    local server = net.tcpHost({
+      port = 8080,
+      address = "127.0.0.1",
+      open = function(socket)
+        print("Client connected")
+      end,
+      data = function(socket, msg)
+        print(msg) -- print message recieved.
+      end,
+      close = function(socket)
+        print("Client disconnected")
+      end,
+    })
+
+    local client = net.tcpConnect({
+      port = 8080,
+      address = "127.0.0.1",
+      open = function(socket)
+        print("Connected to server")
+        socket:send("Hello World!")
+      end,
+      data = function(socket, msg)
+        print(msg) -- print message recieved.
+      end,
+      close = function(socket)
+        print("Disconnected from server")
+      end,
+    })
     ```
 
 ### Changed
