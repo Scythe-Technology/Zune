@@ -71,7 +71,7 @@ const TCPClient = struct {
         if (ctx.stopped)
             return .Stop;
 
-        var fds: [1]context.pollfd = .{.{
+        var fds: [1]context.spollfd = .{.{
             .fd = ctx.stream.handle,
             .events = context.POLLIN,
             .revents = 0,
