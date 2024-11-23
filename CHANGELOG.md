@@ -99,6 +99,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       end,
     })
     ```
+- Added `sqlite` to `zune`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/sqlite)
+  - Currently this is marked as experimental and may change in the future.
+  - Example:
+    ```luau
+    local sqlite = zune.sqlite
+
+    local db = sqlite.open("test.db")
+    db:exec("CREATE TABLE test(id INTEGER PRIMARY KEY, name TEXT)")
+    db:exec("INSERT INTO test (name) VALUES ('Hello World!')")
+    local stmt = db:query("SELECT * FROM test")
+    for _, row in stmt:all() do
+      print(row.id, row.name)
+    end
+    stmt:finalize() -- optional (can be handled by GC)
+    db:close()-- optional (can be handled by GC)
+    ```
 
 ### Changed
 - Formatter now displays `__tostring` metamethods as plain text, instead of as strings.

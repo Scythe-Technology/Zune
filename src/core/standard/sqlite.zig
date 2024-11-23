@@ -213,7 +213,10 @@ const LuaDatabase = struct {
                 return L.Error("Database is closed");
             const query = L.checkString(2);
 
-            const stmt = try ptr.db.prepare(query);
+            const stmt = ptr.db.prepare(query) catch |err| switch (err) {
+                error.OutOfMemory => return err,
+                else => return L.ErrorFmt("SQLite Error: {s}", .{ptr.db.getErrorMessage()}),
+            };
             defer stmt.deinit();
 
             var params: ?[]?sqlite.Value = null;
@@ -221,7 +224,10 @@ const LuaDatabase = struct {
             if (stmt.paramSize() > 0)
                 params = try LuaStatement.loadParams(allocator, L, stmt, 3);
 
-            try stmt.exec(allocator, params orelse &.{});
+            stmt.exec(allocator, params orelse &.{}) catch |err| switch (err) {
+                error.OutOfMemory => return err,
+                else => return L.ErrorFmt("SQLite Error ({}): {s}", .{ err, ptr.db.getErrorMessage() }),
+            };
         } else if (std.mem.eql(u8, namecall, "close")) {
             if (!(L.optBoolean(2) orelse false)) {
                 ptr.close(L) catch {};
