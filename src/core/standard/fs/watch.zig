@@ -281,16 +281,18 @@ const WindowsAttributes = struct {
 
 pub const FileSystemWatcher = struct {
     allocator: std.mem.Allocator,
-    dir_path: []const u8,
+    dir: std.fs.Dir,
+    path: []const u8,
 
     linux: if (builtin.os.tag == .linux) LinuxAttributes else void,
     darwin: if (builtin.os.tag == .macos) DarwinAttributes else void,
     windows: if (builtin.os.tag == .windows) WindowsAttributes else void,
 
-    pub fn init(allocator: std.mem.Allocator, dir_path: []const u8) FileSystemWatcher {
+    pub fn init(allocator: std.mem.Allocator, dir: std.fs.Dir, pathname: []const u8) FileSystemWatcher {
         return FileSystemWatcher{
             .allocator = allocator,
-            .dir_path = dir_path,
+            .dir = dir,
+            .path = pathname,
             .linux = if (builtin.os.tag == .linux) .{},
             .darwin = if (builtin.os.tag == .macos) .{},
             .windows = if (builtin.os.tag == .windows) .{},
@@ -518,9 +520,12 @@ pub const FileSystemWatcher = struct {
         const fd = try std.posix.inotify_init1(std.os.linux.IN.CLOEXEC);
         errdefer std.posix.close(fd);
 
+        const full_path = try self.dir.realpathAlloc(self.allocator, self.path);
+        defer self.allocator.free(full_path);
+
         const wd = try std.posix.inotify_add_watch(
             fd,
-            self.dir_path,
+            full_path,
             std.os.linux.IN.MODIFY | std.os.linux.IN.CREATE | std.os.linux.IN.MOVED_TO | std.os.linux.IN.DELETE | std.os.linux.IN.MOVED_FROM | std.os.linux.IN.MOVE_SELF,
         );
 
@@ -541,7 +546,7 @@ pub const FileSystemWatcher = struct {
             return error.KQueueError;
         errdefer std.posix.close(fd);
 
-        const dir = try std.fs.cwd().openDir(self.dir_path, .{
+        const dir = try self.dir.openDir(self.path, .{
             .access_sub_paths = false,
             .iterate = true,
         });
@@ -553,7 +558,7 @@ pub const FileSystemWatcher = struct {
         var files = std.StringArrayHashMap(DarwinAttributes.FileInfo).init(self.allocator);
         errdefer files.deinit();
 
-        const copy_path = try self.allocator.dupe(u8, self.dir_path);
+        const copy_path = try self.allocator.dupe(u8, self.path);
         errdefer self.allocator.free(copy_path);
         try names.put(@intCast(dir.fd), copy_path);
         try map.put(@intCast(dir.fd), .{
@@ -575,7 +580,7 @@ pub const FileSystemWatcher = struct {
     }
 
     fn startWindows(self: *FileSystemWatcher) !void {
-        const wpath = try std.os.windows.sliceToPrefixedFileW(std.fs.cwd().fd, self.dir_path);
+        const wpath = try std.os.windows.sliceToPrefixedFileW(self.dir.fd, self.path);
 
         const ptr = wpath.span().ptr;
         const path_len_bytes = @as(u16, @intCast(std.mem.sliceTo(ptr, 0).len * 2));
@@ -587,7 +592,7 @@ pub const FileSystemWatcher = struct {
         };
         var attr = std.os.windows.OBJECT_ATTRIBUTES{
             .Length = @sizeOf(std.os.windows.OBJECT_ATTRIBUTES),
-            .RootDirectory = std.fs.cwd().fd,
+            .RootDirectory = self.dir.fd,
             .Attributes = 0,
             .ObjectName = &nt_name,
             .SecurityDescriptor = null,
@@ -646,10 +651,7 @@ test "Platform Watch" {
 
     try tempDir.makeDir("fs-watch-test");
 
-    const tempPath = try tempDir.realpathAlloc(allocator, "fs-watch-test");
-    defer allocator.free(tempPath);
-
-    var watcher = FileSystemWatcher.init(allocator, tempPath);
+    var watcher = FileSystemWatcher.init(allocator, tempDir, "fs-watch-test");
     defer watcher.deinit();
 
     try watcher.start();

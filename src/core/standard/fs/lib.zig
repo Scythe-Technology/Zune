@@ -602,7 +602,7 @@ fn fs_watch(L: *Luau, scheduler: *Scheduler) !i32 {
     };
     dir.close();
 
-    var watch = Watch.FileSystemWatcher.init(allocator, path);
+    var watch = Watch.FileSystemWatcher.init(allocator, fs.cwd(), path);
     errdefer watch.deinit();
     try watch.start();
 
