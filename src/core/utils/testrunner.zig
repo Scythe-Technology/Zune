@@ -33,9 +33,10 @@ pub fn runTest(allocator: std.mem.Allocator, comptime testFile: zune_test_files.
     var scheduler = Scheduler.init(allocator, L);
     defer scheduler.deinit();
 
-    const temporaryDir = std.testing.tmpDir(std.fs.Dir.OpenDirOptions{
+    var temporaryDir = std.testing.tmpDir(std.fs.Dir.OpenDirOptions{
         .access_sub_paths = true,
     });
+    defer temporaryDir.cleanup();
 
     const tempPath = try std.mem.joinZ(allocator, "/", &.{
         ".zig-cache/tmp",

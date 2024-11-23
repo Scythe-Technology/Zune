@@ -637,25 +637,17 @@ pub const FileSystemWatcher = struct {
 test "Platform Watch" {
     const allocator = std.testing.allocator;
 
-    const temporaryDir = std.testing.tmpDir(std.fs.Dir.OpenDirOptions{
+    var temporaryDir = std.testing.tmpDir(std.fs.Dir.OpenDirOptions{
         .access_sub_paths = true,
     });
+    defer temporaryDir.cleanup();
 
-    const tempPath = try std.mem.join(allocator, "/", &.{
-        ".zig-cache/tmp",
-        &temporaryDir.sub_path,
-        "fs-watch-test",
-    });
+    const tempDir = temporaryDir.dir;
+
+    try tempDir.makeDir("fs-watch-test");
+
+    const tempPath = try tempDir.realpathAlloc(allocator, "fs-watch-test");
     defer allocator.free(tempPath);
-
-    const tempFile = try std.mem.join(allocator, "/", &.{
-        tempPath,
-        "test.txt",
-    });
-    defer allocator.free(tempFile);
-
-    try std.fs.cwd().makePath(tempPath);
-    defer std.fs.cwd().deleteDir(tempPath) catch std.debug.panic("Failed to delete test directory", .{});
 
     var watcher = FileSystemWatcher.init(allocator, tempPath);
     defer watcher.deinit();
@@ -672,11 +664,10 @@ test "Platform Watch" {
 
     // TODO: Renable test for macOs, cannot detect file modification in tests.
     if (builtin.os.tag == .macos)
-        return;
+        return error.SkipZigTest;
 
     { // Create file
-        const file = try std.fs.cwd().createFile(tempFile, .{});
-        errdefer std.fs.cwd().deleteFile(tempFile) catch std.debug.panic("Failed to delete test.txt", .{});
+        const file = try tempDir.createFile("fs-watch-test/test.txt", .{});
         defer file.close();
 
         {
@@ -709,7 +700,7 @@ test "Platform Watch" {
     }
 
     // Delete file
-    try std.fs.cwd().deleteFile(tempFile);
+    try tempDir.deleteFile("fs-watch-test/test.txt");
 
     {
         const info = try watcher.next() orelse return error.ExpectedEvent;
