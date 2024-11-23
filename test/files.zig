@@ -19,6 +19,7 @@ pub const @"luau.test" = newFile("standard/luau.test.luau");
 pub const @"task.test" = newFile("standard/task.test.luau");
 pub const @"stdio.test" = newFile("standard/stdio.test.luau");
 pub const @"regex.test" = newFile("standard/regex.test.luau");
+pub const @"sqlite.test" = newFile("standard/sqlite/init.test.luau");
 pub const @"process.test" = newFile("standard/process.test.luau");
 pub const @"testing.test" = newFile("standard/testing.test.luau");
 pub const @"serde.test" = newFile("standard/serde/init.test.luau");

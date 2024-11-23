@@ -1990,6 +1990,38 @@ type FFILib = {
 }
 --[======[ FFI ]======]--
 
+--[======[ SQLite ]======]--
+
+export type SQLite3Arguments = {[string]: number | string | buffer};
+export type SQLite3Result = {[string]: number | string | buffer};
+
+declare class SQLite3Statement
+    function run(self, args: SQLite3Arguments?): SQLite3Result
+    function get(self, args: SQLite3Arguments?): SQLite3Result
+    function all(self, args: SQLite3Arguments?): SQLite3Result
+    function finalize(self): ()
+end
+
+declare class SQLite3Database
+    function query(self, query: string): SQLite3Statement
+    function exec(self, query: string, args: SQLite3Arguments?): ()
+    function close(self): ()
+end
+
+export type SQLiteLib = {
+    --[[
+        Opens a database.
+    
+        *Default: `:memory:`*
+
+        @param path The path to the database.
+        @return `SQLite3Database`
+        @error `SQLite3Error`
+    ]]
+    open: (path: string?) -> SQLite3Database,
+}
+--[======[ SQLite ]======]--
+
 declare zune: {
     fs: FileSystemLib,
     process: ProcessLib,
@@ -2003,4 +2035,5 @@ declare zune: {
     regex: RegexLib,
     datetime: DatetimeLib,
     ffi: FFILib,
+    sqlite: SQLiteLib,
 }

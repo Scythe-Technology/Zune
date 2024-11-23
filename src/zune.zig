@@ -31,6 +31,7 @@ pub var CONFIGURATIONS = .{.format_max_depth};
 const VERSION = "Zune " ++ zune_info.version ++ "+" ++ std.fmt.comptimePrint("{d}.{d}", .{ luau.LUAU_VERSION.major, luau.LUAU_VERSION.minor });
 
 var EXPERIMENTAL_FFI = false;
+var EXPERIMENTAL_SQLITE = false;
 
 pub fn loadConfiguration() void {
     const allocator = DEFAULT_ALLOCATOR;
@@ -106,6 +107,8 @@ pub fn loadConfiguration() void {
     if (toml.checkOptionTable(zconfig, "experimental")) |experimental_config| {
         if (toml.checkOptionBool(experimental_config, "ffi")) |enabled|
             EXPERIMENTAL_FFI = enabled;
+        if (toml.checkOptionBool(experimental_config, "sqlite")) |enabled|
+            EXPERIMENTAL_SQLITE = enabled;
     }
 }
 
@@ -206,6 +209,8 @@ pub fn openZune(L: *luau.Luau, args: []const []const u8, flags: Flags) !void {
 
     if (EXPERIMENTAL_FFI)
         corelib.ffi.loadLib(L);
+    if (EXPERIMENTAL_SQLITE)
+        corelib.sqlite.loadLib(L);
 
     corelib.testing.loadLib(L, flags.mode == .Test);
 

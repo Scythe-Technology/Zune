@@ -115,6 +115,7 @@ pub fn build(b: *std.Build) !void {
     const dep_datetime = b.dependency("datetime", .{ .target = target, .optimize = optimize });
     const dep_toml = b.dependency("toml", .{ .target = target, .optimize = optimize });
     const dep_ffi = b.dependency("ffi", .{ .target = target, .optimize = optimize, .safe_build = true });
+    const dep_sqlite = b.dependency("sqlite", .{ .target = target, .optimize = optimize });
 
     const prebuild_step = b.step("prebuild", "Setup project for build");
 
@@ -144,6 +145,7 @@ pub fn build(b: *std.Build) !void {
     exe.root_module.addImport("datetime", dep_datetime.module("zdt"));
     exe.root_module.addImport("toml", dep_toml.module("tomlz"));
     exe.root_module.addImport("ffi", dep_ffi.module("ffi"));
+    exe.root_module.addImport("sqlite", dep_sqlite.module("z-sqlite"));
 
     b.installArtifact(exe);
 
@@ -196,6 +198,7 @@ pub fn build(b: *std.Build) !void {
     exe_unit_tests.root_module.addImport("datetime", dep_datetime.module("zdt"));
     exe_unit_tests.root_module.addImport("toml", dep_toml.module("tomlz"));
     exe_unit_tests.root_module.addImport("ffi", dep_ffi.module("ffi"));
+    exe_unit_tests.root_module.addImport("sqlite", dep_sqlite.module("z-sqlite"));
 
     exe_unit_tests.step.dependOn(&install_test_sample_dylib.step);
 
