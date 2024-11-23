@@ -1505,6 +1505,15 @@ export type StdReader = {
         @return `string`
     ]]
     read: (self: StdReader, amount: number?) -> string,
+    --[[
+        Read text from the reader.
+
+        Optional `amount`, defaults to `1`.
+        
+        @param amount The amount of characters to read.
+        @return `string`
+    ]]
+    readAsync: (self: StdReader, amount: number?) -> string,
 }
 
 type ColorFunction = (color: "black" | "red" | "green" | "yellow" | "blue" | "magenta" | "cyan" | "white" | "bblack" | "bred" | "bgreen" | "byellow" | "bblue" | "bmagenta" | "bcyan" | "bwhite") -> string
