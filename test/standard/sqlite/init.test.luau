@@ -31,7 +31,7 @@ describe("SQLite", function()
 
     test("Insert", function()
         local db = sqlite.open();
-        
+
         db:exec("CREATE TABLE users(id TEXT PRIMARY KEY, age FLOAT)");
 
         do
@@ -64,7 +64,7 @@ describe("SQLite", function()
 
     test("Count", function()
         local db = sqlite.open();
-        
+
         db:exec("CREATE TABLE users(id TEXT PRIMARY KEY, age FLOAT)");
         db:exec(`INSERT INTO users VALUES("a", 25)`);
         db:exec(`INSERT INTO users VALUES("b", 27)`);
@@ -89,7 +89,7 @@ describe("SQLite", function()
 
     test("Example", function()
         local db = sqlite.open();
-        
+
         db:exec("CREATE TABLE users(id TEXT PRIMARY KEY, age FLOAT)");
 
         do
@@ -142,7 +142,7 @@ describe("SQLite", function()
                 [":min"] = 22,
             })).toBe(expect.similar({}));
         end
-        do 
+        do
             local query = db:query("SELECT * FROM users WHERE age IS NULL")
             expect(query:all()).toBe(expect.similar({
                 { id = "c", age = nil },

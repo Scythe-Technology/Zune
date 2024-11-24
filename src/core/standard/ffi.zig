@@ -265,13 +265,14 @@ const LuaPointer = struct {
             _ = try LuaPointer.newStaticPtr(L, @ptrFromInt(offset), false);
             return 1;
         }
-        const static = try LuaPointer.newStaticPtr(L, @as([*]u8, @ptrCast(ptr.ptr))[offset..], false);
-
-        if (ptr.size) |size| {
+        if (ptr.size) |size|
             if (size < offset)
                 return L.Error("Offset OutOfBounds");
+
+        const static = try LuaPointer.newStaticPtr(L, @as([*]u8, @ptrCast(ptr.ptr))[offset..], false);
+
+        if (ptr.size) |size|
             static.size = size - offset;
-        }
 
         return 1;
     }
@@ -452,14 +453,18 @@ const LuaPointer = struct {
     pub fn method_setSize(ptr: *LuaPointer, L: *Luau) !i32 {
         if (ptr.destroyed or ptr.ptr == null)
             return L.Error("NoAddressAvailable");
-        const size: usize = @intFromFloat(L.checkNumber(2));
+        const size = L.checkNumber(2);
+        if (size < 0)
+            return L.Error("Size cannot be negative");
+
+        const length: usize = @intFromFloat(size);
 
         switch (ptr.type) {
             .Allocated => return L.Error("Cannot set size of a known size pointer"),
             .Static => {},
         }
 
-        ptr.size = size;
+        ptr.size = length;
 
         return 0;
     }

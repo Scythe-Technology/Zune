@@ -53,7 +53,7 @@ export type FileHandle = {
 
     --[[
         Appends to a file.
-        
+
         @param contents The contents to append to the file.
     ]]
     append: (self: FileHandle, contents: buffer | string) -> (),
@@ -193,7 +193,7 @@ type FileSystemLib = {
         @param path The path to the file.
         @param useBuffer Whether to read the file as a buffer.
         @return `string | buffer` The contents of the file.
-        @error 
+        @error
     ]]
     readFile:
         & ((path: string) -> string)
@@ -458,17 +458,17 @@ declare class ProcessChild
         Nil to read all.
 
         @param size The size of the output to read.
-        @return `string`
+        @return `string?`
     ]]
-    function readOut(self, size: number?): string
+    function readOut(self, size: number?): string?
     --[[
         Reads the output of the process. Stdout.
 
-		Optional size parameter to read a specific amount of bytes.
-		Nil to read all.
+        Optional size parameter to read a specific amount of bytes.
+        Nil to read all.
 
-		@param size The size of the output to read.
-		@return `string`
+        @param size The size of the output to read.
+        @return `string?`
     ]]
     function readOutAsync(self, size: number?): string
     --[[
@@ -484,9 +484,9 @@ declare class ProcessChild
         Nil to read all.
 
         @param size The size of the output to read.
-        @return `string`
+        @return `string?`
     ]]
-    function readErr(self, size: number?): string
+    function readErr(self, size: number?): string?
     --[[
         Reads the error output of the process. Stderr.
 
@@ -494,7 +494,7 @@ declare class ProcessChild
         Nil to read all.
 
         @param size The size of the output to read.
-        @return `string`
+        @return `string?`
     ]]
     function readErrAsync(self, size: number?): string?
 end
@@ -504,22 +504,22 @@ type ProcessLib = {
         The os the process is running on.
     ]]
     os: OS,
-    
+
     --[[
         The architecture of the processor running.
     ]]
     arch: CPUArchitecture,
-    
+
     --[[
         The current working directory of the process.
     ]]
     cwd: string,
-    
+
     --[[
         The arguments passed to the process.
     ]]
     args: { string },
-    
+
     --[[
         The environment variables of the process.
         - Includes `.env` file in the current working directory.
@@ -529,7 +529,7 @@ type ProcessLib = {
         - Includes `.env.local` file in the current working directory.
     ]]
     env: { [string]: string },
-    
+
     --[[
         Loads the environment variables of the process.
         - Includes `.env` file in the current working directory.
@@ -537,14 +537,14 @@ type ProcessLib = {
         - Includes `.env.development` file in the current working directory. When LUAU_ENV is set to `DEVELOPMENT`.
         - Includes `.env.test` file in the current working directory. When LUAU_ENV is set to `TEST`.
         - Includes `.env.local` file in the current working directory.
-    
+
         @return `EnvironmentMap`
     ]]
     loadEnv: () -> { [string]: string },
-    
+
     --[[
         Creates a new process.
-    
+
         @param exec The executable to run.
         @param args The arguments to pass to the executable.
         @param procOpts The options for the process.
@@ -552,14 +552,14 @@ type ProcessLib = {
         @error `ProcessCreateError`
     ]]
     create: (exec: string, args: {string}?, procOpts: ProcessOptions?) -> ProcessChild,
-    
+
     --[[
         Runs a new process.
-    
+
         Blocks the current process until the process has exited.
-    
+
         We recommend using `process.create` for non-blocking process creation.
-    
+
         @param exec The executable to run.
         @param args The arguments to pass to the executable.
         @param procOpts The options for the process.
@@ -567,17 +567,17 @@ type ProcessLib = {
         @error `ProcessRunError`
     ]]
     run: (exec: string, args: {string}?, procOpts: ProcessOptions?) -> ProcessRunResult,
-    
+
     --[[
         Exits the current process with the given exit code.
-    
+
         @param code
     ]]
     exit: (code: number) -> never,
-    
+
     --[[
         Registers a signal handler.
-    
+
         @param signal The signal to handle.
         @param callback The callback to run when the signal is received.
     ]]
@@ -719,80 +719,80 @@ type TestingLib = {
         Whether the testing suite is running.
     ]]
     running: boolean,
-    
+
     --[[
         [Internal]
-    
+
         The number of tests that have failed.
     ]]
     _FAILED: number,
-    
+
     --[[
         [Internal]
-    
+
         The number of tests conducted.
     ]]
     _COUNT: number,
-    
+
     --[[
         [Internal]
-    
+
         The number of tests that have passed.
     ]]
     _START: number,
-    
+
     --[[
         Conducts a test.
-    
+
         *Will be ignored if the testing suite is not running.*
-    
+
         @param name The name of the test.
         @param callback The callback to run the test.
     ]]
     test: (name: string, callback: () -> ()) -> (),
-    
+
     --[[
         Describes a test suite.
-    
+
         *Will be ignored if the testing suite is not running.*
-    
+
         @param name The name of the suite.
         @param callback The callback to run the suite.
     ]]
     describe: (name: string, callback: () -> ()) -> (),
-    
+
     --[[
         Defers a function.
-    
+
         Deferred function will be executed after a test completes.
         Useful for cleaning up resources.
-    
+
         @param callback The callback to defer.
     ]]
     defer: (fn: () -> ()) -> (),
-    
+
     --[[
         Expects a value.
-    
+
         @param value The value to expect.
         @return Handler for expectations.
     ]]
     expect: ((value: (...any) -> ...any) -> FunctionalCases) & ((value: any) -> ExpectCases) & ExpectHandler,
-    
+
     --[[
         Expects a value to be true or non nil.
-    
+
         Similar to `assert(value)`
-    
+
         @param value The value to expect.
     ]]
     expected: (value: any) -> (),
-    
+
     --[[
         Expects a value to equal another.
-    
+
         Similar to `assert(value == expected, ...)`
-    
+
         @param expected The expected value.
         @param value The value to test.
     ]]
@@ -804,66 +804,66 @@ type TestingLib = {
 type TaskLib = {
     --[[
         Cancels a task.
-    
+
         @param thread The task to cancel.
     ]]
     cancel: (thread: thread) -> (),
-    
+
     --[[
         Defers a task.
-    
+
         Runs on next frame.
-    
+
         @param f The function to defer.
         @return `thread`
     ]]
     defer: <A..., R...>(f: ((A...) -> R...) | thread, A...) -> thread,
-    
+
     --[[
         Delays a task.
-    
+
         Runs after a certain amount of time.
-    
+
         @param sec The time to delay.
         @param f The function to delay.
         @return `thread`
     ]]
     delay: <A..., R...>(sec: number, f: ((A...) -> (R...)) | thread, A...) -> thread,
-    
+
     --[[
         Spawns a task.
-    
+
         Runs immediately.
-    
+
         @param f The function to spawn.
         @return `thread`
     ]]
     spawn: <A..., R...>(f: ((A...) -> (R...)) | thread, A...) -> thread,
-    
+
     --[[
         Sleeps task.
-    
+
         Yields caller.
         Resumes after a certain amount of time.
-    
+
         @param sec The time to wait.
         @return `number`
     ]]
     wait: (sec: number?) -> number,
-    
+
     --[[
         Counts the number of tasks.
-    
+
         Optional kinds parameter to count a specific kind of task.
-    
+
         Kinds:
         - `s` to count sleeping tasks.
         - `d` to count deferred tasks.
         - `w` to count awaiting tasks. (Zune backend)
         - `t` to count internal tasks. (Zune backend)
-    
+
         #### Example
-    
+
         ```luau
         task.defer(function() end)
         task.spawn(function() task.wait(1) end)
@@ -871,7 +871,7 @@ type TaskLib = {
         print(task.count("d")) -- 1
         print(task.count()) -- 2
         ```
-    
+
         @param kinds The kinds of tasks to count.
         @return `number` | `...number`
     ]]
@@ -978,7 +978,7 @@ export type ServerWebSocketHandlers = {
 
     --[[
         A function event for when a websocket is opened.
-        
+
         *`WebSocket` class will keep the same reference per connection*.
     ]]
     open: ((websocket: NetWebSocket) -> ())?,
@@ -1011,7 +1011,7 @@ export type ServeOptions = {
     --[[
         Whether to reuse the address.
         - Useful for multi-threaded servers.
-        
+
         Default: `false`
     ]]
     reuseAddress: boolean?,
@@ -1046,16 +1046,16 @@ type BareRequestOptions = {
     headers: {[string]: string}?,
 
     --[[
-        Whether to follow redirects.
-        - Default: `true`
-    ]]
-    allowRedirects: boolean?,
+            Whether to follow redirects.
+            - Default: `true`
+        ]]
+        allowRedirects: boolean?,
 
-    --[[
-        The maximum body size to accept.
-        - Default: `2097152`
-    ]]
-    maxBodySize: number?,
+        --[[
+            The maximum body size to accept.
+            - Default: `2097152`
+        ]]
+        maxBodySize: number?,
 }
 
 type BodyRequestOptions = {
@@ -1075,7 +1075,7 @@ export type WebSocketOptions = {
         Timeout for the connection.
 
         *Default: 30*
-        
+
         *Negative number for indefinite*
     ]]
     timeout: number?,
@@ -1148,7 +1148,7 @@ export type TCPServerOptions = {
 
     --[[
         The address to bind to.
-        
+
         *Default: `127.0.0.1`*
     ]]
     address: string?,
@@ -1156,7 +1156,7 @@ export type TCPServerOptions = {
     --[[
         Whether to reuse the address.
         - Useful for multi-threaded servers.
-        
+
         Default: `false`
     ]]
     reuseAddress: boolean?,
@@ -1178,32 +1178,32 @@ export type TCPServerOptions = {
 type NetworkLib = {
     --[[
         Starts a server on the specified port.
-    
+
         @param options The options for the server.
         @return `string | ServerHandle` The error message, or the server handle.
         @error `ServerStartError`
     ]]
     serve: (options: ServeOptions) -> NetServerHandle,
-    
+
     --[[
         Makes a request to the specified host.
-    
+
         Optional options, defaults to GET request.
-    
+
         *TLS is supported.*
-    
+
         @param host The host to make the request to.
         @param options The options for the request.
         @return `Response`
         @error `RequestError`
     ]]
     request: (host: string, options: RequestOptions?) -> Response,
-    
+
     --[[
         Creates a websocket client.
-    
+
         *TLS is supported.*
-    
+
         @param host The host to connect to.
         @param opts The options for the websocket.
         @return `ClientWebSocket`
@@ -1212,7 +1212,7 @@ type NetworkLib = {
     websocket: (host: string, opts: WebSocketOptions) -> NetWebSocket,
     --[[
         Creates a UDP Socket.
-    
+
         @param opts The options for the UDP Socket.
         @return `UDPSocket`
     ]]
@@ -1220,7 +1220,7 @@ type NetworkLib = {
 
     --[[
         Creates a TCP Client.
-    
+
         @param opts The options for the TCP Client.
         @return `TCPClient`
     ]]
@@ -1228,7 +1228,7 @@ type NetworkLib = {
 
     --[[
         Creates a TCP Server.
-    
+
         @param opts The options for the TCP Server.
         @return `TCPServer`
     ]]
@@ -1252,23 +1252,23 @@ export type LoadOptions = {
 type LuauLib = {
     --[[
         Compiles Luau source code.
-        
+
         @param source The source code to compile.
         @param options The options for the compilation.
         @return `string` The compiled code, or an error.
         @error `CompileError`
     ]]
     compile: (source: string, options: CompileOptions?) -> string,
-    
+
     --[[
         Loads Luau source code.
-    
+
         *Notes:*
         - `nativeCodeGen` will be disabled if `env` field is not a regular table (non-metatable).
         - If `env` is not provided, it will default to the global environment.
             - If the global environment is an unsafe environment, `nativeCodeGen` will not work.
         - If `chunkName` is not provided, it will default to `(load)`.
-    
+
         @param bytecode The bytecode to load.
         @param options The options for the load.
         @return `(...any) -> ...any` The loaded function.
@@ -1407,37 +1407,37 @@ type SerdeLib = {
         JSON encoder and decoder.
     ]]
     json: JsonEncoder,
-    
+
     --[[
         JSON5 encoder and decoder.
     ]]
     json5: JsonEncoder,
-    
+
     --[[
         TOML encoder and decoder.
     ]]
     toml: TomlEncoder,
-    
+
     --[[
         YAML encoder and decoder.
     ]]
     yaml: YamlEncoder,
-    
+
     --[[
         BASE64 encoder and decoder.
     ]]
     base64: Base64Encoder,
-    
+
     --[[
         GZIP compressor and decompressor.
     ]]
     gzip: GenericCompressor,
-    
+
     --[[
         ZLIB compressor and decompressor.
     ]]
     zlib: GenericCompressor,
-    
+
     --[[
         LZ4 compressor and decompressor.
     ]]
@@ -1500,7 +1500,7 @@ export type StdReader = {
         Read text from the reader.
 
         Optional `amount`, defaults to `1`.
-        
+
         @param amount The amount of characters to read.
         @return `string`
     ]]
@@ -1509,7 +1509,7 @@ export type StdReader = {
         Read text from the reader.
 
         Optional `amount`, defaults to `1`.
-        
+
         @param amount The amount of characters to read.
         @return `string`
     ]]
@@ -1520,10 +1520,10 @@ type ColorFunction = (color: "black" | "red" | "green" | "yellow" | "blue" | "ma
 
 type StdioLib = {
     MAX_READ: number,
-    
+
     --[[
         Generates escape sequence to move the cursor.
-    
+
         @param action The action.
         @return `string`
     ]]
@@ -1534,68 +1534,68 @@ type StdioLib = {
         & ((action: "nextline", linesDown: number) -> string)
         & ((action: "prevline", linesUp: number) -> string)
         & ((action: "gotocol", column: number) -> string),
-    
+
     --[[
         Generates escape sequence to erase text.
-    
+
         @param erase The erase action.
         @return `string`
     ]]
     erase: ((erase: "endOf" | "startOf" | "entire" | "savedLines" | "endOfLine" | "startOfLine" | "entireLine") -> string),
-    
+
     --[[
         Generates style.
-    
+
         @param action The action.
         @return `string`
     ]]
     style: (style: "bold" | "dim" | "italic" | "underline" | "blinking" | "inverse" | "hidden" | "strikethrough") -> string,
-    
+
     --[[
         Resets styles.
-    
+
         Optional style parameter to reset a specific style. Nil to reset all.
-    
+
         @param style The style to reset.
         @return `string`
     ]]
     reset:
         & (() -> string)
         & ((style: "weight" | "italic" | "underline" | "blinking" | "inverse" | "hidden" | "strikethrough" | "color") -> string),
-    
+
     --[[
         Generates color.
-    
+
         @param color The color.
         @return `string`
     ]]
     color: ColorFunction,
     --[[
         Generates background color.
-    
+
         @param color The color.
         @return `string`
     ]]
     bgcolor: ColorFunction,
-    
+
     --[[
         Generates color.
-    
+
         @param code The color code.
         @return `string`
     ]]
     color256: (code: number) -> string,
     --[[
         Generates background color.
-    
+
         @param code The color code.
         @return `string`
     ]]
     bgcolor256: (code: number) -> string,
-    
+
     --[[
         Generates true color.
-    
+
         @param r The red value.
         @param g The green value.
         @param b The blue value.
@@ -1604,7 +1604,7 @@ type StdioLib = {
     trueColor: (r: number, g: number, b: number) -> string,
     --[[
         Generates background true color.
-    
+
         @param r The red value.
         @param g The green value.
         @param b The blue value.
@@ -1614,7 +1614,7 @@ type StdioLib = {
 
     --[[
         Formats input to a readable string.
-    
+
         @param ... The arguments to format.
         @return `string`
     ]]
@@ -1677,7 +1677,7 @@ type BcryptPasswordOptions = {
     algorithm: "bcrypt"?,
     --[[
         Default: 4
-        
+
         Only between 4 and 31
     ]]
     cost: number?,
@@ -1706,12 +1706,12 @@ type CryptoLib = {
         Hash functions
     ]]
     hash: HashAlgorithms<HashFn>,
-    
+
     --[[
         HMAC functions
     ]]
     hmac: HashAlgorithms<HmacFn>,
-    
+
     --[[
         Password hashing function
     ]]
@@ -1719,7 +1719,7 @@ type CryptoLib = {
         hash: (password: string, options: PasswordOptions?) -> string,
         verify: (password: string, hash: string) -> boolean,
     },
-    
+
     --[[
         Cryptographically secure random number generation.
     ]]
@@ -1727,29 +1727,29 @@ type CryptoLib = {
         --[[
             Generates a random number (f64), if no arguments are provided, it will generate a number between 0 and 1.
         ]]
-        nextNumber: 
+        nextNumber:
             & (() -> number)
             & ((min: number, max: number) -> number),
         --[[
             Generates a random integer (i32), if no arguments are provided,
-            
+
             it will generate a number between the limits of a signed 32-bit integer.
         ]]
-        nextInteger: 
+        nextInteger:
             & (() -> number)
             & ((min: number, max: number) -> number),
-        
+
         --[[
             Generates a random boolean.
         ]]
         nextBoolean: () -> boolean,
-    
+
         --[[
             Writes random bytes to the buffer.
         ]]
         fill: (buffer: buffer, offset: number, length: number) -> (),
     },
-    
+
     --[[
         AES encryption and decryption.
     ]]
@@ -1833,11 +1833,11 @@ export type Regex = {
 type RegexLib = {
     --[[
         Create a new regex object.
-    
+
         Flags:
           - `i`: Case insensitive
           - `m`: Multiline
-    
+
         @param pattern Pattern to use
         @param flags Flags to use
     ]]
@@ -1859,7 +1859,7 @@ export type TimeDictionary = {
 export type DateTime = {
     unixTimestamp: number,
     unixTimestampMillis: number,
-    
+
     UnixTimestamp: number,
     UnixTimestampMillis: number,
 
@@ -1881,13 +1881,13 @@ export type DateTime = {
 
 type DatetimeLib = {
     now: () -> DateTime,
-    
+
     fromIsoDate: (date: string) -> DateTime,
     fromUnixTimestamp: (timestamp: number) -> DateTime,
     fromUnixTimestampMillis: (timestamp: number) -> DateTime,
     fromLocalTime: (year: number, month: number, day: number, hour: number, minute: number, second: number, millisecond: number) -> DateTime,
     fromUniversalTime: (year: number, month: number, day: number, hour: number, minute: number, second: number, millisecond: number) -> DateTime,
-    
+
     parse: (date: string) -> DateTime,
 }
 --[======[ Datetime ]======]--
@@ -1921,8 +1921,8 @@ export type Pointer = {
     retain: (self: Pointer) -> Pointer,
     drop: (self: Pointer) -> Pointer,
     offset: (self: Pointer, offset: number) -> Pointer,
-    read: (self: Pointer, srcOffset: number, dest: buffer, destOffset: number, count: number) -> buffer,
-    write: (self: Pointer, destOffset: number, src: buffer, srcOffset: number, count: number) -> (),
+    read: (self: Pointer, srcOffset: number, dest: buffer | Pointer, destOffset: number, count: number) -> buffer,
+    write: (self: Pointer, destOffset: number, src: buffer | Pointer, srcOffset: number, count: number) -> (),
     readi8: (self: Pointer, offset: number?) -> number,
     readu8: (self: Pointer, offset: number?) -> number,
     readi16: (self: Pointer, offset: number?) -> number,
@@ -1934,16 +1934,16 @@ export type Pointer = {
     readf32: (self: Pointer, offset: number?) -> number,
     readf64: (self: Pointer, offset: number?) -> number,
     readPtr: (self: Pointer, offset: number?) -> Pointer,
-    writei8: (self: Pointer, offset: number, value: number | buffer) -> (),
-    writeu8: (self: Pointer, offset: number, value: number | buffer) -> (),
-    writei16: (self: Pointer, offset: number, value: number | buffer) -> (),
-    writeu16: (self: Pointer, offset: number, value: number | buffer) -> (),
-    writei32: (self: Pointer, offset: number, value: number | buffer) -> (),
-    writeu32: (self: Pointer, offset: number, value: number | buffer) -> (),
-    writei64: (self: Pointer, offset: number, value: number | buffer) -> (),
-    writeu64: (self: Pointer, offset: number, value: number | buffer) -> (),
-    writef32: (self: Pointer, offset: number, value: number | buffer) -> (),
-    writef64: (self: Pointer, offset: number, value: number | buffer) -> (),
+    writei8: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
+    writeu8: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
+    writei16: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
+    writeu16: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
+    writei32: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
+    writeu32: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
+    writei64: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
+    writeu64: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
+    writef32: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
+    writef64: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
     writePtr: (self: Pointer, offset: number, value: Pointer) -> (),
     isNull: (self: Pointer) -> boolean,
     setSize: (self: Pointer, size: number) -> (),
@@ -1952,10 +1952,10 @@ export type Pointer = {
 
 type FFILib = {
     supported: boolean,
-    
+
     prefix: string,
     suffix: string,
-    
+
     types: {
         void: number,
         i8: number,
@@ -1970,19 +1970,19 @@ type FFILib = {
         double: number,
         pointer: number,
     },
-    
+
     sizeOf: (type: Structure | number) -> number,
     alignOf: (type: Structure | number) -> number,
-    
+
     createPtr: (src: buffer) -> Pointer,
     getRef: (src: Pointer) -> Pointer,
-    
+
     alloc: (size: number) -> Pointer,
     free: (src: Pointer) -> (),
     dupe: (src: buffer | Pointer) -> Pointer,
     len: (src: buffer | Pointer) -> number?,
     copy: (dest: buffer | Pointer, destOffset: number, src: buffer | Pointer, srcOffset: number, count: number) -> (),
-    
+
     struct: (fields: {{ [string]: Structure | number }}) -> Structure,
     fn: (definition: FunctionDefinition, srcPtr: Pointer) -> ((...any) -> any),
     closure: (definition: FunctionDefinition, handler: (...any) -> any) -> Closure,
@@ -1996,9 +1996,9 @@ export type SQLite3Arguments = {[string]: number | string | buffer};
 export type SQLite3Result = {[string]: number | string | buffer};
 
 declare class SQLite3Statement
-    function run(self, args: SQLite3Arguments?): SQLite3Result
-    function get(self, args: SQLite3Arguments?): SQLite3Result
-    function all(self, args: SQLite3Arguments?): SQLite3Result
+    function run(self, args: SQLite3Arguments?): SQLite3Result?
+    function get(self, args: SQLite3Arguments?): SQLite3Result?
+    function all(self, args: SQLite3Arguments?): SQLite3Result?
     function finalize(self): ()
 end
 
@@ -2011,7 +2011,7 @@ end
 export type SQLiteLib = {
     --[[
         Opens a database.
-    
+
         *Default: `:memory:`*
 
         @param path The path to the database.
