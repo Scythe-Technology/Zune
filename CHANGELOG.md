@@ -122,7 +122,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - indexing a ffi function from library should be more efficient.
 - Changed `readErr` and `readOut` to non-blocking and return nil or string for ProcessChild in `process`.
 - Changed `ffi`, removed buffers going through as memory blocks of its own, in favor of using the new ffi pointer objects, updated/removed FFI apis.
-- Updated `luau` to `0.652`.
+- Updated `luau` to `0.653`.
 - `fs`, `luau`, `process`, and `net` all functions that returns a boolean & result tuple, now returns only the results or throws a lua error instead.
 - Zune libraries has been changed to a global variable instead of a module with `require`.
 - `require` is now based on **Amended Require Syntax and Resolution Semantics** [Luau RFC](https://rfcs.luau.org/amended-require-resolution.html).
