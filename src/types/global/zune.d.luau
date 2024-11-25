@@ -1992,19 +1992,24 @@ type FFILib = {
 
 --[======[ SQLite ]======]--
 
-export type SQLite3Arguments = {[string]: number | string | buffer};
-export type SQLite3Result = {[string]: number | string | buffer};
+export type SQLite3Values = {[string]: number | string | buffer};
+export type SQLite3Result = {
+    lastInsertRowId: number,
+    changes: number,
+}
 
 declare class SQLite3Statement
-    function run(self, args: SQLite3Arguments?): SQLite3Result?
-    function get(self, args: SQLite3Arguments?): SQLite3Result?
-    function all(self, args: SQLite3Arguments?): SQLite3Result?
+    function run(self, args: SQLite3Values?): SQLite3Result
+    function get(self, args: SQLite3Values?): SQLite3Values?
+    function all(self, args: SQLite3Values?): {SQLite3Values}
     function finalize(self): ()
 end
 
 declare class SQLite3Database
+    transaction: <T...>(self: SQLite3Database, callback: (T...) -> (), kind: ("deferred" | "immediate" | "exclusive")?) -> ((T...) -> ())
+
     function query(self, query: string): SQLite3Statement
-    function exec(self, query: string, args: SQLite3Arguments?): ()
+    function exec(self, query: string, args: SQLite3Values?): ()
     function close(self): ()
 end
 

@@ -133,10 +133,14 @@ const LuaStatement = struct {
             if (ptr.statement.step(allocator) catch |err| switch (err) {
                 error.OutOfMemory => return err,
                 else => return L.ErrorFmt("SQLite Error ({}): {s}", .{ err, ptr.db.db.getErrorMessage() }),
-            }) |res| {
-                defer allocator.free(res);
-                try resultToTable(L, ptr.statement, res);
-            } else L.pushNil();
+            }) |res|
+                allocator.free(res);
+
+            L.newTable();
+
+            L.setFieldInteger(-1, "lastInsertRowId", @as(i32, @truncate(ptr.db.db.getLastInsertRowId())));
+            L.setFieldInteger(-1, "changes", @as(i32, @truncate(ptr.db.db.countChanges())));
+
             return 1;
         } else if (std.mem.eql(u8, namecall, "finalize")) {
             ptr.close(L);
@@ -178,6 +182,105 @@ const LuaDatabase = struct {
     // Placeholder
     pub fn __index(L: *Luau) i32 {
         L.checkType(1, .userdata);
+        return 0;
+    }
+
+    const TransactionKind = enum {
+        None,
+        Deferred,
+        Immediate,
+        Exclusive,
+    };
+    const TransactionMap = std.StaticStringMap(TransactionKind).initComptime(.{
+        .{ "deferred", .Deferred },
+        .{ "immediate", .Immediate },
+        .{ "exclusive", .Exclusive },
+    });
+
+    const Transaction = struct {
+        ptr: *LuaDatabase,
+        state: *Luau,
+        state_ref: i32,
+    };
+
+    pub fn transactionResumed(ctx: *Transaction, L: *Luau, _: *Scheduler) void {
+        const ptr = ctx.ptr;
+        const command = switch (L.status()) {
+            .ok => "COMMIT",
+            else => "ROLLBACK",
+        };
+        L.unref(ctx.state_ref);
+        const state = ctx.state;
+        ptr.db.exec(command, &.{}) catch |err| {
+            switch (err) {
+                error.OutOfMemory => state.pushString(@errorName(err)),
+                else => state.pushFmtString("SQLite Error ({}): {s}", .{ err, ptr.db.getErrorMessage() }) catch state.pushString("OutOfMemory"),
+            }
+            _ = Scheduler.resumeStateError(state, null) catch {};
+            return;
+        };
+        if (L.status() != .ok) {
+            L.xPush(state, 1);
+            _ = Scheduler.resumeStateError(state, null) catch {};
+        } else {
+            _ = Scheduler.resumeState(state, null, 0) catch {};
+        }
+    }
+
+    pub fn transaction(L: *Luau, scheduler: *Scheduler) !i32 {
+        const ptr = L.toUserdataTagged(LuaDatabase, Luau.upvalueIndex(1), tagged.SQLITE_DATABASE) catch unreachable;
+        const kind: TransactionKind = @enumFromInt(L.toInteger(Luau.upvalueIndex(3)) catch unreachable);
+        const activator = switch (kind) {
+            .None => "BEGIN",
+            .Deferred => "BEGIN DEFERRED",
+            .Immediate => "BEGIN IMMEDIATE",
+            .Exclusive => "BEGIN EXCLUSIVE",
+        };
+        ptr.db.exec(activator, &.{}) catch |err| switch (err) {
+            error.OutOfMemory => return err,
+            else => return L.ErrorFmt("SQLite Error: {s}", .{ptr.db.getErrorMessage()}),
+        };
+        const args = L.getTop();
+        const ML = L.newThread();
+        L.xPush(ML, Luau.upvalueIndex(2));
+        if (args > 0)
+            for (1..@intCast(args + 1)) |i| {
+                L.xPush(ML, @intCast(i));
+            };
+
+        _ = L.pushThread();
+        const ref = L.ref(-1) catch unreachable;
+        L.pop(1); // drop: thread
+
+        const status = ML.resumeThread(L, args) catch |err| {
+            L.unref(ref);
+            ptr.db.exec("ROLLBACK", &.{}) catch |sql_err| switch (sql_err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                else => return L.ErrorFmt("SQLite Error ({}): {s}", .{ sql_err, ptr.db.getErrorMessage() }),
+            };
+            switch (err) {
+                error.Runtime => {
+                    ML.xPush(L, -1);
+                    return error.RaiseLuauError;
+                },
+                else => return err,
+            }
+        };
+
+        if (status == .yield) {
+            if (scheduler.awaitResult(Transaction, .{
+                .ptr = ptr,
+                .state = L,
+                .state_ref = ref,
+            }, ML, transactionResumed)) |_|
+                return L.yield(0);
+        } else {
+            L.unref(ref);
+            ptr.db.exec("COMMIT", &.{}) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                else => return L.ErrorFmt("SQLite Error ({}): {s}", .{ err, ptr.db.getErrorMessage() }),
+            };
+        }
         return 0;
     }
 
@@ -228,6 +331,18 @@ const LuaDatabase = struct {
                 error.OutOfMemory => return err,
                 else => return L.ErrorFmt("SQLite Error ({}): {s}", .{ err, ptr.db.getErrorMessage() }),
             };
+        } else if (std.mem.eql(u8, namecall, "transaction")) {
+            L.checkType(2, .function);
+            const kind_str = L.optString(3);
+            const kind: TransactionKind = if (kind_str) |str|
+                TransactionMap.get(str) orelse return L.ErrorFmt("Unknown transaction kind: {s}.", .{str})
+            else
+                .None;
+            L.pushValue(1);
+            L.pushValue(2);
+            L.pushInteger(@intFromEnum(kind));
+            L.pushClosure(luau.EFntoZigFn(Scheduler.toSchedulerEFn(transaction)), "Transaction", 3);
+            return 1;
         } else if (std.mem.eql(u8, namecall, "close")) {
             if (!(L.optBoolean(2) orelse false)) {
                 ptr.close(L) catch {};
@@ -247,6 +362,8 @@ const LuaDatabase = struct {
             ptr.closed = true;
             ptr.statements.deinit();
         }
+        Luau.sys.luaD_checkstack(L, 2);
+        Luau.sys.luaD_expandstacklimit(L, 2);
         if (ptr.statements.items.len > 0) {
             var i = ptr.statements.items.len;
             while (i > 0) {
