@@ -115,6 +115,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     stmt:finalize() -- optional (can be handled by GC)
     db:close()-- optional (can be handled by GC)
     ```
+- Added `serde.lz4.compress` and `serde.lz4.decompress` replacements for standard lz4 compression & decompression instead of frame encoding.
 
 ### Changed
 - Formatter now displays `__tostring` metamethods as plain text, instead of as strings.
@@ -131,6 +132,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `ffi.fn` returns a function, which can be used in lua to call like a normal function.
 - `net.websocket` now only accepts the callbacks within the options table, `bindMessage` & etc have been removed.
 - `net.serve` websocket upgrade callback is now async.
+- `serde.lz4.compress` and `serde.lz4.decompress` renamed to `serde.lz4.compressFrame` and `serde.lz4.decompressFrame`.
 
 ### Fixed
 - Fixed `ffi` closures getting garbage collected.
