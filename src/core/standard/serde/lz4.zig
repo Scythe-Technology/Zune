@@ -6,7 +6,7 @@ const Luau = luau.Luau;
 
 // Lune compatibility
 
-pub fn lua_compress(L: *Luau) !i32 {
+pub fn lua_frame_compress(L: *Luau) !i32 {
     const allocator = L.allocator();
 
     const is_buffer = L.typeOf(1) == .buffer;
@@ -56,7 +56,7 @@ pub fn lua_compress(L: *Luau) !i32 {
     return 1;
 }
 
-pub fn lua_decompress(L: *Luau) !i32 {
+pub fn lua_frame_decompress(L: *Luau) !i32 {
     const allocator = L.allocator();
 
     const is_buffer = L.typeOf(1) == .buffer;
@@ -72,6 +72,42 @@ pub fn lua_decompress(L: *Luau) !i32 {
     const sizeHint = std.mem.bytesAsSlice(u32, string[0..4])[0];
 
     const decompressed = try decoder.decompress(string[4..], sizeHint);
+    defer allocator.free(decompressed);
+
+    if (is_buffer)
+        try L.pushBuffer(decompressed)
+    else
+        L.pushLString(decompressed);
+
+    return 1;
+}
+
+pub fn lua_compress(L: *Luau) !i32 {
+    const allocator = L.allocator();
+
+    const is_buffer = L.typeOf(1) == .buffer;
+    const string = if (is_buffer) L.checkBuffer(1) else L.checkString(1);
+
+    const compressed = try lz4.Standard.compress(allocator, string);
+    defer allocator.free(compressed);
+
+    if (is_buffer)
+        try L.pushBuffer(compressed)
+    else
+        L.pushLString(compressed);
+
+    return 1;
+}
+
+pub fn lua_decompress(L: *Luau) !i32 {
+    const allocator = L.allocator();
+
+    const is_buffer = L.typeOf(1) == .buffer;
+
+    const string = if (is_buffer) L.checkBuffer(1) else L.checkString(1);
+    const sizeHint = L.checkInteger(2);
+
+    const decompressed = try lz4.Standard.decompress(allocator, string, @intCast(sizeHint));
     defer allocator.free(decompressed);
 
     if (is_buffer)

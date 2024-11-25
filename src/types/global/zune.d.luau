@@ -1278,7 +1278,7 @@ type LuauLib = {
 --[======[ Luau ]======]--
 
 --[======[ Serde ]======]--
-export type JsonEncodeConfig = {
+type JsonEncodeConfig = {
     --[[
         Pretty print indent level
     ]]
@@ -1286,14 +1286,14 @@ export type JsonEncodeConfig = {
 }
 
 
-export type JsonDecodeConfig = {
+type JsonDecodeConfig = {
     --[[
         Preserve null values
     ]]
     preserveNull: boolean,
 }
 
-export type JsonEncoder = {
+type JsonEncoder = {
     --[[
         Encodes value to JSON/JSON5
 
@@ -1329,7 +1329,7 @@ export type JsonEncoder = {
     }
 }
 
-export type TomlEncoder = {
+type TomlEncoder = {
     --[[
         Encodes table to TOML
 
@@ -1346,7 +1346,7 @@ export type TomlEncoder = {
     decode: (toml: string) -> {[string]: any},
 }
 
-export type YamlEncoder = {
+type YamlEncoder = {
     --[[
         Encodes table to YAML
 
@@ -1363,7 +1363,7 @@ export type YamlEncoder = {
     decode: (yaml: string) -> {[string]: any},
 }
 
-export type Base64Encoder = {
+type Base64Encoder = {
     --[[
         Encodes table to Base64
 
@@ -1380,26 +1380,34 @@ export type Base64Encoder = {
     decode: (base64: string) -> string,
 }
 
-export type GenericCompressionOptions = {
+type GenericCompressionOptions = {
     --[[
         The compression level.
     ]]
     level: number?,
 }
 
-export type GenericCompressor = {
+type CompressionFn =
+& ((raw: string) -> string)
+& ((raw: buffer) -> buffer)
+
+type AdvancedCompressionFn =
+& ((raw: string, options: GenericCompressionOptions?) -> string)
+& ((raw: buffer, options: GenericCompressionOptions?) -> buffer)
+
+type DecompressionFn =
+& ((compressed: string) -> string)
+& ((compressed: buffer) -> buffer)
+
+type GenericCompressor = {
     --[[
         Compresses a string.
     ]]
-    compress :
-        & ((raw: string, options: GenericCompressionOptions?) -> string)
-        & ((raw: buffer, options: GenericCompressionOptions?) -> buffer),
+    compress : AdvancedCompressionFn,
     --[[
         Decompresses a string.
     ]]
-    decompress :
-        & ((compressed: string) -> string)
-        & ((compressed: buffer) -> buffer),
+    decompress : DecompressionFn,
 }
 
 type SerdeLib = {
@@ -1441,7 +1449,26 @@ type SerdeLib = {
     --[[
         LZ4 compressor and decompressor.
     ]]
-    lz4: GenericCompressor,
+    lz4: {
+        --[[
+            Compresses a string.
+        ]]
+        compress : CompressionFn,
+        --[[
+            Compresses a string as a lz4 frame.
+        ]]
+        compressFrame : AdvancedCompressionFn,
+        --[[
+            Decompresses a string.
+        ]]
+        decompress :
+            & ((compressed: string, size: number) -> string)
+            & ((compressed: buffer, size: number) -> buffer),
+        --[[
+            Decompresses a string as a lz4 frame.
+        ]]
+        decompressFrame : DecompressionFn,
+    },
 }
 --[======[ Serde ]======]--
 

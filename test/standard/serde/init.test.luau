@@ -50,7 +50,9 @@ expect(serde.zlib).toBe(expect.similar({
 }));
 expect(serde.lz4).toBe(expect.similar({
     compress = expect.type("function"),
+    compressFrame = expect.type("function"),
     decompress = expect.type("function"),
+    decompressFrame = expect.type("function"),
 }));
 
 require("./json.test");

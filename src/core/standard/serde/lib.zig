@@ -101,7 +101,9 @@ pub fn loadLib(L: *Luau) void {
         L.newTable();
 
         L.setFieldFn(-1, "compress", lz4.lua_compress);
+        L.setFieldFn(-1, "compressFrame", lz4.lua_frame_compress);
         L.setFieldFn(-1, "decompress", lz4.lua_decompress);
+        L.setFieldFn(-1, "decompressFrame", lz4.lua_frame_decompress);
 
         L.setFieldAhead(-1, "lz4");
     }
