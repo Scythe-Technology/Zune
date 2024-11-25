@@ -81,7 +81,7 @@ pub const LuaMeta = struct {
                 ctx.establishedLua = null;
             }
         } else if (std.mem.eql(u8, namecall, "send")) {
-            const message = L.checkString(2);
+            const message = if (L.typeOf(2) == .buffer) L.checkBuffer(2) else L.checkString(2);
             var socket = WebSocket.initV(L.allocator(), stream, true);
             defer socket.deinit();
             _ = socket.writeText(message) catch |err| return L.ErrorFmt("Failed to write to websocket ({s})", .{@errorName(err)});

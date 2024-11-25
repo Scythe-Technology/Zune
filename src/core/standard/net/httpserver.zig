@@ -71,7 +71,7 @@ pub const LuaMeta = struct {
             }
             ctx.closeConnection(L, id, true);
         } else if (std.mem.eql(u8, namecall, "send")) {
-            const message = L.checkString(2);
+            const message = if (L.typeOf(2) == .buffer) L.checkBuffer(2) else L.checkString(2);
             if (ctx.websockets[id] != null and ctx.connections[id] != null) {
                 const connection = ctx.connections[id] orelse unreachable;
                 var socket = WebSocket.init(L.allocator(), connection.stream, false);

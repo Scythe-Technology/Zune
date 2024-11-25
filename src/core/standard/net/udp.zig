@@ -54,7 +54,7 @@ pub const LuaMeta = struct {
         } else if (std.mem.eql(u8, namecall, "send")) {
             if (self.stopped)
                 return 0;
-            const data = L.checkString(2);
+            const data = if (L.typeOf(2) == .buffer) L.checkBuffer(2) else L.checkString(2);
             const port = L.checkInteger(3);
             if (port < 0 and port > 65535)
                 return L.Error("'port' must be between 0 and 65535");

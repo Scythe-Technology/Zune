@@ -889,7 +889,7 @@ declare class NetWebSocket
     --[[
         Sends a message to the websocket.
     ]]
-    function send(self, message: string): ()
+    function send(self, message: string | buffer): ()
 
     --[[
         Closes the websocket.
@@ -909,7 +909,7 @@ declare class NetUDPSocket
     --[[
         Send a UDP datagram message to remote host.
     ]]
-    function send(self, message: string, port: number, address: string): ()
+    function send(self, message: string | buffer, port: number, address: string): ()
     --[[
         Stops the Socket.
     ]]
@@ -924,7 +924,7 @@ declare class NetTCPConnection
     --[[
         Send a message to remote host.
     ]]
-    function send(self, message: string): ()
+    function send(self, message: string | buffer): ()
     --[[
         Stops the socket.
     ]]

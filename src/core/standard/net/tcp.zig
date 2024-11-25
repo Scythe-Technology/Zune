@@ -51,7 +51,7 @@ const TCPClient = struct {
             } else if (std.mem.eql(u8, namecall, "send")) {
                 if (self.stopped)
                     return 0;
-                const data = L.checkString(2);
+                const data = if (L.typeOf(2) == .buffer) L.checkBuffer(2) else L.checkString(2);
                 self.stream.writeAll(data) catch |err| {
                     self.stopped = true;
                     return err;
@@ -259,7 +259,8 @@ const TCPServer = struct {
 
                 // TODO: prob should switch to static string map
                 if (std.mem.eql(u8, namecall, "send")) {
-                    self.conn.stream.writeAll(L.checkString(2)) catch |err| {
+                    const data = if (L.typeOf(2) == .buffer) L.checkBuffer(2) else L.checkString(2);
+                    self.conn.stream.writeAll(data) catch |err| {
                         std.debug.print("Error sending data to client: {}\n", .{err});
                         return err;
                     };
