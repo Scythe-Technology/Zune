@@ -1933,11 +1933,6 @@ declare class Structure
     function new(self, fields: {{ [string]: buffer | number }}): buffer
 end
 
-export type Closure = {
-    ptr: Pointer,
-    callback: (...any) -> any,
-}
-
 export type FunctionDefinition = {
     returns: Structure | number,
     args: { Structure | number }
@@ -2012,7 +2007,7 @@ type FFILib = {
 
     struct: (fields: {{ [string]: Structure | number }}) -> Structure,
     fn: (definition: FunctionDefinition, srcPtr: Pointer) -> ((...any) -> any),
-    closure: (definition: FunctionDefinition, handler: (...any) -> any) -> Closure,
+    closure: (definition: FunctionDefinition, handler: (...any) -> any) -> Pointer,
     dlopen: (path: string, { [string]: FunctionDefinition }) -> Library,
 }
 --[======[ FFI ]======]--

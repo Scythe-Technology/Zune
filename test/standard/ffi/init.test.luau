@@ -218,41 +218,40 @@ describe("FFI", function()
                 };
                 local c_add_func = ffi.closure(add_defintion, function(a, b)
                     return a + b;
-                end)
+                end):release();
 
-                c_add_func.ptr:release();
-
-                local addfn = ffi.fn(add_defintion, c_add_func.ptr);
+                local addfn = ffi.fn(add_defintion, c_add_func);
 
                 expect(addfn(1, 2)).toBe(3);
                 expect(addfn(2, 3)).toBe(5);
                 expect(addfn(-4, 4)).toBe(0);
                 
-                expect(ffi.fn(add_defintion, c_add_func.ptr)(1, 2)).toBe(3);
-                expect(ffi.fn(add_defintion, c_add_func.ptr)(2, 3)).toBe(5);
-                expect(ffi.fn(add_defintion, c_add_func.ptr)(-4, 4)).toBe(0);
+                expect(ffi.fn(add_defintion, c_add_func)(1, 2)).toBe(3);
+                expect(ffi.fn(add_defintion, c_add_func)(2, 3)).toBe(5);
+                expect(ffi.fn(add_defintion, c_add_func)(-4, 4)).toBe(0);
 
                 do
                     local a = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 1);
                     local b = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 2);
                     expect(addfn(a, b)).toBe(3);
-                    expect(ffi.fn(add_defintion, c_add_func.ptr)(a, b)).toBe(3);
+                    expect(ffi.fn(add_defintion, c_add_func)(a, b)).toBe(3);
                 end
                 
                 do
                     local a = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 2);
                     local b = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 3);
                     expect(addfn(a, b)).toBe(5);
-                    expect(ffi.fn(add_defintion, c_add_func.ptr)(a, b)).toBe(5);
+                    expect(ffi.fn(add_defintion, c_add_func)(a, b)).toBe(5);
                 end
                 
                 do
                     local a = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, -4);
                     local b = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 4);
                     expect(addfn(a, b)).toBe(0);
-                    expect(ffi.fn(add_defintion, c_add_func.ptr)(a, b)).toBe(0);
+                    expect(ffi.fn(add_defintion, c_add_func)(a, b)).toBe(0);
                 end
                 
+                ffi.free(c_add_func); -- free reference to closure in backend (not necessary in real world case).
             end)
 
             test("Lua<f64 add(f64 f64)>", function()
@@ -262,44 +261,42 @@ describe("FFI", function()
                 };
                 local c_add_func = ffi.closure(add_defintion, function(a, b)
                     return a + b;
-                end)
+                end):release();
 
-                c_add_func.ptr:release();
-
-                local addfn = ffi.fn(add_defintion, c_add_func.ptr);
+                local addfn = ffi.fn(add_defintion, c_add_func);
 
                 expect(addfn(1.123, 2)).toBe(3.123);
                 expect(addfn(2.25, 3.25)).toBe(5.5);
                 expect(addfn(-4.25, 4.25)).toBe(0);
 
-                expect(ffi.fn(add_defintion, c_add_func.ptr)(1.123, 2)).toBe(3.123);
-                expect(ffi.fn(add_defintion, c_add_func.ptr)(2.25, 3.25)).toBe(5.5);
-                expect(ffi.fn(add_defintion, c_add_func.ptr)(-4.25, 4.25)).toBe(0);
+                expect(ffi.fn(add_defintion, c_add_func)(1.123, 2)).toBe(3.123);
+                expect(ffi.fn(add_defintion, c_add_func)(2.25, 3.25)).toBe(5.5);
+                expect(ffi.fn(add_defintion, c_add_func)(-4.25, 4.25)).toBe(0);
                 
                 do
                     local a = testBufferOfValue(ffi.sizeOf(ffi.types.double), buffer.writef64, 1.123);
                     local b = testBufferOfValue(ffi.sizeOf(ffi.types.double), buffer.writef64, 2);
                     expect(addfn(a, b)).toBe(3.123);
-                    expect(ffi.fn(add_defintion, c_add_func.ptr)(a, b)).toBe(3.123);
+                    expect(ffi.fn(add_defintion, c_add_func)(a, b)).toBe(3.123);
                 end
 
                 do
                     local a = testBufferOfValue(ffi.sizeOf(ffi.types.double), buffer.writef64, 2.25);
                     local b = testBufferOfValue(ffi.sizeOf(ffi.types.double), buffer.writef64, 3.25);
                     expect(addfn(a, b)).toBe(5.5);
-                    expect(ffi.fn(add_defintion, c_add_func.ptr)(a, b)).toBe(5.5);
+                    expect(ffi.fn(add_defintion, c_add_func)(a, b)).toBe(5.5);
                 end
 
                 do
                     local a = testBufferOfValue(ffi.sizeOf(ffi.types.double), buffer.writef64, -4.25);
                     local b = testBufferOfValue(ffi.sizeOf(ffi.types.double), buffer.writef64, 4.25);
                     expect(addfn(a, b)).toBe(0);
-                    expect(ffi.fn(add_defintion, c_add_func.ptr)(a, b)).toBe(0);
+                    expect(ffi.fn(add_defintion, c_add_func)(a, b)).toBe(0);
                 end
+
+                ffi.free(c_add_func); -- free reference to closure in backend (not necessary in real world case).
             end)
-
         end)
-
     end)
 
     describe("struct", function()
@@ -576,12 +573,12 @@ describe("FFI", function()
                 end
                 counter += 1;
                 return if (counter == 1) then -1 else 1;
-            end)
+            end):release();
 
-            c_func.ptr:release();
+            expect(lib.fire_callback(c_func)).toBe(1);
+            expect(lib.fire_callback(c_func)).toBe(0);
 
-            expect(lib.fire_callback(c_func.ptr)).toBe(1);
-            expect(lib.fire_callback(c_func.ptr)).toBe(0);
+            ffi.free(c_func); -- free reference to closure in backend (not necessary in real world case).
         end)
 
         test("Symbol<void double_call(*void)>", function()
@@ -596,11 +593,13 @@ describe("FFI", function()
                     args = {ffi.types.i32},
                 }, callback)(counter);
                 return num == 2556;
-            end)
-            c_func.ptr:release();
+            end):release();
+            c_func:release();
 
-            expect(lib.double_call(c_func.ptr)).toBe(1);
-            expect(lib.double_call(c_func.ptr)).toBe(0);
+            expect(lib.double_call(c_func)).toBe(1);
+            expect(lib.double_call(c_func)).toBe(0);
+
+            ffi.free(c_func); -- free reference to closure in backend (not necessary in real world case).
         end)
 
         test("Symbol<void check_string(const char*)>", function()

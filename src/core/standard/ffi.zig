@@ -234,9 +234,6 @@ const LuaPointer = struct {
 
     pub fn method_release(ptr: *LuaPointer, L: *Luau) i32 {
         ptr.retained = false;
-        if (ptr.ref) |ref|
-            L.unref(ref);
-        ptr.ref = null;
         if (ptr.local_ref) |ref|
             L.unref(ref);
         ptr.local_ref = null;
@@ -461,7 +458,10 @@ const LuaPointer = struct {
 
         switch (ptr.type) {
             .Allocated => return L.Error("Cannot set size of a known size pointer"),
-            .Static => {},
+            .Static => {
+                if (ptr.size) |_|
+                    return L.Error("Cannot set size of a known size pointer");
+            },
         }
 
         ptr.size = length;
@@ -1335,12 +1335,10 @@ fn ffi_closure(L: *Luau) !i32 {
     L.newTable();
 
     L.newTable();
-    const ptr = try LuaPointer.newStaticPtrWithRef(L, closure_ptr.executable, -3);
-    ptr.retained = false; // Keep reference but don't retain
-    L.setField(-2, "ptr");
-
-    L.pushValue(2);
-    L.setField(-2, "callback");
+    {
+        L.pushValue(2);
+        L.setField(-2, "callback");
+    }
     L.setField(-2, luau.Metamethods.index);
 
     L.pushValue(-3);
@@ -1349,6 +1347,9 @@ fn ffi_closure(L: *Luau) !i32 {
     L.setReadOnly(-1, true);
 
     L.setMetatable(-2);
+
+    const ptr = try LuaPointer.newStaticPtrWithRef(L, closure_ptr.executable, -1);
+    ptr.size = 0;
 
     return 1;
 }
@@ -1612,7 +1613,8 @@ fn ffi_free(L: *Luau) !i32 {
             },
             .Static => {
                 if (ptr.size) |size| {
-                    allocator.free(@as([*]u8, @ptrCast(@alignCast(ptr.ptr)))[0..size]);
+                    if (size > 0)
+                        allocator.free(@as([*]u8, @ptrCast(@alignCast(ptr.ptr)))[0..size]);
                 }
             },
         }
