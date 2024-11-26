@@ -470,6 +470,10 @@ describe("FFI", function()
         });
 
         local lib = ffi.dlopen(`./zig-out/{ffi.prefix}sample.{static_suffix}`, {
+            blank = {
+                returns = ffi.types.void,
+                args = {},
+            },
             add = {
                 returns = ffi.types.i32,
                 args = {ffi.types.i32, ffi.types.i32},
@@ -514,6 +518,10 @@ describe("FFI", function()
             },
         });
         expect(lib).toBe(expect.type("userdata"));
+
+        test("Symbol<void blank()>", function()
+            lib.blank();
+        end)
 
         test("Symbol<?>", function()
             expect(lib:getSymbol("add")).toBe(expect.type("userdata"));
