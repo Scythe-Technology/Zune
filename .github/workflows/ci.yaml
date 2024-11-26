@@ -11,6 +11,7 @@ on:
 
 jobs:
   fmt:
+    name: Format Check
     runs-on: ubuntu-latest
     steps:
     - name: Checkout Repository
@@ -58,13 +59,10 @@ jobs:
           - os: windows-latest
             name: Windows x86_64
             target: x86_64-windows
-            artifact: zune-${{ needs.prep.outputs.version }}-windows-x86_64
             ext: .exe
           - os: windows-latest
             name: Windows Arm64 (compile)
             target: aarch64-windows
-            compile-only: true
-            artifact: zune-${{ needs.prep.outputs.version }}-windows-aarch64
             ext: .exe
           - os: macos-13
             name: macOs x86_64
@@ -111,9 +109,11 @@ jobs:
       run: zig build -Dtarget=${{ matrix.target }} --verbose
 
     - name: Pack Artifact
+      if: matrix.artifact != ''
       run: cd ./zig-out/bin && zip ../../${{ matrix.artifact }}.zip ./zune${{ matrix.ext }}
 
     - name: Upload Artifact
+      if: matrix.artifact != ''
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.artifact }}
