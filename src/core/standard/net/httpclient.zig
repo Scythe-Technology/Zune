@@ -268,7 +268,6 @@ pub fn dtor(ctx: *Self, L: *Luau, scheduler: *Scheduler) void {
         var response = Response.init(allocator, bufferStream.reader().any(), .{
             .ignoreBody = true,
         }) catch |err| {
-            std.debug.print("Error creating response1: {}\n", .{err});
             L.pushString(@errorName(err));
             _ = Scheduler.resumeStateError(L, null) catch {};
             return;
@@ -276,8 +275,7 @@ pub fn dtor(ctx: *Self, L: *Luau, scheduler: *Scheduler) void {
         defer response.deinit();
 
         response.pushToStack(L, responseBody.items) catch |err| {
-            L.pop(1); // drop: boolean
-            std.debug.print("Error pushing response2: {}\n", .{err});
+            std.debug.print("Error reading response: {}\n", .{err});
             L.pushString(@errorName(err));
             _ = Scheduler.resumeStateError(L, null) catch {};
             return;
