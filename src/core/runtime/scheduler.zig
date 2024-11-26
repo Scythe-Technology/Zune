@@ -331,9 +331,9 @@ pub fn run(self: *Self) void {
                     _ = self.awaits.orderedRemove(i);
                     const state = awaiting.state;
                     const data = awaiting.data;
-                    derefThread(awaiting.state, awaiting.ref);
                     awaiting.resumeFn(data, state, self);
                     awaiting.virtualDtor(data, state, self);
+                    derefThread(awaiting.state, awaiting.ref);
                     active += 1;
                 }
             }
@@ -348,8 +348,8 @@ pub fn run(self: *Self) void {
                     .ContinueFast => active += 1,
                     .Stop => {
                         _ = self.tasks.orderedRemove(i);
-                        derefThread(task.state, task.ref);
                         task.virtualDtor(task.data, task.state, self);
+                        derefThread(task.state, task.ref);
                         active += 1;
                     },
                 }
