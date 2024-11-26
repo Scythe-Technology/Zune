@@ -59,11 +59,6 @@ jobs:
           - os: windows-latest
             name: Windows x86_64
             target: x86_64-windows
-            ext: .exe
-          - os: windows-latest
-            name: Windows Arm64 (compile)
-            target: aarch64-windows
-            ext: .exe
           - os: macos-13
             name: macOs x86_64
             target: x86_64-macos
@@ -101,7 +96,6 @@ jobs:
       uses: docker/setup-qemu-action@v1
 
     - name: Run tests
-      if: matrix.compile-only != true
       continue-on-error: ${{ matrix.qemu-platform != '' }}
       run: zig build test -Dtarget=${{ matrix.target }}${{ matrix.qemu-platform != '' && ' -fqemu' || '' }} --verbose
    
