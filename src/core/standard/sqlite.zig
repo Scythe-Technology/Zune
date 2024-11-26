@@ -238,7 +238,7 @@ const LuaDatabase = struct {
         };
         ptr.db.exec(activator, &.{}) catch |err| switch (err) {
             error.OutOfMemory => return err,
-            else => return L.ErrorFmt("SQLite Error: {s}", .{ptr.db.getErrorMessage()}),
+            else => return L.ErrorFmt("SQLite Error ({}): {s}", .{ err, ptr.db.getErrorMessage() }),
         };
         const args = L.getTop();
         const ML = L.newThread();
@@ -299,7 +299,8 @@ const LuaDatabase = struct {
             try ptr.statements.ensureTotalCapacity(ptr.statements.items.len + 1);
             const statement = ptr.db.prepare(query) catch |err| switch (err) {
                 error.OutOfMemory => return err,
-                else => return L.ErrorFmt("SQLite Error: {s}", .{ptr.db.getErrorMessage()}),
+                error.InvalidParameter => return L.ErrorFmt("SQLite Query Error ({}): must have '$', ':', '?', or '@'", .{err}),
+                else => return L.ErrorFmt("SQLite Error ({}): {s}", .{ err, ptr.db.getErrorMessage() }),
             };
             const stmt_ptr = L.newUserdataTaggedWithMetatable(LuaStatement, tagged.SQLITE_STATEMENT);
             const ref = L.ref(-1) catch unreachable;
@@ -318,7 +319,8 @@ const LuaDatabase = struct {
 
             const stmt = ptr.db.prepare(query) catch |err| switch (err) {
                 error.OutOfMemory => return err,
-                else => return L.ErrorFmt("SQLite Error: {s}", .{ptr.db.getErrorMessage()}),
+                error.InvalidParameter => return L.ErrorFmt("SQLite Query Error ({}): must have '$', ':', '?', or '@'", .{err}),
+                else => return L.ErrorFmt("SQLite Error ({}): {s}", .{ err, ptr.db.getErrorMessage() }),
             };
             defer stmt.deinit();
 
