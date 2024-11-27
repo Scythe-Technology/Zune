@@ -340,10 +340,15 @@ pub fn stateCleanUp() void {
     }
 }
 
-pub fn runAsync(L: *Luau, sched: *Scheduler, comptime cleanUp: bool) !void {
-    defer if (cleanUp) stateCleanUp();
+const RunOptions = struct {
+    cleanUp: bool,
+    testing: bool = false,
+};
+
+pub fn runAsync(L: *Luau, sched: *Scheduler, comptime options: RunOptions) !void {
+    defer if (options.cleanUp) stateCleanUp();
     sched.deferThread(L, null, 0);
-    sched.run();
+    sched.run(options.testing);
     _ = try checkStatus(L);
 }
 

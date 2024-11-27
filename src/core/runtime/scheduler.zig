@@ -318,7 +318,7 @@ pub fn cancelThread(self: *Self, thread: *Luau) void {
     }
 }
 
-pub fn run(self: *Self) void {
+pub fn run(self: *Self, comptime testing: bool) void {
     var active: usize = 0;
     while ((self.sleeping.items.len > 0 or self.deferred.items.len > 0 or self.tasks.items.len > 0 or self.awaits.items.len > 0)) {
         const now = luau.clock();
@@ -403,6 +403,8 @@ pub fn run(self: *Self) void {
         if (active == 0) {
             std.time.sleep(std.time.ns_per_ms * 2);
         } else active -= 1;
+        if (comptime testing)
+            self.state.gcCollect();
     }
 }
 

@@ -1,6 +1,5 @@
 --!strict
 local task = zune.task;
-local stdio = zune.stdio;
 
 local testing = {
     running = true,

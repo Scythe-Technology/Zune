@@ -108,9 +108,6 @@ pub const LuaMeta = struct {
         // TODO: prob should switch to static string map
         if (std.mem.eql(u8, namecall, "stop")) {
             self.alive = false;
-            if (self.ref) |ref|
-                L.unref(ref);
-            self.ref = null;
             scheduler.deferThread(L, null, 0); // resume on next task
             return L.yield(0);
         } else return L.ErrorFmt("Unknown method: {s}", .{namecall});

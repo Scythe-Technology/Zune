@@ -154,7 +154,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
             if (Engine.loadModule(ML, "CLI", buffer.items, null)) {
                 try terminal.setNormalMode();
 
-                Engine.runAsync(ML, &scheduler, false) catch ML.pop(1);
+                Engine.runAsync(ML, &scheduler, .{ .cleanUp = false }) catch ML.pop(1);
 
                 try terminal.setRawMode();
             } else |err| switch (err) {
