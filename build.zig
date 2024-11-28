@@ -115,7 +115,17 @@ pub fn build(b: *std.Build) !void {
     const dep_datetime = b.dependency("datetime", .{ .target = target, .optimize = optimize });
     const dep_toml = b.dependency("toml", .{ .target = target, .optimize = optimize });
     const dep_ffi = b.dependency("ffi", .{ .target = target, .optimize = optimize, .safe_build = true });
-    const dep_sqlite = b.dependency("sqlite", .{ .target = target, .optimize = optimize });
+    const dep_sqlite = b.dependency("sqlite", .{
+        .target = target,
+        .optimize = optimize,
+        .SQLITE_ENABLE_RTREE = true,
+        .SQLITE_ENABLE_FTS3 = true,
+        .SQLITE_ENABLE_FTS5 = true,
+        .SQLITE_ENABLE_COLUMN_METADATA = true,
+        .SQLITE_MAX_VARIABLE_NUMBER = 200000,
+        .SQLITE_ENABLE_MATH_FUNCTIONS = true,
+        .SQLITE_ENABLE_FTS3_PARENTHESIS = true,
+    });
 
     const prebuild_step = b.step("prebuild", "Setup project for build");
 

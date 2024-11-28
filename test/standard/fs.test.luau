@@ -408,6 +408,7 @@ test("Watch", function()
         return; -- Skip on macOS
     end
     local changes = {};
+    task.wait(0.5);
     local watcher = fs.watch(TEMP_DIR, function(path, events)
         table.insert(changes, {
             path = path,

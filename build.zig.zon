@@ -36,8 +36,8 @@
             .hash = "12204f922cab84980e36b5c058d354ec0ee169bda401c8e0e80a463580349b476569",
         },
         .sqlite = .{
-            .url = "https://codeload.github.com/Scythe-Technology/z-sqlite/tar.gz/fccb9b05f7a011a0a7631f241032f082a4f86c74",
-            .hash = "122009b318d11362882d08273a245af3e1f851ddd7499c50ffb391369bb65602375e",
+            .url = "https://codeload.github.com/Scythe-Technology/z-sqlite/tar.gz/d034ac4cfc631fb6f600f54e06dd5b7ee9cfc715",
+            .hash = "122092e17bb2626abbd05718a6b84a2732bb754dd0eb710c5581c569c7fa49d612bc",
         },
     },
     .paths = .{
