@@ -1,5 +1,6 @@
 const std = @import("std");
 const luau = @import("luau");
+const zstd = @import("zstd");
 
 const Luau = luau.Luau;
 
@@ -11,7 +12,7 @@ pub fn lua_compress(L: *Luau) !i32 {
     const string = if (is_buffer) L.checkBuffer(1) else L.checkString(1);
     const options = L.typeOf(2);
 
-    var level: u4 = 12;
+    var level: i32 = zstd.DEFAULT_COMPRESSION_LEVEL;
 
     if (!luau.isNoneOrNil(options)) {
         L.checkType(2, .table);
@@ -20,25 +21,17 @@ pub fn lua_compress(L: *Luau) !i32 {
             if (levelType != .number)
                 return L.Error("Options 'level' field must be a number");
             const num = L.toInteger(-1) catch unreachable;
-            if (num < 4 or num > 13)
-                return L.Error("Options 'level' must not be over 13 or less than 4 or equal to 10");
-            if (num == 10)
-                return L.ErrorFmt("Options 'level' cannot be {d}, level does not exist", .{num});
-            level = @intCast(num);
+            if (num < zstd.MIN_COMPRESSION_LEVEL or num > zstd.MAX_COMPRESSION_LEVEL)
+                return L.ErrorFmt("Options 'level' must not be over {} or less than {}", .{ zstd.MAX_COMPRESSION_LEVEL, zstd.MIN_COMPRESSION_LEVEL });
+            level = num;
         }
         L.pop(1);
     }
 
-    var buf = std.ArrayList(u8).init(allocator);
-    defer buf.deinit();
+    const compressed = try zstd.compressAlloc(allocator, string, level);
+    defer allocator.free(compressed);
 
-    var stream = std.io.fixedBufferStream(string);
-
-    try std.compress.zlib.compress(stream.reader(), buf.writer(), .{
-        .level = @enumFromInt(level),
-    });
-
-    if (is_buffer) L.pushBuffer(buf.items) else L.pushLString(buf.items);
+    if (is_buffer) L.pushBuffer(compressed) else L.pushLString(compressed);
 
     return 1;
 }
@@ -50,14 +43,10 @@ pub fn lua_decompress(L: *Luau) !i32 {
 
     const string = if (is_buffer) L.checkBuffer(1) else L.checkString(1);
 
-    var buf = std.ArrayList(u8).init(allocator);
-    defer buf.deinit();
+    const decompressed = try zstd.decompressAlloc(allocator, string);
+    defer allocator.free(decompressed);
 
-    var stream = std.io.fixedBufferStream(string);
-
-    try std.compress.zlib.decompress(stream.reader(), buf.writer());
-
-    if (is_buffer) L.pushBuffer(buf.items) else L.pushLString(buf.items);
+    if (is_buffer) L.pushBuffer(decompressed) else L.pushLString(decompressed);
 
     return 1;
 }

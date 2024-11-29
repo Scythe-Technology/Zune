@@ -39,6 +39,10 @@
             .url = "https://codeload.github.com/Scythe-Technology/z-sqlite/tar.gz/d034ac4cfc631fb6f600f54e06dd5b7ee9cfc715",
             .hash = "122092e17bb2626abbd05718a6b84a2732bb754dd0eb710c5581c569c7fa49d612bc",
         },
+        .zstd = .{
+            .url = "https://codeload.github.com/Scythe-Technology/zig-zstd/tar.gz/b2df94536e2a209aad32a1898a31f703ff6a22ef",
+            .hash = "12200d95dde7db2e375801da38467f5ad066ba90273dfacacca2f3168793743d5c8f",
+        },
     },
     .paths = .{
         "build.zig",

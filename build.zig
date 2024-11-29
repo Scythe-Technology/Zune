@@ -111,6 +111,7 @@ pub fn build(b: *std.Build) !void {
     const dep_yaml = b.dependency("yaml", .{ .target = target, .optimize = optimize });
     const dep_luau = b.dependency("luau", .{ .target = target, .optimize = optimize });
     const dep_lz4 = b.dependency("lz4", .{ .target = target, .optimize = optimize });
+    const dep_zstd = b.dependency("zstd", .{ .target = target, .optimize = optimize });
     const dep_czrex = b.dependency("czrex", .{ .target = target, .optimize = optimize });
     const dep_datetime = b.dependency("datetime", .{ .target = target, .optimize = optimize });
     const dep_toml = b.dependency("toml", .{ .target = target, .optimize = optimize });
@@ -149,6 +150,7 @@ pub fn build(b: *std.Build) !void {
 
     exe.root_module.addImport("yaml", dep_yaml.module("yaml"));
     exe.root_module.addImport("lz4", dep_lz4.module("zig-lz4"));
+    exe.root_module.addImport("zstd", dep_zstd.module("zig-zstd"));
     exe.root_module.addImport("json", dep_json.module("zig-json"));
     exe.root_module.addImport("luau", dep_luau.module("zig-luau"));
     exe.root_module.addImport("regex", dep_czrex.module("czrex"));
@@ -202,6 +204,7 @@ pub fn build(b: *std.Build) !void {
 
     exe_unit_tests.root_module.addImport("yaml", dep_yaml.module("yaml"));
     exe_unit_tests.root_module.addImport("lz4", dep_lz4.module("zig-lz4"));
+    exe_unit_tests.root_module.addImport("zstd", dep_zstd.module("zig-zstd"));
     exe_unit_tests.root_module.addImport("json", dep_json.module("zig-json"));
     exe_unit_tests.root_module.addImport("luau", dep_luau.module("zig-luau"));
     exe_unit_tests.root_module.addImport("regex", dep_czrex.module("czrex"));

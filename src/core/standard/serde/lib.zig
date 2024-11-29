@@ -14,6 +14,7 @@ const base64 = @import("base64.zig");
 const gzip = @import("gzip.zig");
 const zlib = @import("zlib.zig");
 const lz4 = @import("lz4.zig");
+const zstd = @import("zstd.zig");
 
 const Luau = luau.Luau;
 
@@ -106,6 +107,15 @@ pub fn loadLib(L: *Luau) void {
         L.setFieldFn(-1, "decompressFrame", lz4.lua_frame_decompress);
 
         L.setFieldAhead(-1, "lz4");
+    }
+
+    { // Zstd
+        L.newTable();
+
+        L.setFieldFn(-1, "compress", zstd.lua_compress);
+        L.setFieldFn(-1, "decompress", zstd.lua_decompress);
+
+        L.setFieldAhead(-1, "zstd");
     }
 
     luaHelper.registerModule(L, LIB_NAME);

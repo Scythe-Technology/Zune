@@ -54,6 +54,10 @@ expect(serde.lz4).toBe(expect.similar({
     decompress = expect.type("function"),
     decompressFrame = expect.type("function"),
 }));
+expect(serde.zstd).toBe(expect.similar({
+    compress = expect.type("function"),
+    decompress = expect.type("function"),
+}));
 
 require("./json.test");
 require("./json5.test");
@@ -62,3 +66,4 @@ require("./yaml.test");
 require("./gzip.test");
 require("./zlib.test");
 require("./lz4.test");
+require("./zstd.test");

@@ -48,10 +48,7 @@ pub fn lua_frame_compress(L: *Luau) !i32 {
     @memcpy(out[0..4], header[0..4]);
     @memcpy(out[4..][0..buf.items.len], buf.items[0..]);
 
-    if (is_buffer)
-        L.pushBuffer(out)
-    else
-        L.pushLString(out);
+    if (is_buffer) L.pushBuffer(out) else L.pushLString(out);
 
     return 1;
 }
@@ -74,10 +71,7 @@ pub fn lua_frame_decompress(L: *Luau) !i32 {
     const decompressed = try decoder.decompress(string[4..], sizeHint);
     defer allocator.free(decompressed);
 
-    if (is_buffer)
-        L.pushBuffer(decompressed)
-    else
-        L.pushLString(decompressed);
+    if (is_buffer) L.pushBuffer(decompressed) else L.pushLString(decompressed);
 
     return 1;
 }
@@ -91,10 +85,7 @@ pub fn lua_compress(L: *Luau) !i32 {
     const compressed = try lz4.Standard.compress(allocator, string);
     defer allocator.free(compressed);
 
-    if (is_buffer)
-        L.pushBuffer(compressed)
-    else
-        L.pushLString(compressed);
+    if (is_buffer) L.pushBuffer(compressed) else L.pushLString(compressed);
 
     return 1;
 }
@@ -110,10 +101,7 @@ pub fn lua_decompress(L: *Luau) !i32 {
     const decompressed = try lz4.Standard.decompress(allocator, string, @intCast(sizeHint));
     defer allocator.free(decompressed);
 
-    if (is_buffer)
-        L.pushBuffer(decompressed)
-    else
-        L.pushLString(decompressed);
+    if (is_buffer) L.pushBuffer(decompressed) else L.pushLString(decompressed);
 
     return 1;
 }

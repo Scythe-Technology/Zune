@@ -1469,6 +1469,11 @@ type SerdeLib = {
         ]]
         decompressFrame : DecompressionFn,
     },
+
+    --[[
+        ZSTD compressor and decompressor.
+    ]]
+    zstd: GenericCompressor,
 }
 --[======[ Serde ]======]--
 
