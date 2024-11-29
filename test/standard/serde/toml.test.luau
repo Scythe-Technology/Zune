@@ -131,6 +131,23 @@ in it.g'''
                 }
             }));
         end)
+        test("Test 4", function()
+            local sample = [[
+            "ab.c" = "ab"
+            ]];
+            expect(serde.toml.decode(sample)).toBe(expect.similar({
+                ["ab.c"] = "ab",
+            }));
+        end)
+
+        test("Test 5", function()
+            local sample = [[
+            "file://ab/c.luau"      =        "ab"
+            ]];
+            expect(serde.toml.decode(sample)).toBe(expect.similar({
+                ["file://ab/c.luau"] = "ab",
+            }));
+        end)
         test("Test 1 - Error", function()
             -- based on https://github.com/mattyhall/tomlz/blob/9a16dd53927ef2012478b6494bafb4475e44f4c9/tests/fuzzing/id-000000%2Csig-06%2Csrc-000035%2Ctime-345%2Cexecs-551%2Cop-havoc%2Crep-2
             local sample = [=[a = [ { = {} } ]]=];

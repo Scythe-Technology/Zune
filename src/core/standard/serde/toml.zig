@@ -20,6 +20,7 @@ const Error = error{
     InvalidStringEof,
     InvalidArrayEof,
     InvalidTableEof,
+    InvalidLength,
     MissingString,
     MissingArray,
     MissingTable,
@@ -28,6 +29,8 @@ const Error = error{
     InvalidValue,
     UnsupportedType,
     CircularReference,
+    OutOfMemory,
+    NoSpaceLeft,
 };
 
 const charset = "0123456789abcdef";
@@ -345,21 +348,38 @@ const WHITESPACE_LINE = [_]u8{ 32, '\t', '\r', '\n' };
 const DELIMITER = [_]u8{ 32, '\t', '\r', '\n', '}', ']', ',' };
 const NEWLINE = [_]u8{ '\r', '\n' };
 
-fn decodeGenerateName(L: *Luau, name: []const u8, comptime includeLast: bool) !void {
+fn decodeGenerateName(L: *Luau, name: []const u8, comptime includeLast: bool) Error!void {
     var last_pos: usize = 0;
     var p: usize = 0;
     while (p < name.len) switch (name[p]) {
+        '"', '\'' => {
+            const slice = name[last_pos..];
+            L.newTable();
+            var tempInfo = DecodeInfo{};
+            const str_p = try decodeString(L, slice, false, &tempInfo);
+            if (slice.len == str_p) {
+                L.pop(2);
+                break;
+            }
+            p += str_p;
+            L.pushValue(-1);
+            const ttype = L.getTable(-4);
+            if (luau.isNoneOrNil(ttype)) {
+                L.pop(1);
+                L.pushValue(-2);
+                L.setTable(-4);
+            } else if (ttype != .table) return Error.InvalidTable else {
+                L.remove(-2);
+                L.remove(-2);
+            }
+            last_pos = p;
+        },
         '.' => {
             const slice = name[last_pos..p];
             p += 1;
             L.newTable();
-            if (slice[0] == '\'' or slice[0] == '"') {
-                var tempInfo = DecodeInfo{};
-                _ = decodeString(L, slice, false, &tempInfo) catch return Error.InvalidIndexString;
-            } else {
-                try validateWord(slice);
-                L.pushLString(slice);
-            }
+            try validateWord(slice);
+            L.pushLString(slice);
             L.pushValue(-1);
             const ttype = L.getTable(-4);
             if (luau.isNoneOrNil(ttype)) {
@@ -402,7 +422,7 @@ fn decodeGenerateName(L: *Luau, name: []const u8, comptime includeLast: bool) !v
     }
 }
 
-fn decodeString(L: *Luau, string: []const u8, comptime multi: bool, info: *DecodeInfo) !usize {
+fn decodeString(L: *Luau, string: []const u8, comptime multi: bool, info: *DecodeInfo) Error!usize {
     if (string.len < if (multi) 6 else 2)
         return Error.InvalidString;
     if (multi) {
