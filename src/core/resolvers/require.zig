@@ -240,7 +240,7 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
         defer allocator.free(moduleRelativeNameZ);
 
         Engine.loadModule(ML, moduleRelativeNameZ, fileContent, null) catch |err| switch (err) {
-            error.Memory, error.OutOfMemory => return error.OutOfMemory,
+            error.OutOfMemory => return error.OutOfMemory,
             error.Syntax => {
                 L.pop(1); // drop: thread
                 outErr = ML.toString(-1) catch "UnknownError";

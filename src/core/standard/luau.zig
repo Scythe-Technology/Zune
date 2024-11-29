@@ -112,7 +112,7 @@ fn luau_load(L: *Luau) !i32 {
         } else L.pop(1);
     }
 
-    if (useCodeGen and luau.CodeGen.Supported())
+    if (useCodeGen and luau.CodeGen.Supported() and Engine.JIT_ENABLED)
         luau.CodeGen.Compile(L, -1);
 
     return 1;

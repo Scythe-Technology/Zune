@@ -3,7 +3,7 @@ const luau = @import("luau");
 
 const Luau = luau.Luau;
 
-pub fn lua_genHashFn(comptime hash_algorithm: anytype) luau.ZigFn {
+pub fn lua_genHashFn(comptime hash_algorithm: anytype) luau.ZigFnInt {
     return struct {
         fn hash(L: *Luau) i32 {
             const data = L.checkString(1);
@@ -21,7 +21,7 @@ pub fn lua_genHashFn(comptime hash_algorithm: anytype) luau.ZigFn {
     }.hash;
 }
 
-pub fn lua_genHmacFn(comptime hash_algorithm: anytype) luau.ZigFn {
+pub fn lua_genHmacFn(comptime hash_algorithm: anytype) luau.ZigFnInt {
     const hmac_algorithm = std.crypto.auth.hmac.Hmac(hash_algorithm);
     return struct {
         fn hash(L: *Luau) i32 {

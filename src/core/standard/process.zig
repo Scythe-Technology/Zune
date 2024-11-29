@@ -823,7 +823,7 @@ pub fn loadLib(L: *Luau, args: []const []const u8) !void {
         L.setFieldAhead(-1, luau.Metamethods.index); // metatable.__index
 
         L.pushValue(-3);
-        L.pushClosure(luau.EFntoZigFn(lib__newindex), luau.Metamethods.newindex, 1);
+        L.pushClosure(luau.toCFn(lib__newindex), luau.Metamethods.newindex, 1);
         L.setFieldAhead(-1, luau.Metamethods.newindex); // metatable.__newindex
 
         L.setFieldString(-1, luau.Metamethods.metatable, "Metatable is locked");

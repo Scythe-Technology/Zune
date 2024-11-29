@@ -55,7 +55,7 @@ const LuaStatement = struct {
                     .i32 => |n| L.pushInteger(n),
                     .i64 => |n| L.pushNumber(@floatFromInt(n)),
                     .text => |s| L.pushLString(s),
-                    .blob => |b| try L.pushBuffer(b),
+                    .blob => |b| L.pushBuffer(b),
                 }
                 L.setTable(-3);
             }
@@ -349,7 +349,7 @@ const LuaDatabase = struct {
             L.pushValue(1);
             L.pushValue(2);
             L.pushInteger(@intFromEnum(kind));
-            L.pushClosure(luau.EFntoZigFn(Scheduler.toSchedulerEFn(transaction)), "Transaction", 3);
+            L.pushClosure(luau.toCFn(Scheduler.toSchedulerEFn(transaction)), "Transaction", 3);
             return 1;
         } else if (std.mem.eql(u8, namecall, "close")) {
             if (!(L.optBoolean(2) orelse false)) {

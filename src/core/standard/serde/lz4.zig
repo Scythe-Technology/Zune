@@ -49,7 +49,7 @@ pub fn lua_frame_compress(L: *Luau) !i32 {
     @memcpy(out[4..][0..buf.items.len], buf.items[0..]);
 
     if (is_buffer)
-        try L.pushBuffer(out)
+        L.pushBuffer(out)
     else
         L.pushLString(out);
 
@@ -75,7 +75,7 @@ pub fn lua_frame_decompress(L: *Luau) !i32 {
     defer allocator.free(decompressed);
 
     if (is_buffer)
-        try L.pushBuffer(decompressed)
+        L.pushBuffer(decompressed)
     else
         L.pushLString(decompressed);
 
@@ -92,7 +92,7 @@ pub fn lua_compress(L: *Luau) !i32 {
     defer allocator.free(compressed);
 
     if (is_buffer)
-        try L.pushBuffer(compressed)
+        L.pushBuffer(compressed)
     else
         L.pushLString(compressed);
 
@@ -111,7 +111,7 @@ pub fn lua_decompress(L: *Luau) !i32 {
     defer allocator.free(decompressed);
 
     if (is_buffer)
-        try L.pushBuffer(decompressed)
+        L.pushBuffer(decompressed)
     else
         L.pushLString(decompressed);
 

@@ -26,9 +26,10 @@ fn fs_readFile(L: *Luau) !i32 {
     const data = try fs.cwd().readFileAlloc(allocator, path, luaHelper.MAX_LUAU_SIZE);
     defer allocator.free(data);
 
-    if (useBuffer) {
-        L.pushBuffer(data) catch return BufferError.FailedToCreateBuffer;
-    } else L.pushLString(data);
+    if (useBuffer)
+        L.pushBuffer(data)
+    else
+        L.pushLString(data);
 
     return 1;
 }
@@ -436,7 +437,7 @@ const LuaFile = struct {
             const size = L.optInteger(2) orelse luaHelper.MAX_LUAU_SIZE;
             const data = try file_ptr.handle.readToEndAlloc(allocator, @intCast(size));
             defer allocator.free(data);
-            if (L.optBoolean(3) orelse false) try L.pushBuffer(data) else L.pushLString(data);
+            if (L.optBoolean(3) orelse false) L.pushBuffer(data) else L.pushLString(data);
             return 1;
         } else if (std.mem.eql(u8, namecall, "lock")) {
             var lockOpt: fs.File.Lock = .exclusive;

@@ -38,7 +38,10 @@ pub fn lua_compress(L: *Luau) !i32 {
         .level = @enumFromInt(level),
     });
 
-    if (is_buffer) try L.pushBuffer(buf.items) else L.pushLString(buf.items);
+    if (is_buffer)
+        L.pushBuffer(buf.items)
+    else
+        L.pushLString(buf.items);
 
     return 1;
 }
@@ -57,7 +60,7 @@ pub fn lua_decompress(L: *Luau) !i32 {
     try std.compress.gzip.decompress(stream.reader(), buf.writer());
 
     if (is_buffer)
-        try L.pushBuffer(buf.items)
+        L.pushBuffer(buf.items)
     else
         L.pushLString(buf.items);
 

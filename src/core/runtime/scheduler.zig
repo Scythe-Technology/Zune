@@ -436,7 +436,7 @@ pub fn getScheduler(L: *Luau) *Self {
     return luau_scheduler;
 }
 
-pub fn toSchedulerFn(comptime f: *const fn (state: *Luau, scheduler: *Self) i32) luau.ZigFn {
+pub fn toSchedulerFn(comptime f: *const fn (state: *Luau, scheduler: *Self) i32) luau.ZigFnInt {
     return struct {
         fn inner(L: *Luau) i32 {
             return @call(.always_inline, f, .{ L, getScheduler(L) });
@@ -444,9 +444,9 @@ pub fn toSchedulerFn(comptime f: *const fn (state: *Luau, scheduler: *Self) i32)
     }.inner;
 }
 
-pub fn toSchedulerEFn(comptime f: *const fn (state: *Luau, scheduler: *Self) anyerror!i32) luau.ZigEFn {
+pub fn toSchedulerEFn(comptime f: *const fn (state: *Luau, scheduler: *Self) anyerror!i32) luau.ZigFnErrorSet {
     return struct {
-        fn inner(L: *Luau) !i32 {
+        fn inner(L: *Luau) anyerror!i32 {
             return @call(.always_inline, f, .{ L, getScheduler(L) });
         }
     }.inner;

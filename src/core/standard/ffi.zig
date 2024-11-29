@@ -369,8 +369,8 @@ const LuaPointer = struct {
                     .void => unreachable,
                     .i8, .u8 => L.pushInteger(@intCast(@as(AsType(ffiType), @bitCast(mem[0])))),
                     .i16, .u16, .i32, .u32 => L.pushInteger(@intCast(std.mem.readVarInt(AsType(ffiType), mem[0..@sizeOf(AsType(ffiType))], .little))),
-                    .i64 => try L.pushBuffer(mem[0..8]),
-                    .u64 => try L.pushBuffer(mem[0..8]),
+                    .i64 => L.pushBuffer(mem[0..8]),
+                    .u64 => L.pushBuffer(mem[0..8]),
                     .float => L.pushNumber(@floatCast(@as(f32, @bitCast(std.mem.readVarInt(u32, mem[0..4], .little))))),
                     .double => L.pushNumber(@as(f64, @bitCast(std.mem.readVarInt(u64, mem[0..8], .little)))),
                     .pointer => _ = try LuaPointer.newStaticPtr(L, @ptrFromInt(std.mem.readVarInt(usize, mem[0..@sizeOf(usize)], .little)), false),
@@ -478,7 +478,7 @@ const LuaPointer = struct {
 
         const bytes: [:0]const u8 = std.mem.span(target[src_offset..]);
 
-        const buf = try L.newBuffer(bytes.len + 1);
+        const buf = L.newBuffer(bytes.len + 1);
         @memcpy(buf[0..bytes.len], bytes);
         buf[bytes.len] = 0;
 
@@ -718,7 +718,7 @@ const LuaStructType = struct {
             }
         }
 
-        try L.pushBuffer(mem);
+        L.pushBuffer(mem);
 
         return 1;
     }
@@ -1134,7 +1134,7 @@ fn ffi_dlopen(L: *Luau) !i32 {
             .ptr = func,
         };
         L.pushValue(-5);
-        L.pushClosure(luau.EFntoZigFn(FFIFunction.fn_inner), "ffi_func", 2);
+        L.pushClosure(luau.toCFn(FFIFunction.fn_inner), "ffi_func", 2);
         L.setTable(-3);
     }
     L.setField(-2, luau.Metamethods.index);
@@ -1244,11 +1244,11 @@ fn ffi_closure(L: *Luau) !i32 {
                         .u32 => subthread.pushInteger(@intCast(@as(*u32, @ptrCast(@alignCast(ffi_args[i]))).*)),
                         .i64 => {
                             const bytes: [8]u8 = @bitCast(@as(*i64, @ptrCast(@alignCast(ffi_args[i]))).*);
-                            subthread.pushBuffer(&bytes) catch |err| std.debug.panic("Failed: {}", .{err});
+                            subthread.pushBuffer(&bytes);
                         },
                         .u64 => {
                             const bytes: [8]u8 = @bitCast(@as(*u64, @ptrCast(@alignCast(ffi_args[i]))).*);
-                            subthread.pushBuffer(&bytes) catch |err| std.debug.panic("Failed: {}", .{err});
+                            subthread.pushBuffer(&bytes);
                         },
                         .float => subthread.pushNumber(@floatCast(@as(f32, @bitCast(@as(*u32, @ptrCast(@alignCast(ffi_args[i]))).*)))),
                         .double => subthread.pushNumber(@as(f64, @bitCast(@as(*u64, @ptrCast(@alignCast(ffi_args[i]))).*))),
@@ -1256,7 +1256,7 @@ fn ffi_closure(L: *Luau) !i32 {
                     },
                     .structType => |t| {
                         const bytes: [*]u8 = @ptrCast(@alignCast(ffi_args[i]));
-                        subthread.pushBuffer(bytes[0..t.getSize()]) catch |err| std.debug.panic("Failed: {}", .{err});
+                        subthread.pushBuffer(bytes[0..t.getSize()]);
                     },
                 }
             }
@@ -1400,13 +1400,13 @@ const FFIFunction = struct {
                     .u16 => L.pushInteger(@intCast(std.mem.readVarInt(u16, ret, cpu_endian))),
                     .i32 => L.pushInteger(@intCast(std.mem.readVarInt(i32, ret, cpu_endian))),
                     .u32 => L.pushInteger(@intCast(std.mem.readVarInt(u32, ret, cpu_endian))),
-                    .i64 => try L.pushBuffer(ret),
-                    .u64 => try L.pushBuffer(ret),
+                    .i64 => L.pushBuffer(ret),
+                    .u64 => L.pushBuffer(ret),
                     .float => L.pushNumber(@floatCast(@as(f32, @bitCast(std.mem.readVarInt(u32, ret, cpu_endian))))),
                     .double => L.pushNumber(@as(f64, @bitCast(std.mem.readVarInt(u64, ret, cpu_endian)))),
                     .pointer => _ = try LuaPointer.newStaticPtr(L, @ptrFromInt(std.mem.readVarInt(usize, ret[0..@sizeOf(usize)], cpu_endian)), false),
                 },
-                .structType => try L.pushBuffer(ret),
+                .structType => L.pushBuffer(ret),
             }
             return 1;
         }
@@ -1502,7 +1502,7 @@ fn ffi_fn(L: *Luau) !i32 {
         .ptr = ptr,
     };
 
-    L.pushClosure(luau.EFntoZigFn(FFIFunction.fn_inner), "ffi_fn", 1);
+    L.pushClosure(luau.toCFn(FFIFunction.fn_inner), "ffi_fn", 1);
 
     return 1;
 }

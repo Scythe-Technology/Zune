@@ -22,27 +22,38 @@ pub const LuauRunError = enum {
     Runtime,
 };
 
-pub fn compileModule(allocator: std.mem.Allocator, content: []const u8, cOpts: ?luau.CompileOptions) ![]const u8 {
+pub fn compileModule(allocator: std.mem.Allocator, content: []const u8, cOpts: ?luau.CompileOptions) !struct { bool, []const u8 } {
     const compileOptions = cOpts orelse luau.CompileOptions{
         .debug_level = DEBUG_LEVEL,
         .optimization_level = OPTIMIZATION_LEVEL,
     };
-    return try luau.compile(allocator, content, compileOptions);
-}
+    var luau_allocator = luau.Ast.Allocator.Allocator.init();
+    defer luau_allocator.deinit();
 
-pub fn loadModuleBytecode(L: *Luau, moduleName: [:0]const u8, bytecode: []const u8) LuauCompileError!void {
-    L.loadBytecode(moduleName, bytecode) catch {
-        return LuauCompileError.Syntax;
-    };
-    if (luau.CodeGen.Supported() and CODEGEN and JIT_ENABLED)
-        luau.CodeGen.Compile(L, -1);
+    var astNameTable = luau.Ast.Lexer.AstNameTable.init(luau_allocator);
+    defer astNameTable.deinit();
+
+    var parseResult = luau.Ast.Parser.parse(content, astNameTable, luau_allocator);
+    defer parseResult.deinit();
+
+    const hasNativeFunction = parseResult.hasNativeFunction();
+
+    return .{ hasNativeFunction, try luau.Compiler.compileParseResult(allocator, parseResult, astNameTable, compileOptions) };
 }
 
 pub fn loadModule(L: *Luau, name: [:0]const u8, content: []const u8, cOpts: ?luau.CompileOptions) !void {
     const allocator = L.allocator();
-    const bytecode = try compileModule(allocator, content, cOpts);
+    const native, const bytecode = try compileModule(allocator, content, cOpts);
     defer allocator.free(bytecode);
-    return try loadModuleBytecode(L, name, bytecode);
+    return try loadModuleBytecode(L, name, bytecode, native);
+}
+
+pub fn loadModuleBytecode(L: *Luau, moduleName: [:0]const u8, bytecode: []const u8, nativeAttribute: bool) LuauCompileError!void {
+    L.loadBytecode(moduleName, bytecode) catch {
+        return LuauCompileError.Syntax;
+    };
+    if (luau.CodeGen.Supported() and CODEGEN and !nativeAttribute and JIT_ENABLED)
+        luau.CodeGen.Compile(L, -1);
 }
 
 const FileContext = struct {
