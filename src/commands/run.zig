@@ -75,6 +75,8 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
             Engine.CODEGEN = true;
         } else if (flag.len == 11 and std.mem.eql(u8, flag[0..11], "--no-native")) {
             Engine.CODEGEN = false;
+        } else if (flag.len == 8 and std.mem.eql(u8, flag[0..8], "--no-jit")) {
+            Engine.JIT_ENABLED = false;
         }
     };
 

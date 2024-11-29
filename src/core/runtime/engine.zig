@@ -11,6 +11,7 @@ const Luau = luau.Luau;
 pub var DEBUG_LEVEL: u2 = 2;
 pub var OPTIMIZATION_LEVEL: u2 = 1;
 pub var CODEGEN: bool = true;
+pub var JIT_ENABLED: bool = true;
 pub var USE_DETAILED_ERROR: bool = false;
 
 pub const LuauCompileError = error{
@@ -33,7 +34,7 @@ pub fn loadModuleBytecode(L: *Luau, moduleName: [:0]const u8, bytecode: []const 
     L.loadBytecode(moduleName, bytecode) catch {
         return LuauCompileError.Syntax;
     };
-    if (luau.CodeGen.Supported() and CODEGEN)
+    if (luau.CodeGen.Supported() and CODEGEN and JIT_ENABLED)
         luau.CodeGen.Compile(L, -1);
 }
 
@@ -276,7 +277,7 @@ const PrepOptions = struct {
 };
 
 pub fn prep(L: *Luau, pOpts: PrepOptions, flags: Zune.Flags) !void {
-    if (luau.CodeGen.Supported())
+    if (luau.CodeGen.Supported() and JIT_ENABLED)
         luau.CodeGen.Create(L);
 
     L.openLibs();
