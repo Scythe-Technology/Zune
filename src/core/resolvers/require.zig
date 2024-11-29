@@ -52,18 +52,9 @@ const RequireContext = struct {
     path: [:0]const u8,
 };
 fn require_finished(ctx: *RequireContext, ML: *Luau, _: *Scheduler) void {
-    const allocator = ctx.caller.allocator();
-    defer allocator.free(ctx.path);
-
     var outErr: ?[]const u8 = null;
 
     const queue = REQUIRE_QUEUE_MAP.getEntry(ctx.path) orelse std.debug.panic("require_finished: queue not found", .{});
-    defer {
-        for (queue.value_ptr.items) |item|
-            Scheduler.derefThread(item.state, item.ref);
-        queue.value_ptr.deinit();
-        allocator.free(queue.key_ptr.*);
-    }
 
     if (ML.status() == .ok) jmp: {
         const t = ML.getTop();
@@ -95,6 +86,18 @@ fn require_finished(ctx: *RequireContext, ML: *Luau, _: *Scheduler) void {
     }
 
     ML.pop(1);
+}
+
+fn require_dtor(ctx: *RequireContext, _: *Luau, _: *Scheduler) void {
+    const allocator = ctx.caller.allocator();
+    defer allocator.free(ctx.path);
+
+    const queue = REQUIRE_QUEUE_MAP.getEntry(ctx.path) orelse return;
+
+    for (queue.value_ptr.items) |item|
+        Scheduler.derefThread(item.state, item.ref);
+    queue.value_ptr.deinit();
+    allocator.free(queue.key_ptr.*);
 }
 
 pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
@@ -273,7 +276,7 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
                     _ = scheduler.awaitResult(RequireContext, .{
                         .path = path,
                         .caller = L,
-                    }, ML, require_finished);
+                    }, ML, require_finished, require_dtor);
                 }
 
                 var list = std.ArrayList(QueueItem).init(allocator);

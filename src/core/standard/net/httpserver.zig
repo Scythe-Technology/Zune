@@ -259,13 +259,8 @@ pub fn handleWebSocket(ctx: *Self, L: *Luau, scheduler: *Scheduler, i: usize, co
     return;
 }
 
-pub fn responseResumed(responsePtr: *NetStreamData, L: *Luau, scheduler: *Scheduler) void {
-    _ = scheduler;
+pub fn responseResumed(responsePtr: *NetStreamData, L: *Luau, _: *Scheduler) void {
     const allocator = L.allocator();
-    defer {
-        if (responsePtr.owned) |owned|
-            owned[responsePtr.id] = null;
-    }
     if (responsePtr.owned == null)
         return; // Server dead
     const stream = responsePtr.stream orelse {
@@ -407,6 +402,11 @@ pub fn responseResumed(responsePtr: *NetStreamData, L: *Luau, scheduler: *Schedu
     }
 }
 
+pub fn responseResumedDtor(responsePtr: *NetStreamData, _: *Luau, _: *Scheduler) void {
+    if (responsePtr.owned) |owned|
+        owned[responsePtr.id] = null;
+}
+
 pub fn websocket_acceptUpgrade(L: *Luau, ctx: *Self, id: usize, stream: std.net.Stream, res: []const u8) void {
     stream.writeAll(res) catch |err| {
         std.debug.print("Error writing response: {}\n", .{err});
@@ -447,13 +447,6 @@ pub fn websocket_acceptUpgrade(L: *Luau, ctx: *Self, id: usize, stream: std.net.
 }
 
 pub fn websocket_upgradeResumed(responsePtr: *NetStreamData, L: *Luau, _: *Scheduler) void {
-    const allocator = L.allocator();
-    defer {
-        if (responsePtr.owned) |owned|
-            owned[responsePtr.id] = null;
-        if (responsePtr.upgrade_response) |buf|
-            allocator.free(buf);
-    }
     const upgrade = responsePtr.upgrade_response orelse return;
     const ctx = responsePtr.server;
     const id = responsePtr.id;
@@ -485,6 +478,14 @@ pub fn websocket_upgradeResumed(responsePtr: *NetStreamData, L: *Luau, _: *Sched
     }
 
     websocket_acceptUpgrade(L, ctx, id, stream, upgrade);
+}
+
+pub fn websocket_upgradeResumedDtor(responsePtr: *NetStreamData, L: *Luau, _: *Scheduler) void {
+    const allocator = L.allocator();
+    if (responsePtr.owned) |owned|
+        owned[responsePtr.id] = null;
+    if (responsePtr.upgrade_response) |buf|
+        allocator.free(buf);
 }
 
 pub fn handleRequest(ctx: *Self, L: *Luau, scheduler: *Scheduler, i: usize, connection: std.net.Server.Connection) HandleError!void {
@@ -549,7 +550,7 @@ pub fn handleRequest(ctx: *Self, L: *Luau, scheduler: *Scheduler, i: usize, conn
                         .owned = responses,
                         .upgrade_response = response,
                         .id = i,
-                    }, thread, 1, websocket_upgradeResumed, L) catch {
+                    }, thread, 1, websocket_upgradeResumed, websocket_upgradeResumedDtor, L) catch {
                         connection.stream.writeAll(HTTP_500) catch |werr| {
                             std.debug.print("Error writing response: {}\n", .{werr});
                         };
@@ -588,7 +589,7 @@ pub fn handleRequest(ctx: *Self, L: *Luau, scheduler: *Scheduler, i: usize, conn
         .stream = connection.stream,
         .owned = responses,
         .id = i,
-    }, thread, 1, responseResumed, L) catch {
+    }, thread, 1, responseResumed, responseResumedDtor, L) catch {
         connection.stream.writeAll(HTTP_500) catch |werr| {
             std.debug.print("Error writing response: {}\n", .{werr});
         };

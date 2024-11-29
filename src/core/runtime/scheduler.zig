@@ -228,7 +228,14 @@ pub fn addSimpleTask(self: *Self, comptime T: type, data: T, L: *Luau, comptime 
     return L.yield(0);
 }
 
-pub fn awaitResult(self: *Self, comptime T: type, data: T, L: *Luau, comptime handler: *const fn (ctx: *T, L: *Luau, scheduler: *Self) void) ?*T {
+pub fn awaitResult(
+    self: *Self,
+    comptime T: type,
+    data: T,
+    L: *Luau,
+    comptime handlerFn: *const fn (ctx: *T, L: *Luau, scheduler: *Self) void,
+    comptime dtorFn: ?*const fn (ctx: *T, L: *Luau, scheduler: *Self) void,
+) ?*T {
     const allocator = L.allocator();
 
     const ptr = allocator.create(T) catch |err| std.debug.panic("Error: {}\n", .{err});
@@ -238,18 +245,23 @@ pub fn awaitResult(self: *Self, comptime T: type, data: T, L: *Luau, comptime ha
     const status = L.status();
     if (status != .yield) {
         defer allocator.destroy(ptr);
-        handler(ptr, L, self);
+        handlerFn(ptr, L, self);
+        if (dtorFn) |dtor|
+            dtor(ptr, L, self);
         return null;
     }
 
     const resumeFn = struct {
         fn inner(ctx: *anyopaque, l: *Luau, scheduler: *Self) void {
-            @call(.always_inline, handler, .{ @as(*T, @alignCast(@ptrCast(ctx))), l, scheduler });
+            @call(.always_inline, handlerFn, .{ @as(*T, @alignCast(@ptrCast(ctx))), l, scheduler });
         }
     }.inner;
 
     const virtualDtor = struct {
-        fn inner(ctx: *anyopaque, l: *Luau, _: *Self) void {
+        fn inner(ctx: *anyopaque, l: *Luau, scheduler: *Self) void {
+            if (dtorFn) |dtor| {
+                @call(.always_inline, dtor, .{ @as(*T, @alignCast(@ptrCast(ctx))), l, scheduler });
+            }
             l.allocator().destroy(@as(*T, @alignCast(@ptrCast(ctx))));
         }
     }.inner;
@@ -271,11 +283,12 @@ pub fn awaitCall(
     data: T,
     L: *Luau,
     args: i32,
-    comptime handler: *const fn (ctx: *T, L: *Luau, scheduler: *Self) void,
+    comptime handlerFn: *const fn (ctx: *T, L: *Luau, scheduler: *Self) void,
+    comptime dtorFn: ?*const fn (ctx: *T, L: *Luau, scheduler: *Self) void,
     from: ?*Luau,
 ) !?*T {
     _ = try resumeState(L, from, args);
-    return awaitResult(self, T, data, L, handler);
+    return awaitResult(self, T, data, L, handlerFn, dtorFn);
 }
 
 pub fn resumeState(state: *Luau, from: ?*Luau, args: i32) !luau.ResumeStatus {

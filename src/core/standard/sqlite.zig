@@ -200,7 +200,7 @@ const LuaDatabase = struct {
     const Transaction = struct {
         ptr: *LuaDatabase,
         state: *Luau,
-        state_ref: i32,
+        state_ref: ?i32,
     };
 
     pub fn transactionResumed(ctx: *Transaction, L: *Luau, _: *Scheduler) void {
@@ -209,7 +209,8 @@ const LuaDatabase = struct {
             .ok => "COMMIT",
             else => "ROLLBACK",
         };
-        L.unref(ctx.state_ref);
+        L.unref(ctx.state_ref orelse unreachable);
+        ctx.state_ref = null;
         const state = ctx.state;
         ptr.db.exec(command, &.{}) catch |err| {
             switch (err) {
@@ -225,6 +226,11 @@ const LuaDatabase = struct {
         } else {
             _ = Scheduler.resumeState(state, null, 0) catch {};
         }
+    }
+
+    pub fn transactionResumedDtor(ctx: *Transaction, L: *Luau, _: *Scheduler) void {
+        if (ctx.state_ref) |ref|
+            L.unref(ref);
     }
 
     pub fn transaction(L: *Luau, scheduler: *Scheduler) !i32 {
@@ -272,7 +278,7 @@ const LuaDatabase = struct {
                 .ptr = ptr,
                 .state = L,
                 .state_ref = ref,
-            }, ML, transactionResumed)) |_|
+            }, ML, transactionResumed, transactionResumedDtor)) |_|
                 return L.yield(0);
         } else {
             L.unref(ref);
