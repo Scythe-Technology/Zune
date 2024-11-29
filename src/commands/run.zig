@@ -17,13 +17,14 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var run_args: []const []const u8 = args;
     var flags: ?[]const []const u8 = null;
     blk: {
-        for (args, 0..) |arg, ap|
-            if (arg.len < 2 or !std.mem.eql(u8, arg[0..2], "--")) {
+        for (args, 0..) |arg, ap| {
+            if (arg.len < 1 or arg[0] != '-' or arg.len == 1) {
                 if (ap > 0)
                     flags = args[0..ap];
                 run_args = args[ap..];
                 break :blk;
-            };
+            }
+        }
         flags = args;
         run_args = &[0][]const u8{};
         break :blk;
@@ -44,6 +45,36 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
                 const level = try std.fmt.parseInt(u64, flag[10..], 10);
                 PROFILER = level;
             }
+        } else if (flag.len >= 2 and std.mem.eql(u8, flag[0..2], "-O")) {
+            if (flag.len == 3 and flag[2] >= '0' and flag[2] <= '2') {
+                const level: u2 = switch (flag[2]) {
+                    '0' => 0,
+                    '1' => 1,
+                    '2' => 2,
+                    else => unreachable,
+                };
+                Engine.OPTIMIZATION_LEVEL = level;
+            } else {
+                std.debug.print("Flag: -O, Invalid Optimization level, usage: -O<N>\n", .{});
+                return;
+            }
+        } else if (flag.len >= 2 and std.mem.eql(u8, flag[0..2], "-g")) {
+            if (flag.len == 3 and flag[2] >= '0' and flag[2] <= '2') {
+                const level: u2 = switch (flag[2]) {
+                    '0' => 0,
+                    '1' => 1,
+                    '2' => 2,
+                    else => unreachable,
+                };
+                Engine.DEBUG_LEVEL = level;
+            } else {
+                std.debug.print("Flag: -g, Invalid Debug level, usage: -g<N>\n", .{});
+                return;
+            }
+        } else if (flag.len == 8 and std.mem.eql(u8, flag[0..8], "--native")) {
+            Engine.CODEGEN = true;
+        } else if (flag.len == 11 and std.mem.eql(u8, flag[0..11], "--no-native")) {
+            Engine.CODEGEN = false;
         }
     };
 
