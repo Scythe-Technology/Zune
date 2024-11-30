@@ -339,7 +339,10 @@ pub fn lua_setprops(L: *Luau) void {
     L.setFieldInteger(-1, "TwoSpaces", 1);
     L.setFieldInteger(-1, "FourSpaces", 2);
     L.setFieldInteger(-1, "Tabs", 3);
+    L.setReadOnly(-1, true);
     L.setField(-2, "Indents");
+
+    L.setReadOnly(-1, true);
 }
 
 test "Escaped Strings" {

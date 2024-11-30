@@ -124,6 +124,7 @@ pub fn loadLib(L: *Luau) void {
     L.setFieldFn(-1, "compile", luau_compile);
     L.setFieldFn(-1, "load", luau_load);
 
+    L.setReadOnly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);
 }
 

@@ -833,6 +833,7 @@ pub fn loadLib(L: *Luau, args: []const []const u8) !void {
 
     L.remove(-2);
 
+    L.setReadOnly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);
 }
 

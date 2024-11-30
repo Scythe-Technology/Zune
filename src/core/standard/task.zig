@@ -159,6 +159,7 @@ pub fn loadLib(L: *Luau) void {
     L.setFieldFn(-1, "cancel", Scheduler.toSchedulerEFn(task_cancel));
     L.setFieldFn(-1, "count", Scheduler.toSchedulerEFn(task_count));
 
+    L.setReadOnly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);
 }
 

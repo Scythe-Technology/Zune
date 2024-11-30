@@ -13,7 +13,7 @@ assert(version and #version > 0, "No version");
 describe("Server", function()
     test("Basic", function()
         local requests: {ServerRequest} = {};
-        local server = net.serve({
+        local server = net.http.serve({
             port = 8080,
             reuseAddress = true,
             request = function(req)
@@ -26,7 +26,7 @@ describe("Server", function()
         });
         expect(server).toBe(expect.type("userdata"));
 
-        local rRes = net.request("http://localhost:8080");
+        local rRes = net.http.request("http://localhost:8080");
         expect(rRes).toBe(expect.type("table"));
         expect(rRes.ok).toBe(true);
         expect(rRes.statusCode).toBe(200);
@@ -47,7 +47,7 @@ describe("Server", function()
 
         
         expect(function()
-            local _ = net.request("http://localhost:8085");
+            local _ = net.http.request("http://localhost:8085");
         end).toThrow("ConnectionRefused");
 
         expect(requests).toHaveLength(1);
@@ -61,7 +61,7 @@ describe("Server", function()
         expect(requests);
 
         expect(function()
-            local _ = net.request("http://localhost:8080");
+            local _ = net.http.request("http://localhost:8080");
         end).toThrow("ConnectionRefused");
 
         expect(requests).toHaveLength(1);
@@ -69,7 +69,7 @@ describe("Server", function()
 
     test("Basic Table Buffer", function()
         local requests = {};
-        local server = net.serve({
+        local server = net.http.serve({
             port = 8080,
             reuseAddress = true,
             request = function(req)
@@ -82,7 +82,7 @@ describe("Server", function()
         });
         expect(server).toBe(expect.type("userdata"));
 
-        local rRes = net.request("http://localhost:8080");
+        local rRes = net.http.request("http://localhost:8080");
         expect(rRes).toBe(expect.type("table"));
         expect(rRes.ok).toBe(true);
         expect(rRes.statusCode).toBe(200);
@@ -108,7 +108,7 @@ describe("Server", function()
 
     test("Basic Buffer", function()
         local requests = {};
-        local server = net.serve({
+        local server = net.http.serve({
             port = 8080,
             reuseAddress = true,
             request = function(req)
@@ -118,7 +118,7 @@ describe("Server", function()
         });
         expect(server).toBe(expect.type("userdata"));
 
-        local rRes = net.request("http://localhost:8080");
+        local rRes = net.http.request("http://localhost:8080");
         expect(rRes).toBe(expect.type("table"));
         expect(rRes.ok).toBe(true);
         expect(rRes.statusCode).toBe(200);
@@ -144,7 +144,7 @@ describe("Server", function()
 
     test("Long Term", function()
         local requests = {};
-        local server = net.serve({
+        local server = net.http.serve({
             port = 8080,
             reuseAddress = true,
             request = function(req)
@@ -157,7 +157,7 @@ describe("Server", function()
         local requestsMade = 0;
 
         for _ = 1, 10 do
-            local rRes = net.request("http://localhost:8080");
+            local rRes = net.http.request("http://localhost:8080");
             requestsMade += 1;
 
             expect(rRes).toBe(expect.type("table"));
@@ -181,7 +181,7 @@ describe("Server", function()
         end
 
         expect(function()
-            local _ = net.request("http://localhost:8085");
+            local _ = net.http.request("http://localhost:8085");
         end).toThrow("ConnectionRefused");
 
         expect(requests).toHaveLength(requestsMade);
@@ -193,7 +193,7 @@ describe("Server", function()
         expect(server.stopped).toBe(true);
 
         expect(function()
-            local _ = net.request("http://localhost:8080");
+            local _ = net.http.request("http://localhost:8080");
         end).toThrow("ConnectionRefused");
 
         expect(requests).toHaveLength(requestsMade);
@@ -201,7 +201,7 @@ describe("Server", function()
 
     describe("Server Error", function()
         test("Immediate", function()
-            local server = net.serve({
+            local server = net.http.serve({
                 port = 8080,
                 reuseAddress = true,
                 request = function(req)
@@ -214,7 +214,7 @@ describe("Server", function()
                 server:stop();
             end)
     
-            local rRes = net.request("http://localhost:8080");
+            local rRes = net.http.request("http://localhost:8080");
             expect(rRes).toBe(expect.type("table"));
             expect(rRes.ok).toBe(false);
             expect(rRes.statusCode).toBe(500);
@@ -225,7 +225,7 @@ describe("Server", function()
             expect(rRes.statusReason).toBe("Internal Server Error");
         end)
         test("Yielded", function()
-            local server = net.serve({
+            local server = net.http.serve({
                 port = 8080,
                 reuseAddress = true,
                 request = function(req)
@@ -239,7 +239,7 @@ describe("Server", function()
                 server:stop();
             end)
     
-            local rRes = net.request("http://localhost:8080");
+            local rRes = net.http.request("http://localhost:8080");
             expect(rRes).toBe(expect.type("table"));
             expect(rRes.ok).toBe(false);
             expect(rRes.statusCode).toBe(500);
@@ -260,7 +260,7 @@ describe("Websockets", function()
         local serverMessageCount = 0;
         local references = {};
         local reqCalled = false;
-        local server = net.serve({
+        local server = net.http.serve({
             port = 8080,
             reuseAddress = true,
             request = function(req)
@@ -308,7 +308,7 @@ describe("Websockets", function()
         local openCalled = false;
         local messageCount = 0;
         local closeCalled = false;
-        local socket = net.websocket("ws://localhost:8080", {
+        local socket = net.http.websocket("ws://localhost:8080", {
             timeout = 1,
             open = function(socket)
                 expect(upgradeCalled).toBe(true);

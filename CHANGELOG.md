@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking Changes
 - `fs`, `luau`, `process`, and `net` all functions that returns a boolean & result tuple, now returns only the results or throws a lua error instead.
 - `ffi` api changes are not backwards compatible with `0.4.2`.
+- namespaces have been shifted around, read docs to catch up.
 - `require` is now based on **Amended Require Syntax and Resolution Semantics**, thus `require("module/init.luau")` would need to be `require("./module/init")`.
 - `websocket` api changes are not backwards compatible.
 - Zune libraries has been changed to a global variable instead of a module.
@@ -50,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
     print(stdio.format({"Array"}, 123, newproxy())) -- ... custom output
     ```
-- Added `maxBodySize` option to HTTP server in `zune.net`.
+- Added `maxBodySize` option to HTTP server in `zune.net.http`.
 - Added `udpSocket` to `zune.net`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/net)
   - Example:
     ```luau
@@ -139,9 +140,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Zune types has moved all type information into one definition file & removed require directory aliases.
 - `ffi.call` has been changed to `ffi.fn` to define a function pointer for better optimization.
   - `ffi.fn` returns a function, which can be used in lua to call like a normal function.
-- `net.websocket` now only accepts the callbacks within the options table, `bindMessage` & etc have been removed.
-- `net.serve` websocket upgrade callback is now async.
+- `net.http.websocket` now only accepts the callbacks within the options table, `bindMessage` & etc have been removed.
+- `net.http.serve` websocket upgrade callback is now async.
 - `serde.lz4.compress` and `serde.lz4.decompress` renamed to `serde.lz4.compressFrame` and `serde.lz4.decompressFrame`.
+- `net.serve`, `net.request` and `net.websocket` now has been moved to `net.http.serve`, `net.http.request` and `net.http.websocket`.
 
 ### Fixed
 - Fixed `ffi` closures getting garbage collected.

@@ -212,6 +212,7 @@ pub fn loadLib(L: *Luau, enabled: bool) void {
         L.setFieldFn(-1, "describe", empty);
         L.setFieldFn(-1, "test", empty);
         L.setFieldFn(-1, "expect", empty);
+        L.setReadOnly(-1, true);
     }
 
     luaHelper.registerModule(L, LIB_NAME);

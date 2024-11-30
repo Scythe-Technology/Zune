@@ -31,6 +31,7 @@ pub fn loadLib(L: *Luau) void {
 
         json.lua_setprops(L);
 
+        L.setReadOnly(-1, true);
         L.setFieldAhead(-1, "json");
     }
 
@@ -50,6 +51,7 @@ pub fn loadLib(L: *Luau) void {
 
         L.pop(1);
 
+        L.setReadOnly(-1, true);
         L.setFieldAhead(-1, "json5");
     }
 
@@ -59,6 +61,7 @@ pub fn loadLib(L: *Luau) void {
         L.setFieldFn(-1, "encode", toml.lua_encode);
         L.setFieldFn(-1, "decode", toml.lua_decode);
 
+        L.setReadOnly(-1, true);
         L.setFieldAhead(-1, "toml");
     }
 
@@ -68,6 +71,7 @@ pub fn loadLib(L: *Luau) void {
         L.setFieldFn(-1, "encode", yaml.lua_encode);
         L.setFieldFn(-1, "decode", yaml.lua_decode);
 
+        L.setReadOnly(-1, true);
         L.setFieldAhead(-1, "yaml");
     }
 
@@ -77,6 +81,7 @@ pub fn loadLib(L: *Luau) void {
         L.setFieldFn(-1, "encode", base64.lua_encode);
         L.setFieldFn(-1, "decode", base64.lua_decode);
 
+        L.setReadOnly(-1, true);
         L.setFieldAhead(-1, "base64");
     }
 
@@ -86,6 +91,7 @@ pub fn loadLib(L: *Luau) void {
         L.setFieldFn(-1, "compress", gzip.lua_compress);
         L.setFieldFn(-1, "decompress", gzip.lua_decompress);
 
+        L.setReadOnly(-1, true);
         L.setFieldAhead(-1, "gzip");
     }
 
@@ -95,6 +101,7 @@ pub fn loadLib(L: *Luau) void {
         L.setFieldFn(-1, "compress", zlib.lua_compress);
         L.setFieldFn(-1, "decompress", zlib.lua_decompress);
 
+        L.setReadOnly(-1, true);
         L.setFieldAhead(-1, "zlib");
     }
 
@@ -106,6 +113,7 @@ pub fn loadLib(L: *Luau) void {
         L.setFieldFn(-1, "decompress", lz4.lua_decompress);
         L.setFieldFn(-1, "decompressFrame", lz4.lua_frame_decompress);
 
+        L.setReadOnly(-1, true);
         L.setFieldAhead(-1, "lz4");
     }
 
@@ -115,9 +123,11 @@ pub fn loadLib(L: *Luau) void {
         L.setFieldFn(-1, "compress", zstd.lua_compress);
         L.setFieldFn(-1, "decompress", zstd.lua_decompress);
 
+        L.setReadOnly(-1, true);
         L.setFieldAhead(-1, "zstd");
     }
 
+    L.setReadOnly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);
 }
 

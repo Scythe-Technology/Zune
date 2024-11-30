@@ -458,6 +458,7 @@ pub fn loadLib(L: *Luau) void {
     L.setFieldFn(-1, "cursorMove", stdio_cursorMove);
     L.setFieldFn(-1, "format", Formatter.fmt_args);
 
+    L.setReadOnly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);
 }
 

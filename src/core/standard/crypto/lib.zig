@@ -39,6 +39,7 @@ pub fn loadLib(L: *Luau) void {
             L.setFieldFn(-1, "sha384", common.lua_genHashFn(hash.sha2.Sha384));
             L.setFieldFn(-1, "sha512", common.lua_genHashFn(hash.sha2.Sha512));
 
+            L.setReadOnly(-1, true);
             L.setFieldAhead(-1, "sha2");
         }
 
@@ -50,6 +51,7 @@ pub fn loadLib(L: *Luau) void {
             L.setFieldFn(-1, "sha3_384", common.lua_genHashFn(hash.sha3.Sha3_384));
             L.setFieldFn(-1, "sha3_512", common.lua_genHashFn(hash.sha3.Sha3_512));
 
+            L.setReadOnly(-1, true);
             L.setFieldAhead(-1, "sha3");
         }
 
@@ -67,9 +69,11 @@ pub fn loadLib(L: *Luau) void {
             L.setFieldFn(-1, "s224", common.lua_genHashFn(hash.blake2.Blake2s224));
             L.setFieldFn(-1, "s256", common.lua_genHashFn(hash.blake2.Blake2s256));
 
+            L.setReadOnly(-1, true);
             L.setFieldAhead(-1, "blake2");
         }
 
+        L.setReadOnly(-1, true);
         L.setFieldAhead(-1, "hash");
     }
 
@@ -91,6 +95,7 @@ pub fn loadLib(L: *Luau) void {
             L.setFieldFn(-1, "sha384", common.lua_genHmacFn(hash.sha2.Sha384));
             L.setFieldFn(-1, "sha512", common.lua_genHmacFn(hash.sha2.Sha512));
 
+            L.setReadOnly(-1, true);
             L.setFieldAhead(-1, "sha2");
         }
 
@@ -102,6 +107,7 @@ pub fn loadLib(L: *Luau) void {
             L.setFieldFn(-1, "sha3_384", common.lua_genHmacFn(hash.sha3.Sha3_384));
             L.setFieldFn(-1, "sha3_512", common.lua_genHmacFn(hash.sha3.Sha3_512));
 
+            L.setReadOnly(-1, true);
             L.setFieldAhead(-1, "sha3");
         }
 
@@ -119,9 +125,11 @@ pub fn loadLib(L: *Luau) void {
             L.setFieldFn(-1, "s224", common.lua_genHmacFn(hash.blake2.Blake2s224));
             L.setFieldFn(-1, "s256", common.lua_genHmacFn(hash.blake2.Blake2s256));
 
+            L.setReadOnly(-1, true);
             L.setFieldAhead(-1, "blake2");
         }
 
+        L.setReadOnly(-1, true);
         L.setFieldAhead(-1, "hmac");
     }
 
@@ -131,6 +139,7 @@ pub fn loadLib(L: *Luau) void {
         L.setFieldFn(-1, "hash", password.lua_hash);
         L.setFieldFn(-1, "verify", password.lua_verify);
 
+        L.setReadOnly(-1, true);
         L.setFieldAhead(-1, "password");
     }
 
@@ -142,6 +151,7 @@ pub fn loadLib(L: *Luau) void {
         L.setFieldFn(-1, "nextBoolean", random.lua_boolean);
         L.setFieldFn(-1, "fill", random.lua_fill);
 
+        L.setReadOnly(-1, true);
         L.setFieldAhead(-1, "random");
     }
 
@@ -154,6 +164,7 @@ pub fn loadLib(L: *Luau) void {
             L.setFieldFn(-1, "encrypt", aes.lua_aes128_encrypt);
             L.setFieldFn(-1, "decrypt", aes.lua_aes128_decrypt);
 
+            L.setReadOnly(-1, true);
             L.setFieldAhead(-1, "aes128");
         }
 
@@ -163,12 +174,15 @@ pub fn loadLib(L: *Luau) void {
             L.setFieldFn(-1, "encrypt", aes.lua_aes256_encrypt);
             L.setFieldFn(-1, "decrypt", aes.lua_aes256_decrypt);
 
+            L.setReadOnly(-1, true);
             L.setFieldAhead(-1, "aes256");
         }
 
+        L.setReadOnly(-1, true);
         L.setFieldAhead(-1, "aes");
     }
 
+    L.setReadOnly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);
 }
 

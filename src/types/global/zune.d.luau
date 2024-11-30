@@ -1177,40 +1177,6 @@ export type TCPServerOptions = {
 
 type NetworkLib = {
     --[[
-        Starts a server on the specified port.
-
-        @param options The options for the server.
-        @return `string | ServerHandle` The error message, or the server handle.
-        @error `ServerStartError`
-    ]]
-    serve: (options: ServeOptions) -> NetServerHandle,
-
-    --[[
-        Makes a request to the specified host.
-
-        Optional options, defaults to GET request.
-
-        *TLS is supported.*
-
-        @param host The host to make the request to.
-        @param options The options for the request.
-        @return `Response`
-        @error `RequestError`
-    ]]
-    request: (host: string, options: RequestOptions?) -> Response,
-
-    --[[
-        Creates a websocket client.
-
-        *TLS is supported.*
-
-        @param host The host to connect to.
-        @param opts The options for the websocket.
-        @return `ClientWebSocket`
-        @error `WebSocketError`
-    ]]
-    websocket: (host: string, opts: WebSocketOptions) -> NetWebSocket,
-    --[[
         Creates a UDP Socket.
 
         @param opts The options for the UDP Socket.
@@ -1233,6 +1199,43 @@ type NetworkLib = {
         @return `TCPServer`
     ]]
     tcpHost: (opts: TCPServerOptions) -> NetTCPServer,
+
+    http: {
+        --[[
+            Starts a server on the specified port.
+
+            @param options The options for the server.
+            @return `string | ServerHandle` The error message, or the server handle.
+            @error `ServerStartError`
+        ]]
+        serve: (options: ServeOptions) -> NetServerHandle,
+
+        --[[
+            Makes a request to the specified host.
+
+            Optional options, defaults to GET request.
+
+            *TLS is supported.*
+
+            @param host The host to make the request to.
+            @param options The options for the request.
+            @return `Response`
+            @error `RequestError`
+        ]]
+        request: (host: string, options: RequestOptions?) -> Response,
+
+        --[[
+            Creates a websocket client.
+
+            *TLS is supported.*
+
+            @param host The host to connect to.
+            @param opts The options for the websocket.
+            @return `ClientWebSocket`
+            @error `WebSocketError`
+        ]]
+        websocket: (host: string, opts: WebSocketOptions) -> NetWebSocket,
+    }
 }
 --[======[ Network ]======]--
 

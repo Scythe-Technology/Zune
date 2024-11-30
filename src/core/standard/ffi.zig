@@ -1722,6 +1722,7 @@ pub fn loadLib(L: *Luau) void {
         L.pushInteger(field.value);
         L.setTable(-3);
     }
+    L.setReadOnly(-1, true);
     L.setField(-2, "types");
 
     switch (builtin.os.tag) {
@@ -1738,6 +1739,7 @@ pub fn loadLib(L: *Luau) void {
     }
     L.setField(-2, "prefix");
 
+    L.setReadOnly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);
 }
 

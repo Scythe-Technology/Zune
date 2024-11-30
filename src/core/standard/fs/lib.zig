@@ -675,6 +675,7 @@ pub fn loadLib(L: *Luau) void {
 
     L.setFieldFn(-1, "watch", Scheduler.toSchedulerEFn(fs_watch));
 
+    L.setReadOnly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);
 }
 

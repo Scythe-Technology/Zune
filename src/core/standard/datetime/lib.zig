@@ -259,6 +259,7 @@ pub fn loadLib(L: *Luau) void {
     L.setFieldFn(-1, "fromUnixTimestamp", datetime_fromUnixTimestamp);
     L.setFieldFn(-1, "fromUnixTimestampMillis", datetime_fromUnixTimestampMillis);
 
+    L.setReadOnly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);
 }
 

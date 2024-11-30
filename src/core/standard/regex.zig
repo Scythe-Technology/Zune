@@ -165,6 +165,7 @@ pub fn loadLib(L: *Luau) void {
 
     L.setFieldFn(-1, "new", regex_new);
 
+    L.setReadOnly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);
 }
 
