@@ -63,6 +63,8 @@ pub const TaskResult = enum {
     Stop,
 };
 
+pub const AwaitTaskPriority = enum { Internal, User };
+
 const TaskFn = fn (ctx: *anyopaque, L: *Luau, scheduler: *Self) TaskResult;
 const TaskFnDtor = fn (ctx: *anyopaque, L: *Luau, scheduler: *Self) void;
 const AwaitedFn = TaskFnDtor; // Similar to TaskFnDtor
@@ -84,6 +86,7 @@ pub fn AwaitingObject(comptime T: type) type {
         resumeFn: *const AwaitedFn,
         virtualDtor: *const TaskFnDtor,
         ref: ?i32,
+        priority: AwaitTaskPriority,
     };
 }
 
@@ -133,7 +136,7 @@ pub fn spawnThread(self: *Self, thread: *Luau, args: i32) void {
 }
 
 pub fn deferThread(self: *Self, thread: *Luau, from: ?*Luau, args: i32) void {
-    self.deferred.insert(0, .{
+    self.deferred.append(.{
         .from = from,
         .thread = thread,
         .args = args,
@@ -235,6 +238,7 @@ pub fn awaitResult(
     L: *Luau,
     comptime handlerFn: *const fn (ctx: *T, L: *Luau, scheduler: *Self) void,
     comptime dtorFn: ?*const fn (ctx: *T, L: *Luau, scheduler: *Self) void,
+    priority: ?AwaitTaskPriority,
 ) ?*T {
     const allocator = L.allocator();
 
@@ -272,6 +276,7 @@ pub fn awaitResult(
         .resumeFn = resumeFn,
         .virtualDtor = virtualDtor,
         .ref = refThread(L),
+        .priority = priority orelse .User,
     }) catch |err| std.debug.panic("Error: {}\n", .{err});
 
     return ptr;
@@ -288,26 +293,26 @@ pub fn awaitCall(
     from: ?*Luau,
 ) !?*T {
     _ = try resumeState(L, from, args);
-    return awaitResult(self, T, data, L, handlerFn, dtorFn);
+    return awaitResult(self, T, data, L, handlerFn, dtorFn, .User);
 }
 
 pub fn resumeState(state: *Luau, from: ?*Luau, args: i32) !luau.ResumeStatus {
     return state.resumeThread(from, args) catch |err| {
-        Engine.logError(state, err);
+        Engine.logError(state, err, false);
         return err;
     };
 }
 
 pub fn resumeStateError(state: *Luau, from: ?*Luau) !luau.ResumeStatus {
     return state.resumeThreadError(from) catch |err| {
-        Engine.logError(state, err);
+        Engine.logError(state, err, false);
         return err;
     };
 }
 
 pub fn resumeStateErrorFmt(state: *Luau, from: ?*Luau, comptime fmt: []const u8, args: anytype) !luau.ResumeStatus {
     return state.resumeThreadErrorFmt(from, fmt, args) catch |err| {
-        Engine.logError(state, err);
+        Engine.logError(state, err, false);
         return err;
     };
 }
@@ -398,10 +403,7 @@ pub fn run(self: *Self, comptime testing: bool) void {
                 std.debug.panic("Error: {}\n", .{err});
             defer deferredArray.deinit();
             self.deferred.clearAndFree();
-            var i = deferredArray.items.len;
-            while (i > 0) {
-                i -= 1;
-                const deferred = deferredArray.swapRemove(i);
+            for (deferredArray.items) |deferred| {
                 var thread = deferred.thread;
                 const status = thread.status();
                 derefThread(thread, deferred.ref);

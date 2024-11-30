@@ -278,7 +278,7 @@ const LuaDatabase = struct {
                 .ptr = ptr,
                 .state = L,
                 .state_ref = ref,
-            }, ML, transactionResumed, transactionResumedDtor)) |_|
+            }, ML, transactionResumed, transactionResumedDtor, .User)) |_|
                 return L.yield(0);
         } else {
             L.unref(ref);

@@ -42,7 +42,7 @@ describe("task", function()
                 expect(task_ret[1]).toBe(expect.any("thread"));
                 expect(coroutine.status(task_ret[1])).toBe("suspended");
                 expect(task.count("d")).toBe(1);
-                task.wait();
+                task.wait(0.5);
                 expect(task.count("d")).toBe(0);
                 expect(coroutine.status(task_ret[1])).toBe("dead");
                 expect(success).toBeTruthy();
@@ -187,7 +187,7 @@ describe("task", function()
                 expect(task_ret[1]).toBe(expect.any("thread"));
                 expect(task_ret[1]).toBe(thread);
                 expect(coroutine.status(task_ret[1])).toBe("suspended");
-                task.wait();
+                task.wait(0.5);
                 expect(coroutine.status(task_ret[1])).toBe("dead");
                 expect(success).toBeTruthy();
                 expect(err).toBeNil();
@@ -297,7 +297,7 @@ describe("task", function()
                 task.count("d") +
                 task.count("w")
             ).toBe(task.count());
-            task.wait();
+            task.wait(0.5);
             expect(task.count()).toBe(0);
         end)
 

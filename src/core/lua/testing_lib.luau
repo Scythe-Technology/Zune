@@ -1,217 +1,319 @@
 --!strict
 local task = zune.task;
-
-local testing = {
-    running = true,
-    _COUNT = 0,
-    _FAILED = 0,
-    _START = nil::number?,
-};
-local scope_stack = {}::{string};
-local fn_defer = {}::{()->()};
+local stdio = zune.stdio;
 
 local GLOBAL = getfenv();
 
-local declare_safeEnv = GLOBAL.declare_safeEnv :: () -> ();
-local scheduler_droptasks = GLOBAL.scheduler_droptasks :: () -> ();
-local stepcheck_references = GLOBAL.stepcheck_references :: (scope: string) -> ();
+local DECLARE_SAFEENV = GLOBAL.declare_safeEnv :: () -> ();
+local SCHEDULER_DROPTASKS = GLOBAL.scheduler_droptasks :: () -> ();
+local STEPCHECK_REFERENCES = GLOBAL.stepcheck_references :: (scope: string) -> ();
 
-declare_safeEnv();
+DECLARE_SAFEENV();
 
--- TODO: probably should make this configurable
-local USE_PLAIN = false;
-local L = if (USE_PLAIN) then "|" else "│";
-local CL = if (USE_PLAIN) then "--" else "└─";
-local CL2 = if (USE_PLAIN) then "|-" else "└─";
+type TestInfo = {
+    Name: string?,
+    Timeout: number?,
+};
 
-function testing.describe(name, fn)
-    table.insert(scope_stack, name);
-    local ok, err = pcall(fn::any);
-    table.remove(scope_stack);
-    if (not ok) then
-        testing._FAILED += 1;
-        print(`\x1b[1;33mdescribe(\"{name}\", ...) is not suppose to error:\x1b[0m\n    \x1b[1;31m{err}\x1b[0m`);
+type FileContext = {
+    name: string,
+    source: string,
+};
+
+type StackTraceInfo = {
+    file: FileContext,
+    name: string,
+    line: number,
+    address: string,
+};
+
+local testing = {};
+
+testing.running = true;
+
+-- INTERNAL USE
+testing._failed = 0;
+testing._count = 0;
+testing._start = nil::number?;
+
+local DEFER_QUEUE = {}::{()->()};
+local SCOPE_STACK = {}::{string};
+local TEST_STACK = {}::{string};
+
+local RESET = stdio.reset();
+
+local DIM = stdio.style("dim");
+local BOLD = stdio.style("bold");
+local UNDERLINE = stdio.style("underline");
+
+local WHITE = stdio.color("white");
+local RED = stdio.color("red");
+local BLUE = stdio.color("blue");
+local GREEN = stdio.color("green");
+local YELLOW = stdio.color("yellow");
+
+function paddedNumber(line: number, longest: number, padding: string): string
+    return `{line}{string.rep(padding, longest - #tostring(line))}`
+end
+
+function printPreviewLine(
+    source_lines: {string},
+    line: number,
+    longest: number,
+    dim: boolean
+)
+    if (source_lines[line] == nil) then
+        return
     end
+    local style = if (dim) then DIM else BOLD;
+    local color = if (dim) then WHITE else BLUE;
+    print(` {style}{color}{paddedNumber(line, longest, " ")} | {source_lines[line]}{RESET}`);
 end
 
-local function hasSomething(name : string?) : boolean
-    return type(name) == "string" and #name > 1;
+local function nonEmptyString(v : any?) : boolean
+    return type(v) == "string" and #v > 1;
 end
 
-function testing.defer(fn: () -> ())
-    assert(type(fn) == "function", `testing.defer expected function (got {type(fn)})`);
-    table.insert(fn_defer, fn);
+local function writeStackTrace(file: FileContext, name: string, line: number, address: string): StackTraceInfo
+    return {
+        file = file,
+        name = name,
+        line = line,
+        address = address,
+    };
 end
 
 local function secondstoMs(seconds : number) : number
     return (seconds * 1000) // 1;
 end
 
-function testing.test(name : string, fn: () -> (), timeout : number?)
-    testing._COUNT += 1;
-    if (not testing._START) then
-        testing._START = os.clock();
+local function runTest(fn: () -> (), info: TestInfo)
+    testing._count += 1;
+    if (not testing._start) then
+        testing._start = os.clock();
     end
+
     local ok, err;
     local stacktrace = {};
-    local _time = 0;
-    local _time_start = os.clock();
-    ok = xpcall(fn, function(e)
-        _time = os.clock() - _time_start;
-        local lastN = debug.info(1, "n");
-        for i = 1, 30 do
-            local f, n, l, _ = debug.info(i + 1, "fnls");
-            if (not f) then
-                break;
-            end
-            local ln = lastN;
-            if (#stacktrace > 0 or hasSomething(n)) then
-                lastN = n;
-            end
-            if (l < 0) then
-                continue;
-            end
-            local context = getfenv(f);
-            local _FILE = context._FILE;
-            if (type(_FILE) ~= "table") then
-                continue;
-            end
-            table.insert(stacktrace, {
-                file = _FILE,
-                name = ln,
-                line = l,
-                source = "",
-                address = tostring(f),
-            })
+    local timeLength = os.clock();
+    local thread: thread? = coroutine.running();
+    local timout = info.Timeout or -1;
+
+    local delayedThread = if (timout >= 0) then task.delay(timout, function()
+        local main = thread;
+        if (not main) then
+            return;
         end
-        err = e;
-    end)
-    if (ok) then
-        _time = os.clock() - _time_start;
-    end
-    _time = secondstoMs(_time);
+        timeLength = os.clock() - timeLength;
+        thread = nil;
+        err = `Timeout in {timout} seconds`;
+        task.spawn(main); -- resume
+    end) else nil;
 
-    local scope = if (#scope_stack > 0)
-        then `{table.concat(scope_stack, "/")} `
-        else "";
-
-    for i = #fn_defer, 1, -1 do
-        local v = fn_defer[i];
-        local success, result = pcall(v);
-        if (not success) then
-            print(`\x1b[1;33mDeferred function failed:\x1b[0m\n    \x1b[1;31m{result}\x1b[0m`);
-        end
-    end
-    table.clear(fn_defer);
-
-    local a = os.clock() + 5;
-    while (task.count() > 0) do
-        task.wait(0.25);
-        if (a < os.clock()) then
-            break;
-        end
-    end
-
-    stepcheck_references(` -- \x1b[2m{scope}\x1b[0m(\x1b[1m{name}\x1b[0m)`);
-
-    if (ok) then
-        if (task.count() == 0) then
-            print(` \x1b[1;32mPASS\x1b[0m \x1b[2m{scope}\x1b[0m(\x1b[1m{name}\x1b[0m) \x1b[2m[{_time}ms]\x1b[0m`);
-        else
-            print(` \x1b[1;33mWARN\x1b[0m \x1b[2m{scope}\x1b[0m(\x1b[1m{name}\x1b[0m) \x1b[2m[{_time}ms]\x1b[0m`);
-            print(` \x1b[2m{L}\x1b[0;33m Test Running Tasks Timedout (Possible Leak)\x1b[0m`);
-            print(` \x1b[2m{L}    This message is just a warning, but should be noted, that the test has active tasks\x1b[0m`);
-            print(` \x1b[2m{L}    in the scheduler for more than 5 seconds.\x1b[0m`);
-            print(` \x1b[2m{L}\x1b[0m`);
-            local s, d, w, t = task.count("sdwt");
-            local show = {};
-            if (s> 0) then
-                print(` \x1b[2m{L}    "Sleeping" - (Zune Luau), \x1b[0m`);
-                print(` \x1b[2m{L}      Active luau task, usually means there is a running task created by luau or zune.\x1b[0m`);
-                print(` \x1b[2m{L}      Caused when a sleeping task is still in queue.\x1b[0m`);
-                print(` \x1b[2m{L}      From calling 'task.delay'/'task.sleep' or zune backend has requested a delayed resume on a thread\x1b[0m`);
-                table.insert(show, `Sleeping Tasks: \x1b[33m{s}\x1b[0m`);
+    task.defer(function()
+        ok = xpcall(fn, function(e)
+            local main = thread;
+            if (not main) then
+                return;
             end
-            if (d > 0) then
-                print(` \x1b[2m{L}    "Deferred" - (Zune Luau), \x1b[0m`);
-                print(` \x1b[2m{L}      Active luau task, usually means there is a running task created by luau or zune.\x1b[0m`);
-                print(` \x1b[2m{L}      Caused when a deferred task is still in queue.\x1b[0m`);
-                print(` \x1b[2m{L}      From calling 'task.defer' or zune backend has requested a deferred resume on a thread\x1b[0m`);
-                table.insert(show, `Deferred Tasks: \x1b[33m{d}\x1b[0m`);
+            timeLength = os.clock() - timeLength;
+            if (delayedThread) then
+                task.cancel(delayedThread);
             end
-            if (w > 0) then
-                print(` \x1b[2m{L}    "Awaiting" - (Zune Backend > Zig), \x1b[0m`);
-                print(` \x1b[2m{L}      Active zune awaiting task, usually means there is a running task created by the zune backend.\x1b[0m`);
-                print(` \x1b[2m{L}      Caused by a the zune backend waiting for a response from luau\x1b[0m`);
-                print(` \x1b[2m{L}      For example, a active task waiting for a response from a zune server "@zcore/net" called in 'request'\x1b[0m`);
-                table.insert(show, `Awaiting Tasks: \x1b[33m{w}\x1b[0m`);
-            end
-            if (t > 0) then
-                print(` \x1b[2m{L}    "Internal" - (Zune Backend > Zig)\x1b[0m`);
-                print(` \x1b[2m{L}      Active zune core task, usually means there is a running task created by the zune backend.\x1b[0m`);
-                print(` \x1b[2m{L}      Caused by undisposed backend tasks.\x1b[0m`);
-                print(` \x1b[2m{L}      For example, a open zune server from "@zcore/net"\x1b[0m`);
-                table.insert(show, `Internal Tasks: \x1b[33m{t}\x1b[0m`);
-            end
-            print(` \x1b[2m{L}\x1b[0m`);
-            print(` \x1b[2m{L}    If this is a bug, please report it!\x1b[0m`);
-            scheduler_droptasks();
-            print(` \x1b[2m{L}    \x1b[0;34mAll tasks has been dropped\x1b[0m`);
-            for i, v in show do
-                if (i ~= #show) then
-                    print(` \x1b[2m{L}\x1b[0m  {v}`);
+            thread = nil;
+            local lastN = debug.info(1, "n");
+            for i = 1, 30 do
+                local f, n, l, _ = debug.info(i + 1, "fnls");
+                if (not f) then
+                    break;
+                end
+                local ln = lastN;
+                if (#stacktrace > 0 or nonEmptyString(n)) then
+                    lastN = n;
+                end
+                if (l < 0) then
                     continue;
                 end
-                print(` \x1b[2m{CL}\x1b[0m {v}`);
+                local context = getfenv(f);
+                local file = context._FILE;
+                if (type(file) ~= "table") then
+                    continue;
+                end
+                table.insert(
+                    stacktrace,
+                    writeStackTrace(file, ln::string, l, tostring(f))
+                );
+            end
+            err = e;
+            task.spawn(main); -- resume
+        end)
+        local main = thread;
+        if (not main) then
+            return;
+        end
+        if (ok) then
+            timeLength = os.clock() - timeLength;
+            if (delayedThread) then
+                task.cancel(delayedThread);
+            end
+            thread = nil;
+            task.spawn(main); -- resume
+        end
+    end)
+    coroutine.yield();
+    timeLength = secondstoMs(timeLength);
+
+    local scopePadded = if (#SCOPE_STACK > 0) then " " else '';
+    local scope = `{DIM}{scopePadded}{table.concat(SCOPE_STACK, "/")}{RESET}`;
+    scope ..= ` ({BOLD}{info.Name}{RESET})`;
+
+    for i = #DEFER_QUEUE, 1, -1 do
+        local v = DEFER_QUEUE[i];
+        local success, result: any = pcall(v);
+        if (not success) then
+            print(`{YELLOW}Deferred function failed:{RESET}\n    {RED}{result}{RESET}`);
+        end
+    end
+    table.clear(DEFER_QUEUE);
+
+    task.wait();
+
+    STEPCHECK_REFERENCES(` -- {scope}`);
+
+    local test_root = #TEST_STACK == 1;
+    local type = if (ok) then "PASS" else "FAIL";
+    local color = if (ok) then GREEN else RED;
+    local leaked = test_root and task.count() > 0;
+
+    if (ok) then
+        if (leaked) then
+            color = YELLOW;
+            type = "WARN";
+        end
+    end
+
+    print(`{color}{BOLD}{type}{RESET}{scope} {DIM}[{timeLength}ms]{RESET}`);
+
+    if (ok) then
+        if (leaked) then
+            print(` {DIM}|{RESET}{YELLOW} Test Running Tasks Timedout (Possible Leak){RESET}`);
+            print(` {DIM}|    This message is just a warning, but should be noted, that the test has active tasks{RESET}`);
+            print(` {DIM}|    in the scheduler for more than {timout} seconds.{RESET}`);
+            print(` {DIM}|{RESET}`);
+            local s, d, w, t = task.count("sdwt");
+            local show = {};
+            if (s > 0) then
+                print(` {DIM}|    "Sleeping" - (Zune Luau),{RESET}`);
+                print(` {DIM}|      Active luau task, usually means there is a running task created by luau or zune.{RESET}`);
+                print(` {DIM}|      Caused when a sleeping task is still in queue.{RESET}`);
+                print(` {DIM}|      From calling 'task.delay'/'task.sleep' or zune backend has requested a delayed resume on a thread{RESET}`);
+                table.insert(show, `Sleeping Tasks: {YELLOW}{s}{RESET}`);
+            end
+            if (d > 0) then
+                print(` {DIM}|    "Deferred" - (Zune Luau),{RESET}`);
+                print(` {DIM}|      Active luau task, usually means there is a running task created by luau or zune.{RESET}`);
+                print(` {DIM}|      Caused when a deferred task is still in queue.{RESET}`);
+                print(` {DIM}|      From calling 'task.defer' or zune backend has requested a deferred resume on a thread{RESET}`);
+                table.insert(show, `Deferred Tasks: {YELLOW}{d}{RESET}`);
+            end
+            if (w > 0) then
+                print(` {DIM}|    "Awaiting" - (Zune Backend > Zig),{RESET}`);
+                print(` {DIM}|      Active zune awaiting task, usually means there is a running task created by the zune backend.{RESET}`);
+                print(` {DIM}|      Caused by a the zune backend waiting for a response from luau{RESET}`);
+                print(` {DIM}|      For example, a active task waiting for a response from a zune server "@zcore/net" called in 'request'{RESET}`);
+                table.insert(show, `Awaiting Tasks: {YELLOW}{w}{RESET}`);
+            end
+            if (t > 0) then
+                print(` {DIM}|    "Internal" - (Zune Backend > Zig){RESET}`);
+                print(` {DIM}|      Active zune core task, usually means there is a running task created by the zune backend.{RESET}`);
+                print(` {DIM}|      Caused by undisposed backend tasks.{RESET}`);
+                print(` {DIM}|      For example, a open zune server from "@zcore/net"{RESET}`);
+                table.insert(show, `Internal Tasks: {YELLOW}{t}{RESET}`);
+            end
+            print(` {DIM}|`);
+            print(` {DIM}|    If this is a bug, please report it!{RESET}`);
+            print(` {DIM}|{RESET}    {BLUE}All tasks has been dropped{RESET}`);
+            for _, v in show do
+                print(` {DIM}|{RESET}  {v}`);
             end
         end
+    else
+        testing._failed += 1;
+        print(`{RED}error{RESET}: {err}{RESET}`);
 
-        return;
-    end
-
-    scheduler_droptasks();
-
-    testing._FAILED += 1;
-
-    print(` \x1b[1;31mFAIL\x1b[0m \x1b[2m{scope}\x1b[0m(\x1b[1m{name}\x1b[0m) \x1b[2m[{_time}ms]\x1b[0m`);
+        for stack, v in stacktrace do
+            local contents = v.file.source;
+            local lineNumber = v.line;
+            local lines = contents:split("\n");
+            local possible_lines = {}
+            for i = -1, 1 do
+                table.insert(possible_lines, #tostring(lineNumber + i))
+            end
+            local bigLineLen = math.max(unpack(possible_lines))
     
-    if (type(err) ~= "string") then
-        return;
-    end
-
-    local sz = #stacktrace;
-    local errorLines = err:split("\n");
-    for _, v in errorLines do
-        print(` \x1b[2m{L}\x1b[0m \x1b[31m{v}\x1b[0m`);
-    end
-
-    for i, v in stacktrace do
-        local last = i == sz;
-        local contents = v.file.source;
-
-        local line = contents:split("\n")[v.line];
-        local safeLine = line:gsub("\t", "    ");
-        local indent : number = #(string.match(safeLine, "^(%s*)") or "");
-        local column = #(string.match(line, "^(%s*)") or "");
-        local nameHasValue = hasSomething(v.name);
-        if (nameHasValue and v.name) then
-            local start = safeLine:find(v.name, 1, true);
-            if (start) then
-                local subColumn = line:find(v.name, 1, true);
-                if (subColumn) then
-                    column = subColumn;
-                    indent = (start - 1) or indent;
+            local line = lines[v.line];
+            local safeLine = line:gsub("\t", "    ");
+            local indent : number = #(string.match(safeLine, "^(%s*)") or "");
+            local column = #(string.match(line, "^(%s*)") or "");
+            local nameHasValue = nonEmptyString(v.name);
+            if (nameHasValue and v.name) then
+                local start = safeLine:find(v.name, 1, true);
+                if (start) then
+                    local subColumn = line:find(v.name, 1, true);
+                    if (subColumn) then
+                        column = subColumn;
+                        indent = (start - 1) or indent;
+                    end
                 end
             end
+
+            print(`{BOLD}{UNDERLINE}{v.file.name}:{v.line}:{column}:{RESET} {DIM}{v.address:sub(11)}{nameHasValue and ` called {v.name}` or ""}{RESET}`);
+            printPreviewLine(lines, v.line - 1, bigLineLen, true);
+            printPreviewLine(lines, v.line, bigLineLen, false);
+            printPreviewLine(lines, v.line + 1, bigLineLen, true);
         end
-        
-        print(` \x1b[2m{L}\x1b[0m \x1b[31m{v.file.name}:{v.line}:{column}:\x1b[0m \x1b[2m{v.address:sub(11)}{#v.source > 0 and ` {v.source}` or ""}{nameHasValue and ` called {v.name}` or ""} (test)\x1b[0m`);
-        print(` \x1b[2m{L}\x1b[0m \x1b[0m{safeLine}\x1b[0m`);
-        print(` \x1b[2m{last and `{CL}` or `{L} `}\x1b[0m{string.rep("\32", indent)}\x1b[31m^\x1b[0m`);
     end
 
-    declare_safeEnv();
+    if (leaked) then
+        SCHEDULER_DROPTASKS();
+    end
+
+    DECLARE_SAFEENV();
 end
+
+function testing.describe(
+    name: string,
+    fn: (...any) -> ...any
+): ()
+    local line = debug.info(2, "l");
+    table.insert(SCOPE_STACK, name);
+    local ok, err = pcall(fn::any);
+    table.remove(SCOPE_STACK);
+    if (not ok) then
+        testing._failed += 1;
+        print(`{YELLOW}{line}: describe(\"{name}\", ...):{RESET}`);
+        print(`   {RED}{err}{RESET}`);
+    end
+end
+
+function testing.test(
+    name: string,
+    fn: (...any) -> ...any,
+    timeout: number?
+): ()
+    table.insert(TEST_STACK, name);
+    runTest(fn, {
+        Name = name,
+        Timeout = timeout,
+    });
+    table.remove(TEST_STACK);
+end
+
+function testing.defer(fn: () -> ())
+    table.insert(DEFER_QUEUE, fn);
+end
+
+--// Conditionals
 
 local function assertExpect(flipped : boolean, value : boolean, fmt : string, ... : any)
     if (flipped) then
@@ -221,6 +323,7 @@ local function assertExpect(flipped : boolean, value : boolean, fmt : string, ..
         error(string.format(fmt, ...), 4);
     end
 end
+
 
 local Conditional = {};
 Conditional.__index = Conditional;
@@ -288,7 +391,9 @@ local function readable(value : any)
             end
             return char;
         end)
-        return `'{safeValue}'`;
+        return `{GREEN}"{safeValue}"{RESET}`;
+    elseif (t ~= "table") then
+        return stdio.format(value);
     else
         return tostring(value);
     end
@@ -363,48 +468,59 @@ local conditionals = {
 
 conditionals.toEqual = conditionals.toBe;
 
-local function deepScan(a : any, b : any, state : {[any] : any}) : (boolean, string?, boolean?)
+type ScanResult = {string};
+
+local function deepScan(a : any, b : any, state : {[any] : any}, key: string?) : ScanResult
     if (a == b) then
-        return true;
+        return {};
     end
     if (Conditional.is(a)) then
         if (a.name ~= "@similar") then
             local result, _, reason = a(b);
-            local first = false
-            return result, if (reason) then reason:gsub("%%s", ''):gsub("\n", function(c)
-                if (not first) then
-                    first = true;
-                    return `\n{CL2} `;
-                end
-                return "\n   ";
-            end) else "failed condition", true;
+            if (not result) then
+                return {`{key or ''}{if (reason) then reason else "failed condition"}`};
+            end
+            return {}
         else
             a = a.value;
         end
     end
     if (type(a) ~= type(b)) then
-        return false, `not the same type ({type(a)} ~= {type(b)})`, true;
+        return {`{key or ''}{DIM}(type: {RESET}{YELLOW}{type(a)}{RESET}{DIM}) ~= (type: {RESET}{YELLOW}{type(b)}{RESET}{DIM}){RESET}`};
     end
     if (type(a) == "table") then
         if (state[a] == b) then
-            return true;
+            return {};
         end
         state[a] = b;
+        local chunk = {};
+        local keys_hit = {};
         for key, value in a do
-            local result, reason, root = deepScan(value, b[key], state);
-            if (not result) then
-                return false, if (root) then `[{key}]: {reason}` else `[{key}]{reason}`;
+            local result = deepScan(value, b[key], state, `{DIM}[{RESET}{GREEN}{readable(key)}{DIM}]: {RESET}`);
+            if (#result > 0) then
+                keys_hit[key] = true;
+            end
+            for _, difference in result do
+                table.insert(chunk, `    {difference}`);
             end
         end
         for key, value in b do
-            local result, reason, root = deepScan(a[key], value, state);
-            if (not result) then
-                return false, if (root) then `[{key}]: {reason}` else `[{key}]{reason}`;
+            local result = deepScan(a[key], value, state, `{DIM}[{RESET}{GREEN}{readable(key)}{DIM}]: {RESET}`);
+            if (keys_hit[key]) then
+                continue;
+            end
+            for _, difference in result do
+                table.insert(chunk, `    {difference}`);
             end
         end
-        return true;
+        if (#chunk > 0) then
+            table.insert(chunk, 1, `{key or ''}{DIM}\{{RESET}`);
+            table.insert(chunk, `{DIM}\}{RESET}`);
+            return chunk;
+        end
+        return {};
     end
-    return false, `not the same value ({readable(a)} ~= {readable(b)})`, true;
+    return {`{key or ''}{DIM}(value: {RESET}{readable(a)}{DIM}) ~= (value: {RESET}{readable(b)}{DIM}){RESET}`};
 end
 
 local expect = setmetatable({
@@ -434,8 +550,9 @@ local expect = setmetatable({
             error(`expect.type expected string, got {type(t)}`, 2);
         end
         return Conditional.new("@similar", function(value)
-            local result, reason = deepScan(t, value, {});
-            return result, nil, `value is supposed to %sbe similar to specified table\n\n<table>{reason}`;
+            local result = deepScan(t, value, {});
+            return #result == 0, nil, `value is supposed to %sbe similar to value, got:\n{table.concat(result, "\n")}`;
+            -- return result, nil, `value is supposed to %sbe similar to specified table\n\n<table>{reason}`;
         end, t)
     end
 }, {

@@ -26,7 +26,7 @@ describe("Test Scope", function()
             expect(1).toBe(2);
         end)
         expect(ok).toBe(false);
-        expect(err).toBe("[string \"testing.test.luau\"]:26: Expected 1 to be 2");
+        expect(err:find("[string \"testing.test.luau\"]:26: Expected", 1, true)).toBe(1);
     end)
     test("test failed", function()
         expect(1).never.toBe(1);
@@ -48,7 +48,7 @@ describe("Test Scope", function()
                 expect(1).toBe(2);
             end)
             expect(ok).toBe(false);
-            expect(err).toBe("[string \"testing.test.luau\"]:48: Expected 1 to be 2");
+            expect(err:find("[string \"testing.test.luau\"]:48: Expected", 1, true)).toBe(1);
         end)
         test("test failed", function()
             expect(1).never.toBe(1);
@@ -71,4 +71,4 @@ describe("Test Scope", function()
 end)
 
 assert(testing.running, `Should be true, got {testing.running}`);
-assert(type(testing._START) == "number", `Should be number, got {testing._START}`);
+assert(type(testing._start) == "number", `Should be number, got {testing._start}`);

@@ -51,7 +51,7 @@ fn shutdown() void {
             if (ML.pcall(0, 0, 0)) {
                 L.pop(2); // drop: thread, function
                 return; // User will handle process close.
-            } else |err| Zune.runtime_engine.logError(ML, err);
+            } else |err| Zune.runtime_engine.logError(ML, err, false);
             L.pop(1); // drop: thread
         }
         L.pop(1); // drop: ?function

@@ -23,39 +23,61 @@ fn testing_debug(L: *Luau) i32 {
     return 0;
 }
 
-var REF_LEAKED_HEAD: usize = 0;
-var REF_LEAKED_STACK = std.ArrayList(u8).init(Zune.DEFAULT_ALLOCATOR);
-var REF_LEAKED_CACHE = std.ArrayList(bool).init(Zune.DEFAULT_ALLOCATOR);
+var REF_LEAKED_SOURCE = std.AutoHashMap(usize, struct {
+    scope: []const u8,
+    value: []const u8,
+}).init(Zune.DEFAULT_ALLOCATOR);
+
+fn freeRefTrace(allocator: std.mem.Allocator, index: usize) void {
+    if (REF_LEAKED_SOURCE.get(index)) |source| {
+        allocator.free(source.scope);
+        allocator.free(source.value);
+        _ = REF_LEAKED_SOURCE.remove(index);
+    }
+}
+
+fn stepCheckLeakedReferences(L: *Luau) void {
+    const allocator = L.allocator();
+
+    L.pushValue(luau.REGISTRYINDEX);
+
+    const references: usize = @intCast(L.objLen(-1));
+
+    for (1..references) |index| {
+        const store_index = index - 1;
+        defer L.pop(1);
+        if (L.rawGetIndex(-1, @intCast(index)) == .number) {
+            freeRefTrace(allocator, store_index);
+            continue;
+        }
+    }
+}
 
 fn testing_checkLeakedReferences(L: *Luau) !i32 {
     const scope = L.checkString(1);
     const allocator = L.allocator();
-    const writer = REF_LEAKED_STACK.writer();
 
     L.pushValue(luau.REGISTRYINDEX);
 
-    var scope_leaked = false;
-    const references = L.objLen(-1);
-    try REF_LEAKED_CACHE.ensureTotalCapacityPrecise(@intCast(references));
-    REF_LEAKED_CACHE.expandToCapacity();
-    for (1..@as(usize, @intCast(references))) |index| {
+    const references: usize = @intCast(L.objLen(-1));
+
+    for (1..references) |index| {
+        const store_index = index - 1;
         defer L.pop(1);
         if (L.rawGetIndex(-1, @intCast(index)) == .number) {
-            REF_LEAKED_CACHE.items[index] = false;
+            freeRefTrace(allocator, store_index);
             continue;
         }
 
-        if (REF_LEAKED_CACHE.items[index])
+        if (REF_LEAKED_SOURCE.get(store_index) != null)
             continue;
 
-        if (!scope_leaked) {
-            try writer.writeByte('\n');
-            try writer.writeAll(scope);
-        }
-        scope_leaked = true;
-        REF_LEAKED_CACHE.items[index] = true;
-        try writer.print("\n  \x1b[96m{}\x1b[0m \x1b[2m-\x1b[0m ", .{index});
-        try Formatter.fmt_write_idx(allocator, L, writer, -1);
+        const scope_copy = try allocator.dupe(u8, scope);
+
+        var buf = std.ArrayList(u8).init(allocator);
+        try Formatter.fmt_write_idx(allocator, L, buf.writer(), -1);
+
+        try REF_LEAKED_SOURCE.put(store_index, .{ .scope = scope_copy, .value = try buf.toOwnedSlice() });
     }
     return 0;
 }
@@ -66,7 +88,10 @@ fn testing_droptasks(L: *Luau, scheduler: *Scheduler) i32 {
     var awaitsSize = scheduler.awaits.items.len;
     while (awaitsSize > 0) {
         awaitsSize -= 1;
-        const awaiting = scheduler.awaits.swapRemove(awaitsSize);
+        const awaiting = scheduler.awaits.items[awaitsSize];
+        if (awaiting.priority == .Internal)
+            continue;
+        _ = scheduler.awaits.orderedRemove(awaitsSize);
         awaiting.virtualDtor(awaiting.data, awaiting.state, scheduler);
     }
 
@@ -108,6 +133,7 @@ pub const TestResult = struct {
 };
 
 pub fn finish_testing(L: *Luau, rawstart: f64) TestResult {
+    const allocator = L.allocator();
     const end = luau.clock();
 
     _ = L.findTable(luau.REGISTRYINDEX, "_LIBS", 1);
@@ -120,31 +146,46 @@ pub fn finish_testing(L: *Luau, rawstart: f64) TestResult {
         true;
     L.pop(1);
 
-    const start = if (L.getField(-1, "_START") == .number)
+    const start = if (L.getField(-1, "_start") == .number)
         L.toNumber(-1) catch rawstart
     else
         rawstart;
     L.pop(1);
 
     const time = end - start;
-    const mainTestCount = if (L.getField(-1, "_COUNT") == .number)
+    const mainTestCount = if (L.getField(-1, "_count") == .number)
         L.toInteger(-1) catch unreachable
     else
         0;
     L.pop(1);
-    const mainFailedCount = if (L.getField(-1, "_FAILED") == .number)
+    const mainFailedCount = if (L.getField(-1, "_failed") == .number)
         L.toInteger(-1) catch unreachable
     else
         0;
     L.pop(1);
 
-    if (REF_LEAKED_STACK.items.len > 0) {
-        std.debug.print("\n", .{});
-        std.debug.print("\x1b[1;34mLEAK\x1b[0m Runtime leaked references (Information may not be accurate)\x1b[0m", .{});
-        std.debug.print("{s}", .{REF_LEAKED_STACK.items});
-        std.debug.print("\n", .{});
-        REF_LEAKED_STACK.clearAndFree();
+    stepCheckLeakedReferences(L);
+
+    var header = false;
+    if (REF_LEAKED_SOURCE.count() > 0) {
+        var iter = REF_LEAKED_SOURCE.iterator();
+        while (iter.next()) |entry| {
+            const idx = entry.key_ptr.*;
+            const source = entry.value_ptr.*;
+            const refIdx = idx + 1;
+            if (!header) {
+                header = true;
+                std.debug.print("\n", .{});
+                std.debug.print("\x1b[1;34mLEAK\x1b[0m Runtime leaked references (Information may not be accurate)\x1b[0m", .{});
+            }
+            std.debug.print("\n {s}\x1b[0m", .{source.scope});
+            std.debug.print("\n  \x1b[96m{}\x1b[0m \x1b[2m-\x1b[0m {s}", .{ refIdx, source.value });
+
+            freeRefTrace(allocator, idx);
+        }
     }
+    if (header)
+        std.debug.print("\n", .{});
 
     if (stdOut) {
         std.debug.print("\n", .{});
@@ -200,7 +241,7 @@ pub fn loadLib(L: *Luau, enabled: bool) void {
             std.debug.panic("Error loading test framework: {}\n", .{err});
         ML.pcall(0, 1, 0) catch |err| {
             std.debug.print("Error loading test framework (2): {}\n", .{err});
-            Engine.logError(ML, err);
+            Engine.logError(ML, err, false);
             std.debug.panic("Test Framework (2)\n", .{});
         };
         ML.xMove(L, 1);

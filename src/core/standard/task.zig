@@ -114,7 +114,10 @@ fn task_count(L: *Luau, scheduler: *Scheduler) !i32 {
         var total: usize = 0;
         total += scheduler.sleeping.items.len;
         total += scheduler.deferred.items.len;
-        total += scheduler.awaits.items.len;
+        for (scheduler.awaits.items) |item| {
+            if (item.priority == .User)
+                total += 1;
+        }
         total += scheduler.tasks.items.len;
         L.pushNumber(@floatFromInt(total));
         return 1;
@@ -136,7 +139,12 @@ fn task_count(L: *Luau, scheduler: *Scheduler) !i32 {
             },
             'w' => {
                 out += 1;
-                L.pushNumber(@floatFromInt(scheduler.awaits.items.len));
+                var count: usize = 0;
+                for (scheduler.awaits.items) |item| {
+                    if (item.priority == .User)
+                        count += 1;
+                }
+                L.pushNumber(@floatFromInt(count));
             },
             't' => {
                 out += 1;

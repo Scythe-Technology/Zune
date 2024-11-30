@@ -126,6 +126,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     local decompressed = serde.zstd.decompress(compressed)
     print(decompressed) -- "Hello World!"
     ```
+- Added `-O<n>`, `-g<n>`, `--native`, `--no-native`, `--no-jit` flags to the run command.
 
 ### Changed
 - Formatter now displays `__tostring` metamethods as plain text, instead of as strings.

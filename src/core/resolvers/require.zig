@@ -276,7 +276,7 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
                     _ = scheduler.awaitResult(RequireContext, .{
                         .path = path,
                         .caller = L,
-                    }, ML, require_finished, require_dtor);
+                    }, ML, require_finished, require_dtor, .Internal);
                 }
 
                 var list = std.ArrayList(QueueItem).init(allocator);

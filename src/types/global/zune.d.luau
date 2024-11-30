@@ -725,21 +725,21 @@ type TestingLib = {
 
         The number of tests that have failed.
     ]]
-    _FAILED: number,
+    _failed: number,
 
     --[[
         [Internal]
 
         The number of tests conducted.
     ]]
-    _COUNT: number,
+    _count: number,
 
     --[[
         [Internal]
 
         The number of tests that have passed.
     ]]
-    _START: number,
+    _start: number,
 
     --[[
         Conducts a test.
@@ -748,8 +748,9 @@ type TestingLib = {
 
         @param name The name of the test.
         @param callback The callback to run the test.
+        @param timeout The timeout on how long a test should last.
     ]]
-    test: (name: string, callback: () -> ()) -> (),
+    test: (name: string, callback: () -> (), timeout: number?) -> (),
 
     --[[
         Describes a test suite.

@@ -80,7 +80,7 @@ pub fn runTest(allocator: std.mem.Allocator, comptime testFile: zune_test_files.
 
     return Zune.corelib.testing.runTestAsync(ML, &scheduler) catch |err| switch (err) {
         error.MsgHandler, error.Runtime => {
-            Engine.logError(L, err);
+            Engine.logError(L, err, true);
             return err;
         },
         else => return err,

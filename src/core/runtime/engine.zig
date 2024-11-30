@@ -257,10 +257,10 @@ pub fn logDetailedError(L: *Luau) !void {
     }
 }
 
-pub fn logError(L: *Luau, err: anyerror) void {
+pub fn logError(L: *Luau, err: anyerror, forceDetailed: bool) void {
     switch (err) {
         error.Runtime => {
-            if (USE_DETAILED_ERROR) {
+            if (USE_DETAILED_ERROR or forceDetailed) {
                 logDetailedError(L) catch |e| std.debug.panic("{}", .{e});
             } else {
                 std.debug.print("{s}\n", .{L.toString(-1) catch "UnknownError"});
