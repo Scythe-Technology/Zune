@@ -116,6 +116,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     db:close()-- optional (can be handled by GC)
     ```
 - Added `serde.lz4.compress` and `serde.lz4.decompress` replacements for standard lz4 compression & decompression instead of frame encoding.
+- Added `serde.zstd` to `zune`. [More Info](https://scythe-technology.github.io/zune-docs/docs/api/serde)
+  - Example:
+    ```luau
+    local serde = zune.serde
+
+    local compressed = serde.zstd.compress("Hello World!")
+    local decompressed = serde.zstd.decompress(compressed)
+    print(decompressed) -- "Hello World!"
+    ```
 
 ### Changed
 - Formatter now displays `__tostring` metamethods as plain text, instead of as strings.
