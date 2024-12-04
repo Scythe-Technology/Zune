@@ -37,7 +37,7 @@ fn fmt_tostring(allocator: std.mem.Allocator, L: *Luau, idx: i32) !?[]const u8 {
 fn fmt_write_metamethod__tostring(L: *Luau, writer: anytype, idx: i32) !bool {
     L.pushValue(idx);
     defer L.pop(1); // drop: value
-    if (L.getMetatable(if (idx < 0) idx - 1 else idx)) {
+    if (L.getMetatable(-1)) {
         const metaType = L.getField(-1, "__tostring");
         defer L.pop(2); // drop: field(or result of function), metatable
         if (!luau.isNoneOrNil(metaType)) {
@@ -94,7 +94,7 @@ pub fn fmt_print_value(L: *Luau, writer: anytype, idx: i32, depth: usize, asKey:
                 }
             },
             .table => {
-                if (try fmt_write_metamethod__tostring(L, writer, -1))
+                if (try fmt_write_metamethod__tostring(L, writer, idx))
                     return;
                 if (asKey) {
                     const str = fmt_tostring(allocator, L, idx) catch "!ERR!";
