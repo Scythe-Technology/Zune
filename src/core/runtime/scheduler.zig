@@ -89,9 +89,39 @@ pub fn AwaitingObject(comptime T: type) type {
     };
 }
 
+fn SleepOrder(_: void, a: SleepingThread, b: SleepingThread) std.math.Order {
+    const wakeA = a.wake;
+    const wakeB = b.wake;
+    if (wakeA == wakeB) {
+        return .eq;
+    } else if (wakeA < wakeB) {
+        return .lt;
+    } else if (wakeA > wakeB) {
+        return .gt;
+    } else {
+        unreachable;
+    }
+}
+
+fn DeferredOrder(_: void, a: DeferredThread, b: DeferredThread) std.math.Order {
+    const wakeA = a;
+    const wakeB = b.wake;
+    if (wakeA == wakeB) {
+        return .eq;
+    } else if (wakeA < wakeB) {
+        return .lt;
+    } else if (wakeA > wakeB) {
+        return .gt;
+    } else {
+        unreachable;
+    }
+}
+
+const SleepingQueue = std.PriorityQueue(SleepingThread, void, SleepOrder);
+
 state: *Luau,
 allocator: std.mem.Allocator,
-sleeping: std.ArrayList(SleepingThread),
+sleeping: SleepingQueue,
 deferred: std.ArrayList(DeferredThread),
 tasks: std.ArrayList(TaskObject(anyopaque)),
 awaits: std.ArrayList(AwaitingObject(anyopaque)),
@@ -100,7 +130,7 @@ pub fn init(allocator: std.mem.Allocator, state: *Luau) Self {
     return .{
         .state = state,
         .allocator = allocator,
-        .sleeping = std.ArrayList(SleepingThread).init(allocator),
+        .sleeping = SleepingQueue.init(allocator, {}),
         .deferred = std.ArrayList(DeferredThread).init(allocator),
         .tasks = std.ArrayList(TaskObject(anyopaque)).init(allocator),
         .awaits = std.ArrayList(AwaitingObject(anyopaque)).init(allocator),
@@ -158,7 +188,7 @@ pub fn sleepThread(
     const start = luau.clock();
     const wake = start + time;
 
-    self.sleeping.insert(0, .{
+    self.sleeping.add(.{
         .thread = refThread(thread),
         .from = from,
         .start = start,
@@ -328,7 +358,7 @@ pub fn cancelThread(self: *Self, thread: *Luau) void {
     const sleeping_items = self.sleeping.items;
     for (sleeping_items, 0..) |item, i| {
         if (stateFromPair(item.thread) == thread) {
-            const slept = self.sleeping.orderedRemove(i);
+            const slept = self.sleeping.removeIndex(i);
             derefThread(slept.thread);
             return;
         }
@@ -381,11 +411,9 @@ pub fn run(self: *Self, comptime testing: bool) void {
             }
         }
         {
-            var i = self.sleeping.items.len;
-            while (i > 0) {
-                i -= 1;
-                if (self.sleeping.items[i].wake <= now) {
-                    const slept = self.sleeping.orderedRemove(i);
+            while (self.sleeping.peek()) |current| {
+                if (current.wake <= now) {
+                    const slept = self.sleeping.remove();
                     var args = slept.args;
                     const thread, _ = slept.thread;
                     const status = thread.status();
@@ -406,7 +434,7 @@ pub fn run(self: *Self, comptime testing: bool) void {
                         args,
                     ) catch {};
                     active += 1;
-                }
+                } else break;
             }
         }
         if (self.deferred.items.len > 0) {
