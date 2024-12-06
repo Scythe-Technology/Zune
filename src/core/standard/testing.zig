@@ -105,7 +105,7 @@ fn testing_droptasks(L: *Luau, scheduler: *Scheduler) i32 {
     var sleepingSize = scheduler.sleeping.items.len;
     while (sleepingSize > 0) {
         sleepingSize -= 1;
-        const slept = scheduler.sleeping.swapRemove(sleepingSize);
+        const slept = scheduler.sleeping.remove();
         Scheduler.derefThread(slept.thread);
     }
 

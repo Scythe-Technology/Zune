@@ -42,14 +42,16 @@ fn task_spawn(L: *Luau, scheduler: *Scheduler) !i32 {
             break :th TL;
         } else {
             L.pushValue(1);
-            break :th L.toThread(-1) catch return L.Error("thread failed");
+            break :th L.toThread(1) catch return L.Error("thread failed");
         }
     };
 
-    for (0..@intCast(args)) |i| L.pushValue(@intCast(i + 2));
-    L.xMove(thread, args);
+    if (args > 0) {
+        for (0..@intCast(args)) |i|
+            L.xPush(thread, @intCast(i + 2));
+    }
 
-    scheduler.spawnThread(thread, args);
+    scheduler.spawnThread(thread, L, args);
 
     return 1;
 }
@@ -69,12 +71,14 @@ fn task_defer(L: *Luau, scheduler: *Scheduler) !i32 {
             break :th TL;
         } else {
             L.pushValue(1);
-            break :th L.toThread(-1) catch return L.Error("thread failed");
+            break :th L.toThread(1) catch return L.Error("thread failed");
         }
     };
 
-    for (0..@intCast(args)) |i| L.pushValue(@intCast(i + 2));
-    L.xMove(thread, args);
+    if (args > 0) {
+        for (0..@intCast(args)) |i|
+            L.xPush(thread, @intCast(i + 2));
+    }
 
     scheduler.deferThread(thread, L, args);
 
@@ -97,12 +101,14 @@ fn task_delay(L: *Luau, scheduler: *Scheduler) !i32 {
             break :th TL;
         } else {
             L.pushValue(2);
-            break :th L.toThread(-1) catch return L.Error("thread failed");
+            break :th L.toThread(2) catch return L.Error("thread failed");
         }
     };
 
-    for (0..@intCast(args)) |i| L.pushValue(@intCast(i + 3));
-    L.xMove(thread, args);
+    if (args > 0) {
+        for (0..@intCast(args)) |i|
+            L.xPush(thread, @intCast(i + 3));
+    }
 
     scheduler.sleepThread(thread, L, time, args, false);
 

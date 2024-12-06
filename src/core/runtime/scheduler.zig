@@ -164,9 +164,9 @@ pub fn derefThread(pair: LuauPair) void {
     }
 }
 
-pub fn spawnThread(self: *Self, thread: *Luau, args: i32) void {
+pub fn spawnThread(self: *Self, thread: *Luau, from: ?*Luau, args: i32) void {
     _ = self;
-    _ = resumeState(thread, null, args) catch {};
+    _ = resumeState(thread, from, args) catch {};
 }
 
 pub fn deferThread(self: *Self, thread: *Luau, from: ?*Luau, args: i32) void {
@@ -383,12 +383,12 @@ pub fn run(self: *Self, comptime testing: bool) void {
                 i -= 1;
                 const awaiting = self.awaits.items[i];
                 if (awaiting.state[0].status() != .yield) {
+                    defer derefThread(awaiting.state);
                     _ = self.awaits.orderedRemove(i);
                     const state, _ = awaiting.state;
                     const data = awaiting.data;
                     awaiting.resumeFn(data, state, self);
                     awaiting.virtualDtor(data, state, self);
-                    derefThread(awaiting.state);
                     active += 1;
                 }
             }
@@ -402,9 +402,9 @@ pub fn run(self: *Self, comptime testing: bool) void {
                     .Continue => {},
                     .ContinueFast => active += 1,
                     .Stop => {
+                        defer derefThread(task.state);
                         _ = self.tasks.orderedRemove(i);
                         task.virtualDtor(task.data, stateFromPair(task.state), self);
-                        derefThread(task.state);
                         active += 1;
                     },
                 }
@@ -417,7 +417,7 @@ pub fn run(self: *Self, comptime testing: bool) void {
                     var args = slept.args;
                     const thread, _ = slept.thread;
                     const status = thread.status();
-                    derefThread(slept.thread);
+                    defer derefThread(slept.thread);
                     if (status != .ok and status != .yield) {
                         std.debug.print("Cannot resume thread error status: {}\n", .{status});
                         continue;
@@ -445,7 +445,7 @@ pub fn run(self: *Self, comptime testing: bool) void {
             for (deferredArray.items) |deferred| {
                 const thread, _ = deferred.thread;
                 const status = thread.status();
-                derefThread(deferred.thread);
+                defer derefThread(deferred.thread);
                 if (status != .ok and status != .yield)
                     continue;
                 _ = resumeState(
