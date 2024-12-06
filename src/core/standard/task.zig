@@ -12,7 +12,7 @@ pub const LIB_NAME = "task";
 
 fn task_wait(L: *Luau, scheduler: *Scheduler) i32 {
     const time = L.optNumber(1) orelse 0;
-    scheduler.sleepThread(L, time, 0, true);
+    scheduler.sleepThread(L, null, time, 0, true);
     return L.yield(0);
 }
 
@@ -104,7 +104,7 @@ fn task_delay(L: *Luau, scheduler: *Scheduler) !i32 {
     for (0..@intCast(args)) |i| L.pushValue(@intCast(i + 3));
     L.xMove(thread, args);
 
-    scheduler.sleepThread(thread, time, args, false);
+    scheduler.sleepThread(thread, L, time, args, false);
 
     return 1;
 }

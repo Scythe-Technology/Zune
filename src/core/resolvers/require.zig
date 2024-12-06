@@ -41,8 +41,7 @@ var WaitingState = States.Waiting;
 var PreloadedState = States.Preloaded;
 
 const QueueItem = struct {
-    state: *Luau,
-    ref: ?i32,
+    state: Scheduler.LuauPair,
 };
 
 var REQUIRE_QUEUE_MAP = std.StringArrayHashMap(std.ArrayList(QueueItem)).init(Zune.DEFAULT_ALLOCATOR);
@@ -75,7 +74,7 @@ fn require_finished(ctx: *RequireContext, ML: *Luau, _: *Scheduler) void {
     ctx.caller.pop(1); // drop: _MODULES
 
     for (queue.value_ptr.*.items) |item| {
-        const L = item.state;
+        const L, _ = item.state;
         if (outErr) |msg| {
             L.pushLString(msg);
             _ = Scheduler.resumeStateError(L, null) catch {};
@@ -95,7 +94,7 @@ fn require_dtor(ctx: *RequireContext, _: *Luau, _: *Scheduler) void {
     const queue = REQUIRE_QUEUE_MAP.getEntry(ctx.path) orelse return;
 
     for (queue.value_ptr.items) |item|
-        Scheduler.derefThread(item.state, item.ref);
+        Scheduler.derefThread(item.state);
     queue.value_ptr.deinit();
     allocator.free(queue.key_ptr.*);
 }
@@ -181,8 +180,7 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
                     L.pop(1);
                     const res = REQUIRE_QUEUE_MAP.getEntry(moduleAbsolutePath) orelse std.debug.panic("zune_require: queue not found", .{});
                     try res.value_ptr.append(.{
-                        .state = L,
-                        .ref = Scheduler.refThread(L),
+                        .state = Scheduler.refThread(L),
                     });
                     return L.yield(0);
                 } else if (ptr == @as(*const anyopaque, @ptrCast(&PreloadedState))) {
@@ -281,8 +279,7 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
 
                 var list = std.ArrayList(QueueItem).init(allocator);
                 try list.append(.{
-                    .state = L,
-                    .ref = Scheduler.refThread(L),
+                    .state = Scheduler.refThread(L),
                 });
 
                 try REQUIRE_QUEUE_MAP.put(try allocator.dupe(u8, moduleAbsolutePath), list);

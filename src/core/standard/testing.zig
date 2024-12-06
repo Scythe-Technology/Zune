@@ -92,26 +92,28 @@ fn testing_droptasks(L: *Luau, scheduler: *Scheduler) i32 {
         if (awaiting.priority == .Internal)
             continue;
         _ = scheduler.awaits.orderedRemove(awaitsSize);
-        awaiting.virtualDtor(awaiting.data, awaiting.state, scheduler);
+        awaiting.virtualDtor(awaiting.data, Scheduler.stateFromPair(awaiting.state), scheduler);
     }
 
     var tasksSize = scheduler.tasks.items.len;
     while (tasksSize > 0) {
         tasksSize -= 1;
         const task = scheduler.tasks.swapRemove(tasksSize);
-        task.virtualDtor(task.data, task.state, scheduler);
+        task.virtualDtor(task.data, Scheduler.stateFromPair(task.state), scheduler);
     }
 
     var sleepingSize = scheduler.sleeping.items.len;
     while (sleepingSize > 0) {
         sleepingSize -= 1;
-        _ = scheduler.sleeping.swapRemove(sleepingSize);
+        const slept = scheduler.sleeping.swapRemove(sleepingSize);
+        Scheduler.derefThread(slept.thread);
     }
 
     var deferredSize = scheduler.deferred.items.len;
     while (deferredSize > 0) {
         deferredSize -= 1;
-        _ = scheduler.deferred.swapRemove(deferredSize);
+        const deferred = scheduler.deferred.swapRemove(deferredSize);
+        Scheduler.derefThread(deferred.thread);
     }
 
     return 0;
