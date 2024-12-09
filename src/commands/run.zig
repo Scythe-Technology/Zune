@@ -128,9 +128,13 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         .mode = .Run,
     });
 
+    L.setSafeEnv(luau.GLOBALSINDEX, true);
+
     const ML = L.newThread();
 
     ML.sandboxThread();
+
+    Zune.resolvers_require.load_require(ML);
 
     const cwdDirPath = dir.realpathAlloc(allocator, ".") catch return error.FileNotFound;
     defer allocator.free(cwdDirPath);
@@ -143,6 +147,8 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         .name = moduleRelativeName,
         .source = fileContent,
     });
+
+    ML.setSafeEnv(luau.GLOBALSINDEX, true);
 
     const moduleRelativeNameZ = try allocator.dupeZ(u8, moduleRelativeName);
     defer allocator.free(moduleRelativeNameZ);

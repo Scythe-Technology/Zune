@@ -66,6 +66,10 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         .source = "",
     });
 
+    Zune.resolvers_require.load_require(L);
+
+    L.setSafeEnv(luau.GLOBALSINDEX, true);
+
     var stdin = std.io.getStdIn();
     var in_reader = stdin.reader();
 

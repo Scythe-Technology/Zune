@@ -200,3 +200,11 @@ describe("Aliases", function()
         expect(module).toBe("The bar exam");
     end)
 end)
+
+describe("Require with Context", function()
+    test("Require Module", function()
+        local func = require("./generated/relative");
+        expect(func).toBe(expect.type("function"));
+        expect(func()).toBe(expect.type("buffer"));
+    end)
+end)

@@ -127,7 +127,7 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
     } else {
         if ((moduleName.len < 2 or !std.mem.eql(u8, moduleName[0..2], "./")) and (moduleName.len < 3 or !std.mem.eql(u8, moduleName[0..3], "../")))
             return L.Error("must have either \"@\", \"./\", or \"../\" prefix");
-        if (L.getField(luau.GLOBALSINDEX, "_FILE") != .table)
+        if (L.getField(Luau.upvalueIndex(1), "_FILE") != .table)
             return L.Error("InternalError (_FILE is invalid)");
         if (L.getField(-1, "path") != .string)
             return L.Error("InternalError (_FILE.path is not a string)");
@@ -225,6 +225,10 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
 
         ML.sandboxThread();
 
+        load_require(ML);
+
+        ML.setSafeEnv(luau.GLOBALSINDEX, true);
+
         const moduleRelativeName = try std.fs.path.relative(allocator, cwdDirPath, moduleAbsolutePath);
         defer allocator.free(moduleRelativeName);
 
@@ -307,7 +311,9 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
 }
 
 pub fn load_require(L: *Luau) void {
-    L.setGlobalFn("require", Scheduler.toSchedulerEFn(zune_require));
+    L.pushValue(luau.GLOBALSINDEX);
+    L.pushClosure(luau.toCFn(Scheduler.toSchedulerEFn(zune_require)), "require", 1);
+    L.setGlobal("require");
 }
 
 test "Require" {

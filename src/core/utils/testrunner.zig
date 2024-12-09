@@ -55,15 +55,21 @@ pub fn runTest(allocator: std.mem.Allocator, comptime testFile: zune_test_files.
         .mode = .Test,
     });
 
+    L.setSafeEnv(luau.GLOBALSINDEX, true);
+
     const ML = L.newThread();
 
     ML.sandboxThread();
+
+    Zune.resolvers_require.load_require(ML);
 
     Engine.setLuaFileContext(ML, .{
         .path = testFileAbsolute,
         .name = testFile.path,
         .source = testFile.content,
     });
+
+    ML.setSafeEnv(luau.GLOBALSINDEX, true);
 
     const zbasename = try allocator.dupeZ(u8, std.fs.path.basename(testFile.path));
     defer allocator.free(zbasename);

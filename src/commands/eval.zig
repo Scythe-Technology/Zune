@@ -47,15 +47,21 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         .mode = .Run,
     });
 
+    L.setSafeEnv(luau.GLOBALSINDEX, true);
+
     const ML = L.newThread();
 
     ML.sandboxThread();
+
+    Zune.resolvers_require.load_require(ML);
 
     Engine.setLuaFileContext(ML, .{
         .path = virtual_path,
         .name = "EVAL",
         .source = fileContent,
     });
+
+    ML.setSafeEnv(luau.GLOBALSINDEX, true);
 
     const relativeDirPath = std.fs.path.dirname(virtual_path) orelse std.debug.panic("FileNotFound", .{});
 

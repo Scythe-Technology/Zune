@@ -11,7 +11,7 @@ pub const corelib = @import("core/standard/lib.zig");
 pub const DEFAULT_ALLOCATOR = std.heap.c_allocator;
 
 pub const runtime_engine = @import("core/runtime/engine.zig");
-const resolvers_require = @import("core/resolvers/require.zig");
+pub const resolvers_require = @import("core/resolvers/require.zig");
 const resolvers_file = @import("core/resolvers/file.zig");
 const resolvers_fmt = @import("core/resolvers/fmt.zig");
 
@@ -190,11 +190,7 @@ pub fn openZune(L: *luau.Luau, args: []const []const u8, flags: Flags) !void {
     }.inner, "zcore_fmt_warn");
     L.setGlobal("warn");
 
-    resolvers_require.load_require(L);
-
     L.setGlobalLString("_VERSION", VERSION);
-
-    L.setSafeEnv(luau.GLOBALSINDEX, true);
 
     corelib.fs.loadLib(L);
     corelib.task.loadLib(L);

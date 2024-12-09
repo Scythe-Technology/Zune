@@ -45,7 +45,8 @@ fn getPackageVersion(b: *std.Build) ![]const u8 {
     var tree = try std.zig.Ast.parse(b.allocator, @embedFile("build.zig.zon"), .zon);
     defer tree.deinit(b.allocator);
     const version = tree.tokenSlice(tree.nodes.items(.main_token)[2]);
-    if (version.len < 3) @panic("Version length too short");
+    if (version.len < 3)
+        @panic("Version length too short");
     return try b.allocator.dupe(u8, version[1 .. version.len - 1]);
 }
 
