@@ -16,8 +16,8 @@
             .hash = "1220d6bbca59a59f16bda33b69e140d90bad313d11c07c0e2ab16076c59355845112",
         },
         .luau = .{
-            .url = "https://codeload.github.com/Scythe-Technology/zig-luau/tar.gz/9222231c5ed1fdab27c5572763196ed5c921dd57",
-            .hash = "12206c916a5f80a381f03817760a00c350cb5b45c1c2fa4a0687eeb488515448a420",
+            .url = "https://codeload.github.com/Scythe-Technology/zig-luau/tar.gz/cc552d9cb3926791b4b138415fd3c0389a36bf33",
+            .hash = "1220c58ff52eed3fd737fec56d857c6243ccd58bdeeb0600e5aec419caeb85bdd740",
         },
         .czrex = .{
             .url = "https://codeload.github.com/Scythe-Technology/czrex/tar.gz/099db43b9074001329dfb04aef92b7589a00f983",
@@ -50,6 +50,6 @@
         "src",
         "scripts",
         "README.md",
-        "LICENSE",
+        "LICENSE.md",
     },
 }

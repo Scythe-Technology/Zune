@@ -1,0 +1,38 @@
+MIT License
+
+Copyright (c) 2024 Scythe Technology
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+This project includes third-party components with the following licenses:
+
+| Library | License |
+|---------|---------|
+| [`zig-luau`](https://github.com/Scythe-Technology/zig-luau) | [MIT](https://github.com/Scythe-Technology/zig-luau/blob/master/license), [MIT](https://github.com/luau-lang/luau/blob/master/LICENSE.txt), [MIT](https://github.com/luau-lang/luau/blob/master/lua_LICENSE.txt) |
+| [`zig-json`](https://github.com/Scythe-Technology/zig-json) | [MIT](https://github.com/Scythe-Technology/zig-json/blob/master/LICENSE) |
+| [`zig-yaml`](https://github.com/kubkon/zig-yaml) | [MIT](https://github.com/kubkon/zig-yaml/blob/main/LICENSE) |
+| [`zig-lz4`](https://github.com/kubkon/zig-yaml) | [MIT](https://github.com/SnorlaxAssist/zig-lz4/blob/master/LICENSE), [BSD 2-Clause](https://github.com/lz4/lz4/blob/dev/LICENSE) |
+| [`czrex`](https://github.com/kubkon/zig-yaml) | [MIT](https://github.com/Scythe-Technology/czrex/blob/master/LICENSE) |
+| [`zffi`](https://github.com/Scythe-Technology/zffi) | [MIT](https://github.com/Scythe-Technology/zffi/blob/master/LICENSE) |
+| [`zdt`](https://github.com/FObersteiner/zdt) | [MPL-2.0](https://github.com/FObersteiner/zdt/blob/master/LICENSE)|
+| [`tomlz`](https://github.com/mattyhall/tomlz) | [MIT](https://github.com/mattyhall/tomlz/blob/main/LICENCE) |
+| [`z-sqlite`](https://github.com/Scythe-Technology/z-sqlite) | [MIT](https://github.com/Scythe-Technology/z-sqlite/blob/master/LICENSE), [SQLite](https://sqlite.org/copyright.html) |
+| [`zig-zstd`](https://github.com/Scythe-Technology/zig-zstd) | [MIT](https://github.com/Scythe-Technology/zig-zstd/blob/master/LICENSE), [BSD 3-Clause](https://github.com/facebook/zstd/blob/dev/LICENSE) |
