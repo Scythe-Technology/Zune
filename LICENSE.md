@@ -29,8 +29,8 @@ This project includes third-party components with the following licenses:
 | [`zig-luau`](https://github.com/Scythe-Technology/zig-luau) | [MIT](https://github.com/Scythe-Technology/zig-luau/blob/master/license), [MIT](https://github.com/luau-lang/luau/blob/master/LICENSE.txt), [MIT](https://github.com/luau-lang/luau/blob/master/lua_LICENSE.txt) |
 | [`zig-json`](https://github.com/Scythe-Technology/zig-json) | [MIT](https://github.com/Scythe-Technology/zig-json/blob/master/LICENSE) |
 | [`zig-yaml`](https://github.com/kubkon/zig-yaml) | [MIT](https://github.com/kubkon/zig-yaml/blob/main/LICENSE) |
-| [`zig-lz4`](https://github.com/kubkon/zig-yaml) | [MIT](https://github.com/SnorlaxAssist/zig-lz4/blob/master/LICENSE), [BSD 2-Clause](https://github.com/lz4/lz4/blob/dev/LICENSE) |
-| [`czrex`](https://github.com/kubkon/zig-yaml) | [MIT](https://github.com/Scythe-Technology/czrex/blob/master/LICENSE) |
+| [`zig-lz4`](https://github.com/SnorlaxAssist/zig-lz4) | [MIT](https://github.com/SnorlaxAssist/zig-lz4/blob/master/LICENSE), [BSD 2-Clause](https://github.com/lz4/lz4/blob/dev/LICENSE) |
+| [`czrex`](https://github.com/Scythe-Technology/czrex) | [MIT](https://github.com/Scythe-Technology/czrex/blob/master/LICENSE) |
 | [`zffi`](https://github.com/Scythe-Technology/zffi) | [MIT](https://github.com/Scythe-Technology/zffi/blob/master/LICENSE) |
 | [`zdt`](https://github.com/FObersteiner/zdt) | [MPL-2.0](https://github.com/FObersteiner/zdt/blob/master/LICENSE)|
 | [`tomlz`](https://github.com/mattyhall/tomlz) | [MIT](https://github.com/mattyhall/tomlz/blob/main/LICENCE) |
