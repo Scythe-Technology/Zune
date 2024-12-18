@@ -475,10 +475,9 @@ pub fn deinit(self: *Self) void {
 }
 
 pub fn getScheduler(L: *Luau) *Self {
-    if (L.getField(luau.REGISTRYINDEX, "_SCHEDULER") != .light_userdata) L.raiseErrorStr("InternalError (Scheduler not found)", .{});
-    const luau_scheduler = L.toUserdata(Self, -1) catch unreachable;
-    L.pop(1); // drop: Scheduler
-    return luau_scheduler;
+    const GL = L.getMainThread();
+    const scheduler = GL.getThreadData(Self) catch L.raiseErrorStr("InternalError (Scheduler not found)", .{});
+    return scheduler;
 }
 
 pub fn toSchedulerFn(comptime f: *const fn (state: *Luau, scheduler: *Self) i32) luau.ZigFnInt {

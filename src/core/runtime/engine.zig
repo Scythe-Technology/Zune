@@ -296,8 +296,9 @@ pub fn prep(L: *Luau, pOpts: PrepOptions, flags: Zune.Flags) !void {
 }
 
 pub fn prepAsync(L: *Luau, sched: *Scheduler, pOpts: PrepOptions, flags: Zune.Flags) !void {
-    L.pushLightUserdata(sched);
-    L.setField(luau.REGISTRYINDEX, "_SCHEDULER");
+    const GL = L.getMainThread();
+
+    GL.setThreadData(Scheduler, sched);
 
     try prep(L, pOpts, flags);
 }
