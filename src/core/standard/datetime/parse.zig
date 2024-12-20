@@ -2,7 +2,7 @@ const std = @import("std");
 const luau = @import("luau");
 const time = @import("datetime");
 
-const Datetime = time.Datetime;
+const Time = @import("time.zig");
 
 const Month = enum {
     Jan,
@@ -36,7 +36,7 @@ const MonthMap = std.StaticStringMap(Month).initComptime(.{
 
 // in the format "<day-name>, <day> <month> <year> <hour>:<minute>:<second> GMT"
 // eg, "Wed, 21 Oct 2015 07:28:00 GMT"
-pub fn parseModified(allocator: std.mem.Allocator, timestring: []const u8) !Datetime {
+pub fn parseModified(allocator: std.mem.Allocator, timestring: []const u8) !Time {
     const value = std.mem.trim(u8, timestring, " ");
     if (value.len < 29)
         return error.InvalidFormat;
@@ -58,20 +58,23 @@ pub fn parseModified(allocator: std.mem.Allocator, timestring: []const u8) !Date
 
     var tzinfo = try time.Timezone.fromTzdata(tz, allocator);
     errdefer tzinfo.deinit();
-    return Datetime.fromFields(.{
+    const datetime = try time.Datetime.fromFields(.{
         .day = day,
         .month = month,
         .year = year,
         .hour = hour,
         .minute = minute,
         .second = second,
-        .tzinfo = tzinfo,
+        .tz_options = .{
+            .tz = &tzinfo,
+        },
     });
+    return Time.fromTime(allocator, datetime, tzinfo);
 }
 
 // in the format "<day-name>, <day> <month> <year> <hour>:<minute>:<second> GMT"
 // eg, "21 Oct 2015 07:28:00 GMT"
-pub fn parseModifiedShort(allocator: std.mem.Allocator, timestring: []const u8) !Datetime {
+pub fn parseModifiedShort(allocator: std.mem.Allocator, timestring: []const u8) !Time {
     const value = std.mem.trim(u8, timestring, " ");
     if (value.len < 24)
         return error.InvalidFormat;
@@ -93,51 +96,61 @@ pub fn parseModifiedShort(allocator: std.mem.Allocator, timestring: []const u8) 
 
     var tzinfo = try time.Timezone.fromTzdata(tz, allocator);
     errdefer tzinfo.deinit();
-    return Datetime.fromFields(.{
+    const datetime = try time.Datetime.fromFields(.{
         .day = day,
         .month = month,
         .year = year,
         .hour = hour,
         .minute = minute,
         .second = second,
-        .tzinfo = tzinfo,
+        .tz_options = .{
+            .tz = &tzinfo,
+        },
     });
+    return Time.fromTime(allocator, datetime, tzinfo);
 }
 
-pub fn parse(allocator: std.mem.Allocator, str: []const u8) !Datetime {
+pub fn parse(allocator: std.mem.Allocator, str: []const u8) !Time {
     const trimmed = std.mem.trimLeft(u8, std.mem.trimRight(u8, str, " "), " ");
     if (std.mem.indexOfScalar(u8, trimmed, '-') == null) {
         if (str.len < 29)
             return parseModifiedShort(allocator, trimmed);
         return parseModified(allocator, trimmed);
-    } else return time.parseISO8601(trimmed);
+    } else {
+        const datetime = try time.Datetime.fromISO8601(trimmed);
+        return Time.fromTime(allocator, datetime, if (datetime.tz) |tz| tz.* else null);
+    }
 }
 
 const testing = std.testing;
 test "Timeparse" {
     {
         var result = try parse(testing.allocator, "Wed, 21 Oct 2015 07:28:00 GMT");
-        defer if (result.tzinfo) |*tz| tz.deinit();
-        try testing.expectEqual(2015, result.year);
-        try testing.expectEqual(10, result.month);
-        try testing.expectEqual(21, result.day);
-        try testing.expectEqual(7, result.hour);
-        try testing.expectEqual(28, result.minute);
-        try testing.expectEqual(0, result.second);
-        try testing.expect(result.tzinfo != null);
-        try testing.expectEqualStrings("GMT", result.tzinfo.?.name());
+        defer result.deinit();
+        const datetime = result.datatime;
+        try testing.expectEqual(2015, datetime.year);
+        try testing.expectEqual(10, datetime.month);
+        try testing.expectEqual(21, datetime.day);
+        try testing.expectEqual(7, datetime.hour);
+        try testing.expectEqual(28, datetime.minute);
+        try testing.expectEqual(0, datetime.second);
+        try testing.expect(result.timezone != null);
+        try testing.expect(datetime.tz != null);
+        try testing.expectEqualStrings("GMT", result.timezone.?.name());
     }
     {
         var result = try parse(testing.allocator, "Wed, 21 Oct 2015 07:28:00 UTC");
-        defer if (result.tzinfo) |*tz| tz.deinit();
-        try testing.expectEqual(2015, result.year);
-        try testing.expectEqual(10, result.month);
-        try testing.expectEqual(21, result.day);
-        try testing.expectEqual(7, result.hour);
-        try testing.expectEqual(28, result.minute);
-        try testing.expectEqual(0, result.second);
-        try testing.expect(result.tzinfo != null);
-        try testing.expectEqualStrings("UTC", result.tzinfo.?.name());
+        defer result.deinit();
+        const datetime = result.datatime;
+        try testing.expectEqual(2015, datetime.year);
+        try testing.expectEqual(10, datetime.month);
+        try testing.expectEqual(21, datetime.day);
+        try testing.expectEqual(7, datetime.hour);
+        try testing.expectEqual(28, datetime.minute);
+        try testing.expectEqual(0, datetime.second);
+        try testing.expect(result.timezone != null);
+        try testing.expect(datetime.tz != null);
+        try testing.expectEqualStrings("UTC", result.timezone.?.name());
     }
     {
         try testing.expectError(error.DayOutOfRange, parse(testing.allocator, "Wed, 33 Oct 2015 07:28:00 GMT"));
@@ -146,27 +159,31 @@ test "Timeparse" {
 
     {
         var result = try parse(testing.allocator, "21 Oct 2015 07:28:00 GMT");
-        defer if (result.tzinfo) |*tz| tz.deinit();
-        try testing.expectEqual(2015, result.year);
-        try testing.expectEqual(10, result.month);
-        try testing.expectEqual(21, result.day);
-        try testing.expectEqual(7, result.hour);
-        try testing.expectEqual(28, result.minute);
-        try testing.expectEqual(0, result.second);
-        try testing.expect(result.tzinfo != null);
-        try testing.expectEqualStrings("GMT", result.tzinfo.?.name());
+        defer result.deinit();
+        const datetime = result.datatime;
+        try testing.expectEqual(2015, datetime.year);
+        try testing.expectEqual(10, datetime.month);
+        try testing.expectEqual(21, datetime.day);
+        try testing.expectEqual(7, datetime.hour);
+        try testing.expectEqual(28, datetime.minute);
+        try testing.expectEqual(0, datetime.second);
+        try testing.expect(result.timezone != null);
+        try testing.expect(datetime.tz != null);
+        try testing.expectEqualStrings("GMT", result.timezone.?.name());
     }
     {
         var result = try parse(testing.allocator, "21 Oct 2015 07:28:00 UTC");
-        defer if (result.tzinfo) |*tz| tz.deinit();
-        try testing.expectEqual(2015, result.year);
-        try testing.expectEqual(10, result.month);
-        try testing.expectEqual(21, result.day);
-        try testing.expectEqual(7, result.hour);
-        try testing.expectEqual(28, result.minute);
-        try testing.expectEqual(0, result.second);
-        try testing.expect(result.tzinfo != null);
-        try testing.expectEqualStrings("UTC", result.tzinfo.?.name());
+        defer result.deinit();
+        const datetime = result.datatime;
+        try testing.expectEqual(2015, datetime.year);
+        try testing.expectEqual(10, datetime.month);
+        try testing.expectEqual(21, datetime.day);
+        try testing.expectEqual(7, datetime.hour);
+        try testing.expectEqual(28, datetime.minute);
+        try testing.expectEqual(0, datetime.second);
+        try testing.expect(result.timezone != null);
+        try testing.expect(datetime.tz != null);
+        try testing.expectEqualStrings("UTC", result.timezone.?.name());
     }
 
     {
@@ -176,24 +193,30 @@ test "Timeparse" {
 
     {
         var result = try parse(testing.allocator, "2015-10-21T07:28:00Z");
-        try testing.expectEqual(2015, result.year);
-        try testing.expectEqual(10, result.month);
-        try testing.expectEqual(21, result.day);
-        try testing.expectEqual(7, result.hour);
-        try testing.expectEqual(28, result.minute);
-        try testing.expectEqual(0, result.second);
-        try testing.expect(result.tzinfo != null);
-        try testing.expectEqualStrings("UTC", result.tzinfo.?.name());
+        defer result.deinit();
+        const datetime = result.datatime;
+        try testing.expectEqual(2015, datetime.year);
+        try testing.expectEqual(10, datetime.month);
+        try testing.expectEqual(21, datetime.day);
+        try testing.expectEqual(7, datetime.hour);
+        try testing.expectEqual(28, datetime.minute);
+        try testing.expectEqual(0, datetime.second);
+        try testing.expect(result.timezone != null);
+        try testing.expect(datetime.tz != null);
+        try testing.expectEqualStrings("UTC", result.timezone.?.name());
     }
     {
-        const result = try parse(testing.allocator, "2015-10-21T07:28:00");
-        try testing.expectEqual(2015, result.year);
-        try testing.expectEqual(10, result.month);
-        try testing.expectEqual(21, result.day);
-        try testing.expectEqual(7, result.hour);
-        try testing.expectEqual(28, result.minute);
-        try testing.expectEqual(0, result.second);
-        try testing.expect(result.tzinfo == null);
+        var result = try parse(testing.allocator, "2015-10-21T07:28:00");
+        defer result.deinit();
+        const datetime = result.datatime;
+        try testing.expectEqual(2015, datetime.year);
+        try testing.expectEqual(10, datetime.month);
+        try testing.expectEqual(21, datetime.day);
+        try testing.expectEqual(7, datetime.hour);
+        try testing.expectEqual(28, datetime.minute);
+        try testing.expectEqual(0, datetime.second);
+        try testing.expect(result.timezone == null);
+        try testing.expect(datetime.tz == null);
     }
     {
         try testing.expectError(error.InvalidFormat, parse(testing.allocator, "2015-10-21T07:28:00B"));

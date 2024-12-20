@@ -4,11 +4,11 @@ const time = @import("datetime");
 
 const parse = @import("parse.zig");
 
+const Time = @import("time.zig");
+
 const luaHelper = @import("../../utils/luahelper.zig");
 
 const Luau = luau.Luau;
-
-const Datetime = time.Datetime;
 
 pub const LIB_NAME = "datetime";
 
@@ -17,17 +17,19 @@ const LuaDatetime = struct {
 
     pub fn __namecall(L: *Luau) !i32 {
         L.checkType(1, .userdata);
-        const datetime_ptr = L.toUserdata(Datetime, 1) catch unreachable;
+        const ptr = L.toUserdata(Time, 1) catch unreachable;
 
         const namecall = L.nameCallAtom() catch return 0;
 
         const allocator = L.allocator();
 
+        const datetime = ptr.datatime;
+
         if (std.mem.eql(u8, namecall, "toIsoDate") or std.mem.eql(u8, namecall, "ToIsoDate")) {
-            const utc = if (datetime_ptr.isAware())
-                try datetime_ptr.tzLocalize(null)
+            const utc = if (datetime.isAware())
+                try datetime.tzLocalize(null)
             else
-                datetime_ptr.*;
+                datetime.*;
 
             try L.pushFmtString("{}Z", .{utc});
 
@@ -35,11 +37,11 @@ const LuaDatetime = struct {
         } else if (std.mem.eql(u8, namecall, "toLocalTime") or std.mem.eql(u8, namecall, "ToLocalTime")) {
             var tz = try time.Timezone.tzLocal(allocator);
             defer tz.deinit();
-            const date = if (datetime_ptr.isNaive())
-                try datetime_ptr.tzLocalize(time.Timezone.UTC)
+            const date = if (datetime.isNaive())
+                try datetime.tzLocalize(.{ .tz = &time.Timezone.UTC })
             else
-                datetime_ptr.*;
-            const local = try date.tzConvert(tz);
+                datetime.*;
+            const local = try date.tzConvert(.{ .tz = &tz });
             L.newTable();
 
             L.setFieldInteger(-1, "year", @intCast(local.year));
@@ -52,10 +54,10 @@ const LuaDatetime = struct {
 
             return 1;
         } else if (std.mem.eql(u8, namecall, "toUniversalTime") or std.mem.eql(u8, namecall, "ToUniversalTime")) {
-            const utc = if (datetime_ptr.isAware())
-                try datetime_ptr.tzConvert(time.Timezone.UTC)
+            const utc = if (datetime.isAware())
+                try datetime.tzConvert(.{ .tz = &time.Timezone.UTC })
             else
-                try datetime_ptr.tzLocalize(time.Timezone.UTC);
+                try datetime.tzLocalize(.{ .tz = &time.Timezone.UTC });
             L.newTable();
 
             L.setFieldInteger(-1, "year", @intCast(utc.year));
@@ -71,31 +73,31 @@ const LuaDatetime = struct {
             const format_str = L.checkString(2);
             var tz = try time.Timezone.tzLocal(allocator);
             defer tz.deinit();
-            const date = if (datetime_ptr.isNaive())
-                try datetime_ptr.tzLocalize(time.Timezone.UTC)
+            const date = if (datetime.isNaive())
+                try datetime.tzLocalize(.{ .tz = &time.Timezone.UTC })
             else
-                datetime_ptr.*;
-            const local = try date.tzConvert(tz);
+                datetime.*;
+            const local = try date.tzConvert(.{ .tz = &tz });
 
             var buf = std.ArrayList(u8).init(allocator);
             defer buf.deinit();
 
-            try time.formatToString(buf.writer(), format_str, local);
+            try local.toString(format_str, buf.writer());
 
             L.pushLString(buf.items);
 
             return 1;
         } else if (std.mem.eql(u8, namecall, "formatUniversalTime") or std.mem.eql(u8, namecall, "FormatUniversalTime")) {
             const format_str = L.checkString(2);
-            const utc = if (datetime_ptr.isAware())
-                try datetime_ptr.tzConvert(time.Timezone.UTC)
+            const utc = if (datetime.isAware())
+                try datetime.tzConvert(.{ .tz = &time.Timezone.UTC })
             else
-                try datetime_ptr.tzLocalize(time.Timezone.UTC);
+                try datetime.tzLocalize(.{ .tz = &time.Timezone.UTC });
 
             var buf = std.ArrayList(u8).init(allocator);
             defer buf.deinit();
 
-            try time.formatToString(buf.writer(), format_str, utc);
+            try utc.toString(format_str, buf.writer());
 
             L.pushLString(buf.items);
 
@@ -106,29 +108,29 @@ const LuaDatetime = struct {
 
     pub fn __index(L: *Luau) i32 {
         L.checkType(1, .userdata);
-        const datetime_ptr = L.toUserdata(Datetime, 1) catch unreachable;
+        const ptr = L.toUserdata(Time, 1) catch unreachable;
 
         const index = L.checkString(2);
 
         if (std.mem.eql(u8, index, "unixTimestamp") or std.mem.eql(u8, index, "UnixTimestamp")) {
-            L.pushNumber(@floatFromInt(datetime_ptr.toUnix(.second)));
+            L.pushNumber(@floatFromInt(ptr.datatime.toUnix(.second)));
             return 1;
         } else if (std.mem.eql(u8, index, "unixTimestampMillis") or std.mem.eql(u8, index, "UnixTimestampMillis")) {
-            L.pushNumber(@floatFromInt(datetime_ptr.toUnix(.millisecond)));
+            L.pushNumber(@floatFromInt(ptr.datatime.toUnix(.millisecond)));
             return 1;
         }
         return 0;
     }
 
-    pub fn __dtor(datetime_ptr: *Datetime) void {
-        if (datetime_ptr.tzinfo) |*tz|
-            tz.deinit();
+    pub fn __dtor(ptr: *Time) void {
+        ptr.deinit();
     }
 };
 
 fn datetime_now(L: *Luau) !i32 {
-    const datetime_ptr = L.newUserdata(Datetime);
-    datetime_ptr.* = Datetime.now(null);
+    const allocator = L.allocator();
+    const ptr = L.newUserdataDtor(Time, LuaDatetime.__dtor);
+    ptr.* = try Time.fromTime(allocator, try time.Datetime.now(null), null);
     if (L.getMetatableRegistry(LuaDatetime.META) == .table)
         L.setMetatable(-2)
     else
@@ -137,9 +139,10 @@ fn datetime_now(L: *Luau) !i32 {
 }
 
 fn datetime_fromUnixTimestamp(L: *Luau) !i32 {
+    const allocator = L.allocator();
     const timestamp = L.checkNumber(1);
-    const datetime_ptr = L.newUserdata(Datetime);
-    datetime_ptr.* = try Datetime.fromUnix(@intFromFloat(timestamp), .second, null);
+    const ptr = L.newUserdataDtor(Time, LuaDatetime.__dtor);
+    ptr.* = try Time.fromTime(allocator, try time.Datetime.fromUnix(@intFromFloat(timestamp), .second, null), null);
     if (L.getMetatableRegistry(LuaDatetime.META) == .table)
         L.setMetatable(-2)
     else
@@ -148,9 +151,10 @@ fn datetime_fromUnixTimestamp(L: *Luau) !i32 {
 }
 
 fn datetime_fromUnixTimestampMillis(L: *Luau) !i32 {
+    const allocator = L.allocator();
     const timestamp = L.checkNumber(1);
-    const datetime_ptr = L.newUserdata(Datetime);
-    datetime_ptr.* = try Datetime.fromUnix(@intFromFloat(timestamp), .millisecond, null);
+    const ptr = L.newUserdataDtor(Time, LuaDatetime.__dtor);
+    ptr.* = try Time.fromTime(allocator, try time.Datetime.fromUnix(@intFromFloat(timestamp), .millisecond, null), null);
     if (L.getMetatableRegistry(LuaDatetime.META) == .table)
         L.setMetatable(-2)
     else
@@ -167,8 +171,10 @@ fn datetime_fromUniversalTime(L: *Luau) !i32 {
     const second = L.optInteger(6) orelse 0;
     const millisecond = L.optInteger(7) orelse 0;
 
-    const datetime_ptr = L.newUserdata(Datetime);
-    datetime_ptr.* = try Datetime.fromFields(.{
+    const allocator = L.allocator();
+
+    const ptr = L.newUserdataDtor(Time, LuaDatetime.__dtor);
+    const datetime = try time.Datetime.fromFields(.{
         .year = @intCast(year),
         .month = @intCast(month),
         .day = @intCast(day),
@@ -177,6 +183,7 @@ fn datetime_fromUniversalTime(L: *Luau) !i32 {
         .second = @intCast(second),
         .nanosecond = @intCast(millisecond * std.time.ns_per_ms),
     });
+    ptr.* = try Time.fromTime(allocator, datetime, null);
     if (L.getMetatableRegistry(LuaDatetime.META) == .table)
         L.setMetatable(-2)
     else
@@ -195,8 +202,9 @@ fn datetime_fromLocalTime(L: *Luau) !i32 {
 
     const allocator = L.allocator();
 
-    const datetime_ptr = L.newUserdataDtor(Datetime, LuaDatetime.__dtor);
-    datetime_ptr.* = try Datetime.fromFields(.{
+    const ptr = L.newUserdataDtor(Time, LuaDatetime.__dtor);
+    const local = try time.Timezone.tzLocal(allocator);
+    const datetime = try time.Datetime.fromFields(.{
         .year = @intCast(year),
         .month = @intCast(month),
         .day = @intCast(day),
@@ -204,8 +212,9 @@ fn datetime_fromLocalTime(L: *Luau) !i32 {
         .minute = @intCast(minute),
         .second = @intCast(second),
         .nanosecond = @intCast(millisecond * std.time.ns_per_ms),
-        .tzinfo = try time.Timezone.tzLocal(allocator),
+        .tzinfo = local,
     });
+    ptr.* = try Time.fromTime(allocator, datetime, local);
     if (L.getMetatableRegistry(LuaDatetime.META) == .table)
         L.setMetatable(-2)
     else
@@ -214,10 +223,11 @@ fn datetime_fromLocalTime(L: *Luau) !i32 {
 }
 
 fn datetime_fromIsoDate(L: *Luau) !i32 {
+    const allocator = L.allocator();
     const iso_date = L.checkString(1);
 
-    const datetime_ptr = L.newUserdataDtor(Datetime, LuaDatetime.__dtor);
-    datetime_ptr.* = try time.parseISO8601(iso_date);
+    const ptr = L.newUserdataDtor(Time, LuaDatetime.__dtor);
+    ptr.* = try Time.fromTime(allocator, try time.Datetime.fromISO8601(iso_date), null);
     if (L.getMetatableRegistry(LuaDatetime.META) == .table)
         L.setMetatable(-2)
     else
@@ -229,8 +239,8 @@ fn datetime_parse(L: *Luau) !i32 {
     const allocator = L.allocator();
     const date_string = L.checkString(1);
 
-    const datetime_ptr = L.newUserdataDtor(Datetime, LuaDatetime.__dtor);
-    datetime_ptr.* = try parse.parse(allocator, date_string);
+    const ptr = L.newUserdataDtor(Time, LuaDatetime.__dtor);
+    ptr.* = try parse.parse(allocator, date_string);
     if (L.getMetatableRegistry(LuaDatetime.META) == .table)
         L.setMetatable(-2)
     else

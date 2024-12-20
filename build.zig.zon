@@ -16,8 +16,8 @@
             .hash = "1220d6bbca59a59f16bda33b69e140d90bad313d11c07c0e2ab16076c59355845112",
         },
         .luau = .{
-            .url = "https://codeload.github.com/Scythe-Technology/zig-luau/tar.gz/f57091f0825aebab157f9633ec59d5853493cf1d",
-            .hash = "1220895278f92607cd23c4638488c1ead1f9027a6052a4f07c7d58d81584469b6532",
+            .url = "https://codeload.github.com/Scythe-Technology/zig-luau/tar.gz/05813b51b2b18e2066d104abbefe3098445f2e5b",
+            .hash = "12209c86f13a67753f0b1e73a470e8060c3f8129b58bdde60c6242a0e95040fe30d0",
         },
         .czrex = .{
             .url = "https://codeload.github.com/Scythe-Technology/czrex/tar.gz/099db43b9074001329dfb04aef92b7589a00f983",
@@ -28,8 +28,8 @@
             .hash = "122092de7c4680b0d7bab8adc96ebaa22b6654179f6b8757f25d2dec6feda04b00b5",
         },
         .datetime = .{
-            .url = "https://codeload.github.com/FObersteiner/zdt/tar.gz/eb49813879c49413661601822c7b466d8daf5055",
-            .hash = "122000990924dc7a78c5c440db4006b7e962e700fbe5cf983e99bf8de2c3daf14791",
+            .url = "https://codeload.github.com/FObersteiner/zdt/tar.gz/9c5d317f46353940881dd6cde387b176b1cd3962",
+            .hash = "1220ab33523ece09d28ee47d3b89865f9884438648ced53ac6a4237c2a8d47a55703",
         },
         .toml = .{
             .url = "https://codeload.github.com/mattyhall/tomlz/tar.gz/9a16dd53927ef2012478b6494bafb4475e44f4c9",
@@ -40,8 +40,8 @@
             .hash = "122092e17bb2626abbd05718a6b84a2732bb754dd0eb710c5581c569c7fa49d612bc",
         },
         .zstd = .{
-            .url = "https://codeload.github.com/Scythe-Technology/zig-zstd/tar.gz/b2df94536e2a209aad32a1898a31f703ff6a22ef",
-            .hash = "12200d95dde7db2e375801da38467f5ad066ba90273dfacacca2f3168793743d5c8f",
+            .url = "https://codeload.github.com/Scythe-Technology/zig-zstd/tar.gz/1a5eea905f8bc622fff72eb807744468a0311848",
+            .hash = "1220cd0ded41510d117684f986f895276413b51739212655d429568be7e150e4bd48",
         },
     },
     .paths = .{
