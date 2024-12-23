@@ -540,9 +540,10 @@ pub fn lua_tcp_server(L: *Luau, scheduler: *Scheduler) !i32 {
 
     const address = try std.net.Address.parseIp4(address_ip, port);
 
+    // TODO: non-blocking async io server
     const server = try address.listen(.{
         .reuse_address = reuseAddress,
-        .force_nonblocking = true,
+        .force_nonblocking = false,
     });
 
     const self = L.newUserdata(TCPServer);
