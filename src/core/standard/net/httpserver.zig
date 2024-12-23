@@ -196,7 +196,10 @@ pub fn writeAllToStream(stream: std.net.Stream, data: []const u8) !void {
     var index: usize = 0;
     while (index < data.len) {
         index += stream.write(data[index..]) catch |err| switch (err) {
-            error.WouldBlock => continue,
+            error.WouldBlock => {
+                std.time.sleep(std.time.ns_per_ms * 1);
+                continue;
+            },
             else => return err,
         };
     }
