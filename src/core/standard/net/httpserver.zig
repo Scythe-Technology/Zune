@@ -192,6 +192,16 @@ pub fn closeConnection(ctx: *Self, L: *Luau, id: usize, cleanUp: bool) void {
     }
 }
 
+pub fn writeAllToStream(stream: std.net.Stream, data: []const u8) !void {
+    var index: usize = 0;
+    while (index < data.len) {
+        index += stream.write(data[index..]) catch |err| switch (err) {
+            error.WouldBlock => continue,
+            else => return err,
+        };
+    }
+}
+
 pub fn handleWebSocket(ctx: *Self, L: *Luau, scheduler: *Scheduler, i: usize, connection: std.net.Server.Connection) HandleError!void {
     const allocator = L.allocator();
     _ = scheduler;
@@ -268,7 +278,7 @@ pub fn responseResumed(responsePtr: *NetStreamData, L: *Luau, _: *Scheduler) voi
         return;
     };
     if (L.status() != .ok) {
-        stream.writeAll(HTTP_500) catch |err| {
+        writeAllToStream(stream, HTTP_500) catch |err| {
             std.debug.print("Error writing response: {}\n", .{err});
         };
         return;
@@ -279,13 +289,13 @@ pub fn responseResumed(responsePtr: *NetStreamData, L: *Luau, _: *Scheduler) voi
             if (L.getField(-1, "statusCode") != .number) {
                 L.pop(1);
                 std.debug.print("Field 'statusCode' must be a number", .{});
-                stream.writeAll(HTTP_500) catch return;
+                writeAllToStream(stream, HTTP_500) catch return;
                 return;
             }
             const statusCode = L.checkInteger(-1);
             if (statusCode < 100 or statusCode > 599) {
                 std.debug.print("Status code must be between 100 and 599", .{});
-                stream.writeAll(HTTP_500) catch return;
+                writeAllToStream(stream, HTTP_500) catch return;
                 return;
             }
 
@@ -294,7 +304,7 @@ pub fn responseResumed(responsePtr: *NetStreamData, L: *Luau, _: *Scheduler) voi
             defer headersString.deinit();
             if (!luau.isNoneOrNil(headersType) and headersType != .table) {
                 std.debug.print("Field 'headers' must be a table", .{});
-                stream.writeAll(HTTP_500) catch return;
+                writeAllToStream(stream, HTTP_500) catch return;
                 return;
             } else if (headersType == .table) {
                 var headers = std.ArrayList(std.http.Header).init(allocator);
@@ -321,22 +331,22 @@ pub fn responseResumed(responsePtr: *NetStreamData, L: *Luau, _: *Scheduler) voi
                 for (headers.items) |header| {
                     headersString.appendSlice(header.name) catch |err| {
                         std.debug.print("Error appending header name: {}\n", .{err});
-                        stream.writeAll(HTTP_500) catch return;
+                        writeAllToStream(stream, HTTP_500) catch return;
                         return;
                     };
                     headersString.appendSlice(": ") catch |err| {
                         std.debug.print("Error appending header separator: {}\n", .{err});
-                        stream.writeAll(HTTP_500) catch return;
+                        writeAllToStream(stream, HTTP_500) catch return;
                         return;
                     };
                     headersString.appendSlice(header.value) catch |err| {
                         std.debug.print("Error appending header value: {}\n", .{err});
-                        stream.writeAll(HTTP_500) catch return;
+                        writeAllToStream(stream, HTTP_500) catch return;
                         return;
                     };
                     headersString.appendSlice("\r\n") catch |err| {
                         std.debug.print("Error appending header separator: {}\n", .{err});
-                        stream.writeAll(HTTP_500) catch return;
+                        writeAllToStream(stream, HTTP_500) catch return;
                         return;
                     };
                 }
@@ -345,7 +355,7 @@ pub fn responseResumed(responsePtr: *NetStreamData, L: *Luau, _: *Scheduler) voi
             const bodyType = L.getField(-3, "body");
             if (bodyType != .string and bodyType != .buffer) {
                 std.debug.print("Field 'body' must be a string", .{});
-                stream.writeAll(HTTP_500) catch return;
+                writeAllToStream(stream, HTTP_500) catch return;
                 return;
             }
             const body = if (bodyType == .buffer)
@@ -376,7 +386,7 @@ pub fn responseResumed(responsePtr: *NetStreamData, L: *Luau, _: *Scheduler) voi
                 };
             defer allocator.free(response);
 
-            stream.writeAll(response) catch |err| {
+            writeAllToStream(stream, response) catch |err| {
                 std.debug.print("Error writing response: {}\n", .{err});
                 return;
             };
@@ -388,7 +398,7 @@ pub fn responseResumed(responsePtr: *NetStreamData, L: *Luau, _: *Scheduler) voi
                 return;
             };
             defer allocator.free(response);
-            stream.writeAll(response) catch |err| {
+            writeAllToStream(stream, response) catch |err| {
                 std.debug.print("Error writing response: {}\n", .{err});
                 return;
             };
@@ -396,7 +406,7 @@ pub fn responseResumed(responsePtr: *NetStreamData, L: *Luau, _: *Scheduler) voi
         else => {
             L.pop(1);
             std.debug.print("Serve response must be a table or string", .{});
-            stream.writeAll(HTTP_500) catch return;
+            writeAllToStream(stream, HTTP_500) catch return;
             return;
         },
     }
@@ -408,7 +418,7 @@ pub fn responseResumedDtor(responsePtr: *NetStreamData, _: *Luau, _: *Scheduler)
 }
 
 pub fn websocket_acceptUpgrade(L: *Luau, ctx: *Self, id: usize, stream: std.net.Stream, res: []const u8) void {
-    stream.writeAll(res) catch |err| {
+    writeAllToStream(stream, res) catch |err| {
         std.debug.print("Error writing response: {}\n", .{err});
         return;
     };
@@ -457,21 +467,21 @@ pub fn websocket_upgradeResumed(responsePtr: *NetStreamData, L: *Luau, _: *Sched
         return;
     };
     if (L.status() != .ok) {
-        stream.writeAll(HTTP_500) catch |err| {
+        writeAllToStream(stream, HTTP_500) catch |err| {
             std.debug.print("Error writing response: {}\n", .{err});
         };
         return;
     }
     if (L.typeOf(-1) != .boolean) {
         std.debug.print("Function must return a boolean\n", .{});
-        stream.writeAll(HTTP_500) catch |werr| {
+        writeAllToStream(stream, HTTP_500) catch |werr| {
             std.debug.print("Error writing response: {}\n", .{werr});
         };
         return;
     }
     const allow = L.toBoolean(-1);
     if (!allow) {
-        stream.writeAll(HTTP_404) catch |err| {
+        writeAllToStream(stream, HTTP_404) catch |err| {
             std.debug.print("Error writing response: {}\n", .{err});
         };
         return;
@@ -497,7 +507,7 @@ pub fn handleRequest(ctx: *Self, L: *Luau, scheduler: *Scheduler, i: usize, conn
         .maxBodySize = ctx.max_body_size,
     }) catch |err| {
         if (err == error.BodyTooLarge) {
-            connection.stream.writeAll(HTTP_413) catch |writeErr| {
+            writeAllToStream(connection.stream, HTTP_413) catch |writeErr| {
                 std.debug.print("Error writing response: {}\n", .{writeErr});
             };
         } else if (err == error.InvalidMethod) {
@@ -538,7 +548,7 @@ pub fn handleRequest(ctx: *Self, L: *Luau, scheduler: *Scheduler, i: usize, conn
 
                     req.pushToStack(thread) catch |err| {
                         std.debug.print("Error pushing request to stack: {}\n", .{err});
-                        connection.stream.writeAll(HTTP_500) catch |werr| {
+                        writeAllToStream(connection.stream, HTTP_500) catch |werr| {
                             std.debug.print("Error writing response: {}\n", .{werr});
                         };
                         return;
@@ -551,7 +561,7 @@ pub fn handleRequest(ctx: *Self, L: *Luau, scheduler: *Scheduler, i: usize, conn
                         .upgrade_response = response,
                         .id = i,
                     }, thread, 1, websocket_upgradeResumed, websocket_upgradeResumedDtor, L) catch {
-                        connection.stream.writeAll(HTTP_500) catch |werr| {
+                        writeAllToStream(connection.stream, HTTP_500) catch |werr| {
                             std.debug.print("Error writing response: {}\n", .{werr});
                         };
                         return;
@@ -590,7 +600,7 @@ pub fn handleRequest(ctx: *Self, L: *Luau, scheduler: *Scheduler, i: usize, conn
         .owned = responses,
         .id = i,
     }, thread, 1, responseResumed, responseResumedDtor, L) catch {
-        connection.stream.writeAll(HTTP_500) catch |werr| {
+        writeAllToStream(connection.stream, HTTP_500) catch |werr| {
             std.debug.print("Error writing response: {}\n", .{werr});
         };
         return;
