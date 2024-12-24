@@ -1,6 +1,7 @@
 const std = @import("std");
-const builtin = @import("builtin");
+const aio = @import("aio");
 const luau = @import("luau");
+const builtin = @import("builtin");
 
 const Scheduler = @import("../../runtime/scheduler.zig");
 
@@ -19,7 +20,98 @@ const OpenError = error{ InvalidMode, BadExclusive };
 
 pub const LIB_NAME = "fs";
 
-fn fs_readFile(L: *Luau) !i32 {
+const FsReadContext = struct {
+    file: fs.File,
+    useBuffer: bool,
+    read: usize = 0,
+    offset: usize = 0,
+    reading: bool = true,
+    buffer: [1024]u8 = undefined,
+    array: std.ArrayList(u8) = undefined,
+    asyncError: aio.Read.Error = error.Unexpected,
+};
+fn fs_readFileAsync__Completion(octx: ?*FsReadContext, L: *Luau, scheduler: *Scheduler, failed: bool) void {
+    var ctx = octx orelse @panic("No Context");
+    if (failed) {
+        ctx.reading = false;
+        L.pushString(@errorName(ctx.asyncError));
+        _ = Scheduler.resumeStateError(L, null) catch {};
+        return;
+    }
+    ctx.array.appendSlice(ctx.buffer[0..ctx.read]) catch |err| {
+        ctx.reading = false;
+        L.pushString(@errorName(err));
+        _ = Scheduler.resumeStateError(L, null) catch {};
+        return;
+    };
+    ctx.offset += ctx.read;
+
+    if (ctx.read < ctx.buffer.len) {
+        ctx.reading = false;
+        if (ctx.useBuffer)
+            L.pushBuffer(ctx.array.items)
+        else
+            L.pushLString(ctx.array.items);
+        _ = Scheduler.resumeState(L, null, 1) catch {};
+        return;
+    }
+
+    scheduler.queueIo(FsReadContext, ctx, L, aio.Read{
+        .file = ctx.file,
+        .offset = ctx.offset,
+        .buffer = &ctx.buffer,
+        .out_read = &ctx.read,
+        .out_error = &ctx.asyncError,
+    }, fs_readFileAsync__Completion, fs_readFileAsync__Dtor) catch |err| {
+        ctx.reading = false;
+        L.pushString(@errorName(err));
+        _ = Scheduler.resumeStateError(L, null) catch {};
+    };
+}
+fn fs_readFileAsync__Dtor(octx: ?*FsReadContext, L: *Luau, scheduler: *Scheduler, _: bool) void {
+    const ctx = octx orelse @panic("No Context");
+    if (ctx.reading)
+        return;
+    const allocator = L.allocator();
+    defer allocator.destroy(ctx);
+    ctx.array.deinit();
+    scheduler.queueIo(struct {}, null, L, aio.CloseFile{
+        .file = ctx.file,
+    }, null, null) catch |err| {
+        std.debug.print("Failed to close file: {}\n", .{err});
+    };
+}
+
+fn fs_readFileAsync(L: *Luau, scheduler: *Scheduler) !i32 {
+    const allocator = L.allocator();
+    const path = L.checkString(1);
+    const useBuffer = L.optBoolean(2) orelse false;
+
+    const file = try fs.cwd().openFile(path, .{
+        .mode = .read_only,
+    });
+    errdefer file.close();
+
+    const ctx = try allocator.create(FsReadContext);
+    errdefer allocator.destroy(ctx);
+    ctx.* = .{
+        .file = file,
+        .useBuffer = useBuffer,
+        .reading = true,
+        .array = try std.ArrayList(u8).initCapacity(allocator, 1024),
+    };
+
+    try scheduler.queueIo(FsReadContext, ctx, L, aio.Read{
+        .file = file,
+        .buffer = &ctx.buffer,
+        .out_read = &ctx.read,
+        .out_error = &ctx.asyncError,
+    }, fs_readFileAsync__Completion, fs_readFileAsync__Dtor);
+
+    return L.yield(0);
+}
+
+fn fs_readFileSync(L: *Luau) !i32 {
     const allocator = L.allocator();
     const path = L.checkString(1);
     const useBuffer = L.optBoolean(2) orelse false;
@@ -653,7 +745,8 @@ pub fn loadLib(L: *Luau) void {
     L.setFieldFn(-1, "createFile", fs_createFile);
     L.setFieldFn(-1, "openFile", fs_openFile);
 
-    L.setFieldFn(-1, "readFile", fs_readFile);
+    L.setFieldFn(-1, "readFile", Scheduler.toSchedulerEFn(fs_readFileAsync));
+    L.setFieldFn(-1, "readFileSync", fs_readFileSync);
     L.setFieldFn(-1, "readDir", fs_readDir);
 
     L.setFieldFn(-1, "writeFile", fs_writeFile);

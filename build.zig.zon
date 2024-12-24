@@ -43,6 +43,10 @@
             .url = "https://codeload.github.com/Scythe-Technology/zig-tinycc/tar.gz/26cb2da1909a1b8c1521450b93418d8868846789",
             .hash = "1220204f225b5afdc6409296073af9cef595e215e0d0fe76c9d2f585a945e09dea0d",
         },
+        .aio = .{
+            .url = "https://codeload.github.com/Scythe-Technology/zig-aio/tar.gz/566ad0826b93e89f59036fd41dda4b512d1ed167",
+            .hash = "12201375b8b70ee96fe69d0da9aed22455b0cdcf1531caf1bb0417210ca0630c391b",
+        },
     },
     .paths = .{
         "build.zig",
