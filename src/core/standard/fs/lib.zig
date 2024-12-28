@@ -25,39 +25,41 @@ const ReadAsyncContext = struct {
     lua_type: luau.LuaType = .string,
 
     offset: usize = 0,
-    reading: bool = true,
     buffer_len: usize = 0,
     array: std.ArrayList(u8) = undefined,
-    error_state: anyerror = error.None,
 
     out_read: usize = 0,
     out_error: aio.Read.Error = error.Unexpected,
+    out_close_error: aio.CloseFile.Error = error.Unexpected,
 
-    fn endReading(ctx: *ReadAsyncContext, err: ?anyerror) void {
-        ctx.reading = false;
-        if (err) |e|
-            ctx.error_state = e;
+    fn endReading(ctx: *ReadAsyncContext, L: *Luau, scheduler: *Scheduler, err: ?anyerror) void {
+        scheduler.queueIoCallback(ReadAsyncContext, ctx, L, aio.CloseFile{
+            .file = ctx.file,
+            .out_error = &ctx.out_close_error,
+        }, readFileFinished) catch |e| {
+            std.debug.print("Failed to queue close: {}\n", .{e});
+        };
+
+        if (err) |e| {
+            if (e != error.None) {
+                L.pushString(@errorName(e));
+                _ = Scheduler.resumeStateError(L, null) catch {};
+            }
+        }
     }
 
     fn readFileCompletion(ctx: *ReadAsyncContext, L: *Luau, scheduler: *Scheduler, failed: bool) void {
-        if (failed) return ctx.endReading(ctx.out_error);
+        if (failed)
+            return ctx.endReading(L, scheduler, ctx.out_error);
 
         ctx.offset += ctx.out_read;
         ctx.buffer_len += ctx.out_read;
 
         if (ctx.out_read == 0 or ctx.buffer_len > luaHelper.MAX_LUAU_SIZE) {
-            ctx.array.shrinkAndFree(ctx.buffer_len);
-            ctx.reading = false;
-            switch (ctx.lua_type) {
-                .buffer => L.pushBuffer(ctx.array.items),
-                .string => L.pushLString(ctx.array.items),
-                else => unreachable,
-            }
-            _ = Scheduler.resumeState(L, null, 1) catch {};
-            return;
+            return ctx.endReading(L, scheduler, null);
         }
 
-        ctx.array.ensureTotalCapacity(ctx.buffer_len + ctx.offset + 1) catch |err| return ctx.endReading(err);
+        ctx.array.ensureTotalCapacity(ctx.buffer_len + ctx.offset + 1) catch |err| return ctx.endReading(L, scheduler, err);
         if (ctx.array.capacity > luaHelper.MAX_LUAU_SIZE)
             ctx.array.shrinkAndFree(luaHelper.MAX_LUAU_SIZE);
         ctx.array.expandToCapacity();
@@ -68,24 +70,25 @@ const ReadAsyncContext = struct {
             .buffer = ctx.array.items[ctx.offset..],
             .out_read = &ctx.out_read,
             .out_error = &ctx.out_error,
-        }, readFileCompletion, readFileDtor) catch |err| return ctx.endReading(err);
+        }, readFileCompletion) catch |err| return ctx.endReading(L, scheduler, err);
     }
 
-    fn readFileDtor(ctx: *ReadAsyncContext, L: *Luau, scheduler: *Scheduler, _: bool) void {
-        if (ctx.error_state != error.None) {
-            L.pushString(@errorName(ctx.error_state));
-            _ = Scheduler.resumeStateError(L, null) catch {};
-        }
-        if (ctx.reading)
-            return;
+    fn readFileFinished(ctx: *ReadAsyncContext, L: *Luau, _: *Scheduler, failed: bool) void {
         const allocator = L.allocator();
         defer allocator.destroy(ctx);
-        ctx.array.deinit();
-        scheduler.queueIo(L, aio.CloseFile{
-            .file = ctx.file,
-        }) catch |err| {
-            std.debug.print("Failed to close file: {}\n", .{err});
-        };
+        defer ctx.array.deinit();
+
+        if (failed) {
+            std.debug.print("Failed to close handle: {}\n", .{ctx.out_close_error});
+        }
+
+        ctx.array.shrinkAndFree(ctx.buffer_len);
+        switch (ctx.lua_type) {
+            .buffer => L.pushBuffer(ctx.array.items),
+            .string => L.pushLString(ctx.array.items),
+            else => unreachable,
+        }
+        _ = Scheduler.resumeState(L, null, 1) catch {};
     }
 };
 
@@ -104,7 +107,6 @@ fn fs_readFileAsync(L: *Luau, scheduler: *Scheduler) !i32 {
     ctx.* = .{
         .file = file,
         .lua_type = if (useBuffer) .buffer else .string,
-        .reading = true,
         .array = try std.ArrayList(u8).initCapacity(allocator, 1024),
     };
 
@@ -115,7 +117,7 @@ fn fs_readFileAsync(L: *Luau, scheduler: *Scheduler) !i32 {
         .buffer = ctx.array.items[ctx.offset..],
         .out_read = &ctx.out_read,
         .out_error = &ctx.out_error,
-    }, ReadAsyncContext.readFileCompletion, ReadAsyncContext.readFileDtor);
+    }, ReadAsyncContext.readFileCompletion);
 
     return L.yield(0);
 }

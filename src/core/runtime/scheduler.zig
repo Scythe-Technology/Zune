@@ -70,7 +70,6 @@ pub const AwaitTaskPriority = enum { Internal, User };
 const TaskFn = fn (ctx: *anyopaque, L: *Luau, scheduler: *Self) TaskResult;
 const TaskFnDtor = fn (ctx: *anyopaque, L: *Luau, scheduler: *Self) void;
 const AsyncCallbackFn = fn (ctx: *anyopaque, L: *Luau, scheduler: *Self, failed: bool) void;
-const AsyncCallbackFnDtor = fn (ctx: *anyopaque, L: *Luau, scheduler: *Self, failed: bool) void;
 const AwaitedFn = TaskFnDtor; // Similar to TaskFnDtor
 
 pub fn TaskObject(comptime T: type) type {
@@ -96,7 +95,6 @@ const AsyncIoThread = struct {
     data: ?*anyopaque,
     state: LuauPair,
     handlerFn: ?*const AsyncCallbackFn,
-    virtualDtor: ?*const AsyncCallbackFnDtor,
 };
 
 const FrameKind = enum {
@@ -183,8 +181,6 @@ fn ioCompletion(uop: aio.Dynamic.Uop, _: aio.Id, failed: bool) void {
             scheduler.async_tasks -= 1;
             if (ctx.handlerFn) |handler|
                 handler(ctx.data.?, state, scheduler, failed);
-            if (ctx.virtualDtor) |dtor|
-                dtor(ctx.data.?, state, scheduler, failed);
         },
     }
 }
@@ -396,7 +392,6 @@ pub fn queueIoCallback(
     L: *Luau,
     io: anytype,
     comptime handlerFn: ?*const fn (ctx: *T, L: *Luau, scheduler: *Self, failed: bool) void,
-    comptime dtorFn: ?*const fn (ctx: *T, L: *Luau, scheduler: *Self, failed: bool) void,
 ) !void {
     const allocator = self.allocator;
 
@@ -409,17 +404,10 @@ pub fn queueIoCallback(
         }
     }.inner;
 
-    const virtualDtor = struct {
-        fn inner(ctx: *anyopaque, l: *Luau, scheduler: *Self, failed: bool) void {
-            @call(.always_inline, dtorFn.?, .{ @as(*T, @alignCast(@ptrCast(ctx))), l, scheduler, failed });
-        }
-    }.inner;
-
     async_ptr.* = .{
         .state = refThread(L),
         .data = data,
         .handlerFn = if (handlerFn != null) handler else null,
-        .virtualDtor = if (dtorFn != null) virtualDtor else null,
     };
     errdefer derefThread(async_ptr.state);
 
