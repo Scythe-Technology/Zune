@@ -99,6 +99,15 @@ const AsyncIoThread = struct {
     virtualDtor: ?*const AsyncCallbackFnDtor,
 };
 
+const FrameKind = enum {
+    None,
+    Awaiting,
+    Task,
+    Sleeping,
+    AsyncIO,
+    Deferred,
+};
+
 fn SleepOrder(_: void, a: SleepingThread, b: SleepingThread) std.math.Order {
     const wakeA = a.wake;
     const wakeB = b.wake;
@@ -139,6 +148,8 @@ awaits: std.ArrayList(AwaitingObject(anyopaque)),
 dynamic: aio.Dynamic,
 async_tasks: usize = 0,
 
+frame: FrameKind = .None,
+
 pub fn init(allocator: std.mem.Allocator, state: *Luau) Self {
     var dyn = aio.Dynamic.init(allocator, 8) catch |err| std.debug.panic("Error: {}\n", .{err});
     dyn.queue_callback = ioQueue;
@@ -165,11 +176,11 @@ fn ioCompletion(uop: aio.Dynamic.Uop, _: aio.Id, failed: bool) void {
         inline else => |*op| {
             std.debug.assert(op.userdata != 0);
             const ctx: *AsyncIoThread = @ptrFromInt(op.userdata);
-            defer derefThread(ctx.state);
             const state = stateFromPair(ctx.state);
             const scheduler = getScheduler(state);
-            scheduler.async_tasks -= 1;
             defer scheduler.allocator.destroy(ctx);
+            defer derefThread(ctx.state);
+            scheduler.async_tasks -= 1;
             if (ctx.handlerFn) |handler|
                 handler(ctx.data.?, state, scheduler, failed);
             if (ctx.virtualDtor) |dtor|
@@ -231,7 +242,7 @@ pub fn sleepThread(
     waited: bool,
 ) void {
     const start = luau.clock();
-    const wake = start + time;
+    const wake = start + time + if (time == 0 and self.frame == .Sleeping) @as(f64, 0.0001) else @as(f64, 0);
 
     self.sleeping.add(.{
         .thread = refThread(thread),
@@ -493,7 +504,8 @@ pub fn run(self: *Self, comptime testing: bool) void {
     var active: usize = 0;
     while ((self.sleeping.items.len > 0 or self.deferred.len > 0 or self.tasks.items.len > 0 or self.awaits.items.len > 0 or self.async_tasks > 0)) {
         const now = luau.clock();
-        {
+        if (self.awaits.items.len > 0) {
+            self.frame = .Awaiting;
             var i = self.awaits.items.len;
             while (i > 0) {
                 i -= 1;
@@ -509,7 +521,8 @@ pub fn run(self: *Self, comptime testing: bool) void {
                 }
             }
         }
-        {
+        if (self.tasks.items.len > 0) {
+            self.frame = .Task;
             var i = self.tasks.items.len;
             while (i > 0) {
                 i -= 1;
@@ -526,7 +539,8 @@ pub fn run(self: *Self, comptime testing: bool) void {
                 }
             }
         }
-        {
+        if (self.sleeping.items.len > 0) {
+            self.frame = .Sleeping;
             while (self.sleeping.peek()) |current| {
                 if (current.wake <= now) {
                     const slept = self.sleeping.remove();
@@ -554,6 +568,7 @@ pub fn run(self: *Self, comptime testing: bool) void {
             }
         }
         jmp: {
+            self.frame = .AsyncIO;
             const res = self.dynamic.complete(.nonblocking) catch |err| {
                 std.debug.print("AsyncIO Error: {}\n", .{err});
                 break :jmp;
@@ -567,6 +582,7 @@ pub fn run(self: *Self, comptime testing: bool) void {
             }
         }
         if (self.deferred.len > 0) {
+            self.frame = .Deferred;
             while (self.deferred.popFirst()) |node| {
                 const deferred = node.data;
                 defer self.allocator.destroy(node);
@@ -583,6 +599,7 @@ pub fn run(self: *Self, comptime testing: bool) void {
                 active += 1;
             }
         }
+        self.frame = .None;
         if (active >= 5000)
             active = 5000;
         if (active == 0) {
