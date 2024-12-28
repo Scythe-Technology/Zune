@@ -109,10 +109,9 @@ fn testing_droptasks(L: *Luau, scheduler: *Scheduler) i32 {
         Scheduler.derefThread(slept.thread);
     }
 
-    var deferredSize = scheduler.deferred.items.len;
-    while (deferredSize > 0) {
-        deferredSize -= 1;
-        const deferred = scheduler.deferred.swapRemove(deferredSize);
+    while (scheduler.deferred.pop()) |node| {
+        const deferred = node.data;
+        defer scheduler.allocator.destroy(node);
         Scheduler.derefThread(deferred.thread);
     }
 
