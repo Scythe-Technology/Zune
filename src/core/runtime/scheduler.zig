@@ -149,7 +149,7 @@ async_tasks: usize = 0,
 frame: FrameKind = .None,
 
 pub fn init(allocator: std.mem.Allocator, state: *Luau) Self {
-    var dyn = aio.Dynamic.init(allocator, 8) catch |err| std.debug.panic("Error: {}\n", .{err});
+    var dyn = aio.Dynamic.init(allocator, 4096) catch |err| std.debug.panic("Error: {}\n", .{err});
     dyn.queue_callback = ioQueue;
     dyn.completion_callback = ioCompletion;
     return .{

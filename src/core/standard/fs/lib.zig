@@ -32,11 +32,11 @@ const ReadAsyncContext = struct {
     out_error: aio.Read.Error = error.Unexpected,
     out_close_error: aio.CloseFile.Error = error.Unexpected,
 
-    fn endReading(ctx: *ReadAsyncContext, L: *Luau, scheduler: *Scheduler, err: ?anyerror) void {
+    fn end(ctx: *ReadAsyncContext, L: *Luau, scheduler: *Scheduler, err: ?anyerror) void {
         scheduler.queueIoCallback(ReadAsyncContext, ctx, L, aio.CloseFile{
             .file = ctx.file,
             .out_error = &ctx.out_close_error,
-        }, readFileFinished) catch |e| {
+        }, finished) catch |e| {
             std.debug.print("Failed to queue close: {}\n", .{e});
         };
 
@@ -48,18 +48,18 @@ const ReadAsyncContext = struct {
         }
     }
 
-    fn readFileCompletion(ctx: *ReadAsyncContext, L: *Luau, scheduler: *Scheduler, failed: bool) void {
+    fn completion(ctx: *ReadAsyncContext, L: *Luau, scheduler: *Scheduler, failed: bool) void {
         if (failed)
-            return ctx.endReading(L, scheduler, ctx.out_error);
+            return ctx.end(L, scheduler, ctx.out_error);
 
         ctx.offset += ctx.out_read;
         ctx.buffer_len += ctx.out_read;
 
         if (ctx.out_read == 0 or ctx.buffer_len > luaHelper.MAX_LUAU_SIZE) {
-            return ctx.endReading(L, scheduler, null);
+            return ctx.end(L, scheduler, null);
         }
 
-        ctx.array.ensureTotalCapacity(ctx.buffer_len + ctx.offset + 1) catch |err| return ctx.endReading(L, scheduler, err);
+        ctx.array.ensureTotalCapacity(ctx.buffer_len + ctx.offset + 1) catch |err| return ctx.end(L, scheduler, err);
         if (ctx.array.capacity > luaHelper.MAX_LUAU_SIZE)
             ctx.array.shrinkAndFree(luaHelper.MAX_LUAU_SIZE);
         ctx.array.expandToCapacity();
@@ -70,10 +70,10 @@ const ReadAsyncContext = struct {
             .buffer = ctx.array.items[ctx.offset..],
             .out_read = &ctx.out_read,
             .out_error = &ctx.out_error,
-        }, readFileCompletion) catch |err| return ctx.endReading(L, scheduler, err);
+        }, completion) catch |err| return ctx.end(L, scheduler, err);
     }
 
-    fn readFileFinished(ctx: *ReadAsyncContext, L: *Luau, _: *Scheduler, failed: bool) void {
+    fn finished(ctx: *ReadAsyncContext, L: *Luau, _: *Scheduler, failed: bool) void {
         const allocator = L.allocator();
         defer allocator.destroy(ctx);
         defer ctx.array.deinit();
@@ -117,7 +117,7 @@ fn fs_readFileAsync(L: *Luau, scheduler: *Scheduler) !i32 {
         .buffer = ctx.array.items[ctx.offset..],
         .out_read = &ctx.out_read,
         .out_error = &ctx.out_error,
-    }, ReadAsyncContext.readFileCompletion);
+    }, ReadAsyncContext.completion);
 
     return L.yield(0);
 }
@@ -155,7 +155,95 @@ fn fs_readDir(L: *Luau) !i32 {
     return 1;
 }
 
-fn fs_writeFile(L: *Luau) !i32 {
+const WriteAsyncContext = struct {
+    file: fs.File,
+    offset: usize = 0,
+    data: []u8,
+    buffer: []u8,
+
+    out_written: usize = 0,
+    out_error: aio.Write.Error = error.Unexpected,
+    out_close_error: aio.CloseFile.Error = error.Unexpected,
+
+    fn end(ctx: *WriteAsyncContext, L: *Luau, scheduler: *Scheduler, err: ?anyerror) void {
+        scheduler.queueIoCallback(WriteAsyncContext, ctx, L, aio.CloseFile{
+            .file = ctx.file,
+            .out_error = &ctx.out_close_error,
+        }, finished) catch |e| {
+            std.debug.print("Failed to queue close: {}\n", .{e});
+        };
+
+        if (err) |e| {
+            if (e != error.None) {
+                L.pushString(@errorName(e));
+                _ = Scheduler.resumeStateError(L, null) catch {};
+            }
+        }
+    }
+
+    fn completion(ctx: *WriteAsyncContext, L: *Luau, scheduler: *Scheduler, failed: bool) void {
+        if (failed)
+            return ctx.end(L, scheduler, ctx.out_error);
+
+        ctx.offset += ctx.out_written;
+
+        if (ctx.out_written == ctx.data.len) {
+            return ctx.end(L, scheduler, null);
+        }
+
+        ctx.data = ctx.data[ctx.out_written..];
+
+        scheduler.queueIoCallback(WriteAsyncContext, ctx, L, aio.Write{
+            .file = ctx.file,
+            .offset = ctx.offset,
+            .buffer = ctx.data,
+            .out_written = &ctx.out_written,
+            .out_error = &ctx.out_error,
+        }, completion) catch |err| return ctx.end(L, scheduler, err);
+    }
+
+    fn finished(ctx: *WriteAsyncContext, L: *Luau, _: *Scheduler, failed: bool) void {
+        const allocator = L.allocator();
+        defer allocator.destroy(ctx);
+        defer allocator.free(ctx.buffer);
+
+        if (failed) {
+            std.debug.print("Failed to close handle: {}\n", .{ctx.out_close_error});
+        }
+
+        _ = Scheduler.resumeState(L, null, 0) catch {};
+    }
+};
+
+fn fs_writeFileAsync(L: *Luau, scheduler: *Scheduler) !i32 {
+    const allocator = L.allocator();
+    const path = L.checkString(1);
+    const data = if (L.isBuffer(2)) L.checkBuffer(2) else L.checkString(2);
+    const copy = try allocator.dupe(u8, data);
+    errdefer allocator.free(copy);
+
+    const file = try fs.cwd().createFile(path, .{});
+    errdefer file.close();
+
+    const ctx = try allocator.create(WriteAsyncContext);
+    errdefer allocator.destroy(ctx);
+    ctx.* = .{
+        .file = file,
+        .data = copy,
+        .buffer = copy,
+    };
+
+    try scheduler.queueIoCallback(WriteAsyncContext, ctx, L, aio.Write{
+        .file = file,
+        .buffer = ctx.data,
+        .out_written = &ctx.out_written,
+        .out_error = &ctx.out_error,
+    }, WriteAsyncContext.completion);
+
+    return L.yield(0);
+}
+
+fn fs_writeFileSync(L: *Luau) !i32 {
     const path = L.checkString(1);
     const data = if (L.isBuffer(2)) L.checkBuffer(2) else L.checkString(2);
     try fs.cwd().writeFile(fs.Dir.WriteFileOptions{
@@ -760,7 +848,8 @@ pub fn loadLib(L: *Luau) void {
     L.setFieldFn(-1, "readFileSync", fs_readFileSync);
     L.setFieldFn(-1, "readDir", fs_readDir);
 
-    L.setFieldFn(-1, "writeFile", fs_writeFile);
+    L.setFieldFn(-1, "writeFile", Scheduler.toSchedulerEFn(fs_writeFileAsync));
+    L.setFieldFn(-1, "writeFileSync", fs_writeFileSync);
     L.setFieldFn(-1, "writeDir", fs_writeDir);
 
     L.setFieldFn(-1, "removeFile", fs_removeFile);
