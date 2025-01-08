@@ -44,7 +44,7 @@ pub fn compileModule(allocator: std.mem.Allocator, content: []const u8, cOpts: ?
 pub fn loadModule(L: *Luau, name: [:0]const u8, content: []const u8, cOpts: ?luau.CompileOptions) !void {
     const allocator = L.allocator();
     var script = content;
-    if (content[0] == '#' and content[1] == '!') {
+    if (content.len >= 2 and content[0] == '#' and content[1] == '!') {
         const pos = std.mem.indexOf(u8, content, "\n") orelse content.len;
         script = content[pos..];
     }
