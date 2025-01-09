@@ -10,12 +10,12 @@ position: usize,
 
 pub const MAX_HISTORY_SIZE: u16 = 200;
 
-pub fn init(allocator: std.mem.Allocator) !History {
+pub fn init(allocator: std.mem.Allocator, comptime location: []const u8) !History {
     var file_path: ?[]const u8 = null;
     if (std.process.getEnvVarOwned(allocator, "HOME") catch null) |path| {
-        file_path = try std.fs.path.resolve(allocator, &.{ path, ".zune_history" });
+        file_path = try std.fs.path.resolve(allocator, &.{ path, location });
     } else if (std.process.getEnvVarOwned(allocator, "USERPROFILE") catch null) |path| {
-        file_path = try std.fs.path.resolve(allocator, &.{ path, ".zune_history" });
+        file_path = try std.fs.path.resolve(allocator, &.{ path, location });
     }
     var history_data = std.ArrayList([]const u8).init(allocator);
     errdefer history_data.deinit();

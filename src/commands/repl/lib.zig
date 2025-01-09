@@ -7,7 +7,7 @@ const Zune = @import("../../zune.zig");
 const Engine = @import("../../core/runtime/engine.zig");
 const Scheduler = @import("../../core/runtime/scheduler.zig");
 
-const History = @import("Hsitory.zig");
+const History = @import("History.zig");
 const Terminal = @import("Terminal.zig");
 
 const Luau = luau.Luau;
@@ -35,7 +35,7 @@ pub fn SigInt() bool {
 fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
     REPL_STATE = 1;
 
-    var history = try History.init(allocator);
+    var history = try History.init(allocator, ".zune_history");
     errdefer history.deinit();
 
     HISTORY = &history;
@@ -108,7 +108,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         if (byte == 0x1B) {
             if (try in_reader.readByte() != '[') continue;
             switch (try in_reader.readByte()) {
-                'A' => {
+                'A' => { // Up Arrow
                     if (history.size() == 0)
                         continue;
                     if (history.isLatest())
@@ -122,7 +122,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
                         try out.print("> {s}", .{line});
                     }
                 },
-                'B' => {
+                'B' => { // Down Arrow
                     if (history.next()) |line| {
                         buffer.clearRetainingCapacity();
                         try buffer.appendSlice(line);
@@ -134,13 +134,13 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
                     if (history.isLatest())
                         history.clearTemp();
                 },
-                'C' => {
+                'C' => { // Right Arrow
                     if (position < buffer.items.len) {
                         try terminal.moveCursor(.Right);
                         position += 1;
                     }
                 },
-                'D' => {
+                'D' => { // Left Arrow
                     if (position > 0) {
                         try terminal.moveCursor(.Left);
                         position -= 1;
