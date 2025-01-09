@@ -1,5 +1,5 @@
 const std = @import("std");
-const ffi = @import("ffi");
+const tinycc = @import("tinycc");
 const luau = @import("luau");
 const builtin = @import("builtin");
 
@@ -23,21 +23,146 @@ inline fn floatOutOfRange(comptime T: type, value: f64) bool {
     return value < -std.math.floatMax(T) or value > std.math.floatMax(T);
 }
 
-fn AsType(t: ffi.Type) type {
-    return switch (t) {
-        .void => void,
-        .i8 => i8,
-        .u8 => u8,
-        .i16 => i16,
-        .u16 => u16,
-        .i32 => i32,
-        .u32 => u32,
-        .i64 => i64,
-        .u64 => u64,
-        .float => f32,
-        .double => f64,
-        .pointer => *anyopaque,
+pub const DataType = struct {
+    size: usize,
+    alignment: u29,
+    kind: ?TypeKind = null,
+    offsets: ?[]const usize = null,
+    fields: ?[]const DataType = null,
+
+    pub const TypeKind = enum {
+        void,
+        i8,
+        i16,
+        i32,
+        i64,
+        u8,
+        u16,
+        u32,
+        u64,
+        f32,
+        f64,
+        pointer,
+
+        pub fn asType(self: TypeKind) type {
+            switch (self) {
+                .void => return void,
+                .i8 => return i8,
+                .i16 => return i16,
+                .i32 => return i32,
+                .i64 => return i64,
+                .u8 => return u8,
+                .u16 => return u16,
+                .u32 => return u32,
+                .u64 => return u64,
+                .f32 => return f32,
+                .f64 => return f64,
+                .pointer => return *anyopaque,
+            }
+        }
     };
+
+    pub inline fn isConst(self: DataType) bool {
+        return self.kind != null;
+    }
+    pub inline fn isStruct(self: DataType) bool {
+        return self.offsets != null;
+    }
+    pub inline fn isSigned(self: DataType) bool {
+        if (self.kind == null)
+            return false;
+        return switch (self.kind) {
+            .i8, .i16, .i32, .i64 => true,
+            else => false,
+        };
+    }
+    pub inline fn isFloat(self: DataType) bool {
+        if (self.kind == null)
+            return false;
+        return switch (self.kind) {
+            .f32, .f64 => true,
+            else => false,
+        };
+    }
+    pub fn free(self: DataType, allocator: std.mem.Allocator) void {
+        if (self.offsets) |offsets|
+            allocator.free(offsets);
+        if (self.fields) |fields|
+            allocator.free(fields);
+    }
+};
+
+pub const DataTypes = struct {
+    pub const Types = struct {
+        pub const type_void = DataType{ .size = 0, .alignment = 0, .kind = .void };
+
+        pub const type_i8 = DataType{ .size = 1, .alignment = 1, .kind = .i8 };
+        pub const type_i16 = DataType{ .size = 2, .alignment = 2, .kind = .i16 };
+        pub const type_i32 = DataType{ .size = 4, .alignment = 4, .kind = .i32 };
+        pub const type_i64 = DataType{ .size = 8, .alignment = 8, .kind = .i64 };
+
+        pub const type_u8 = DataType{ .size = 1, .alignment = 1, .kind = .u8 };
+        pub const type_u16 = DataType{ .size = 2, .alignment = 2, .kind = .u16 };
+        pub const type_u32 = DataType{ .size = 4, .alignment = 4, .kind = .u32 };
+        pub const type_u64 = DataType{ .size = 8, .alignment = 8, .kind = .u64 };
+
+        pub const type_float = DataType{ .size = 4, .alignment = 4, .kind = .f32 };
+        pub const type_double = DataType{ .size = 8, .alignment = 8, .kind = .f64 };
+        pub const type_pointer = DataType{ .size = 8, .alignment = 8, .kind = .pointer };
+    };
+
+    pub const order: []const *const DataType = &.{
+        &Types.type_void,  &Types.type_i8,     &Types.type_i16,
+        &Types.type_i32,   &Types.type_i64,    &Types.type_u8,
+        &Types.type_u16,   &Types.type_u32,    &Types.type_u64,
+        &Types.type_float, &Types.type_double, &Types.type_pointer,
+    };
+
+    pub fn writeCTypeName(datatype: DataType, writer: anytype, comptime pointer: bool) !void {
+        if (datatype.kind) |kind| {
+            switch (kind) {
+                .void => return try writer.writeAll("void" ++ if (pointer) "*" else ""),
+                .i8 => return try writer.writeAll("char" ++ if (pointer) "*" else ""),
+                .i16 => return try writer.writeAll("short" ++ if (pointer) "*" else ""),
+                .i32 => return try writer.writeAll("int" ++ if (pointer) "*" else ""),
+                .i64 => return try writer.writeAll("long long" ++ if (pointer) "*" else ""),
+                .u8 => return try writer.writeAll("unsigned char" ++ if (pointer) "*" else ""),
+                .u16 => return try writer.writeAll("unsigned short" ++ if (pointer) "*" else ""),
+                .u32 => return try writer.writeAll("unsigned int" ++ if (pointer) "*" else ""),
+                .u64 => return try writer.writeAll("unsigned long long" ++ if (pointer) "*" else ""),
+                .f32 => return try writer.writeAll("float" ++ if (pointer) "*" else ""),
+                .f64 => return try writer.writeAll("double" ++ if (pointer) "*" else ""),
+                .pointer => return try writer.writeAll("void*" ++ if (pointer) "*" else ""),
+            }
+        } else {
+            return error.Unsupported;
+        }
+    }
+
+    pub fn IsConstDataType(datatype: *DataType) bool {
+        if (datatype.kind != null)
+            return true;
+        return false;
+    }
+};
+
+fn alignForward(value: usize, alignment: usize) usize {
+    return (value + (alignment - 1)) & ~(@as(usize, alignment - 1));
+}
+
+pub fn makeStruct(allocator: std.mem.Allocator, fields: []const DataType) !DataType {
+    var offset: usize = 0;
+    var alignment: u29 = 1;
+    var offsets = try allocator.alloc(usize, fields.len);
+    errdefer allocator.free(offsets);
+    for (fields, 0..) |field, i| {
+        alignment = @max(alignment, field.alignment);
+        offset = alignForward(offset, field.alignment);
+        offsets[i] = offset;
+        offset += field.size;
+    }
+    const size = alignForward(offset, alignment);
+    return DataType{ .size = size, .alignment = alignment, .offsets = offsets, .fields = try allocator.dupe(DataType, fields) };
 }
 
 const LuaPointer = struct {
@@ -352,28 +477,36 @@ const LuaPointer = struct {
         return 0;
     }
 
-    pub fn GenerateReadMethod(comptime ffiType: ffi.Type) fn (ptr: *LuaPointer, L: *Luau) anyerror!i32 {
+    pub fn GenerateReadMethod(comptime T: type) fn (ptr: *LuaPointer, L: *Luau) anyerror!i32 {
+        if (comptime @sizeOf(T) == 0)
+            @compileError("Cannot read void type");
+        const ti = @typeInfo(T);
+        const len = @sizeOf(T);
         return struct {
             fn inner(ptr: *LuaPointer, L: *Luau) !i32 {
                 if (ptr.destroyed or ptr.ptr == null)
                     return error.NoAddressAvailable;
                 const offset: usize = @intCast(L.optInteger(2) orelse 0);
 
-                const len = ffiType.toSize();
                 if (ptr.size) |size| if (size < len + offset)
                     return error.OutOfBounds;
 
                 const mem: [*]u8 = @as([*]u8, @ptrCast(@alignCast(ptr.ptr)))[offset..];
 
-                switch (ffiType) {
-                    .void => unreachable,
-                    .i8, .u8 => L.pushInteger(@intCast(@as(AsType(ffiType), @bitCast(mem[0])))),
-                    .i16, .u16, .i32, .u32 => L.pushInteger(@intCast(std.mem.readVarInt(AsType(ffiType), mem[0..@sizeOf(AsType(ffiType))], .little))),
-                    .i64 => L.pushBuffer(mem[0..8]),
-                    .u64 => L.pushBuffer(mem[0..8]),
-                    .float => L.pushNumber(@floatCast(@as(f32, @bitCast(std.mem.readVarInt(u32, mem[0..4], .little))))),
-                    .double => L.pushNumber(@as(f64, @bitCast(std.mem.readVarInt(u64, mem[0..8], .little)))),
-                    .pointer => _ = try LuaPointer.newStaticPtr(L, @ptrFromInt(std.mem.readVarInt(usize, mem[0..@sizeOf(usize)], .little)), false),
+                switch (ti) {
+                    .float => switch (len) {
+                        4 => L.pushNumber(@floatCast(@as(f32, @bitCast(std.mem.readVarInt(u32, mem[0..len], cpu_endian))))),
+                        8 => L.pushNumber(@as(f64, @bitCast(std.mem.readVarInt(u64, mem[0..len], cpu_endian)))),
+                        else => unreachable,
+                    },
+                    .int => switch (len) {
+                        1 => L.pushInteger(@intCast(@as(T, @bitCast(mem[0])))),
+                        2...4 => L.pushInteger(@intCast(std.mem.readVarInt(T, mem[0..len], cpu_endian))),
+                        8 => L.pushBuffer(mem[0..len]),
+                        else => return error.Unsupported,
+                    },
+                    .pointer => _ = try LuaPointer.newStaticPtr(L, @ptrFromInt(std.mem.readVarInt(usize, mem[0..@sizeOf(usize)], cpu_endian)), false),
+                    else => @compileError("Unsupported type"),
                 }
 
                 return 1;
@@ -381,22 +514,24 @@ const LuaPointer = struct {
         }.inner;
     }
 
-    pub fn GenerateWriteMethod(comptime ffiType: ffi.Type) fn (ptr: *LuaPointer, L: *Luau) anyerror!i32 {
+    pub fn GenerateWriteMethod(comptime T: type) fn (ptr: *LuaPointer, L: *Luau) anyerror!i32 {
+        if (comptime @sizeOf(T) == 0)
+            @compileError("Cannot write void type");
+        const ti = @typeInfo(T);
+        const len = @sizeOf(T);
         return struct {
             fn inner(ptr: *LuaPointer, L: *Luau) !i32 {
                 if (ptr.destroyed or ptr.ptr == null)
                     return error.NoAddressAvailable;
                 const offset: usize = @intCast(L.optInteger(2) orelse 0);
 
-                const len = ffiType.toSize();
                 if (ptr.size) |size| if (size < len + offset)
                     return error.OutOfBounds;
 
                 const mem: []u8 = @as([*]u8, @ptrCast(@alignCast(ptr.ptr)))[offset .. offset + len];
 
-                switch (ffiType) {
-                    .void => unreachable,
-                    .i8, .u8, .i16, .u16, .i32, .u32, .i64, .u64, .float, .double => try FFITypeConversion(ffiType, mem, L, 3, 0),
+                switch (ti) {
+                    .int, .float => try FFITypeConversion(T, mem, L, 3, 0),
                     .pointer => switch (L.typeOf(-1)) {
                         .userdata => {
                             const lua_ptr = try LuaPointer.value(L, -1);
@@ -407,6 +542,7 @@ const LuaPointer = struct {
                         },
                         else => return error.InvalidArgType,
                     },
+                    else => @compileError("Unsupported type"),
                 }
 
                 return 1;
@@ -414,29 +550,29 @@ const LuaPointer = struct {
         }.inner;
     }
 
-    pub const method_readi8 = GenerateReadMethod(.i8);
-    pub const method_readu8 = GenerateReadMethod(.u8);
-    pub const method_readi16 = GenerateReadMethod(.i16);
-    pub const method_readu16 = GenerateReadMethod(.u16);
-    pub const method_readi32 = GenerateReadMethod(.i32);
-    pub const method_readu32 = GenerateReadMethod(.u32);
-    pub const method_readi64 = GenerateReadMethod(.i64);
-    pub const method_readu64 = GenerateReadMethod(.u64);
-    pub const method_readf32 = GenerateReadMethod(.float);
-    pub const method_readf64 = GenerateReadMethod(.double);
-    pub const method_readPtr = GenerateReadMethod(.pointer);
+    pub const method_readi8 = GenerateReadMethod(i8);
+    pub const method_readu8 = GenerateReadMethod(u8);
+    pub const method_readi16 = GenerateReadMethod(i16);
+    pub const method_readu16 = GenerateReadMethod(u16);
+    pub const method_readi32 = GenerateReadMethod(i32);
+    pub const method_readu32 = GenerateReadMethod(u32);
+    pub const method_readi64 = GenerateReadMethod(i64);
+    pub const method_readu64 = GenerateReadMethod(u64);
+    pub const method_readf32 = GenerateReadMethod(f32);
+    pub const method_readf64 = GenerateReadMethod(f64);
+    pub const method_readPtr = GenerateReadMethod(*anyopaque);
 
-    pub const method_writei8 = GenerateWriteMethod(.i8);
-    pub const method_writeu8 = GenerateWriteMethod(.u8);
-    pub const method_writei16 = GenerateWriteMethod(.i16);
-    pub const method_writeu16 = GenerateWriteMethod(.u16);
-    pub const method_writei32 = GenerateWriteMethod(.i32);
-    pub const method_writeu32 = GenerateWriteMethod(.u32);
-    pub const method_writei64 = GenerateWriteMethod(.i64);
-    pub const method_writeu64 = GenerateWriteMethod(.u64);
-    pub const method_writef32 = GenerateWriteMethod(.float);
-    pub const method_writef64 = GenerateWriteMethod(.double);
-    pub const method_writePtr = GenerateWriteMethod(.pointer);
+    pub const method_writei8 = GenerateWriteMethod(i8);
+    pub const method_writeu8 = GenerateWriteMethod(u8);
+    pub const method_writei16 = GenerateWriteMethod(i16);
+    pub const method_writeu16 = GenerateWriteMethod(u16);
+    pub const method_writei32 = GenerateWriteMethod(i32);
+    pub const method_writeu32 = GenerateWriteMethod(u32);
+    pub const method_writei64 = GenerateWriteMethod(i64);
+    pub const method_writeu64 = GenerateWriteMethod(u64);
+    pub const method_writef32 = GenerateWriteMethod(f32);
+    pub const method_writef64 = GenerateWriteMethod(f64);
+    pub const method_writePtr = GenerateWriteMethod(*anyopaque);
 
     pub fn method_isNull(ptr: *LuaPointer, L: *Luau) i32 {
         if (ptr.destroyed) {
@@ -618,21 +754,28 @@ const LuaHandle = struct {
 };
 
 const LuaClosure = struct {
-    closure: *ffi.CallbackClosure,
-    args: std.ArrayList(ffi.GenType),
-    returns: ffi.GenType,
+    allocator: std.mem.Allocator,
+    callinfo: *CallInfo,
     thread: *Luau,
+    sym: FFIFunction.FFISymbol,
+
+    callable: *anyopaque,
+
+    pub const CallInfo = struct {
+        args: c_uint,
+        thread: *Luau,
+        type: SymbolFunction,
+    };
 
     pub fn __dtor(ptr: *LuaClosure) void {
-        ptr.closure.deinit();
-        ptr.args.deinit();
-        ptr.args.allocator.destroy(ptr.closure);
+        ptr.allocator.destroy(ptr.callinfo);
+        ptr.sym.free(ptr.allocator);
     }
 };
 
 const LuaStructType = struct {
-    type: ffi.Struct,
-    fields: std.StringArrayHashMap(ffi.GenType),
+    type: DataType,
+    fields: std.StringArrayHashMap(DataType),
 
     pub const META = "ffi_struct_type";
 
@@ -649,19 +792,19 @@ const LuaStructType = struct {
     });
 
     pub fn method_size(ptr: *LuaStructType, L: *Luau) !i32 {
-        L.pushInteger(@intCast(ptr.type.getSize()));
+        L.pushInteger(@intCast(ptr.type.size));
         return 1;
     }
 
     pub fn method_alignment(ptr: *LuaStructType, L: *Luau) !i32 {
-        L.pushInteger(@intCast(ptr.type.getAlignment()));
+        L.pushInteger(@intCast(ptr.type.alignment));
         return 1;
     }
 
     pub fn method_offset(ptr: *LuaStructType, L: *Luau) !i32 {
         const field = L.checkString(2);
         const order = ptr.fields.getIndex(field) orelse return L.ErrorFmt("Unknown field: {s}", .{field});
-        L.pushInteger(@intCast(ptr.type.offsets[order]));
+        L.pushInteger(@intCast(ptr.type.offsets.?[order]));
         return 1;
     }
 
@@ -669,7 +812,7 @@ const LuaStructType = struct {
         L.checkType(2, .table);
         const allocator = L.allocator();
 
-        const mem = try allocator.alloc(u8, ptr.type.getSize());
+        const mem = try allocator.alloc(u8, ptr.type.size);
         defer allocator.free(mem);
 
         @memset(mem, 0);
@@ -679,42 +822,31 @@ const LuaStructType = struct {
             L.pushLString(field);
             if (luau.isNoneOrNil(L.getTable(2)))
                 return error.MissingField;
-            const offset = ptr.type.offsets[order];
+            const offset = ptr.type.offsets.?[order];
 
-            switch (ptr.fields.get(field) orelse unreachable) {
-                .ffiType => |ffiType| {
-                    switch (ffiType) {
-                        .void => return error.VoidArg,
-                        .i8 => try FFITypeConversion(.i8, mem, L, -1, offset),
-                        .u8 => try FFITypeConversion(.u8, mem, L, -1, offset),
-                        .i16 => try FFITypeConversion(.i16, mem, L, -1, offset),
-                        .u16 => try FFITypeConversion(.u16, mem, L, -1, offset),
-                        .i32 => try FFITypeConversion(.i32, mem, L, -1, offset),
-                        .u32 => try FFITypeConversion(.u32, mem, L, -1, offset),
-                        .i64 => try FFITypeConversion(.i64, mem, L, -1, offset),
-                        .u64 => try FFITypeConversion(.u64, mem, L, -1, offset),
-                        .float => try FFITypeConversion(.float, mem, L, -1, offset),
-                        .double => try FFITypeConversion(.double, mem, L, -1, offset),
-                        .pointer => switch (L.typeOf(-1)) {
-                            .userdata => {
-                                const lua_ptr = try LuaPointer.value(L, -1);
-                                if (lua_ptr.destroyed)
-                                    return error.NoAddressAvailable;
-                                var bytes: [@sizeOf(usize)]u8 = @bitCast(@as(usize, @intFromPtr(lua_ptr.ptr)));
-                                @memcpy(mem[offset .. offset + @sizeOf(usize)], &bytes);
-                            },
-                            else => return error.InvalidArgType,
+            const field_type = ptr.type.fields.?[order];
+            if (field_type.isConst()) {
+                switch (field_type.kind.?) {
+                    .void => return error.InvalidArgType,
+                    inline .i8, .u8, .i16, .u16, .i32, .u32, .i64, .u64, .f32, .f64 => |T| try FFITypeConversion(T.asType(), mem, L, -1, offset),
+                    .pointer => switch (L.typeOf(-1)) {
+                        .userdata => {
+                            const lua_ptr = try LuaPointer.value(L, -1);
+                            if (lua_ptr.destroyed)
+                                return error.NoAddressAvailable;
+                            var bytes: [@sizeOf(usize)]u8 = @bitCast(@as(usize, @intFromPtr(lua_ptr.ptr)));
+                            @memcpy(mem[offset .. offset + @sizeOf(usize)], &bytes);
                         },
-                    }
-                },
-                .structType => |t| {
-                    if (L.typeOf(-1) != .buffer)
-                        return error.InvalidArgType;
-                    const value = L.toBuffer(-1) catch unreachable;
-                    if (value.len != t.getSize())
-                        return error.InvalidArgType;
-                    @memcpy(mem[offset .. offset + t.getSize()], value);
-                },
+                        else => return error.InvalidArgType,
+                    },
+                }
+            } else {
+                if (L.typeOf(-1) != .buffer)
+                    return error.InvalidArgType;
+                const value = L.toBuffer(-1) catch unreachable;
+                if (value.len != field_type.size)
+                    return error.InvalidArgType;
+                @memcpy(mem[offset .. offset + field_type.size], value);
             }
         }
 
@@ -737,22 +869,22 @@ const LuaStructType = struct {
         };
     }
 
-    pub fn __dtor(ptr: *LuaStructType) void {
+    pub fn __dtor(_: *Luau, ptr: *LuaStructType) void {
         var iter = ptr.fields.iterator();
         while (iter.next()) |entry|
             ptr.fields.allocator.free(entry.key_ptr.*);
+        ptr.type.free(ptr.fields.allocator);
         ptr.fields.deinit();
-        ptr.type.deinit();
     }
 };
 
 const SymbolFunction = struct {
-    returns_type: ffi.GenType,
-    args_type: []ffi.GenType,
+    returns_type: DataType,
+    args_type: []DataType,
 };
 
-const FFITypeSize = std.meta.fields(ffi.Type).len;
-fn convertToFFIType(number: i32) !ffi.Type {
+const FFITypeSize = std.meta.fields(DataType).len;
+fn convertToFFIType(number: i32) !DataType {
     if (number < 0 or @as(u32, @intCast(number)) > FFITypeSize)
         return error.InvalidReturnType;
     return @enumFromInt(number);
@@ -760,39 +892,47 @@ fn convertToFFIType(number: i32) !ffi.Type {
 
 fn isFFIType(L: *Luau, idx: i32) bool {
     switch (L.typeOf(idx)) {
-        .number => {
-            const n = L.toInteger(idx) catch unreachable;
-            return n >= 0 and @as(u32, @intCast(n)) < FFITypeSize;
+        .userdata => {
+            _ = L.toUserdataTagged(LuaStructType, idx, tagged.FFI_STRUCT) catch return false;
+            return true;
         },
-        .userdata => return is_ffi_struct(L, idx),
+        .light_userdata => {
+            const datatype = L.toUserdata(DataType, idx) catch unreachable;
+            if (!DataTypes.IsConstDataType(datatype))
+                return false;
+            return true;
+        },
         else => return false,
     }
 }
 
-fn toFFIType(L: *Luau, idx: i32) !ffi.GenType {
+fn toFFIType(L: *Luau, idx: i32) !DataType {
     switch (L.typeOf(idx)) {
-        .number => return .{
-            .ffiType = try convertToFFIType(L.toInteger(idx) catch unreachable),
-        },
         .userdata => {
-            const lua_struct = L.toUserdata(LuaStructType, idx) catch unreachable;
-            return .{
-                .structType = lua_struct.*.type,
-            };
+            const lua_struct = L.toUserdataTagged(LuaStructType, idx, tagged.FFI_STRUCT) catch return error.InvalidFFIType;
+            return lua_struct.*.type;
+        },
+        .light_userdata => {
+            const datatype = L.toUserdata(DataType, idx) catch unreachable;
+            if (!DataTypes.IsConstDataType(datatype))
+                return error.InvalidFFIType;
+            return datatype.*;
         },
         else => return error.InvalidType,
     }
 }
 
 pub fn FFITypeConversion(
-    comptime ffiType: ffi.Type,
+    comptime T: type,
     mem: []u8,
     L: *Luau,
     index: comptime_int,
     offset: usize,
 ) !void {
-    const T = AsType(ffiType);
-    const isFloat = @typeInfo(T) == .float;
+    const ti = @typeInfo(T);
+    if (ti != .int and ti != .float)
+        @compileError("Unsupported type");
+    const isFloat = ti == .float;
     switch (L.typeOf(index)) {
         .number => {
             const value = if (isFloat) L.toNumber(index) catch unreachable else fast: {
@@ -822,7 +962,7 @@ pub fn FFITypeConversion(
 }
 
 fn FFILoadTypeConversion(
-    comptime ffiType: ffi.Type,
+    comptime T: type,
     allocator: std.mem.Allocator,
     args: [][]u8,
     arg_idx: usize,
@@ -830,8 +970,10 @@ fn FFILoadTypeConversion(
     index: i32,
     comptime use_allocated: bool,
 ) !void {
-    const T = AsType(ffiType);
-    const isFloat = @typeInfo(T) == .float;
+    const ti = @typeInfo(T);
+    if (ti != .int and ti != .float)
+        @compileError("Unsupported type");
+    const isFloat = ti == .float;
     const size = @sizeOf(T);
     switch (L.typeOf(index)) {
         .number => {
@@ -867,60 +1009,56 @@ fn FFILoadTypeConversion(
 fn load_ffi_args(
     allocator: std.mem.Allocator,
     L: *Luau,
-    ffi_func: *ffi.CallableFunction,
+    arg_types: []DataType,
     start_idx: usize,
     args: [][]u8,
     comptime pre_allocated: bool,
 ) !void {
     for (0..args.len) |i| {
         const lua_index: i32 = @intCast(start_idx + i);
-        if (ffi.toffiType(ffi_func.argTypes[i])) |t| switch (t) {
-            .void => std.debug.panic("Void arg", .{}),
-            .i8 => try FFILoadTypeConversion(.i8, allocator, args, i, L, lua_index, pre_allocated),
-            .u8 => try FFILoadTypeConversion(.u8, allocator, args, i, L, lua_index, pre_allocated),
-            .i16 => try FFILoadTypeConversion(.i16, allocator, args, i, L, lua_index, pre_allocated),
-            .u16 => try FFILoadTypeConversion(.u16, allocator, args, i, L, lua_index, pre_allocated),
-            .i32 => try FFILoadTypeConversion(.i32, allocator, args, i, L, lua_index, pre_allocated),
-            .u32 => try FFILoadTypeConversion(.u32, allocator, args, i, L, lua_index, pre_allocated),
-            .i64 => try FFILoadTypeConversion(.i64, allocator, args, i, L, lua_index, pre_allocated),
-            .u64 => try FFILoadTypeConversion(.u64, allocator, args, i, L, lua_index, pre_allocated),
-            .float => try FFILoadTypeConversion(.float, allocator, args, i, L, lua_index, pre_allocated),
-            .double => try FFILoadTypeConversion(.double, allocator, args, i, L, lua_index, pre_allocated),
-            .pointer => switch (L.typeOf(lua_index)) {
-                .userdata => {
-                    const ptr = try LuaPointer.value(L, lua_index);
-                    if (ptr.destroyed)
-                        return error.NoAddressAvailable;
-                    const buf: []u8 = if (pre_allocated) args[i] else try allocator.alloc([]u8, @sizeOf(usize));
-                    var bytes: [@sizeOf(usize)]u8 = @bitCast(@as(usize, @intFromPtr(ptr.ptr)));
-                    @memcpy(buf, &bytes);
-                    if (!pre_allocated)
-                        args[i] = buf;
-                },
-                .string => {
-                    const str: [:0]const u8 = L.toString(lua_index) catch unreachable;
-                    const dup = try allocator.dupeZ(u8, str);
-                    errdefer allocator.free(dup);
+        const ffitype = arg_types[i];
+        if (ffitype.isConst()) {
+            switch (ffitype.kind.?) {
+                .void => std.debug.panic("Void arg", .{}),
+                inline .i8, .u8, .i16, .u16, .i32, .u32, .i64, .u64, .f32, .f64 => |T| try FFILoadTypeConversion(T.asType(), allocator, args, i, L, lua_index, pre_allocated),
+                .pointer => {
+                    switch (L.typeOf(lua_index)) {
+                        .userdata => {
+                            const ptr = try LuaPointer.value(L, lua_index);
+                            if (ptr.destroyed)
+                                return error.NoAddressAvailable;
+                            const buf: []u8 = if (pre_allocated) args[i] else try allocator.alloc([]u8, @sizeOf(usize));
+                            var bytes: [@sizeOf(usize)]u8 = @bitCast(@as(usize, @intFromPtr(ptr.ptr)));
+                            @memcpy(buf, &bytes);
+                            if (!pre_allocated)
+                                args[i] = buf;
+                        },
+                        .string => {
+                            const str: [:0]const u8 = L.toString(lua_index) catch unreachable;
+                            const dup = try allocator.dupeZ(u8, str);
+                            errdefer allocator.free(dup);
 
-                    const buf: []u8 = if (pre_allocated) args[i] else try allocator.alloc([]u8, @sizeOf(usize));
-                    var bytes: [@sizeOf(usize)]u8 = @bitCast(@as(usize, @intFromPtr(dup.ptr)));
-                    @memcpy(buf, &bytes);
-                    if (!pre_allocated)
-                        args[i] = buf;
+                            const buf: []u8 = if (pre_allocated) args[i] else try allocator.alloc([]u8, @sizeOf(usize));
+                            var bytes: [@sizeOf(usize)]u8 = @bitCast(@as(usize, @intFromPtr(dup.ptr)));
+                            @memcpy(buf, &bytes);
+                            if (!pre_allocated)
+                                args[i] = buf;
+                        },
+                        .nil => {
+                            const buf: []u8 = if (pre_allocated) args[i] else try allocator.alloc([]u8, @sizeOf(usize));
+                            @memset(buf, 0);
+                            if (!pre_allocated)
+                                args[i] = buf;
+                        },
+                        else => return error.InvalidArgType,
+                    }
                 },
-                .nil => {
-                    const buf: []u8 = if (pre_allocated) args[i] else try allocator.alloc([]u8, @sizeOf(usize));
-                    @memset(buf, 0);
-                    if (!pre_allocated)
-                        args[i] = buf;
-                },
-                else => return error.InvalidArgType,
-            },
+            }
         } else {
             if (L.typeOf(lua_index) != .buffer)
                 return error.InvalidArgType;
             const buf = L.toBuffer(lua_index) catch unreachable;
-            const mem: []u8 = if (pre_allocated) args[i] else try allocator.alloc(u8, ffi_func.argTypes[i].*.size);
+            const mem: []u8 = if (pre_allocated) args[i] else try allocator.alloc(u8, ffitype.size);
             if (buf.len != mem.len)
                 return error.InvalidStructSize;
             @memcpy(mem, buf);
@@ -930,7 +1068,7 @@ fn load_ffi_args(
     }
 }
 
-fn alloc_ffi_args(allocator: std.mem.Allocator, args: []ffi.GenType) ![][]u8 {
+fn alloc_ffi_args(allocator: std.mem.Allocator, args: []DataType) ![][]u8 {
     const alloc_args = try allocator.alloc([]u8, args.len);
     var alloc_len: usize = 0;
     errdefer allocator.free(alloc_args);
@@ -941,7 +1079,7 @@ fn alloc_ffi_args(allocator: std.mem.Allocator, args: []ffi.GenType) ![][]u8 {
 
     // Allocate space for the arg types
     for (args, 0..) |arg, i| {
-        alloc_args[i] = try allocator.alloc(u8, arg.getSize());
+        alloc_args[i] = try allocator.alloc(u8, arg.size);
         alloc_len += 1;
     }
 
@@ -953,7 +1091,7 @@ fn ffi_struct(L: *Luau) !i32 {
 
     const allocator = L.allocator();
 
-    var struct_map = std.StringArrayHashMap(ffi.GenType).init(allocator);
+    var struct_map = std.StringArrayHashMap(DataType).init(allocator);
     errdefer struct_map.deinit();
     errdefer {
         var iter = struct_map.iterator();
@@ -999,19 +1137,79 @@ fn ffi_struct(L: *Luau) !i32 {
         L.pop(1);
     }
 
-    const data = L.newUserdataDtor(LuaStructType, LuaStructType.__dtor);
-
-    if (L.getMetatableRegistry(LuaStructType.META) == .table)
-        L.setMetatable(-2)
-    else
-        std.debug.panic("InternalError (FFI Metatable not initialized)", .{});
+    const data = L.newUserdataTaggedWithMetatable(LuaStructType, tagged.FFI_STRUCT);
 
     data.* = .{
-        .type = try ffi.Struct.init(allocator, struct_map.values()),
+        .type = try makeStruct(allocator, struct_map.values()),
         .fields = struct_map,
     };
 
     return 1;
+}
+
+fn generateTypeFromSymbol(source: *std.ArrayList(u8), symbol: DataType, order: usize, comptime pointer: bool) !void {
+    const writer = source.writer();
+
+    if (order == 0) {
+        if (symbol.isStruct())
+            try writer.print("struct anon_ret" ++ if (pointer) "*" else "", .{})
+        else
+            try DataTypes.writeCTypeName(symbol, writer, pointer);
+    } else {
+        if (symbol.isStruct())
+            try writer.print("struct anon_{d}" ++ if (pointer) "*" else "", .{order - 1})
+        else
+            try DataTypes.writeCTypeName(symbol, writer, pointer);
+    }
+}
+
+fn generateTypesFromSymbol(source: *std.ArrayList(u8), symbol_returns: DataType, symbol_args: []DataType) !void {
+    const writer = source.writer();
+    if (symbol_returns.isStruct())
+        try writer.print("struct anon_ret {{ unsigned char _[{d}]; }};\n", .{symbol_returns.size});
+
+    for (symbol_args, 0..) |arg, i| {
+        if (!arg.isStruct())
+            continue;
+
+        try writer.print("struct anon_{d} {{ unsigned char _[{d}]; }};\n", .{ i, arg.size });
+    }
+
+    try source.appendSlice("typedef ");
+    try generateTypeFromSymbol(source, symbol_returns, 0, false);
+    try source.appendSlice(" (*Fn)(");
+    for (symbol_args, 0..) |arg, i| {
+        if (i != 0)
+            try source.appendSlice(", ");
+        try generateTypeFromSymbol(source, arg, i + 1, false);
+    }
+    try source.appendSlice(");");
+    try source.append('\n');
+}
+
+fn generateSourceFromSymbol(source: *std.ArrayList(u8), symbol_returns: DataType, symbol_args: []DataType) !void {
+    const writer = source.writer();
+
+    try generateTypesFromSymbol(source, symbol_returns, symbol_args);
+
+    try source.appendSlice("void call_fn_ffi(Fn fn, void** args, void* ret) {\n  ");
+    if (symbol_returns.size > 0) {
+        try source.appendSlice("*(");
+        try generateTypeFromSymbol(source, symbol_returns, 0, true);
+        try source.appendSlice(")ret = ");
+    }
+    try source.appendSlice("fn(");
+    if (symbol_args.len > 0) {
+        for (symbol_args, 0..) |arg, i| {
+            if (i != 0)
+                try source.append(',');
+            try source.appendSlice("\n    *((");
+            try generateTypeFromSymbol(source, arg, i + 1, true);
+            try writer.print(")args[{d}])", .{i});
+        }
+        try source.appendSlice("\n  ");
+    }
+    try source.appendSlice(");\n}\n");
 }
 
 fn ffi_dlopen(L: *Luau) !i32 {
@@ -1025,8 +1223,10 @@ fn ffi_dlopen(L: *Luau) !i32 {
     defer func_map.deinit();
     defer {
         var iter = func_map.iterator();
-        while (iter.next()) |entry|
+        while (iter.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
             allocator.free(entry.value_ptr.args_type);
+        }
     }
 
     L.pushNil();
@@ -1049,7 +1249,7 @@ fn ffi_dlopen(L: *Luau) !i32 {
 
         const args_len = L.objLen(-1);
 
-        const args = try allocator.alloc(ffi.GenType, @intCast(args_len));
+        const args = try allocator.alloc(DataType, @intCast(args_len));
         errdefer allocator.free(args);
 
         var order: usize = 0;
@@ -1065,14 +1265,16 @@ fn ffi_dlopen(L: *Luau) !i32 {
                 return error.InvalidArgOrder;
 
             args[order] = try toFFIType(L, -1);
-            if (args[order] == .ffiType and args[order].ffiType == .void)
+            if (args[order].size == 0)
                 return error.VoidArg;
 
             order += 1;
         }
         L.pop(1); // drop: args
 
-        try func_map.put(name, .{
+        const name_copy = try allocator.dupe(u8, name); // Zig owned string to prevent GC from Lua owned strings
+        errdefer allocator.free(name_copy);
+        try func_map.put(name_copy, .{
             .returns_type = returns_ffi_type,
             .args_type = args,
         });
@@ -1093,20 +1295,37 @@ fn ffi_dlopen(L: *Luau) !i32 {
     L.newTable();
 
     L.newTable();
-    var iter = func_map.iterator();
-    while (iter.next()) |entry| {
-        const namez = try allocator.dupeZ(u8, entry.key_ptr.*);
+    while (func_map.popOrNull()) |entry| {
+        const key = entry.key;
+        const value = entry.value;
+        defer allocator.free(key);
+        errdefer allocator.free(value.args_type);
+        const namez = try allocator.dupeZ(u8, key);
         defer allocator.free(namez);
         const func = lib.lookup(*anyopaque, namez) orelse {
-            std.debug.print("Symbol not found: {s}\n", .{entry.key_ptr.*});
+            std.debug.print("Symbol not found: {s}\n", .{key});
             return error.SymbolNotFound;
         };
 
-        const symbol_returns = entry.value_ptr.returns_type;
-        const symbol_args = entry.value_ptr.args_type;
+        const symbol_returns = value.returns_type;
+        const symbol_args = value.args_type;
 
-        var ffi_callback = try ffi.CallableFunction.init(allocator, func, symbol_args, symbol_returns);
-        errdefer ffi_callback.deinit();
+        const state = try tinycc.new();
+        errdefer state.deinit();
+
+        state.set_output_type(tinycc.TCC_OUTPUT_MEMORY);
+        state.set_options("-std=c11 -nostdlib -Wl,--export-all-symbols");
+
+        var source = std.ArrayList(u8).init(allocator);
+        defer source.deinit();
+
+        try generateSourceFromSymbol(&source, symbol_returns, symbol_args);
+
+        const block = state.compileStringOnceAlloc(allocator, source.items) catch |err| {
+            std.debug.print("Internal FFI Error: {}\n", .{err});
+            return error.CompilationError;
+        };
+        errdefer block.free();
 
         // Allocate space for the arg types
         const alloc_args: ?[][]u8 = if (symbol_args.len > 0) try alloc_ffi_args(allocator, symbol_args) else null;
@@ -1117,21 +1336,27 @@ fn ffi_dlopen(L: *Luau) !i32 {
             ffi_alloc_args.?[i] = @ptrCast(@alignCast(alloc_args.?[i].ptr));
         }
         // Allocate space for the return type
-        const ret_size = symbol_returns.getSize();
+        const ret_size = symbol_returns.size;
         const alloc_ret: ?[]u8 = if (ret_size > 0) try allocator.alloc(u8, ret_size) else null;
         errdefer if (alloc_ret) allocator.free(alloc_ret);
 
         // Zig owned string to prevent GC from Lua owned strings
-        L.pushLString(entry.key_ptr.*);
+        L.pushLString(key);
 
         const data = L.newUserdataDtor(FFIFunction, FFIFunction.__dtor);
         data.* = .{
+            .allocator = allocator,
+            .state = state,
+            .ret = alloc_ret,
             .args = alloc_args,
             .ffi_args = ffi_alloc_args,
-            .ret = alloc_ret,
-            .callable = ffi_callback,
             .lib = ptr,
-            .ptr = func,
+            .callable = @ptrCast(@alignCast(state.get_symbol("call_fn_ffi") orelse @panic("Symbol not found"))),
+            .sym = .{
+                .ptr = func,
+                .block = block,
+                .type = value,
+            },
         };
         L.pushValue(-5);
         L.pushClosure(luau.toCFn(FFIFunction.fn_inner), "ffi_func", 2);
@@ -1148,11 +1373,10 @@ fn ffi_dlopen(L: *Luau) !i32 {
 }
 
 fn FFIReturnTypeConversion(
-    comptime ffiType: ffi.Type,
+    comptime T: type,
     ret_ptr: *anyopaque,
     L: *Luau,
 ) void {
-    const T = AsType(ffiType);
     const isFloat = @typeInfo(T) == .float;
     const size = @sizeOf(T);
     const mem = @as([*]u8, @ptrCast(@alignCast(ret_ptr)))[0..size];
@@ -1160,7 +1384,7 @@ fn FFIReturnTypeConversion(
         .number => {
             const value = if (isFloat) L.toNumber(-1) catch unreachable else L.toInteger(-1) catch unreachable;
             if (if (isFloat) floatOutOfRange(T, value) else intOutOfRange(T, value))
-                return std.debug.panic("Out of range ('{s}')", .{@tagName(ffiType)});
+                return std.debug.panic("Out of range ('{s}')", .{@typeName(T)});
             var bytes: [size]u8 = @bitCast(@as(T, if (isFloat) @floatCast(value) else @intCast(value)));
             @memcpy(mem, &bytes);
         },
@@ -1171,10 +1395,84 @@ fn FFIReturnTypeConversion(
         .buffer => {
             const lua_buf = L.toBuffer(-1) catch unreachable;
             if (lua_buf.len < size)
-                return std.debug.panic("Small buffer ('{s}')", .{@tagName(ffiType)});
+                return std.debug.panic("Small buffer ('{s}')", .{@typeName(T)});
             @memcpy(mem, lua_buf[0..size]);
         },
-        else => std.debug.panic("Invalid return type (expected number for '{s}')", .{@tagName(ffiType)}),
+        else => std.debug.panic("Invalid return type (expected number for '{s}')", .{@typeName(T)}),
+    }
+}
+
+fn ffi_closure_inner(cif: *LuaClosure.CallInfo, extern_args: [*]?*anyopaque, ret: ?*anyopaque) callconv(.c) void {
+    const args = extern_args[0..cif.args];
+
+    const subthread = cif.thread.newThread();
+    defer cif.thread.pop(1);
+    cif.thread.xPush(subthread, 1);
+
+    for (cif.type.args_type, 0..) |arg_type, i| {
+        if (arg_type.isConst()) {
+            switch (arg_type.kind.?) {
+                .void => unreachable,
+                inline .i8, .u8, .i16, .u16, .u32 => |T| subthread.pushInteger(@intCast(@as(*T.asType(), @ptrCast(@alignCast(args[i]))).*)),
+                .i32 => subthread.pushInteger(@as(*i32, @ptrCast(@alignCast(args[i]))).*),
+                inline .i64, .u64 => |T| {
+                    const bytes: [8]u8 = @bitCast(@as(*T.asType(), @ptrCast(@alignCast(args[i]))).*);
+                    subthread.pushBuffer(&bytes);
+                },
+                .f32 => subthread.pushNumber(@floatCast(@as(f32, @bitCast(@as(*u32, @ptrCast(@alignCast(args[i]))).*)))),
+                .f64 => subthread.pushNumber(@as(f64, @bitCast(@as(*u64, @ptrCast(@alignCast(args[i]))).*))),
+                .pointer => _ = LuaPointer.newStaticPtr(subthread, @as(*[*]u8, @ptrCast(@alignCast(args[i]))).*, false) catch |err| std.debug.panic("Failed: {}", .{err}),
+            }
+        } else {
+            const bytes: [*]u8 = @ptrCast(@alignCast(args[i]));
+            subthread.pushBuffer(bytes[0..arg_type.size]);
+        }
+    }
+
+    const has_return = cif.type.returns_type.size > 0;
+
+    subthread.pcall(@intCast(args.len), if (has_return) 1 else 0, 0) catch {
+        std.debug.panic("C Closure Runtime Error: {s}", .{subthread.toString(-1) catch "UnknownError"});
+    };
+
+    if (ret) |ret_ptr| {
+        defer subthread.pop(1);
+        if (cif.type.returns_type.isConst()) {
+            switch (cif.type.returns_type.kind.?) {
+                .void => unreachable,
+                inline .i8,
+                .u8,
+                .i16,
+                .u16,
+                .i32,
+                .u32,
+                .i64,
+                .u64,
+                .f32,
+                .f64,
+                => |T| FFIReturnTypeConversion(T.asType(), ret_ptr, subthread),
+                .pointer => switch (subthread.typeOf(-1)) {
+                    .userdata => {
+                        const ptr = LuaPointer.value(subthread, -1) catch std.debug.panic("Invalid pointer", .{});
+                        if (ptr.destroyed or ptr.ptr == null)
+                            std.debug.panic("No address available", .{});
+                        @as(*[*]u8, @ptrCast(@alignCast(ret_ptr))).* = @ptrCast(ptr.ptr);
+                    },
+                    .string => std.debug.panic("Unsupported return type (use a pointer to a buffer instead)", .{}),
+                    .nil => {
+                        @as(*?*anyopaque, @ptrCast(@alignCast(ret_ptr))).* = null;
+                    },
+                    else => return std.debug.panic("Invalid return type (expected buffer/nil for '*anyopaque')", .{}),
+                },
+            }
+        } else {
+            if (subthread.typeOf(-1) != .buffer)
+                return std.debug.panic("Invalid return type (expected buffer for struct)", .{});
+            const buf = subthread.toBuffer(-1) catch unreachable;
+            if (buf.len != cif.type.returns_type.size)
+                return std.debug.panic("Invalid return type (expected buffer of size {d} for struct)", .{cif.type.returns_type.size});
+            @memcpy(@as([*]u8, @ptrCast(@alignCast(ret_ptr))), buf);
+        }
     }
 }
 
@@ -1184,14 +1482,14 @@ fn ffi_closure(L: *Luau) !i32 {
 
     const allocator = L.allocator();
 
-    var returns: ffi.GenType = .{ .ffiType = .void };
-    var args = std.ArrayList(ffi.GenType).init(allocator);
-    errdefer args.deinit();
+    var symbol_returns: DataType = DataTypes.Types.type_void;
+    var args = std.ArrayList(DataType).init(allocator);
+    defer args.deinit();
 
     _ = L.getField(1, "returns");
     if (!isFFIType(L, -1))
         return error.InvalidReturnType;
-    returns = try toFFIType(L, -1);
+    symbol_returns = try toFFIType(L, -1);
     L.pop(1);
 
     if (L.getField(1, "args") != .table)
@@ -1211,7 +1509,7 @@ fn ffi_closure(L: *Luau) !i32 {
 
         const t = try toFFIType(L, -1);
 
-        if (t == .ffiType and t.ffiType == .void)
+        if (t.size == 0)
             return error.VoidArg;
 
         try args.append(t);
@@ -1220,117 +1518,89 @@ fn ffi_closure(L: *Luau) !i32 {
         L.pop(1);
     }
 
-    const callback_handler = struct {
-        fn inner(cif: ffi.CallInfo, ffi_args: []?*anyopaque, ffi_ret: ?*anyopaque, ud: ?*anyopaque) void {
-            if (ud == null)
-                std.debug.panic("Invalid userdata", .{});
-            const data = @as(*LuaClosure, @ptrCast(@alignCast(ud.?)));
-            if (cif.nargs != data.args.items.len)
-                std.debug.panic("Invalid number of arguments", .{});
+    const symbol_args = try args.toOwnedSlice();
+    errdefer allocator.free(symbol_args);
 
-            const subthread = data.thread.newThread();
-            defer data.thread.pop(1);
-            data.thread.xPush(subthread, 1);
+    const state = try tinycc.new();
+    errdefer state.deinit();
 
-            for (data.args.items, 0..) |arg_type, i| {
-                switch (arg_type) {
-                    .ffiType => |t| switch (t) {
-                        .void => unreachable,
-                        .i8 => subthread.pushInteger(@intCast(@as(*i8, @ptrCast(ffi_args[i])).*)),
-                        .u8 => subthread.pushInteger(@intCast(@as(*u8, @ptrCast(ffi_args[i])).*)),
-                        .i16 => subthread.pushInteger(@intCast(@as(*i16, @ptrCast(@alignCast(ffi_args[i]))).*)),
-                        .u16 => subthread.pushInteger(@intCast(@as(*u16, @ptrCast(@alignCast(ffi_args[i]))).*)),
-                        .i32 => subthread.pushInteger(@as(*i32, @ptrCast(@alignCast(ffi_args[i]))).*),
-                        .u32 => subthread.pushInteger(@intCast(@as(*u32, @ptrCast(@alignCast(ffi_args[i]))).*)),
-                        .i64 => {
-                            const bytes: [8]u8 = @bitCast(@as(*i64, @ptrCast(@alignCast(ffi_args[i]))).*);
-                            subthread.pushBuffer(&bytes);
-                        },
-                        .u64 => {
-                            const bytes: [8]u8 = @bitCast(@as(*u64, @ptrCast(@alignCast(ffi_args[i]))).*);
-                            subthread.pushBuffer(&bytes);
-                        },
-                        .float => subthread.pushNumber(@floatCast(@as(f32, @bitCast(@as(*u32, @ptrCast(@alignCast(ffi_args[i]))).*)))),
-                        .double => subthread.pushNumber(@as(f64, @bitCast(@as(*u64, @ptrCast(@alignCast(ffi_args[i]))).*))),
-                        .pointer => _ = LuaPointer.newStaticPtr(subthread, @as(*[*]u8, @ptrCast(@alignCast(ffi_args[i]))).*, false) catch |err| std.debug.panic("Failed: {}", .{err}),
-                    },
-                    .structType => |t| {
-                        const bytes: [*]u8 = @ptrCast(@alignCast(ffi_args[i]));
-                        subthread.pushBuffer(bytes[0..t.getSize()]);
-                    },
-                }
-            }
+    state.set_output_type(tinycc.TCC_OUTPUT_MEMORY);
+    state.set_options("-std=c11 -nostdlib -Wl,--export-all-symbols");
 
-            const has_return = data.returns != .ffiType or data.returns.ffiType != .void;
+    var source = std.ArrayList(u8).init(allocator);
+    defer source.deinit();
+    const writer = source.writer();
 
-            subthread.pcall(@intCast(data.args.items.len), if (has_return) 1 else 0, 0) catch {
-                std.debug.panic("C Closure Runtime Error: {s}", .{subthread.toString(-1) catch "UnknownError"});
-            };
+    try writer.print((if (builtin.os.tag == .windows) "__declspec(dllimport)" else "extern") ++ " void external_call(void*, void**, void*);\n", .{});
+    try writer.print((if (builtin.os.tag == .windows) "__declspec(dllimport)" else "extern") ++ " void* external_ptr;\n\n", .{});
 
-            if (has_return) {
-                defer subthread.pop(1);
-                if (ffi_ret) |ret_ptr| {
-                    switch (data.returns) {
-                        .ffiType => |t| switch (t) {
-                            .void => unreachable,
-                            .i8 => FFIReturnTypeConversion(.i8, ret_ptr, subthread),
-                            .u8 => FFIReturnTypeConversion(.u8, ret_ptr, subthread),
-                            .i16 => FFIReturnTypeConversion(.i16, ret_ptr, subthread),
-                            .u16 => FFIReturnTypeConversion(.u16, ret_ptr, subthread),
-                            .i32 => FFIReturnTypeConversion(.i32, ret_ptr, subthread),
-                            .u32 => FFIReturnTypeConversion(.u32, ret_ptr, subthread),
-                            .i64 => FFIReturnTypeConversion(.i64, ret_ptr, subthread),
-                            .u64 => FFIReturnTypeConversion(.u64, ret_ptr, subthread),
-                            .float => FFIReturnTypeConversion(.float, ret_ptr, subthread),
-                            .double => FFIReturnTypeConversion(.double, ret_ptr, subthread),
-                            .pointer => switch (subthread.typeOf(-1)) {
-                                .userdata => {
-                                    const ptr = LuaPointer.value(subthread, -1) catch std.debug.panic("Invalid pointer", .{});
-                                    if (ptr.destroyed or ptr.ptr == null)
-                                        std.debug.panic("No address available", .{});
-                                    @as(*[*]u8, @ptrCast(@alignCast(ret_ptr))).* = @ptrCast(ptr.ptr);
-                                },
-                                .string => std.debug.panic("Unsupported return type (use a pointer to a buffer instead)", .{}),
-                                .nil => {
-                                    @as(*?*anyopaque, @ptrCast(@alignCast(ret_ptr))).* = null;
-                                },
-                                else => return std.debug.panic("Invalid return type (expected buffer/nil for '{s}')", .{@tagName(t)}),
-                            },
-                        },
-                        .structType => |t| {
-                            if (subthread.typeOf(-1) != .buffer)
-                                return std.debug.panic("Invalid return type (expected buffer for struct)", .{});
-                            const buf = subthread.toBuffer(-1) catch unreachable;
-                            if (buf.len != t.getSize())
-                                return std.debug.panic("Invalid return type (expected buffer of size {d} for struct)", .{t.getSize()});
-                            @memcpy(@as([*]u8, @ptrCast(@alignCast(ret_ptr))), buf);
-                        },
-                    }
-                }
-            }
-        }
-    }.inner;
+    try generateTypesFromSymbol(&source, symbol_returns, symbol_args);
 
-    const closure_ptr = try allocator.create(ffi.CallbackClosure);
-    {
-        errdefer allocator.destroy(closure_ptr);
-
-        closure_ptr.* = try ffi.CallbackClosure.init(allocator, ffi.toCClosureFn(callback_handler), args.items, returns);
+    try generateTypeFromSymbol(&source, symbol_returns, 0, false);
+    try source.appendSlice(" call_closure_ffi(");
+    for (symbol_args, 0..) |arg, i| {
+        if (i != 0)
+            try source.appendSlice(", ");
+        try generateTypeFromSymbol(&source, arg, i + 1, false);
+        try writer.print(" arg_{d}", .{i});
     }
+    try source.appendSlice(") {\n  ");
+    if (symbol_args.len > 0) {
+        try writer.print("void* args[{d}];\n  ", .{symbol_args.len});
+    }
+    if (symbol_returns.size > 0) {
+        try generateTypeFromSymbol(&source, symbol_returns, 0, false);
+        try source.appendSlice(" ret;\n  ");
+    }
+
+    for (symbol_args, 0..) |_, i| {
+        try writer.print("args[{d}] = (void*)&arg_{d};\n  ", .{ i, i });
+    }
+
+    try writer.print("external_call(&external_ptr, args, (void*)&ret);\n  ", .{});
+    try writer.print("return ret;\n}}\n", .{});
+
+    const call_ptr = try allocator.create(LuaClosure.CallInfo);
+    errdefer allocator.destroy(call_ptr);
+
+    call_ptr.* = .{
+        .args = @intCast(symbol_args.len),
+        .thread = undefined,
+        .type = .{
+            .returns_type = symbol_returns,
+            .args_type = symbol_args,
+        },
+    };
+
+    _ = state.add_symbol("external_ptr", @ptrCast(@alignCast(call_ptr)));
+    _ = state.add_symbol("external_call", @ptrCast(@alignCast(&ffi_closure_inner)));
+
+    const block = state.compileStringOnceAlloc(allocator, source.items) catch |err| {
+        std.debug.print("Internal FFI Error: {}\n", .{err});
+        return error.CompilationError;
+    };
 
     const thread = L.newThread();
     L.xPush(thread, 2);
 
+    call_ptr.thread = thread;
+
     const data = L.newUserdataDtor(LuaClosure, LuaClosure.__dtor);
 
     data.* = .{
-        .args = args,
-        .closure = closure_ptr,
-        .returns = returns,
+        .allocator = allocator,
+        .callinfo = call_ptr,
+        .callable = @ptrCast(@alignCast(state.get_symbol("call_closure_ffi") orelse @panic("Symbol not found"))),
         .thread = thread,
+        .sym = .{
+            .ptr = @ptrCast(@alignCast(call_ptr)),
+            .type = .{
+                .returns_type = symbol_returns,
+                .args_type = symbol_args,
+            },
+            .block = block,
+        },
     };
-
-    try closure_ptr.prep(data);
 
     L.newTable();
 
@@ -1348,19 +1618,35 @@ fn ffi_closure(L: *Luau) !i32 {
 
     L.setMetatable(-2);
 
-    const ptr = try LuaPointer.newStaticPtrWithRef(L, closure_ptr.executable, -1);
+    const ptr = try LuaPointer.newStaticPtrWithRef(L, data.callable, -1);
     ptr.size = 0;
 
     return 1;
 }
 
 const FFIFunction = struct {
-    callable: ffi.CallableFunction,
+    allocator: std.mem.Allocator,
+    state: *tinycc.TCCState,
+    sym: FFISymbol,
     args: ?[][]u8,
     ffi_args: ?[]*anyopaque,
     ret: ?[]u8,
-    ptr: *anyopaque,
     lib: ?*LuaHandle = null,
+
+    callable: FFICallable,
+
+    pub const FFISymbol = struct {
+        type: SymbolFunction,
+        block: tinycc.DynMem,
+        ptr: *anyopaque,
+
+        pub fn free(self: *FFISymbol, allocator: std.mem.Allocator) void {
+            self.block.free();
+            allocator.free(self.type.args_type);
+        }
+    };
+
+    pub const FFICallable = *const fn (fnPtr: *anyopaque, args: ?[*]*anyopaque, ret: ?*anyopaque) callconv(.c) void;
 
     pub fn fn_inner(L: *Luau) !i32 {
         const allocator = L.allocator();
@@ -1370,7 +1656,7 @@ const FFIFunction = struct {
             if (!lib.open)
                 return error.LibraryNotOpen;
 
-        const callable = &ffi_func.callable;
+        const callable = ffi_func.callable;
 
         const alloc_args = ffi_func.args;
         const alloc_ret = ffi_func.ret;
@@ -1386,27 +1672,27 @@ const FFIFunction = struct {
         var arena = std.heap.ArenaAllocator.init(allocator);
         defer arena.deinit();
         if (alloc_args) |args|
-            try load_ffi_args(arena.allocator(), L, callable, 1, args, true);
+            try load_ffi_args(arena.allocator(), L, ffi_func.sym.type.args_type, 1, args, true);
 
-        try callable.call(alloc_ret, ffi_func.ffi_args);
+        callable(ffi_func.sym.ptr, if (ffi_func.ffi_args) |args| @ptrCast(@alignCast(args)) else null, if (alloc_ret) |ret| @ptrCast(@alignCast(ret.ptr)) else null);
 
         if (alloc_ret) |ret| {
-            switch (callable.returnType) {
-                .ffiType => |ffiType| switch (ffiType) {
-                    .void => return 0,
+            const datatype = ffi_func.sym.type.returns_type;
+            if (datatype.isConst()) {
+                L.pushBuffer(ret);
+                switch (datatype.kind.?) {
+                    .void => unreachable,
                     .i8 => L.pushInteger(@intCast(@as(i8, @intCast(ret[0])))),
                     .u8 => L.pushInteger(@intCast(ret[0])),
-                    .i16 => L.pushInteger(@intCast(std.mem.readVarInt(i16, ret, cpu_endian))),
-                    .u16 => L.pushInteger(@intCast(std.mem.readVarInt(u16, ret, cpu_endian))),
-                    .i32 => L.pushInteger(@intCast(std.mem.readVarInt(i32, ret, cpu_endian))),
-                    .u32 => L.pushInteger(@intCast(std.mem.readVarInt(u32, ret, cpu_endian))),
+                    inline .i16, .u16, .i32, .u32 => |T| L.pushInteger(@intCast(std.mem.readVarInt(T.asType(), ret, cpu_endian))),
                     .i64 => L.pushBuffer(ret),
                     .u64 => L.pushBuffer(ret),
-                    .float => L.pushNumber(@floatCast(@as(f32, @bitCast(std.mem.readVarInt(u32, ret, cpu_endian))))),
-                    .double => L.pushNumber(@as(f64, @bitCast(std.mem.readVarInt(u64, ret, cpu_endian)))),
+                    .f32 => L.pushNumber(@floatCast(@as(f32, @bitCast(std.mem.readVarInt(u32, ret, cpu_endian))))),
+                    .f64 => L.pushNumber(@as(f64, @bitCast(std.mem.readVarInt(u64, ret, cpu_endian)))),
                     .pointer => _ = try LuaPointer.newStaticPtr(L, @ptrFromInt(std.mem.readVarInt(usize, ret[0..@sizeOf(usize)], cpu_endian)), false),
-                },
-                .structType => L.pushBuffer(ret),
+                }
+            } else {
+                L.pushBuffer(ret);
             }
             return 1;
         }
@@ -1414,7 +1700,7 @@ const FFIFunction = struct {
     }
 
     pub fn __dtor(self: *FFIFunction) void {
-        const allocator = self.callable.allocator;
+        const allocator = self.allocator;
         if (self.args) |args| {
             for (args) |arg|
                 allocator.free(arg);
@@ -1427,7 +1713,9 @@ const FFIFunction = struct {
         if (self.ret) |ret|
             allocator.free(ret);
 
-        self.callable.deinit();
+        self.state.deinit();
+
+        self.sym.free(allocator);
     }
 };
 
@@ -1442,14 +1730,14 @@ fn ffi_fn(L: *Luau) !i32 {
 
     const allocator = L.allocator();
 
-    var returns: ffi.GenType = .{ .ffiType = .void };
-    var args = std.ArrayList(ffi.GenType).init(allocator);
-    defer args.deinit();
+    var symbol_returns: DataType = DataTypes.Types.type_void;
+    var args = std.ArrayList(DataType).init(allocator);
+    errdefer args.deinit();
 
     _ = L.getField(1, "returns");
     if (!isFFIType(L, -1))
         return error.InvalidReturnType;
-    returns = try toFFIType(L, -1);
+    symbol_returns = try toFFIType(L, -1);
     L.pop(1);
 
     if (L.getField(1, "args") != .table)
@@ -1469,7 +1757,7 @@ fn ffi_fn(L: *Luau) !i32 {
 
         const t = try toFFIType(L, -1);
 
-        if (t == .ffiType and t.ffiType == .void)
+        if (t.size == 0)
             return error.VoidArg;
 
         try args.append(t);
@@ -1478,28 +1766,55 @@ fn ffi_fn(L: *Luau) !i32 {
         L.pop(1);
     }
 
-    const ffi_func = try ffi.CallableFunction.init(allocator, ptr, args.items, returns);
+    const symbol_args = try args.toOwnedSlice();
+    errdefer allocator.free(symbol_args);
+
+    const state = try tinycc.new();
+    errdefer state.deinit();
+
+    state.set_output_type(tinycc.TCC_OUTPUT_MEMORY);
+    state.set_options("-std=c11 -nostdlib -Wl,--export-all-symbols");
+
+    var source = std.ArrayList(u8).init(allocator);
+    defer source.deinit();
+
+    try generateSourceFromSymbol(&source, symbol_returns, symbol_args);
+
+    const block = state.compileStringOnceAlloc(allocator, source.items) catch |err| {
+        std.debug.print("Internal FFI Error: {}\n", .{err});
+        return error.CompilationError;
+    };
+    errdefer block.free();
 
     // Allocate space for the arguments
-    const alloc_args: ?[][]u8 = if (args.items.len > 0) try alloc_ffi_args(allocator, args.items) else null;
+    const alloc_args: ?[][]u8 = if (symbol_args.len > 0) try alloc_ffi_args(allocator, symbol_args) else null;
     errdefer if (alloc_args) |arr| allocator.free(arr);
-    const ffi_alloc_args: ?[]*anyopaque = if (args.items.len > 0) try allocator.alloc(*anyopaque, args.items.len) else null;
+    const ffi_alloc_args: ?[]*anyopaque = if (symbol_args.len > 0) try allocator.alloc(*anyopaque, symbol_args.len) else null;
     errdefer if (ffi_alloc_args) |arr| allocator.free(arr);
-    for (0..args.items.len) |i| {
+    for (0..symbol_args.len) |i| {
         ffi_alloc_args.?[i] = @ptrCast(@alignCast(alloc_args.?[i].ptr));
     }
     // Allocate space for the return type
-    const ret_size = returns.getSize();
+    const ret_size = symbol_returns.size;
     const alloc_ret: ?[]u8 = if (ret_size > 0) try allocator.alloc(u8, ret_size) else null;
 
     const data = L.newUserdataDtor(FFIFunction, FFIFunction.__dtor);
 
     data.* = .{
+        .allocator = allocator,
+        .state = state,
+        .ret = alloc_ret,
         .args = alloc_args,
         .ffi_args = ffi_alloc_args,
-        .ret = alloc_ret,
-        .callable = ffi_func,
-        .ptr = ptr,
+        .callable = @ptrCast(@alignCast(state.get_symbol("call_fn_ffi") orelse @panic("Symbol not found"))),
+        .sym = .{
+            .ptr = ptr,
+            .block = block,
+            .type = .{
+                .args_type = symbol_args,
+                .returns_type = symbol_returns,
+            },
+        },
     };
 
     L.pushClosure(luau.toCFn(FFIFunction.fn_inner), "ffi_fn", 1);
@@ -1561,13 +1876,13 @@ fn ffi_copy(L: *Luau) !i32 {
 
 fn ffi_sizeOf(L: *Luau) !i32 {
     const t = try toFFIType(L, 1);
-    L.pushInteger(@intCast(t.getSize()));
+    L.pushInteger(@intCast(t.size));
     return 1;
 }
 
 fn ffi_alignOf(L: *Luau) !i32 {
     const t = try toFFIType(L, 1);
-    L.pushInteger(@intCast(t.getAlignment()));
+    L.pushInteger(@intCast(t.alignment));
     return 1;
 }
 
@@ -1675,7 +1990,8 @@ pub fn loadLib(L: *Luau) void {
         L.setFieldFn(-1, luau.Metamethods.namecall, LuaStructType.__namecall); // metatable.__namecall
 
         L.setFieldString(-1, luau.Metamethods.metatable, "Metatable is locked");
-        L.pop(1);
+        L.setUserdataDtor(LuaStructType, tagged.FFI_STRUCT, LuaStructType.__dtor);
+        L.setUserdataMetatable(tagged.FFI_STRUCT, -1);
     }
     {
         L.newMetatable(LuaPointer.META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
@@ -1690,19 +2006,11 @@ pub fn loadLib(L: *Luau) void {
 
     L.newTable();
 
-    if (ffi.Supported()) {
-        L.setFieldFn(-1, "dlopen", ffi_dlopen);
-        L.setFieldFn(-1, "struct", ffi_struct);
-        L.setFieldFn(-1, "closure", ffi_closure);
-        L.setFieldFn(-1, "fn", ffi_fn);
-        L.setFieldBoolean(-1, "supported", true);
-    } else {
-        L.setFieldFn(-1, "dlopen", ffi_unsupported);
-        L.setFieldFn(-1, "struct", ffi_unsupported);
-        L.setFieldFn(-1, "closure", ffi_unsupported);
-        L.setFieldFn(-1, "fn", ffi_unsupported);
-        L.setFieldBoolean(-1, "supported", false);
-    }
+    L.setFieldFn(-1, "dlopen", ffi_dlopen);
+    L.setFieldFn(-1, "struct", ffi_struct);
+    L.setFieldFn(-1, "closure", ffi_closure);
+    L.setFieldFn(-1, "fn", ffi_fn);
+    L.setFieldBoolean(-1, "supported", true);
 
     L.setFieldFn(-1, "sizeOf", ffi_sizeOf);
     L.setFieldFn(-1, "alignOf", ffi_alignOf);
@@ -1717,9 +2025,9 @@ pub fn loadLib(L: *Luau) void {
     L.setFieldFn(-1, "createPtr", LuaPointer.ptrFromBuffer);
 
     L.newTable();
-    inline for (std.meta.fields(ffi.Type)) |field| {
-        L.pushString(field.name);
-        L.pushInteger(field.value);
+    inline for (@typeInfo(DataTypes.Types).@"struct".decls, 0..) |decl, i| {
+        L.pushString(decl.name[5..]);
+        L.pushLightUserdata(@constCast(@ptrCast(@alignCast(DataTypes.order[i]))));
         L.setTable(-3);
     }
     L.setReadOnly(-1, true);
