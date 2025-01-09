@@ -1325,7 +1325,7 @@ fn ffi_dlopen(L: *Luau) !i32 {
             std.debug.print("Internal FFI Error: {}\n", .{err});
             return error.CompilationError;
         };
-        errdefer allocator.free(block);
+        errdefer block.free();
 
         // Allocate space for the arg types
         const alloc_args: ?[][]u8 = if (symbol_args.len > 0) try alloc_ffi_args(allocator, symbol_args) else null;
@@ -1637,11 +1637,11 @@ const FFIFunction = struct {
 
     pub const FFISymbol = struct {
         type: SymbolFunction,
-        block: []u8,
+        block: tinycc.DynMem,
         ptr: *anyopaque,
 
         pub fn free(self: *FFISymbol, allocator: std.mem.Allocator) void {
-            allocator.free(self.block);
+            self.block.free();
             allocator.free(self.type.args_type);
         }
     };
@@ -1784,7 +1784,7 @@ fn ffi_fn(L: *Luau) !i32 {
         std.debug.print("Internal FFI Error: {}\n", .{err});
         return error.CompilationError;
     };
-    errdefer allocator.free(block);
+    errdefer block.free();
 
     // Allocate space for the arguments
     const alloc_args: ?[][]u8 = if (symbol_args.len > 0) try alloc_ffi_args(allocator, symbol_args) else null;
