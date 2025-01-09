@@ -69,7 +69,7 @@ pub const AwaitTaskPriority = enum { Internal, User };
 
 const TaskFn = fn (ctx: *anyopaque, L: *Luau, scheduler: *Self) TaskResult;
 const TaskFnDtor = fn (ctx: *anyopaque, L: *Luau, scheduler: *Self) void;
-const AsyncCallbackFn = fn (ctx: *anyopaque, L: *Luau, scheduler: *Self, failed: bool) void;
+const AsyncCallbackFn = fn (ctx: ?*anyopaque, L: *Luau, scheduler: *Self, failed: bool) void;
 const AwaitedFn = TaskFnDtor; // Similar to TaskFnDtor
 
 pub fn TaskObject(comptime T: type) type {
@@ -180,7 +180,7 @@ fn ioCompletion(uop: aio.Dynamic.Uop, _: aio.Id, failed: bool) void {
             defer derefThread(ctx.state);
             scheduler.async_tasks -= 1;
             if (ctx.handlerFn) |handler|
-                handler(ctx.data.?, state, scheduler, failed);
+                handler(ctx.data, state, scheduler, failed);
         },
     }
 }
@@ -385,7 +385,46 @@ pub fn awaitCall(
     return awaitResult(self, T, data, L, handlerFn, dtorFn, .User);
 }
 
+pub fn asyncIoResumeState(L: *Luau, _: *Self, failed: bool) void {
+    if (failed) {
+        L.pushString("Async IO failed");
+        _ = resumeStateError(L, null) catch {};
+    } else _ = resumeState(L, null, 0) catch {};
+}
+
 pub fn queueIoCallback(
+    self: *Self,
+    L: *Luau,
+    io: anytype,
+    comptime handlerFn: ?*const fn (L: *Luau, scheduler: *Self, failed: bool) void,
+) !void {
+    const allocator = self.allocator;
+
+    const async_ptr = try allocator.create(AsyncIoThread);
+    errdefer allocator.destroy(async_ptr);
+
+    const handler = struct {
+        fn inner(_: ?*anyopaque, l: *Luau, scheduler: *Self, failed: bool) void {
+            @call(.always_inline, handlerFn.?, .{ l, scheduler, failed });
+        }
+    }.inner;
+
+    async_ptr.* = .{
+        .state = refThread(L),
+        .data = null,
+        .handlerFn = if (handlerFn != null) handler else null,
+    };
+    errdefer derefThread(async_ptr.state);
+
+    var queueItem = io;
+
+    queueItem.userdata = @intFromPtr(async_ptr);
+
+    try self.dynamic.queue(queueItem);
+    self.async_tasks += 1;
+}
+
+pub fn queueIoCallbackCtx(
     self: *Self,
     comptime T: type,
     data: *T,
@@ -399,8 +438,8 @@ pub fn queueIoCallback(
     errdefer allocator.destroy(async_ptr);
 
     const handler = struct {
-        fn inner(ctx: *anyopaque, l: *Luau, scheduler: *Self, failed: bool) void {
-            @call(.always_inline, handlerFn.?, .{ @as(*T, @alignCast(@ptrCast(ctx))), l, scheduler, failed });
+        fn inner(ctx: ?*anyopaque, l: *Luau, scheduler: *Self, failed: bool) void {
+            @call(.always_inline, handlerFn.?, .{ @as(*T, @alignCast(@ptrCast(ctx.?))), l, scheduler, failed });
         }
     }.inner;
 
@@ -433,7 +472,6 @@ pub fn queueIo(
         .state = refThread(L),
         .data = null,
         .handlerFn = null,
-        .virtualDtor = null,
     };
     errdefer derefThread(async_ptr.state);
 
@@ -614,20 +652,4 @@ pub fn getScheduler(L: *Luau) *Self {
     const GL = L.getMainThread();
     const scheduler = GL.getThreadData(Self) catch L.raiseErrorStr("InternalError (Scheduler not found)", .{});
     return scheduler;
-}
-
-pub fn toSchedulerFn(comptime f: *const fn (state: *Luau, scheduler: *Self) i32) luau.ZigFnInt {
-    return struct {
-        fn inner(L: *Luau) i32 {
-            return @call(.always_inline, f, .{ L, getScheduler(L) });
-        }
-    }.inner;
-}
-
-pub fn toSchedulerEFn(comptime f: *const fn (state: *Luau, scheduler: *Self) anyerror!i32) luau.ZigFnErrorSet {
-    return struct {
-        fn inner(L: *Luau) anyerror!i32 {
-            return @call(.always_inline, f, .{ L, getScheduler(L) });
-        }
-    }.inner;
 }

@@ -778,7 +778,9 @@ pub fn prep(
     scheduler.addTask(Self, self, L, update, dtor);
 }
 
-pub fn lua_serve(L: *Luau, scheduler: *Scheduler) !i32 {
+pub fn lua_serve(L: *Luau) !i32 {
+    const scheduler = Scheduler.getScheduler(L);
+
     L.checkType(1, .table);
 
     var addressStr: []const u8 = "127.0.0.1";

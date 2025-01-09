@@ -472,9 +472,11 @@ pub fn prep(
     return true;
 }
 
-pub fn lua_websocket(L: *Luau, scheduler: *Scheduler) !i32 {
-    const uriString = L.checkString(1);
+pub fn lua_websocket(L: *Luau) !i32 {
+    const scheduler = Scheduler.getScheduler(L);
     const allocator = L.allocator();
+
+    const uriString = L.checkString(1);
 
     var timeout: ?f64 = 30;
     var protocols = std.ArrayList([]const u8).init(allocator);

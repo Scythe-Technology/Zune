@@ -82,8 +82,8 @@ fn testing_checkLeakedReferences(L: *Luau) !i32 {
     return 0;
 }
 
-fn testing_droptasks(L: *Luau, scheduler: *Scheduler) i32 {
-    _ = L;
+fn testing_droptasks(L: *Luau) i32 {
+    const scheduler = Scheduler.getScheduler(L);
 
     var awaitsSize = scheduler.awaits.items.len;
     while (awaitsSize > 0) {
@@ -228,7 +228,7 @@ pub fn loadLib(L: *Luau, enabled: bool) void {
         L.pop(1);
         ML.setFieldFn(luau.GLOBALSINDEX, "declare_safeEnv", testing_declareSafeEnv);
         ML.setFieldFn(luau.GLOBALSINDEX, "stepcheck_references", testing_checkLeakedReferences);
-        ML.setFieldFn(luau.GLOBALSINDEX, "scheduler_droptasks", Scheduler.toSchedulerFn(testing_droptasks));
+        ML.setFieldFn(luau.GLOBALSINDEX, "scheduler_droptasks", testing_droptasks);
         ML.setFieldBoolean(luau.GLOBALSINDEX, "_FILE", false);
 
         const bytecode_buf = allocator.alloc(u8, test_lib_size) catch |err| std.debug.panic("Unable to allocate space for testing framework: {}", .{err});

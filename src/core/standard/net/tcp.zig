@@ -36,7 +36,7 @@ const TCPClient = struct {
             return 0;
         }
 
-        pub fn __namecall(L: *Luau, _: *Scheduler) !i32 {
+        pub fn __namecall(L: *Luau) !i32 {
             L.checkType(1, .userdata);
             const self = L.toUserdata(Self, 1) catch unreachable;
 
@@ -139,7 +139,8 @@ const TCPClient = struct {
     }
 };
 
-pub fn lua_tcp_client(L: *Luau, scheduler: *Scheduler) !i32 {
+pub fn lua_tcp_client(L: *Luau) !i32 {
+    const scheduler = Scheduler.getScheduler(L);
     var address_ip: []const u8 = "";
     var port: u16 = 0;
 
@@ -249,7 +250,7 @@ const TCPServer = struct {
 
         pub const LuaMeta = struct {
             pub const META = "net_tcp_server_connection_instance";
-            pub fn __namecall(L: *Luau, _: *Scheduler) !i32 {
+            pub fn __namecall(L: *Luau) !i32 {
                 L.checkType(1, .userdata);
                 const self = L.toUserdata(Connection, 1) catch unreachable;
                 if (!self.connected)
@@ -296,7 +297,7 @@ const TCPServer = struct {
             return 0;
         }
 
-        pub fn __namecall(L: *Luau, _: *Scheduler) !i32 {
+        pub fn __namecall(L: *Luau) !i32 {
             L.checkType(1, .userdata);
             const self = L.toUserdata(Self, 1) catch unreachable;
 
@@ -471,7 +472,8 @@ const TCPServer = struct {
     }
 };
 
-pub fn lua_tcp_server(L: *Luau, scheduler: *Scheduler) !i32 {
+pub fn lua_tcp_server(L: *Luau) !i32 {
+    const scheduler = Scheduler.getScheduler(L);
     var data_ref: ?i32 = null;
     errdefer if (data_ref) |ref| L.unref(ref);
     var open_ref: ?i32 = null;
@@ -588,7 +590,7 @@ pub fn lua_load(L: *Luau) void {
         L.newMetatable(TCPClient.LuaMeta.META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
 
         L.setFieldFn(-1, luau.Metamethods.index, TCPClient.LuaMeta.__index); // metatable.__index
-        L.setFieldFn(-1, luau.Metamethods.namecall, Scheduler.toSchedulerEFn(TCPClient.LuaMeta.__namecall)); // metatable.__namecall
+        L.setFieldFn(-1, luau.Metamethods.namecall, TCPClient.LuaMeta.__namecall); // metatable.__namecall
 
         L.setFieldString(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.pop(1);
@@ -597,7 +599,7 @@ pub fn lua_load(L: *Luau) void {
         L.newMetatable(TCPServer.LuaMeta.META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
 
         L.setFieldFn(-1, luau.Metamethods.index, TCPServer.LuaMeta.__index); // metatable.__index
-        L.setFieldFn(-1, luau.Metamethods.namecall, Scheduler.toSchedulerEFn(TCPServer.LuaMeta.__namecall)); // metatable.__namecall
+        L.setFieldFn(-1, luau.Metamethods.namecall, TCPServer.LuaMeta.__namecall); // metatable.__namecall
 
         L.setFieldString(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.pop(1);
@@ -605,7 +607,7 @@ pub fn lua_load(L: *Luau) void {
     {
         L.newMetatable(TCPServer.Connection.LuaMeta.META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
 
-        L.setFieldFn(-1, luau.Metamethods.namecall, Scheduler.toSchedulerEFn(TCPServer.Connection.LuaMeta.__namecall)); // metatable.__namecall
+        L.setFieldFn(-1, luau.Metamethods.namecall, TCPServer.Connection.LuaMeta.__namecall); // metatable.__namecall
 
         L.setFieldString(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.pop(1);
