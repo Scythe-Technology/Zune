@@ -16,16 +16,12 @@
             .hash = "1220d6bbca59a59f16bda33b69e140d90bad313d11c07c0e2ab16076c59355845112",
         },
         .luau = .{
-            .url = "https://codeload.github.com/Scythe-Technology/zig-luau/tar.gz/05813b51b2b18e2066d104abbefe3098445f2e5b",
-            .hash = "12209c86f13a67753f0b1e73a470e8060c3f8129b58bdde60c6242a0e95040fe30d0",
+            .url = "https://codeload.github.com/Scythe-Technology/zig-luau/tar.gz/09d100590b57992d155367bd2fa9393a65750756",
+            .hash = "12202d0d4e63c689813725bc00c36160e1faaa9738dea7a3c823b4b7e953e21cc095",
         },
         .czrex = .{
             .url = "https://codeload.github.com/Scythe-Technology/czrex/tar.gz/099db43b9074001329dfb04aef92b7589a00f983",
             .hash = "1220c4004e77aa9880e02cc11d90d7eb92ddbc3ea2b4f2ebe5220ef53763173fe491",
-        },
-        .ffi = .{
-            .url = "https://codeload.github.com/Scythe-Technology/zffi/tar.gz/62ee0eb0bf9d29a2112012dda807f8569f343d2c",
-            .hash = "122092de7c4680b0d7bab8adc96ebaa22b6654179f6b8757f25d2dec6feda04b00b5",
         },
         .datetime = .{
             .url = "https://codeload.github.com/FObersteiner/zdt/tar.gz/9c5d317f46353940881dd6cde387b176b1cd3962",
@@ -42,6 +38,10 @@
         .zstd = .{
             .url = "https://codeload.github.com/Scythe-Technology/zig-zstd/tar.gz/1a5eea905f8bc622fff72eb807744468a0311848",
             .hash = "1220cd0ded41510d117684f986f895276413b51739212655d429568be7e150e4bd48",
+        },
+        .tinycc = .{
+            .url = "https://codeload.github.com/Scythe-Technology/zig-tinycc/tar.gz/d0f1d703aeaa9ccbfb5b62f4158901ef6867f113",
+            .hash = "12206a1920d17bf592c20e7caee64c31f57eb2f8c0e4c54896e776a9df3e35d75e56",
         },
     },
     .paths = .{
