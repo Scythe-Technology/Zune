@@ -1531,8 +1531,8 @@ fn ffi_closure(L: *Luau) !i32 {
     defer source.deinit();
     const writer = source.writer();
 
-    try writer.print("extern void external_call(void*, void**, void*);\n", .{});
-    try writer.print("extern void* external_ptr;\n\n", .{});
+    try writer.print(if (builtin.os.tag == .windows) "__declspec(dllimport)" else "extern" ++ " void external_call(void*, void**, void*);\n", .{});
+    try writer.print(if (builtin.os.tag == .windows) "__declspec(dllimport)" else "extern" ++ " void* external_ptr;\n\n", .{});
 
     try generateTypesFromSymbol(&source, symbol_returns, symbol_args);
 
