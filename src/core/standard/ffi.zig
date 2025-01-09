@@ -2006,19 +2006,11 @@ pub fn loadLib(L: *Luau) void {
 
     L.newTable();
 
-    // if (ffi.Supported()) {
     L.setFieldFn(-1, "dlopen", ffi_dlopen);
     L.setFieldFn(-1, "struct", ffi_struct);
     L.setFieldFn(-1, "closure", ffi_closure);
     L.setFieldFn(-1, "fn", ffi_fn);
     L.setFieldBoolean(-1, "supported", true);
-    // } else {
-    // L.setFieldFn(-1, "dlopen", ffi_unsupported);
-    // L.setFieldFn(-1, "struct", ffi_unsupported);
-    // L.setFieldFn(-1, "closure", ffi_unsupported);
-    // L.setFieldFn(-1, "fn", ffi_unsupported);
-    // L.setFieldBoolean(-1, "supported", false);
-    // }
 
     L.setFieldFn(-1, "sizeOf", ffi_sizeOf);
     L.setFieldFn(-1, "alignOf", ffi_alignOf);
