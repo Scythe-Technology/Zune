@@ -1657,7 +1657,7 @@ fn ffi_closure(L: *Luau) !i32 {
     const writer = source.writer();
 
     try generateExported(&source, "external_call", "void", &.{ "void*", "void**", "void*" });
-    try generateExported(&source, "external_ptr", "void", &.{ "void*", "void**", "void*" });
+    try generateExported(&source, "external_ptr", "void*", &.{});
 
     try writer.print("\n", .{});
 
