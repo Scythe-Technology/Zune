@@ -134,7 +134,12 @@ pub fn build(b: *std.Build) !void {
 
     try prebuild(b, prebuild_step);
 
-    const version = try getPackageVersion(b);
+    var version = try getPackageVersion(b);
+    if (std.mem.indexOf(u8, version, "-dev")) |_| {
+        const hash = b.run(&.{ "git", "rev-parse", "--short", "HEAD" });
+        const trimmed = std.mem.trim(u8, hash, "\r\n ");
+        version = try std.mem.join(b.allocator, ".", &.{ version, trimmed });
+    }
 
     const zune_info = b.addOptions();
     zune_info.addOption([]const u8, "version", version);
