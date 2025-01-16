@@ -108,19 +108,26 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    var packed_optimize = optimize;
+
+    switch (optimize) {
+        .ReleaseFast => packed_optimize = .ReleaseSmall,
+        else => {},
+    }
+
     const dep_aio = b.dependency("aio", .{ .target = target, .optimize = optimize });
     const dep_json = b.dependency("json", .{ .target = target, .optimize = optimize });
     const dep_yaml = b.dependency("yaml", .{ .target = target, .optimize = optimize });
-    const dep_luau = b.dependency("luau", .{ .target = target, .optimize = optimize });
-    const dep_lz4 = b.dependency("lz4", .{ .target = target, .optimize = optimize });
-    const dep_zstd = b.dependency("zstd", .{ .target = target, .optimize = optimize });
-    const dep_czrex = b.dependency("czrex", .{ .target = target, .optimize = optimize });
-    const dep_datetime = b.dependency("datetime", .{ .target = target, .optimize = optimize });
     const dep_toml = b.dependency("toml", .{ .target = target, .optimize = optimize });
-    const dep_tinycc = b.dependency("tinycc", .{ .target = target, .optimize = optimize, .CONFIG_TCC_BACKTRACE = false });
+    const dep_datetime = b.dependency("datetime", .{ .target = target, .optimize = optimize });
+    const dep_luau = b.dependency("luau", .{ .target = target, .optimize = packed_optimize });
+    const dep_lz4 = b.dependency("lz4", .{ .target = target, .optimize = packed_optimize });
+    const dep_zstd = b.dependency("zstd", .{ .target = target, .optimize = packed_optimize });
+    const dep_czrex = b.dependency("czrex", .{ .target = target, .optimize = packed_optimize });
+    const dep_tinycc = b.dependency("tinycc", .{ .target = target, .optimize = packed_optimize, .CONFIG_TCC_BACKTRACE = false });
     const dep_sqlite = b.dependency("sqlite", .{
         .target = target,
-        .optimize = optimize,
+        .optimize = packed_optimize,
         .SQLITE_ENABLE_RTREE = true,
         .SQLITE_ENABLE_FTS3 = true,
         .SQLITE_ENABLE_FTS5 = true,
