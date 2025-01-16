@@ -405,7 +405,8 @@ pub fn prep(allocator: std.mem.Allocator, L: *Luau, scheduler: *Scheduler, optio
     scheduler.addTask(Self, netClientPtr, L, update, dtor);
 }
 
-pub fn lua_request(L: *Luau, scheduler: *Scheduler) !i32 {
+pub fn lua_request(L: *Luau) !i32 {
+    const scheduler = Scheduler.getScheduler(L);
     const uriString = L.checkString(1);
     const allocator = L.allocator();
 

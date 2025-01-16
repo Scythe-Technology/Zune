@@ -1,10 +1,13 @@
 const std = @import("std");
-const builtin = @import("builtin");
+const aio = @import("aio");
 const luau = @import("luau");
+const builtin = @import("builtin");
 
 const Scheduler = @import("../../runtime/scheduler.zig");
 
 const luaHelper = @import("../../utils/luahelper.zig");
+
+const File = @import("../../objects/filesystem/File.zig");
 
 const Watch = @import("./watch.zig");
 
@@ -19,7 +22,19 @@ const OpenError = error{ InvalidMode, BadExclusive };
 
 pub const LIB_NAME = "fs";
 
-fn fs_readFile(L: *Luau) !i32 {
+fn fs_readFileAsync(L: *Luau) !i32 {
+    const path = L.checkString(1);
+    const useBuffer = L.optBoolean(2) orelse false;
+
+    const file = try fs.cwd().openFile(path, .{
+        .mode = .read_only,
+    });
+    errdefer file.close();
+
+    return File.ReadAsyncContext.queue(L, file, useBuffer, 1024, luaHelper.MAX_LUAU_SIZE, true);
+}
+
+fn fs_readFileSync(L: *Luau) !i32 {
     const allocator = L.allocator();
     const path = L.checkString(1);
     const useBuffer = L.optBoolean(2) orelse false;
@@ -52,7 +67,17 @@ fn fs_readDir(L: *Luau) !i32 {
     return 1;
 }
 
-fn fs_writeFile(L: *Luau) !i32 {
+fn fs_writeFileAsync(L: *Luau) !i32 {
+    const path = L.checkString(1);
+    const data = if (L.isBuffer(2)) L.checkBuffer(2) else L.checkString(2);
+
+    const file = try fs.cwd().createFile(path, .{});
+    errdefer file.close();
+
+    return File.WriteAsyncContext.queue(L, file, data, true, 0);
+}
+
+fn fs_writeFileSync(L: *Luau) !i32 {
     const path = L.checkString(1);
     const data = if (L.isBuffer(2)) L.checkBuffer(2) else L.checkString(2);
     try fs.cwd().writeFile(fs.Dir.WriteFileOptions{
@@ -389,122 +414,6 @@ const LuaWatch = struct {
     }
 };
 
-const FileObject = struct {
-    handle: fs.File,
-    open: bool = true,
-};
-
-const LuaFile = struct {
-    pub const META = "fs_file_instance";
-
-    pub fn __index(L: *Luau) i32 {
-        L.checkType(1, .userdata);
-        // const index = L.checkString(2);
-        // const file_ptr = L.toUserdata(FileObject, 1) catch return 0;
-
-        return 0;
-    }
-
-    pub fn __namecall(L: *Luau) !i32 {
-        L.checkType(1, .userdata);
-        var file_ptr = L.toUserdata(FileObject, 1) catch unreachable;
-
-        const namecall = L.nameCallAtom() catch return 0;
-
-        const allocator = L.allocator();
-
-        // TODO: prob should switch to static string map
-        if (std.mem.eql(u8, namecall, "write")) {
-            const string = if (L.typeOf(2) == .buffer) L.checkBuffer(2) else L.checkString(2);
-            try file_ptr.handle.writeAll(string);
-        } else if (std.mem.eql(u8, namecall, "append")) {
-            const string = if (L.typeOf(2) == .buffer) L.checkBuffer(2) else L.checkString(2);
-            try file_ptr.handle.seekFromEnd(0);
-            try file_ptr.handle.writeAll(string);
-        } else if (std.mem.eql(u8, namecall, "getSeekPosition")) {
-            L.pushInteger(@intCast(try file_ptr.handle.getPos()));
-            return 1;
-        } else if (std.mem.eql(u8, namecall, "getSize")) {
-            L.pushInteger(@intCast(try file_ptr.handle.getEndPos()));
-            return 1;
-        } else if (std.mem.eql(u8, namecall, "seekFromEnd")) {
-            try file_ptr.handle.seekFromEnd(@intCast(L.optInteger(2) orelse 0));
-        } else if (std.mem.eql(u8, namecall, "seekTo")) {
-            try file_ptr.handle.seekTo(@intCast(L.optInteger(2) orelse 0));
-        } else if (std.mem.eql(u8, namecall, "seekBy")) {
-            try file_ptr.handle.seekFromEnd(@intCast(L.optInteger(2) orelse 1));
-        } else if (std.mem.eql(u8, namecall, "read")) {
-            const size = L.optInteger(2) orelse luaHelper.MAX_LUAU_SIZE;
-            const data = try file_ptr.handle.readToEndAlloc(allocator, @intCast(size));
-            defer allocator.free(data);
-            if (L.optBoolean(3) orelse false) L.pushBuffer(data) else L.pushLString(data);
-            return 1;
-        } else if (std.mem.eql(u8, namecall, "lock")) {
-            var lockOpt: fs.File.Lock = .exclusive;
-            if (L.typeOf(2) == .string) {
-                const lockType = L.toString(2) catch unreachable;
-                if (std.mem.eql(u8, lockType, "shared")) {
-                    lockOpt = .shared;
-                } else if (!std.mem.eql(u8, lockType, "exclusive")) {
-                    lockOpt = .exclusive;
-                } else if (!std.mem.eql(u8, lockType, "none")) {
-                    lockOpt = .none;
-                }
-            }
-            if (builtin.os.tag == .windows) {
-                switch (lockOpt) {
-                    .none => {},
-                    .shared, .exclusive => {
-                        var io_status_block: std.os.windows.IO_STATUS_BLOCK = undefined;
-                        const range_off: std.os.windows.LARGE_INTEGER = 0;
-                        const range_len: std.os.windows.LARGE_INTEGER = 1;
-                        std.os.windows.LockFile(
-                            file_ptr.handle.handle,
-                            null,
-                            null,
-                            null,
-                            &io_status_block,
-                            &range_off,
-                            &range_len,
-                            null,
-                            std.os.windows.FALSE, // non-blocking=false
-                            @intFromBool(lockOpt == .exclusive),
-                        ) catch |err| switch (err) {
-                            error.WouldBlock => unreachable, // non-blocking=false
-                            else => |e| return e,
-                        };
-                    },
-                }
-                L.pushBoolean(true);
-            } else L.pushBoolean(try file_ptr.handle.tryLock(lockOpt));
-            return 1;
-        } else if (std.mem.eql(u8, namecall, "unlock")) {
-            file_ptr.handle.unlock();
-        } else if (std.mem.eql(u8, namecall, "sync")) {
-            try file_ptr.handle.sync();
-        } else if (std.mem.eql(u8, namecall, "readonly")) {
-            const meta = try file_ptr.handle.metadata();
-            var permissions = meta.permissions();
-            const enabled = L.optBoolean(2) orelse {
-                L.pushBoolean(permissions.readOnly());
-                return 1;
-            };
-            permissions.setReadOnly(enabled);
-            try file_ptr.handle.setPermissions(permissions);
-        } else if (std.mem.eql(u8, namecall, "close")) {
-            if (file_ptr.open) file_ptr.handle.close();
-            file_ptr.open = false;
-        } else return L.ErrorFmt("Unknown method: {s}", .{namecall});
-        return 0;
-    }
-
-    pub fn __dtor(ptr: *FileObject) void {
-        if (ptr.open)
-            ptr.handle.close();
-        ptr.open = false;
-    }
-};
-
 fn fs_openFile(L: *Luau) !i32 {
     const path = L.checkString(1);
 
@@ -536,17 +445,7 @@ fn fs_openFile(L: *Luau) !i32 {
         .mode = mode,
     });
 
-    const filePtr = L.newUserdataDtor(FileObject, LuaFile.__dtor);
-
-    filePtr.* = .{
-        .handle = file,
-        .open = true,
-    };
-
-    if (L.getMetatableRegistry(LuaFile.META) == .table)
-        L.setMetatable(-2)
-    else
-        std.debug.panic("InternalError (File Metatable not initialized)", .{});
+    File.pushFile(L, file, .File);
 
     return 1;
 }
@@ -573,22 +472,13 @@ fn fs_createFile(L: *Luau) !i32 {
         .exclusive = exclusive,
     });
 
-    const filePtr = L.newUserdataDtor(FileObject, LuaFile.__dtor);
-
-    filePtr.* = .{
-        .handle = file,
-        .open = true,
-    };
-
-    if (L.getMetatableRegistry(LuaFile.META) == .table)
-        L.setMetatable(-2)
-    else
-        std.debug.panic("InternalError (File Metatable not initialized)", .{});
+    File.pushFile(L, file, .File);
 
     return 1;
 }
 
-fn fs_watch(L: *Luau, scheduler: *Scheduler) !i32 {
+fn fs_watch(L: *Luau) !i32 {
+    const scheduler = Scheduler.getScheduler(L);
     const path = L.checkString(1);
     L.checkType(2, .function);
 
@@ -631,15 +521,6 @@ fn fs_watch(L: *Luau, scheduler: *Scheduler) !i32 {
 
 pub fn loadLib(L: *Luau) void {
     {
-        L.newMetatable(LuaFile.META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
-
-        L.setFieldFn(-1, luau.Metamethods.index, LuaFile.__index); // metatable.__index
-        L.setFieldFn(-1, luau.Metamethods.namecall, LuaFile.__namecall); // metatable.__namecall
-
-        L.setFieldString(-1, luau.Metamethods.metatable, "Metatable is locked");
-        L.pop(1);
-    }
-    {
         L.newMetatable(LuaWatch.META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
 
         L.setFieldFn(-1, luau.Metamethods.index, LuaWatch.__index); // metatable.__index
@@ -653,10 +534,12 @@ pub fn loadLib(L: *Luau) void {
     L.setFieldFn(-1, "createFile", fs_createFile);
     L.setFieldFn(-1, "openFile", fs_openFile);
 
-    L.setFieldFn(-1, "readFile", fs_readFile);
+    L.setFieldFn(-1, "readFile", fs_readFileAsync);
+    L.setFieldFn(-1, "readFileSync", fs_readFileSync);
     L.setFieldFn(-1, "readDir", fs_readDir);
 
-    L.setFieldFn(-1, "writeFile", fs_writeFile);
+    L.setFieldFn(-1, "writeFile", fs_writeFileAsync);
+    L.setFieldFn(-1, "writeFileSync", fs_writeFileSync);
     L.setFieldFn(-1, "writeDir", fs_writeDir);
 
     L.setFieldFn(-1, "removeFile", fs_removeFile);
@@ -673,7 +556,7 @@ pub fn loadLib(L: *Luau) void {
 
     L.setFieldFn(-1, "symlink", fs_symlink);
 
-    L.setFieldFn(-1, "watch", Scheduler.toSchedulerEFn(fs_watch));
+    L.setFieldFn(-1, "watch", fs_watch);
 
     L.setReadOnly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);

@@ -99,8 +99,10 @@ fn require_dtor(ctx: *RequireContext, _: *Luau, _: *Scheduler) void {
     allocator.free(queue.key_ptr.*);
 }
 
-pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
+pub fn zune_require(L: *Luau) !i32 {
     const allocator = L.allocator();
+    const scheduler = Scheduler.getScheduler(L);
+
     const moduleName = L.checkString(1);
     _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
     var outErr: ?[]const u8 = null;
@@ -312,7 +314,7 @@ pub fn zune_require(L: *Luau, scheduler: *Scheduler) !i32 {
 
 pub fn load_require(L: *Luau) void {
     L.pushValue(luau.GLOBALSINDEX);
-    L.pushClosure(luau.toCFn(Scheduler.toSchedulerEFn(zune_require)), "require", 1);
+    L.pushClosure(luau.toCFn(zune_require), "require", 1);
     L.setGlobal("require");
 }
 

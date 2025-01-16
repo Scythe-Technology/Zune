@@ -233,7 +233,9 @@ const LuaDatabase = struct {
             L.unref(ref);
     }
 
-    pub fn transaction(L: *Luau, scheduler: *Scheduler) !i32 {
+    pub fn transaction(L: *Luau) !i32 {
+        const scheduler = Scheduler.getScheduler(L);
+
         const ptr = L.toUserdataTagged(LuaDatabase, Luau.upvalueIndex(1), tagged.SQLITE_DATABASE) catch unreachable;
         const kind: TransactionKind = @enumFromInt(L.toInteger(Luau.upvalueIndex(3)) catch unreachable);
         const activator = switch (kind) {
@@ -349,7 +351,7 @@ const LuaDatabase = struct {
             L.pushValue(1);
             L.pushValue(2);
             L.pushInteger(@intFromEnum(kind));
-            L.pushClosure(luau.toCFn(Scheduler.toSchedulerEFn(transaction)), "Transaction", 3);
+            L.pushClosure(luau.toCFn(transaction), "Transaction", 3);
             return 1;
         } else if (std.mem.eql(u8, namecall, "close")) {
             if (!(L.optBoolean(2) orelse false)) {

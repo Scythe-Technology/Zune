@@ -13,6 +13,7 @@ const base64 = @import("base64.zig");
 
 const gzip = @import("gzip.zig");
 const zlib = @import("zlib.zig");
+const flate = @import("flate.zig");
 const lz4 = @import("lz4.zig");
 const zstd = @import("zstd.zig");
 
@@ -103,6 +104,16 @@ pub fn loadLib(L: *Luau) void {
 
         L.setReadOnly(-1, true);
         L.setFieldAhead(-1, "zlib");
+    }
+
+    { // Flate
+        L.newTable();
+
+        L.setFieldFn(-1, "compress", flate.lua_compress);
+        L.setFieldFn(-1, "decompress", flate.lua_decompress);
+
+        L.setReadOnly(-1, true);
+        L.setFieldAhead(-1, "flate");
     }
 
     { // Lz4

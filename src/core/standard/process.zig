@@ -299,7 +299,9 @@ const ProcessChildHandle = struct {
         .{ "writeIn", .WriteIn },
     });
 
-    pub fn __namecall(L: *Luau, scheduler: *Scheduler) !i32 {
+    pub fn __namecall(L: *Luau) !i32 {
+        const scheduler = Scheduler.getScheduler(L);
+
         L.checkType(1, .userdata);
         const ptr = L.toUserdata(ProcessChildHandle, 1) catch unreachable;
         const namecall = L.nameCallAtom() catch unreachable;
@@ -482,7 +484,8 @@ const ProcessAsyncRun = struct {
     }
 };
 
-fn process_run(L: *Luau, scheduler: *Scheduler) !i32 {
+fn process_run(L: *Luau) !i32 {
+    const scheduler = Scheduler.getScheduler(L);
     const allocator = L.allocator();
 
     var childOptions = try ProcessChildOptions.init(L);
@@ -777,7 +780,7 @@ pub fn loadLib(L: *Luau, args: []const []const u8) !void {
         L.newMetatable(ProcessChildHandle.META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
 
         L.setFieldFn(-1, luau.Metamethods.index, ProcessChildHandle.__index); // metatable.__index
-        L.setFieldFn(-1, luau.Metamethods.namecall, Scheduler.toSchedulerEFn(ProcessChildHandle.__namecall)); // metatable.__namecall
+        L.setFieldFn(-1, luau.Metamethods.namecall, ProcessChildHandle.__namecall); // metatable.__namecall
 
         L.setFieldString(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.pop(1);
@@ -811,7 +814,7 @@ pub fn loadLib(L: *Luau, args: []const []const u8) !void {
     }
 
     L.setFieldFn(-1, "exit", process_exit);
-    L.setFieldFn(-1, "run", Scheduler.toSchedulerEFn(process_run));
+    L.setFieldFn(-1, "run", process_run);
     L.setFieldFn(-1, "create", process_create);
     L.setFieldFn(-1, "onSignal", process_onsignal);
 

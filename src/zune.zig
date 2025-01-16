@@ -7,6 +7,7 @@ const toml = @import("libraries/toml.zig");
 pub const cli = @import("cli.zig");
 
 pub const corelib = @import("core/standard/lib.zig");
+pub const objects = @import("core/objects/lib.zig");
 
 pub const DEFAULT_ALLOCATOR = std.heap.c_allocator;
 
@@ -164,6 +165,8 @@ pub fn loadLuaurc(allocator: std.mem.Allocator, dir: std.fs.Dir) anyerror!void {
 
 pub fn openZune(L: *luau.Luau, args: []const []const u8, flags: Flags) !void {
     L.openLibs();
+
+    objects.load(L);
 
     L.newTable();
     L.newTable();

@@ -1,4 +1,5 @@
 const std = @import("std");
+const aio = @import("aio");
 const luau = @import("luau");
 
 const Engine = @import("engine.zig");
@@ -68,6 +69,7 @@ pub const AwaitTaskPriority = enum { Internal, User };
 
 const TaskFn = fn (ctx: *anyopaque, L: *Luau, scheduler: *Self) TaskResult;
 const TaskFnDtor = fn (ctx: *anyopaque, L: *Luau, scheduler: *Self) void;
+const AsyncCallbackFn = fn (ctx: ?*anyopaque, L: *Luau, scheduler: *Self, failed: bool) void;
 const AwaitedFn = TaskFnDtor; // Similar to TaskFnDtor
 
 pub fn TaskObject(comptime T: type) type {
@@ -88,6 +90,21 @@ pub fn AwaitingObject(comptime T: type) type {
         priority: AwaitTaskPriority,
     };
 }
+
+const AsyncIoThread = struct {
+    data: ?*anyopaque,
+    state: LuauPair,
+    handlerFn: ?*const AsyncCallbackFn,
+};
+
+const FrameKind = enum {
+    None,
+    Awaiting,
+    Task,
+    Sleeping,
+    AsyncIO,
+    Deferred,
+};
 
 fn SleepOrder(_: void, a: SleepingThread, b: SleepingThread) std.math.Order {
     const wakeA = a.wake;
@@ -118,23 +135,54 @@ fn DeferredOrder(_: void, a: DeferredThread, b: DeferredThread) std.math.Order {
 }
 
 const SleepingQueue = std.PriorityQueue(SleepingThread, void, SleepOrder);
+const DeferredLinkedList = std.DoublyLinkedList(DeferredThread);
 
 state: *Luau,
 allocator: std.mem.Allocator,
 sleeping: SleepingQueue,
-deferred: std.ArrayList(DeferredThread),
+deferred: DeferredLinkedList,
 tasks: std.ArrayList(TaskObject(anyopaque)),
 awaits: std.ArrayList(AwaitingObject(anyopaque)),
+dynamic: aio.Dynamic,
+async_tasks: usize = 0,
+
+frame: FrameKind = .None,
 
 pub fn init(allocator: std.mem.Allocator, state: *Luau) Self {
+    var dyn = aio.Dynamic.init(allocator, 4096) catch |err| std.debug.panic("Error: {}\n", .{err});
+    dyn.queue_callback = ioQueue;
+    dyn.completion_callback = ioCompletion;
     return .{
         .state = state,
         .allocator = allocator,
         .sleeping = SleepingQueue.init(allocator, {}),
-        .deferred = std.ArrayList(DeferredThread).init(allocator),
+        .deferred = DeferredLinkedList{},
         .tasks = std.ArrayList(TaskObject(anyopaque)).init(allocator),
         .awaits = std.ArrayList(AwaitingObject(anyopaque)).init(allocator),
+        .dynamic = dyn,
     };
+}
+
+fn ioQueue(uop: aio.Dynamic.Uop, id: aio.Id) void {
+    _ = uop;
+    _ = id;
+    // place holder
+}
+
+fn ioCompletion(uop: aio.Dynamic.Uop, _: aio.Id, failed: bool) void {
+    switch (uop) {
+        inline else => |*op| {
+            std.debug.assert(op.userdata != 0);
+            const ctx: *AsyncIoThread = @ptrFromInt(op.userdata);
+            const state = stateFromPair(ctx.state);
+            const scheduler = getScheduler(state);
+            defer scheduler.allocator.destroy(ctx);
+            defer derefThread(ctx.state);
+            scheduler.async_tasks -= 1;
+            if (ctx.handlerFn) |handler|
+                handler(ctx.data, state, scheduler, failed);
+        },
+    }
 }
 
 pub fn refThread(L: *Luau) LuauPair {
@@ -170,11 +218,15 @@ pub fn spawnThread(self: *Self, thread: *Luau, from: ?*Luau, args: i32) void {
 }
 
 pub fn deferThread(self: *Self, thread: *Luau, from: ?*Luau, args: i32) void {
-    self.deferred.append(.{
-        .from = from,
-        .thread = refThread(thread),
-        .args = args,
-    }) catch |err| std.debug.panic("Error: {}\n", .{err});
+    const ptr = self.allocator.create(DeferredLinkedList.Node) catch |err| std.debug.panic("Error: {}\n", .{err});
+    ptr.* = .{
+        .data = .{
+            .from = from,
+            .thread = refThread(thread),
+            .args = args,
+        },
+    };
+    self.deferred.append(ptr);
 }
 
 pub fn sleepThread(
@@ -186,7 +238,7 @@ pub fn sleepThread(
     waited: bool,
 ) void {
     const start = luau.clock();
-    const wake = start + time;
+    const wake = start + time + if (time == 0 and self.frame == .Sleeping) @as(f64, 0.0001) else @as(f64, 0);
 
     self.sleeping.add(.{
         .thread = refThread(thread),
@@ -333,6 +385,104 @@ pub fn awaitCall(
     return awaitResult(self, T, data, L, handlerFn, dtorFn, .User);
 }
 
+pub fn asyncIoResumeState(L: *Luau, _: *Self, failed: bool) void {
+    if (failed) {
+        L.pushString("Async IO failed");
+        _ = resumeStateError(L, null) catch {};
+    } else _ = resumeState(L, null, 0) catch {};
+}
+
+pub fn queueIoCallback(
+    self: *Self,
+    L: *Luau,
+    io: anytype,
+    comptime handlerFn: ?*const fn (L: *Luau, scheduler: *Self, failed: bool) void,
+) !void {
+    const allocator = self.allocator;
+
+    const async_ptr = try allocator.create(AsyncIoThread);
+    errdefer allocator.destroy(async_ptr);
+
+    const handler = struct {
+        fn inner(_: ?*anyopaque, l: *Luau, scheduler: *Self, failed: bool) void {
+            @call(.always_inline, handlerFn.?, .{ l, scheduler, failed });
+        }
+    }.inner;
+
+    async_ptr.* = .{
+        .state = refThread(L),
+        .data = null,
+        .handlerFn = if (handlerFn != null) handler else null,
+    };
+    errdefer derefThread(async_ptr.state);
+
+    var queueItem = io;
+
+    queueItem.userdata = @intFromPtr(async_ptr);
+
+    try self.dynamic.queue(queueItem);
+    self.async_tasks += 1;
+}
+
+pub fn queueIoCallbackCtx(
+    self: *Self,
+    comptime T: type,
+    data: *T,
+    L: *Luau,
+    io: anytype,
+    comptime handlerFn: ?*const fn (ctx: *T, L: *Luau, scheduler: *Self, failed: bool) void,
+) !void {
+    const allocator = self.allocator;
+
+    const async_ptr = try allocator.create(AsyncIoThread);
+    errdefer allocator.destroy(async_ptr);
+
+    const handler = struct {
+        fn inner(ctx: ?*anyopaque, l: *Luau, scheduler: *Self, failed: bool) void {
+            @call(.always_inline, handlerFn.?, .{ @as(*T, @alignCast(@ptrCast(ctx.?))), l, scheduler, failed });
+        }
+    }.inner;
+
+    async_ptr.* = .{
+        .state = refThread(L),
+        .data = data,
+        .handlerFn = if (handlerFn != null) handler else null,
+    };
+    errdefer derefThread(async_ptr.state);
+
+    var queueItem = io;
+
+    queueItem.userdata = @intFromPtr(async_ptr);
+
+    try self.dynamic.queue(queueItem);
+    self.async_tasks += 1;
+}
+
+pub fn queueIo(
+    self: *Self,
+    L: *Luau,
+    io: anytype,
+) !void {
+    const allocator = self.allocator;
+
+    const async_ptr = try allocator.create(AsyncIoThread);
+    errdefer allocator.destroy(async_ptr);
+
+    async_ptr.* = .{
+        .state = refThread(L),
+        .data = null,
+        .handlerFn = null,
+    };
+    errdefer derefThread(async_ptr.state);
+
+    var queueItem = io;
+
+    queueItem.userdata = @intFromPtr(async_ptr);
+
+    try self.dynamic.queue(queueItem);
+    self.async_tasks += 1;
+}
+
 pub fn resumeState(state: *Luau, from: ?*Luau, args: i32) !luau.ResumeStatus {
     return state.resumeThread(from, args) catch |err| {
         Engine.logError(state, err, false);
@@ -363,21 +513,25 @@ pub fn cancelThread(self: *Self, thread: *Luau) void {
             return;
         }
     }
-    const deferred_items = self.deferred.items;
-    for (deferred_items, 0..) |item, i| {
-        if (stateFromPair(item.thread) == thread) {
-            const deferred = self.deferred.orderedRemove(i);
+    var node = self.deferred.first;
+    while (node) |dnode| {
+        const deferred = dnode.data;
+        if (stateFromPair(deferred.thread) == thread) {
             derefThread(deferred.thread);
-            return;
+            self.deferred.remove(dnode);
+            self.allocator.destroy(dnode);
+            break;
         }
+        node = dnode.next;
     }
 }
 
 pub fn run(self: *Self, comptime testing: bool) void {
     var active: usize = 0;
-    while ((self.sleeping.items.len > 0 or self.deferred.items.len > 0 or self.tasks.items.len > 0 or self.awaits.items.len > 0)) {
+    while ((self.sleeping.items.len > 0 or self.deferred.len > 0 or self.tasks.items.len > 0 or self.awaits.items.len > 0 or self.async_tasks > 0)) {
         const now = luau.clock();
-        {
+        if (self.awaits.items.len > 0) {
+            self.frame = .Awaiting;
             var i = self.awaits.items.len;
             while (i > 0) {
                 i -= 1;
@@ -393,7 +547,8 @@ pub fn run(self: *Self, comptime testing: bool) void {
                 }
             }
         }
-        {
+        if (self.tasks.items.len > 0) {
+            self.frame = .Task;
             var i = self.tasks.items.len;
             while (i > 0) {
                 i -= 1;
@@ -410,7 +565,8 @@ pub fn run(self: *Self, comptime testing: bool) void {
                 }
             }
         }
-        {
+        if (self.sleeping.items.len > 0) {
+            self.frame = .Sleeping;
             while (self.sleeping.peek()) |current| {
                 if (current.wake <= now) {
                     const slept = self.sleeping.remove();
@@ -437,12 +593,25 @@ pub fn run(self: *Self, comptime testing: bool) void {
                 } else break;
             }
         }
-        if (self.deferred.items.len > 0) {
-            var deferredArray = self.deferred.clone() catch |err|
-                std.debug.panic("Error: {}\n", .{err});
-            defer deferredArray.deinit();
-            self.deferred.clearAndFree();
-            for (deferredArray.items) |deferred| {
+        jmp: {
+            self.frame = .AsyncIO;
+            const res = self.dynamic.complete(.nonblocking) catch |err| {
+                std.debug.print("AsyncIO Error: {}\n", .{err});
+                break :jmp;
+            };
+            if (res.num_completed > 0) {
+                std.debug.print("completed async task: {}\n", .{res.num_completed});
+                active += res.num_completed;
+            }
+            if (res.num_errors > 0) {
+                std.debug.print("errors: {}\n", .{res.num_errors});
+            }
+        }
+        if (self.deferred.len > 0) {
+            self.frame = .Deferred;
+            while (self.deferred.popFirst()) |node| {
+                const deferred = node.data;
+                defer self.allocator.destroy(node);
                 const thread, _ = deferred.thread;
                 const status = thread.status();
                 defer derefThread(deferred.thread);
@@ -456,6 +625,7 @@ pub fn run(self: *Self, comptime testing: bool) void {
                 active += 1;
             }
         }
+        self.frame = .None;
         if (active >= 5000)
             active = 5000;
         if (active == 0) {
@@ -469,29 +639,17 @@ pub fn run(self: *Self, comptime testing: bool) void {
 pub fn deinit(self: *Self) void {
     KillScheduler(self, true);
     self.sleeping.deinit();
-    self.deferred.deinit();
+    {
+        while (self.deferred.pop()) |node|
+            self.allocator.destroy(node);
+    }
     self.tasks.deinit();
     self.awaits.deinit();
+    self.dynamic.deinit(self.allocator);
 }
 
 pub fn getScheduler(L: *Luau) *Self {
     const GL = L.getMainThread();
     const scheduler = GL.getThreadData(Self) catch L.raiseErrorStr("InternalError (Scheduler not found)", .{});
     return scheduler;
-}
-
-pub fn toSchedulerFn(comptime f: *const fn (state: *Luau, scheduler: *Self) i32) luau.ZigFnInt {
-    return struct {
-        fn inner(L: *Luau) i32 {
-            return @call(.always_inline, f, .{ L, getScheduler(L) });
-        }
-    }.inner;
-}
-
-pub fn toSchedulerEFn(comptime f: *const fn (state: *Luau, scheduler: *Self) anyerror!i32) luau.ZigFnErrorSet {
-    return struct {
-        fn inner(L: *Luau) anyerror!i32 {
-            return @call(.always_inline, f, .{ L, getScheduler(L) });
-        }
-    }.inner;
 }

@@ -80,7 +80,17 @@ const ResetMap = std.StaticStringMap(u6).initComptime(.{
     .{ "color", 39 },
 });
 
-const CursorActionMap = std.StaticStringMap(CursorMoveKind).initComptime(.{ .{ "home", .Home }, .{ "goto", .Goto }, .{ "up", .Up }, .{ "down", .Down }, .{ "right", .Right }, .{ "left", .Left }, .{ "nextline", .Nextline }, .{ "prevline", .PreviousLine }, .{ "gotocol", .GotoColumn } });
+const CursorActionMap = std.StaticStringMap(CursorMoveKind).initComptime(.{
+    .{ "home", .Home },
+    .{ "goto", .Goto },
+    .{ "up", .Up },
+    .{ "down", .Down },
+    .{ "right", .Right },
+    .{ "left", .Left },
+    .{ "nextline", .Nextline },
+    .{ "prevline", .PreviousLine },
+    .{ "gotocol", .GotoColumn },
+});
 
 const EraseActionMap = std.StaticStringMap(EraseKind).initComptime(.{
     .{ "endOf", .UntilEndOf },
@@ -239,7 +249,9 @@ const LuaStdIn = struct {
         return 0;
     }
 
-    pub fn __namecall(L: *Luau, scheduler: *Scheduler) !i32 {
+    pub fn __namecall(L: *Luau) !i32 {
+        const scheduler = Scheduler.getScheduler(L);
+
         L.checkType(1, .userdata);
         var file_ptr = L.toUserdata(std.fs.File, 1) catch unreachable;
         const namecall = L.nameCallAtom() catch return 0;
@@ -384,7 +396,7 @@ pub fn loadLib(L: *Luau) void {
         L.newMetatable(LuaStdIn.META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
 
         L.setFieldFn(-1, luau.Metamethods.index, LuaStdIn.__index); // metatable.__index
-        L.setFieldFn(-1, luau.Metamethods.namecall, Scheduler.toSchedulerEFn(LuaStdIn.__namecall)); // metatable.__namecall
+        L.setFieldFn(-1, luau.Metamethods.namecall, LuaStdIn.__namecall); // metatable.__namecall
 
         L.setFieldString(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.pop(1);
