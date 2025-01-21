@@ -10,7 +10,7 @@ const WebSocket = @import("http/websocket.zig");
 
 const zune_info = @import("zune-info");
 
-const Luau = luau.Luau;
+const VM = luau.VM;
 
 const context = Common.context;
 const prepRefType = Common.prepRefType;
@@ -31,7 +31,7 @@ success: bool = false,
 fds: []context.spollfd,
 err: ?anyerror,
 
-pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult {
+pub fn update(ctx: *Self, L: *VM.lua.State, scheduler: *Scheduler) Scheduler.TaskResult {
     _ = scheduler;
     _ = L;
     var req = ctx.req;
@@ -40,7 +40,7 @@ pub fn update(ctx: *Self, L: *Luau, scheduler: *Scheduler) Scheduler.TaskResult 
 
     const nums = context.spoll(fds, 1) catch std.debug.panic("Bad poll (1)", .{});
     if (nums == 0) {
-        if (ctx.start < luau.clock()) {
+        if (ctx.start < VM.lperf.clock()) {
             ctx.err = error.TimedOut;
             ctx.success = false;
             return .Stop;
@@ -221,9 +221,9 @@ fn redirect(req: *std.http.Client.Request, uri: std.Uri) !void {
     };
 }
 
-pub fn dtor(ctx: *Self, L: *Luau, scheduler: *Scheduler) void {
+pub fn dtor(ctx: *Self, L: *VM.lua.State, scheduler: *Scheduler) void {
     _ = scheduler;
-    const allocator = L.allocator();
+    const allocator = luau.getallocator(L);
 
     var req = ctx.req.*;
     const options = ctx.options.*;
@@ -246,14 +246,14 @@ pub fn dtor(ctx: *Self, L: *Luau, scheduler: *Scheduler) void {
         const max_append_size = options.max_append_size orelse 2 * 1024 * 1024;
         req.reader().readAllArrayList(&responseBody, max_append_size) catch |err| {
             std.debug.print("Error reading response0: {}\n", .{err});
-            L.pushString(@errorName(err));
+            L.pushstring(@errorName(err));
             _ = Scheduler.resumeStateError(L, null) catch {};
             return;
         };
 
         if (options.server_header_buffer == null) {
             std.debug.print("Server header buffer is null\n", .{});
-            L.pushString("InternalError (Header Buffer is null)");
+            L.pushstring("InternalError (Header Buffer is null)");
             _ = Scheduler.resumeStateError(L, null) catch {};
             return;
         }
@@ -268,7 +268,7 @@ pub fn dtor(ctx: *Self, L: *Luau, scheduler: *Scheduler) void {
         var response = Response.init(allocator, bufferStream.reader().any(), .{
             .ignoreBody = true,
         }) catch |err| {
-            L.pushString(@errorName(err));
+            L.pushstring(@errorName(err));
             _ = Scheduler.resumeStateError(L, null) catch {};
             return;
         };
@@ -276,7 +276,7 @@ pub fn dtor(ctx: *Self, L: *Luau, scheduler: *Scheduler) void {
 
         response.pushToStack(L, responseBody.items) catch |err| {
             std.debug.print("Error reading response: {}\n", .{err});
-            L.pushString(@errorName(err));
+            L.pushstring(@errorName(err));
             _ = Scheduler.resumeStateError(L, null) catch {};
             return;
         };
@@ -285,9 +285,9 @@ pub fn dtor(ctx: *Self, L: *Luau, scheduler: *Scheduler) void {
     } else {
         // continue lua with error
         if (ctx.err) |err|
-            L.pushString(@errorName(err))
+            L.pushstring(@errorName(err))
         else
-            L.pushString("Error");
+            L.pushstring("Error");
         _ = Scheduler.resumeStateError(L, null) catch {};
     }
 }
@@ -335,7 +335,7 @@ pub fn validateUri(uri: std.Uri, arena: std.mem.Allocator) !struct { std.http.Cl
     return .{ protocol, valid_uri };
 }
 
-pub fn prep(allocator: std.mem.Allocator, L: *Luau, scheduler: *Scheduler, options: std.http.Client.FetchOptions) !void {
+pub fn prep(allocator: std.mem.Allocator, L: *VM.lua.State, scheduler: *Scheduler, options: std.http.Client.FetchOptions) !void {
     const client = std.http.Client{
         .allocator = allocator,
     };
@@ -394,7 +394,7 @@ pub fn prep(allocator: std.mem.Allocator, L: *Luau, scheduler: *Scheduler, optio
     fds[0].events = context.POLLIN;
 
     netClientPtr.* = .{
-        .start = luau.clock() + 30,
+        .start = VM.lperf.clock() + 30,
         .fds = fds,
         .client = clientPtr,
         .req = requestPtr,
@@ -405,10 +405,10 @@ pub fn prep(allocator: std.mem.Allocator, L: *Luau, scheduler: *Scheduler, optio
     scheduler.addTask(Self, netClientPtr, L, update, dtor);
 }
 
-pub fn lua_request(L: *Luau) !i32 {
+pub fn lua_request(L: *VM.lua.State) !i32 {
     const scheduler = Scheduler.getScheduler(L);
-    const uriString = L.checkString(1);
-    const allocator = L.allocator();
+    const uriString = L.Lcheckstring(1);
+    const allocator = luau.getallocator(L);
 
     var method: std.http.Method = .GET;
     var payload: ?[]const u8 = null;
@@ -419,54 +419,54 @@ pub fn lua_request(L: *Luau) !i32 {
     defer headers.deinit();
 
     const optionsType = L.typeOf(2);
-    if (optionsType != .nil and optionsType != .none) {
-        L.checkType(2, .table);
-        if (L.getField(2, "method") != .string)
-            return L.Error("Expected field 'method' to be a string");
-        const methodStr = L.checkString(-1);
+    if (!optionsType.isnoneornil()) {
+        L.Lchecktype(2, .Table);
+        if (L.getfield(2, "method") != .String)
+            return L.Zerror("Expected field 'method' to be a string");
+        const methodStr = L.Lcheckstring(-1);
         L.pop(1);
-        const headersType = L.getField(2, "headers");
-        if (!luau.isNoneOrNil(headersType)) {
-            if (headersType != .table)
-                return L.Error("Expected field 'headers' to be a table");
+        const headersType = L.getfield(2, "headers");
+        if (!headersType.isnoneornil()) {
+            if (headersType != .Table)
+                return L.Zerror("Expected field 'headers' to be a table");
             Common.read_headers(L, &headers, -1) catch |err| switch (err) {
                 error.InvalidKeyType => {
                     L.pop(1);
-                    return L.Error("Header key must be a string");
+                    return L.Zerror("Header key must be a string");
                 },
                 error.InvalidValueType => {
                     L.pop(1);
-                    return L.Error("Header value must be a string");
+                    return L.Zerror("Header value must be a string");
                 },
-                else => return L.Error("UnknownError"),
+                else => return L.Zerror("UnknownError"),
             };
         }
-        const allowRedirectsType = L.getField(2, "allowRedirects");
-        if (!luau.isNoneOrNil(allowRedirectsType)) {
-            if (allowRedirectsType != .boolean)
-                return L.Error("Expected field 'allowRedirects' to be a boolean");
-            if (!L.toBoolean(-1))
+        const allowRedirectsType = L.getfield(2, "allowRedirects");
+        if (!allowRedirectsType.isnoneornil()) {
+            if (allowRedirectsType != .Boolean)
+                return L.Zerror("Expected field 'allowRedirects' to be a boolean");
+            if (!L.toboolean(-1))
                 redirectBehavior = .not_allowed;
         }
-        const maxBodySizeType = L.getField(2, "maxBodySize");
-        if (!luau.isNoneOrNil(maxBodySizeType)) {
-            if (maxBodySizeType != .number)
-                return L.Error("Expected field 'maxBodySize' to be a number");
-            maxBodySize = @intCast(L.toInteger(-1) catch unreachable);
+        const maxBodySizeType = L.getfield(2, "maxBodySize");
+        if (!maxBodySizeType.isnoneornil()) {
+            if (maxBodySizeType != .Number)
+                return L.Zerror("Expected field 'maxBodySize' to be a number");
+            maxBodySize = @intCast(L.tointeger(-1) orelse unreachable);
         }
         L.pop(1);
         if (std.mem.eql(u8, methodStr, "POST")) {
             method = .POST;
-            if (L.getField(2, "body") != .string)
-                return L.Error("Expected field 'body' to be a string");
-            payload = L.checkString(-1);
+            if (L.getfield(2, "body") != .String)
+                return L.Zerror("Expected field 'body' to be a string");
+            payload = L.Lcheckstring(-1);
             L.pop(1);
         }
     }
 
     const uri = std.Uri.parse(uriString) catch |err| {
-        L.pushString(@errorName(err));
-        L.raiseError();
+        L.pushstring(@errorName(err));
+        L.raiseerror();
         return 1;
     };
 
@@ -485,8 +485,8 @@ pub fn lua_request(L: *Luau) !i32 {
         .payload = payload,
         .method = method,
     }) catch |err| {
-        L.pushString(@errorName(err));
-        L.raiseError();
+        L.pushstring(@errorName(err));
+        L.raiseerror();
         return 1;
     };
 

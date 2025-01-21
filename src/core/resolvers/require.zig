@@ -4,12 +4,15 @@ const luau = @import("luau");
 const Zune = @import("../../zune.zig");
 const Engine = @import("../runtime/engine.zig");
 const Scheduler = @import("../runtime/scheduler.zig");
+const Debugger = @import("../runtime/debugger.zig");
 
 const file = @import("file.zig");
 
-const Luau = luau.Luau;
+const VM = luau.VM;
 
 pub var MODE: RequireMode = .RelativeToFile;
+
+pub var RUN_MODE: Zune.RunMode = .Run;
 
 const RequireMode = enum {
     RelativeToFile,
@@ -47,39 +50,39 @@ const QueueItem = struct {
 var REQUIRE_QUEUE_MAP = std.StringArrayHashMap(std.ArrayList(QueueItem)).init(Zune.DEFAULT_ALLOCATOR);
 
 const RequireContext = struct {
-    caller: *Luau,
+    caller: *VM.lua.State,
     path: [:0]const u8,
 };
-fn require_finished(ctx: *RequireContext, ML: *Luau, _: *Scheduler) void {
+fn require_finished(ctx: *RequireContext, ML: *VM.lua.State, _: *Scheduler) void {
     var outErr: ?[]const u8 = null;
 
     const queue = REQUIRE_QUEUE_MAP.getEntry(ctx.path) orelse std.debug.panic("require_finished: queue not found", .{});
 
-    if (ML.status() == .ok) jmp: {
-        const t = ML.getTop();
+    if (ML.status() == .Ok) jmp: {
+        const t = ML.gettop();
         if (t > 1 or t < 0) {
             outErr = "module must return one value";
             break :jmp;
         } else if (t == 0)
-            ML.pushNil();
+            ML.pushnil();
     } else outErr = "requested module failed to load";
 
-    _ = ctx.caller.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
+    _ = ctx.caller.Lfindtable(VM.lua.REGISTRYINDEX, "_MODULES", 1);
     if (outErr != null)
-        ctx.caller.pushLightUserdata(@ptrCast(&ErrorState))
+        ctx.caller.pushlightuserdata(@ptrCast(&ErrorState))
     else
-        ML.xPush(ctx.caller, -1);
-    ctx.caller.setField(-2, ctx.path); // SET: _MODULES[moduleName] = module
+        ML.xpush(ctx.caller, -1);
+    ctx.caller.setfield(-2, ctx.path); // SET: _MODULES[moduleName] = module
 
     ctx.caller.pop(1); // drop: _MODULES
 
     for (queue.value_ptr.*.items) |item| {
         const L, _ = item.state;
         if (outErr) |msg| {
-            L.pushLString(msg);
+            L.pushlstring(msg);
             _ = Scheduler.resumeStateError(L, null) catch {};
         } else {
-            ML.xPush(L, -1);
+            ML.xpush(L, -1);
             _ = Scheduler.resumeState(L, null, 1) catch {};
         }
     }
@@ -87,8 +90,8 @@ fn require_finished(ctx: *RequireContext, ML: *Luau, _: *Scheduler) void {
     ML.pop(1);
 }
 
-fn require_dtor(ctx: *RequireContext, _: *Luau, _: *Scheduler) void {
-    const allocator = ctx.caller.allocator();
+fn require_dtor(ctx: *RequireContext, _: *VM.lua.State, _: *Scheduler) void {
+    const allocator = luau.getallocator(ctx.caller);
     defer allocator.free(ctx.path);
 
     const queue = REQUIRE_QUEUE_MAP.getEntry(ctx.path) orelse return;
@@ -99,18 +102,18 @@ fn require_dtor(ctx: *RequireContext, _: *Luau, _: *Scheduler) void {
     allocator.free(queue.key_ptr.*);
 }
 
-pub fn zune_require(L: *Luau) !i32 {
-    const allocator = L.allocator();
+pub fn zune_require(L: *VM.lua.State) !i32 {
+    const allocator = luau.getallocator(L);
     const scheduler = Scheduler.getScheduler(L);
 
-    const moduleName = L.checkString(1);
-    _ = L.findTable(luau.REGISTRYINDEX, "_MODULES", 1);
+    const moduleName = L.Lcheckstring(1);
+    _ = L.Lfindtable(VM.lua.REGISTRYINDEX, "_MODULES", 1);
     var outErr: ?[]const u8 = null;
     var moduleAbsolutePath: [:0]const u8 = undefined;
     var searchResult: ?file.SearchResult([:0]const u8) = null;
     defer if (searchResult) |r| r.deinit();
     if (moduleName.len == 0)
-        return L.Error("must have either \"@\", \"./\", or \"../\" prefix");
+        return L.Zerror("must have either \"@\", \"./\", or \"../\" prefix");
 
     const absPath = try std.fs.cwd().realpathAlloc(allocator, ".");
     defer allocator.free(absPath);
@@ -128,15 +131,15 @@ pub fn zune_require(L: *Luau) !i32 {
         searchResult = try Engine.findLuauFileFromPathZ(allocator, absPath, modulePath);
     } else {
         if ((moduleName.len < 2 or !std.mem.eql(u8, moduleName[0..2], "./")) and (moduleName.len < 3 or !std.mem.eql(u8, moduleName[0..3], "../")))
-            return L.Error("must have either \"@\", \"./\", or \"../\" prefix");
-        if (L.getField(Luau.upvalueIndex(1), "_FILE") != .table)
-            return L.Error("InternalError (_FILE is invalid)");
-        if (L.getField(-1, "path") != .string)
-            return L.Error("InternalError (_FILE.path is not a string)");
-        const moduleFilePath = L.toString(-1) catch unreachable;
+            return L.Zerror("must have either \"@\", \"./\", or \"../\" prefix");
+        if (L.getfield(VM.lua.upvalueindex(1), "_FILE") != .Table)
+            return L.Zerror("InternalError (_FILE is invalid)");
+        if (L.getfield(-1, "path") != .String)
+            return L.Zerror("InternalError (_FILE.path is not a string)");
+        const moduleFilePath = L.tostring(-1) orelse unreachable;
         L.pop(2); // drop: path, _FILE
         if (!std.fs.path.isAbsolute(moduleFilePath))
-            return L.Error("InternalError (_FILE.path is not absolute)");
+            return L.Zerror("InternalError (_FILE.path is not absolute)");
 
         switch (MODE) {
             .RelativeToFile => {
@@ -161,7 +164,7 @@ pub fn zune_require(L: *Luau) !i32 {
                     try buf.appendSlice("\n- ");
                     try buf.appendSlice(relative);
                 }
-                L.pushLString(buf.items);
+                L.pushlstring(buf.items);
                 return error.RaiseLuauError;
             }
             moduleAbsolutePath = results[0];
@@ -170,10 +173,10 @@ pub fn zune_require(L: *Luau) !i32 {
     }
 
     jmp: {
-        const moduleType = L.getField(-1, moduleAbsolutePath);
-        if (moduleType != .nil) {
-            if (moduleType == .light_userdata) {
-                const ptr = L.toPointer(-1) catch unreachable;
+        const moduleType = L.getfield(-1, moduleAbsolutePath);
+        if (moduleType != .Nil) {
+            if (moduleType == .LightUserdata) {
+                const ptr = L.topointer(-1) orelse unreachable;
                 if (ptr == @as(*const anyopaque, @ptrCast(&ErrorState))) {
                     L.pop(1);
                     outErr = "requested module failed to load";
@@ -221,15 +224,15 @@ pub fn zune_require(L: *Luau) !i32 {
         };
         defer allocator.free(fileContent);
 
-        const GL = L.getMainThread();
-        const ML = GL.newThread();
-        GL.xMove(L, 1);
+        const GL = L.mainthread();
+        const ML = GL.newthread();
+        GL.xmove(L, 1);
 
-        ML.sandboxThread();
+        ML.Lsandboxthread();
 
         load_require(ML);
 
-        ML.setSafeEnv(luau.GLOBALSINDEX, true);
+        ML.setsafeenv(VM.lua.GLOBALSINDEX, true);
 
         const moduleRelativeName = try std.fs.path.relative(allocator, cwdDirPath, moduleAbsolutePath);
         defer allocator.free(moduleRelativeName);
@@ -240,38 +243,46 @@ pub fn zune_require(L: *Luau) !i32 {
             .source = fileContent,
         });
 
-        const moduleRelativeNameZ = try allocator.dupeZ(u8, moduleRelativeName);
-        defer allocator.free(moduleRelativeNameZ);
+        const sourceNameZ = try std.mem.joinZ(allocator, "", &.{ "@", moduleAbsolutePath });
+        defer allocator.free(sourceNameZ);
 
-        Engine.loadModule(ML, moduleRelativeNameZ, fileContent, null) catch |err| switch (err) {
+        Engine.loadModule(ML, sourceNameZ, fileContent, null) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             error.Syntax => {
                 L.pop(1); // drop: thread
-                outErr = ML.toString(-1) catch "UnknownError";
+                outErr = ML.tostring(-1) orelse "UnknownError";
                 break :jmp;
             },
         };
 
-        L.pushLightUserdata(@ptrCast(&PreloadedState));
-        L.setField(-3, moduleAbsolutePath);
+        switch (RUN_MODE) {
+            .Debug => {
+                const ref = ML.ref(-1) orelse unreachable;
+                try Debugger.addReference(allocator, ML, moduleAbsolutePath, ref);
+            },
+            else => {},
+        }
 
-        const resumeStatus: ?luau.ResumeStatus = Scheduler.resumeState(ML, L, 0) catch {
+        L.pushlightuserdata(@ptrCast(&PreloadedState));
+        L.setfield(-3, moduleAbsolutePath);
+
+        const resumeStatus: ?VM.lua.Status = Scheduler.resumeState(ML, L, 0) catch {
             L.pop(1); // drop: thread
             outErr = "requested module failed to load";
             break :jmp;
         };
         if (resumeStatus) |status| {
-            if (status == .ok) {
-                const t = ML.getTop();
+            if (status == .Ok) {
+                const t = ML.gettop();
                 if (t > 1 or t < 0) {
                     L.pop(1); // drop: thread
                     outErr = "module must return one value";
                     break :jmp;
                 } else if (t == 0)
-                    ML.pushNil();
-            } else if (status == .yield) {
-                L.pushLightUserdata(@ptrCast(&WaitingState));
-                L.setField(-3, moduleAbsolutePath);
+                    ML.pushnil();
+            } else if (status == .Yield) {
+                L.pushlightuserdata(@ptrCast(&WaitingState));
+                L.setfield(-3, moduleAbsolutePath);
 
                 {
                     const path = try allocator.dupeZ(u8, moduleAbsolutePath);
@@ -294,28 +305,28 @@ pub fn zune_require(L: *Luau) !i32 {
             }
         }
 
-        ML.xMove(L, 1);
-        L.pushValue(-1);
-        L.setField(-4, moduleAbsolutePath); // SET: _MODULES[moduleName] = module
+        ML.xmove(L, 1);
+        L.pushvalue(-1);
+        L.setfield(-4, moduleAbsolutePath); // SET: _MODULES[moduleName] = module
     }
 
     if (outErr != null) {
-        L.pushLightUserdata(@ptrCast(&ErrorState));
-        L.setField(-2, moduleAbsolutePath);
+        L.pushlightuserdata(@ptrCast(&ErrorState));
+        L.setfield(-2, moduleAbsolutePath);
     }
 
     if (outErr) |err| {
-        L.pushLString(err);
+        L.pushlstring(err);
         return error.RaiseLuauError;
     }
 
     return 1;
 }
 
-pub fn load_require(L: *Luau) void {
-    L.pushValue(luau.GLOBALSINDEX);
-    L.pushClosure(luau.toCFn(zune_require), "require", 1);
-    L.setGlobal("require");
+pub fn load_require(L: *VM.lua.State) void {
+    L.pushvalue(VM.lua.GLOBALSINDEX);
+    L.pushcclosure(VM.zapi.toCFn(zune_require), "require", 1);
+    L.setglobal("require");
 }
 
 test "Require" {

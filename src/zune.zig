@@ -16,11 +16,16 @@ pub const resolvers_require = @import("core/resolvers/require.zig");
 const resolvers_file = @import("core/resolvers/file.zig");
 const resolvers_fmt = @import("core/resolvers/fmt.zig");
 
+pub const Debugger = @import("core/runtime/debugger.zig");
+
 const zune_info = @import("zune-info");
+
+const VM = luau.VM;
 
 pub const RunMode = enum {
     Run,
     Test,
+    Debug,
 };
 
 pub const Flags = struct {
@@ -29,7 +34,7 @@ pub const Flags = struct {
 
 pub var CONFIGURATIONS = .{.format_max_depth};
 
-const VERSION = "Zune " ++ zune_info.version ++ "+" ++ std.fmt.comptimePrint("{d}.{d}", .{ luau.LUAU_VERSION.major, luau.LUAU_VERSION.minor });
+pub const VERSION = "Zune " ++ zune_info.version ++ "+" ++ std.fmt.comptimePrint("{d}.{d}", .{ luau.LUAU_VERSION.major, luau.LUAU_VERSION.minor });
 
 var EXPERIMENTAL_FFI = false;
 var EXPERIMENTAL_SQLITE = false;
@@ -163,37 +168,37 @@ pub fn loadLuaurc(allocator: std.mem.Allocator, dir: std.fs.Dir) anyerror!void {
     }
 }
 
-pub fn openZune(L: *luau.Luau, args: []const []const u8, flags: Flags) !void {
-    L.openLibs();
+pub fn openZune(L: *VM.lua.State, args: []const []const u8, flags: Flags) !void {
+    L.Lopenlibs();
 
     objects.load(L);
 
-    L.newTable();
-    L.newTable();
-    L.setFieldFn(-1, luau.Metamethods.index, struct {
-        fn inner(l: *luau.Luau) !i32 {
-            _ = l.findTable(luau.REGISTRYINDEX, "_LIBS", 1);
-            l.pushValue(2);
-            _ = l.getTable(-2);
+    L.newtable();
+    L.newtable();
+    L.Zsetfieldc(-1, luau.Metamethods.index, struct {
+        fn inner(l: *VM.lua.State) !i32 {
+            _ = l.Lfindtable(VM.lua.REGISTRYINDEX, "_LIBS", 1);
+            l.pushvalue(2);
+            _ = l.gettable(-2);
             return 1;
         }
     }.inner);
-    L.setFieldString(-1, luau.Metamethods.metatable, "This metatable is locked");
-    L.setMetatable(-2);
-    L.setReadOnly(-1, true);
-    L.setGlobal("zune");
+    L.Zsetfieldc(-1, luau.Metamethods.metatable, "This metatable is locked");
+    _ = L.setmetatable(-2);
+    L.setreadonly(-1, true);
+    L.setglobal("zune");
 
-    L.pushFunction(resolvers_fmt.fmt_print, "zcore_fmt_print");
-    L.setGlobal("print");
-    L.pushFunction(struct {
-        fn inner(l: *luau.Luau) !i32 {
+    L.Zpushfunction(resolvers_fmt.fmt_print, "zcore_fmt_print");
+    L.setglobal("print");
+    L.Zpushfunction(struct {
+        fn inner(l: *VM.lua.State) !i32 {
             std.debug.print("\x1b[2m[\x1b[0;33mWARN\x1b[0;2m]\x1b[0m ", .{});
             return try resolvers_fmt.fmt_print(l);
         }
     }.inner, "zcore_fmt_warn");
-    L.setGlobal("warn");
+    L.setglobal("warn");
 
-    L.setGlobalLString("_VERSION", VERSION);
+    L.Zsetglobal("_VERSION", VERSION);
 
     corelib.fs.loadLib(L);
     corelib.task.loadLib(L);

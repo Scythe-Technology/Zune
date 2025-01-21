@@ -6,19 +6,19 @@ const Zune = @import("../../zune.zig");
 const Engine = @import("../runtime/engine.zig");
 const Scheduler = @import("../runtime/scheduler.zig");
 
-const Formatter = @import("../resolvers/fmt.zig");
+const formatter = @import("../resolvers/fmt.zig");
 
 const luaHelper = @import("../utils/luahelper.zig");
 
 const test_lib_gz = @embedFile("../lua/testing_lib.luac.gz");
 const test_lib_size = @embedFile("../lua/testing_lib.luac").len;
 
-const Luau = luau.Luau;
+const VM = luau.VM;
 
 pub const LIB_NAME = "testing";
 
-fn testing_debug(L: *Luau) i32 {
-    const str = L.checkString(1);
+fn testing_debug(L: *VM.lua.State) i32 {
+    const str = L.Lcheckstring(1);
     std.debug.print("{s}\n", .{str});
     return 0;
 }
@@ -36,35 +36,35 @@ fn freeRefTrace(allocator: std.mem.Allocator, index: usize) void {
     }
 }
 
-fn stepCheckLeakedReferences(L: *Luau) void {
-    const allocator = L.allocator();
+fn stepCheckLeakedReferences(L: *VM.lua.State) void {
+    const allocator = luau.getallocator(L);
 
-    L.pushValue(luau.REGISTRYINDEX);
+    L.pushvalue(VM.lua.REGISTRYINDEX);
 
-    const references: usize = @intCast(L.objLen(-1));
+    const references: usize = @intCast(L.objlen(-1));
 
     for (1..references) |index| {
         const store_index = index - 1;
         defer L.pop(1);
-        if (L.rawGetIndex(-1, @intCast(index)) == .number) {
+        if (L.rawgeti(-1, @intCast(index)) == .Number) {
             freeRefTrace(allocator, store_index);
             continue;
         }
     }
 }
 
-fn testing_checkLeakedReferences(L: *Luau) !i32 {
-    const scope = L.checkString(1);
-    const allocator = L.allocator();
+fn testing_checkLeakedReferences(L: *VM.lua.State) !i32 {
+    const scope = L.Lcheckstring(1);
+    const allocator = luau.getallocator(L);
 
-    L.pushValue(luau.REGISTRYINDEX);
+    L.pushvalue(VM.lua.REGISTRYINDEX);
 
-    const references: usize = @intCast(L.objLen(-1));
+    const references: usize = @intCast(L.objlen(-1));
 
     for (1..references) |index| {
         const store_index = index - 1;
         defer L.pop(1);
-        if (L.rawGetIndex(-1, @intCast(index)) == .number) {
+        if (L.rawgeti(-1, @intCast(index)) == .Number) {
             freeRefTrace(allocator, store_index);
             continue;
         }
@@ -75,14 +75,14 @@ fn testing_checkLeakedReferences(L: *Luau) !i32 {
         const scope_copy = try allocator.dupe(u8, scope);
 
         var buf = std.ArrayList(u8).init(allocator);
-        try Formatter.fmt_write_idx(allocator, L, buf.writer(), -1);
+        try formatter.fmt_write_idx(allocator, L, buf.writer(), -1, formatter.MAX_DEPTH);
 
         try REF_LEAKED_SOURCE.put(store_index, .{ .scope = scope_copy, .value = try buf.toOwnedSlice() });
     }
     return 0;
 }
 
-fn testing_droptasks(L: *Luau) i32 {
+fn testing_droptasks(L: *VM.lua.State) i32 {
     const scheduler = Scheduler.getScheduler(L);
 
     var awaitsSize = scheduler.awaits.items.len;
@@ -118,12 +118,12 @@ fn testing_droptasks(L: *Luau) i32 {
     return 0;
 }
 
-fn testing_declareSafeEnv(L: *Luau) i32 {
-    L.setSafeEnv(luau.GLOBALSINDEX, true);
+fn testing_declareSafeEnv(L: *VM.lua.State) i32 {
+    L.setsafeenv(VM.lua.GLOBALSINDEX, true);
     return 0;
 }
 
-fn empty(L: *Luau) i32 {
+fn empty(L: *VM.lua.State) i32 {
     _ = L;
     return 0;
 }
@@ -133,34 +133,34 @@ pub const TestResult = struct {
     total: i32,
 };
 
-pub fn finish_testing(L: *Luau, rawstart: f64) TestResult {
-    const allocator = L.allocator();
-    const end = luau.clock();
+pub fn finish_testing(L: *VM.lua.State, rawstart: f64) TestResult {
+    const allocator = luau.getallocator(L);
+    const end = VM.lperf.clock();
 
-    _ = L.findTable(luau.REGISTRYINDEX, "_LIBS", 1);
-    if (L.getField(-1, LIB_NAME) != .table)
+    _ = L.Lfindtable(VM.lua.REGISTRYINDEX, "_LIBS", 1);
+    if (L.getfield(-1, LIB_NAME) != .Table)
         std.debug.panic("No test framework loaded", .{});
 
-    const stdOut = if (L.getField(luau.GLOBALSINDEX, "_testing_stdOut") == .boolean)
-        L.toBoolean(-1)
+    const stdOut = if (L.getfield(VM.lua.GLOBALSINDEX, "_testing_stdOut") == .Boolean)
+        L.toboolean(-1)
     else
         true;
     L.pop(1);
 
-    const start = if (L.getField(-1, "_start") == .number)
-        L.toNumber(-1) catch rawstart
+    const start = if (L.getfield(-1, "_start") == .Number)
+        L.tonumber(-1) orelse rawstart
     else
         rawstart;
     L.pop(1);
 
     const time = end - start;
-    const mainTestCount = if (L.getField(-1, "_count") == .number)
-        L.toInteger(-1) catch unreachable
+    const mainTestCount = if (L.getfield(-1, "_count") == .Number)
+        L.tointeger(-1) orelse unreachable
     else
         0;
     L.pop(1);
-    const mainFailedCount = if (L.getField(-1, "_failed") == .number)
-        L.toInteger(-1) catch unreachable
+    const mainFailedCount = if (L.getfield(-1, "_failed") == .Number)
+        L.tointeger(-1) orelse unreachable
     else
         0;
     L.pop(1);
@@ -203,33 +203,33 @@ pub fn finish_testing(L: *Luau, rawstart: f64) TestResult {
     };
 }
 
-pub fn runTestAsync(L: *Luau, sched: *Scheduler) !TestResult {
-    const start = luau.clock();
+pub fn runTestAsync(L: *VM.lua.State, sched: *Scheduler) !TestResult {
+    const start = VM.lperf.clock();
 
     try Engine.runAsync(L, sched, .{
         .cleanUp = true,
-        .testing = true,
+        .mode = .Test,
     });
 
     return finish_testing(L, start);
 }
 
-pub fn loadLib(L: *Luau, enabled: bool) void {
-    const allocator = L.allocator();
+pub fn loadLib(L: *VM.lua.State, enabled: bool) void {
+    const allocator = luau.getallocator(L);
     if (enabled) {
-        const GL = L.getMainThread();
-        const ML = GL.newThread();
-        GL.xMove(L, 1);
-        ML.sandboxThread();
+        const GL = L.mainthread();
+        const ML = GL.newthread();
+        GL.xmove(L, 1);
+        ML.Lsandboxthread();
 
-        if (L.getField(luau.GLOBALSINDEX, "_testing_stdOut") == .boolean and !L.toBoolean(-1)) {
-            ML.setFieldFn(luau.GLOBALSINDEX, "print", empty);
-        } else ML.setFieldFn(luau.GLOBALSINDEX, "print", testing_debug);
+        if (L.getfield(VM.lua.GLOBALSINDEX, "_testing_stdOut") == .Boolean and !L.toboolean(-1)) {
+            ML.Zsetfieldc(VM.lua.GLOBALSINDEX, "print", empty);
+        } else ML.Zsetfieldc(VM.lua.GLOBALSINDEX, "print", testing_debug);
         L.pop(1);
-        ML.setFieldFn(luau.GLOBALSINDEX, "declare_safeEnv", testing_declareSafeEnv);
-        ML.setFieldFn(luau.GLOBALSINDEX, "stepcheck_references", testing_checkLeakedReferences);
-        ML.setFieldFn(luau.GLOBALSINDEX, "scheduler_droptasks", testing_droptasks);
-        ML.setFieldBoolean(luau.GLOBALSINDEX, "_FILE", false);
+        ML.Zsetfieldc(VM.lua.GLOBALSINDEX, "declare_safeEnv", testing_declareSafeEnv);
+        ML.Zsetfieldc(VM.lua.GLOBALSINDEX, "stepcheck_references", testing_checkLeakedReferences);
+        ML.Zsetfieldc(VM.lua.GLOBALSINDEX, "scheduler_droptasks", testing_droptasks);
+        ML.Zsetfieldc(VM.lua.GLOBALSINDEX, "_FILE", false);
 
         const bytecode_buf = allocator.alloc(u8, test_lib_size) catch |err| std.debug.panic("Unable to allocate space for testing framework: {}", .{err});
         defer allocator.free(bytecode_buf);
@@ -238,23 +238,23 @@ pub fn loadLib(L: *Luau, enabled: bool) void {
 
         std.compress.gzip.decompress(bytecode_gz_buf_stream.reader(), bytecode_buf_stream.writer()) catch |err| std.debug.panic("Failed to decompress testing framework: {}", .{err});
 
-        ML.loadBytecode("test_framework", bytecode_buf) catch |err|
+        ML.load("test_framework", bytecode_buf, 0) catch |err|
             std.debug.panic("Error loading test framework: {}\n", .{err});
-        ML.pcall(0, 1, 0) catch |err| {
+        _ = ML.pcall(0, 1, 0).check() catch |err| {
             std.debug.print("Error loading test framework (2): {}\n", .{err});
             Engine.logError(ML, err, false);
             std.debug.panic("Test Framework (2)\n", .{});
         };
-        ML.xMove(L, 1);
+        ML.xmove(L, 1);
 
         L.remove(-2);
     } else {
-        L.newTable();
-        L.setFieldBoolean(-1, "running", false);
-        L.setFieldFn(-1, "describe", empty);
-        L.setFieldFn(-1, "test", empty);
-        L.setFieldFn(-1, "expect", empty);
-        L.setReadOnly(-1, true);
+        L.newtable();
+        L.Zsetfieldc(-1, "running", false);
+        L.Zsetfieldc(-1, "describe", empty);
+        L.Zsetfieldc(-1, "test", empty);
+        L.Zsetfieldc(-1, "expect", empty);
+        L.setreadonly(-1, true);
     }
 
     luaHelper.registerModule(L, LIB_NAME);

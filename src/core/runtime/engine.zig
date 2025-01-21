@@ -6,7 +6,7 @@ const file = @import("../resolvers/file.zig");
 const require = @import("../resolvers/require.zig");
 const Scheduler = @import("../runtime/scheduler.zig");
 
-const Luau = luau.Luau;
+const VM = luau.VM;
 
 pub var DEBUG_LEVEL: u2 = 2;
 pub var OPTIMIZATION_LEVEL: u2 = 1;
@@ -38,11 +38,11 @@ pub fn compileModule(allocator: std.mem.Allocator, content: []const u8, cOpts: ?
 
     const hasNativeFunction = parseResult.hasNativeFunction();
 
-    return .{ hasNativeFunction, try luau.Compiler.compileParseResult(allocator, parseResult, astNameTable, compileOptions) };
+    return .{ hasNativeFunction, try luau.Compiler.Compiler.compileParseResult(allocator, parseResult, astNameTable, compileOptions) };
 }
 
-pub fn loadModule(L: *Luau, name: [:0]const u8, content: []const u8, cOpts: ?luau.CompileOptions) !void {
-    const allocator = L.allocator();
+pub fn loadModule(L: *VM.lua.State, name: [:0]const u8, content: []const u8, cOpts: ?luau.CompileOptions) !void {
+    const allocator = luau.getallocator(L);
     var script = content;
     if (content.len >= 2 and content[0] == '#' and content[1] == '!') {
         const pos = std.mem.indexOf(u8, content, "\n") orelse content.len;
@@ -53,8 +53,8 @@ pub fn loadModule(L: *Luau, name: [:0]const u8, content: []const u8, cOpts: ?lua
     return try loadModuleBytecode(L, name, bytecode, native);
 }
 
-pub fn loadModuleBytecode(L: *Luau, moduleName: [:0]const u8, bytecode: []const u8, nativeAttribute: bool) LuauCompileError!void {
-    L.loadBytecode(moduleName, bytecode) catch {
+pub fn loadModuleBytecode(L: *VM.lua.State, moduleName: [:0]const u8, bytecode: []const u8, nativeAttribute: bool) LuauCompileError!void {
+    L.load(moduleName, bytecode, 0) catch {
         return LuauCompileError.Syntax;
     };
     if (luau.CodeGen.Supported() and CODEGEN and !nativeAttribute and JIT_ENABLED)
@@ -68,23 +68,23 @@ const FileContext = struct {
 };
 
 const StackInfo = struct {
-    what: luau.DebugInfo.FnType,
+    what: VM.lua.Debug.Context,
     name: ?[]const u8 = null,
     source: ?[]const u8 = null,
-    source_line: ?i32 = null,
-    current_line: ?i32 = null,
+    source_line: ?u32 = null,
+    current_line: ?u32 = null,
 };
 
-pub fn setLuaFileContext(L: *Luau, ctx: FileContext) void {
-    L.newTable();
-    L.setFieldLString(-1, "name", ctx.name);
-    L.setFieldLString(-1, "path", ctx.path);
+pub fn setLuaFileContext(L: *VM.lua.State, ctx: FileContext) void {
+    L.newtable();
+    L.Zsetfield(-1, "name", ctx.name);
+    L.Zsetfield(-1, "path", ctx.path);
 
     // TODO: Only include source when USE_DETAILED_ERROR is true or testing.
     // if (USE_DETAILED_ERROR)
-    L.setFieldLString(-1, "source", ctx.source);
+    L.Zsetfield(-1, "source", ctx.source);
 
-    L.setField(luau.GLOBALSINDEX, "_FILE");
+    L.setfield(VM.lua.GLOBALSINDEX, "_FILE");
 }
 
 pub fn printSpacedPadding(padding: []u8) void {
@@ -92,7 +92,7 @@ pub fn printSpacedPadding(padding: []u8) void {
     std.debug.print("{s}|\n", .{padding});
 }
 
-pub fn printPreviewError(padding: []u8, line: i32, comptime fmt: []const u8, args: anytype) void {
+pub fn printPreviewError(padding: []u8, line: u32, comptime fmt: []const u8, args: anytype) void {
     std.debug.print("{s}|\n", .{padding});
     _ = std.fmt.bufPrint(padding, "{d}", .{line}) catch |e| std.debug.panic("{}", .{e});
     std.debug.print("{s}~ \x1b[2mPreviewError: " ++ fmt ++ "\x1b[0m\n", .{padding} ++ args);
@@ -100,8 +100,8 @@ pub fn printPreviewError(padding: []u8, line: i32, comptime fmt: []const u8, arg
     std.debug.print("{s}|\n", .{padding});
 }
 
-pub fn logDetailedError(L: *Luau) !void {
-    const allocator = L.allocator();
+pub fn logDetailedError(L: *VM.lua.State) !void {
+    const allocator = luau.getallocator(L);
 
     var list = std.ArrayList(StackInfo).init(allocator);
     defer list.deinit();
@@ -112,50 +112,55 @@ pub fn logDetailedError(L: *Luau) !void {
             allocator.free(source);
     };
 
-    var ar: luau.DebugInfo = undefined;
     var level: i32 = 0;
-    while (L.getInfo(level, .{ .s = true, .l = true, .n = true }, &ar)) : (level += 1) {
+    var ar: VM.lua.Debug = .{ .ssbuf = undefined };
+    while (L.getinfo(level, "sln", &ar)) : (level += 1) {
         var info: StackInfo = .{
             .what = ar.what,
         };
         if (ar.name) |name|
             info.name = try allocator.dupe(u8, name);
-        if (ar.line_defined) |line|
+        if (ar.linedefined) |line|
             info.source_line = line;
-        if (ar.current_line) |line|
+        if (ar.currentline) |line|
             info.current_line = line;
-
-        info.source = try allocator.dupe(u8, ar.source);
+        info.source = try allocator.dupe(u8, ar.source.?);
 
         try list.append(info);
     }
 
-    var err_msg = L.toString(-1) catch "UnknownError";
+    var err_msg = L.tostring(-1) orelse "UnknownError";
 
     if (list.items.len < 1) {
         std.debug.print("\x1b[32merror\x1b[0m: {s}\n", .{err_msg});
-        std.debug.print("{s}\n", .{L.debugTrace()});
+        std.debug.print("{s}\n", .{L.debugtrace()});
         return;
     }
 
-    Luau.sys.luaD_checkstack(L, 5);
-    Luau.sys.luaD_expandstacklimit(L, 5);
+    if (!L.checkstack(5)) {
+        std.debug.print("Failed to show detailed error: StackOverflow\n", .{});
+        std.debug.print("\x1b[32merror\x1b[0m: {s}\n", .{err_msg});
+        std.debug.print("{s}\n", .{L.debugtrace()});
+        return;
+    }
 
     var reference_level: ?usize = null;
     jmp: {
         const item = blk: {
             for (list.items, 0..) |item, lvl|
-                if (item.what == .luau) {
+                if (item.what == .lua) {
                     reference_level = lvl;
                     break :blk item;
                 };
             break :blk list.items[0];
         };
-        if (item.source == null or item.current_line == null)
+        const source = item.source orelse break :jmp;
+        const currentline = item.current_line orelse break :jmp;
+        if (source.len < 1 and source[0] != '@')
             break :jmp;
-        const strip = try std.fmt.allocPrint(allocator, "[string \"{s}\"]:{d}: ", .{
-            item.source.?,
-            item.current_line.?,
+        const strip = try std.fmt.allocPrint(allocator, "{s}:{d}: ", .{
+            source[1..],
+            currentline,
         });
         defer allocator.free(strip);
 
@@ -182,37 +187,37 @@ pub fn logDetailedError(L: *Luau) !void {
     @memset(padded_string, ' ');
 
     for (list.items, 0..) |info, lvl| {
-        if (info.current_line == null or info.current_line.? < 0)
+        if (info.current_line == null)
             continue;
         if (info.source) |src| blk: {
             const current_line = info.current_line.?;
 
-            std.debug.print("\x1b[1;4m{s}:{d}\x1b[0m\n", .{ src, current_line });
+            std.debug.print("\x1b[1;4m{s}:{d}\x1b[0m\n", .{ if (src.len > 1) src[1..] else src, current_line });
 
-            if (!L.getInfo(@intCast(lvl), .{ .f = true }, &ar)) {
+            if (!L.getinfo(@intCast(lvl), "f", &ar)) {
                 printPreviewError(padded_string, current_line, "Failed to get function info", .{});
                 continue;
             }
 
-            if (L.typeOf(-1) != .function)
+            if (L.typeOf(-1) != .Function)
                 return error.InternalError;
-            L.getFenv(-1);
+            L.getfenv(-1);
             defer L.pop(2); // drop: env, func
-            if (L.typeOf(-1) != .table) {
+            if (L.typeOf(-1) != .Table) {
                 printPreviewError(padded_string, current_line, "Failed to get function environment", .{});
                 continue;
             }
             defer L.pop(1); // drop: _FILE
-            if (L.getField(-1, "_FILE") != .table) {
+            if (L.getfield(-1, "_FILE") != .Table) {
                 printPreviewError(padded_string, current_line, "Failed to get file context", .{});
                 continue;
             }
             defer L.pop(1); // drop: source
-            if (L.getField(-1, "source") != .string) {
+            if (L.getfield(-1, "source") != .String) {
                 printPreviewError(padded_string, current_line, "Failed to get file source", .{});
                 continue;
             }
-            const content = L.toString(-1) catch unreachable;
+            const content = L.tostring(-1) orelse unreachable;
 
             var stream = std.io.fixedBufferStream(content);
             const reader = stream.reader();
@@ -262,14 +267,14 @@ pub fn logDetailedError(L: *Luau) !void {
     }
 }
 
-pub fn logError(L: *Luau, err: anyerror, forceDetailed: bool) void {
+pub fn logError(L: *VM.lua.State, err: anyerror, forceDetailed: bool) void {
     switch (err) {
         error.Runtime => {
             if (USE_DETAILED_ERROR or forceDetailed) {
                 logDetailedError(L) catch |e| std.debug.panic("{}", .{e});
             } else {
-                std.debug.print("{s}\n", .{L.toString(-1) catch "UnknownError"});
-                std.debug.print("{s}\n", .{L.debugTrace()});
+                std.debug.print("{s}\n", .{L.tostring(-1) orelse "UnknownError"});
+                std.debug.print("{s}\n", .{L.debugtrace()});
             }
         },
         else => {
@@ -278,13 +283,13 @@ pub fn logError(L: *Luau, err: anyerror, forceDetailed: bool) void {
     }
 }
 
-pub fn checkStatus(L: *Luau) !luau.Status {
+pub fn checkStatus(L: *VM.lua.State) !VM.lua.Status {
     const status = L.status();
     switch (status) {
-        .ok, .yield => return status,
-        .err_syntax, .err_runtime => return error.Runtime,
-        .err_memory => return error.Memory,
-        .err_error => return error.MsgHandler,
+        .Ok, .Yield, .Break => return status,
+        .ErrSyntax, .ErrRun => return error.Runtime,
+        .ErrMem => return error.Memory,
+        .ErrErr => return error.MsgHandler,
     }
 }
 
@@ -292,18 +297,18 @@ const PrepOptions = struct {
     args: []const []const u8,
 };
 
-pub fn prep(L: *Luau, pOpts: PrepOptions, flags: Zune.Flags) !void {
+pub fn prep(L: *VM.lua.State, pOpts: PrepOptions, flags: Zune.Flags) !void {
     if (luau.CodeGen.Supported() and JIT_ENABLED)
         luau.CodeGen.Create(L);
 
-    L.openLibs();
+    L.Lopenlibs();
     try Zune.openZune(L, pOpts.args, flags);
 }
 
-pub fn prepAsync(L: *Luau, sched: *Scheduler, pOpts: PrepOptions, flags: Zune.Flags) !void {
-    const GL = L.getMainThread();
+pub fn prepAsync(L: *VM.lua.State, sched: *Scheduler, pOpts: PrepOptions, flags: Zune.Flags) !void {
+    const GL = L.mainthread();
 
-    GL.setThreadData(Scheduler, sched);
+    GL.setthreaddata(*Scheduler, sched);
 
     try prep(L, pOpts, flags);
 }
@@ -360,39 +365,41 @@ pub fn stateCleanUp() void {
 
 const RunOptions = struct {
     cleanUp: bool,
-    testing: bool = false,
+    mode: Zune.RunMode = .Run,
 };
 
-pub fn runAsync(L: *Luau, sched: *Scheduler, comptime options: RunOptions) !void {
+pub fn runAsync(L: *VM.lua.State, sched: *Scheduler, comptime options: RunOptions) !void {
     defer if (options.cleanUp) stateCleanUp();
     sched.deferThread(L, null, 0);
-    sched.run(options.testing);
+    sched.run(options.mode);
     _ = try checkStatus(L);
 }
 
-pub fn run(L: *Luau) !void {
+pub fn run(L: *VM.lua.State) !void {
     defer stateCleanUp();
-    try L.pcall(0, 0, 0);
+    _ = try L.pcall(0, 0, 0).check();
 }
 
 test "Run Basic" {
     const allocator = std.testing.allocator;
-    const L = try Luau.init(&allocator);
+    const L = try luau.init(&allocator);
     defer L.deinit();
-    if (luau.CodeGen.Supported()) luau.CodeGen.Create(L);
-    L.openLibs();
+    if (luau.CodeGen.Supported())
+        luau.CodeGen.Create(L);
+    L.Lopenlibs();
     try loadModule(L, "test", "tostring(\"Hello, World!\")\n", null);
     try run(L);
 }
 
 test "Run Basic Syntax Error" {
     const allocator = std.testing.allocator;
-    const L = try Luau.init(&allocator);
+    const L = try luau.init(&allocator);
     defer L.deinit();
-    if (luau.CodeGen.Supported()) luau.CodeGen.Create(L);
-    L.openLibs();
+    if (luau.CodeGen.Supported())
+        luau.CodeGen.Create(L);
+    L.Lopenlibs();
     try std.testing.expectError(LuauCompileError.Syntax, loadModule(L, "test", "print('Hello, World!'\n", null));
-    try std.testing.expectEqualStrings("[string \"test\"]:2: Expected ')' (to close '(' at line 1), got <eof>", L.toString(-1) catch "UnknownError");
+    try std.testing.expectEqualStrings("[string \"test\"]:2: Expected ')' (to close '(' at line 1), got <eof>", L.tostring(-1) orelse "UnknownError");
 }
 
 test {

@@ -3,7 +3,7 @@ const luau = @import("luau");
 
 const common = @import("common.zig");
 
-const Luau = luau.Luau;
+const VM = luau.VM;
 
 const argon2 = std.crypto.pwhash.argon2;
 const bcrypt = std.crypto.pwhash.bcrypt;
@@ -21,56 +21,59 @@ const AlgorithmMap = std.StaticStringMap(AlgorithmUnion).initComptime(.{
     .{ "bcrypt", .bcrypt },
 });
 
-pub fn lua_hash(L: *Luau) !i32 {
-    const allocator = L.allocator();
-    const password = L.checkString(1);
+pub fn lua_hash(L: *VM.lua.State) !i32 {
+    const allocator = luau.getallocator(L);
+    const password = L.Lcheckstring(1);
 
     var algorithm = DEFAULT_ALGO;
     var cost: u32 = 65536;
     var cost2: u32 = 2;
     var threads: u24 = 1;
 
-    switch (try L.typeOfObjConsumed(2)) {
-        .table => {
-            switch (try L.getFieldObjConsumed(2, "algorithm")) {
-                .string => |s| algorithm = AlgorithmMap.get(s) orelse return L.Error("Invalid Algorithm"),
-                .none, .nil => {},
-                else => return L.Error("Invalid `algorithm` (String expected)"),
+    switch (L.typeOf(2)) {
+        .Table => {
+            switch (L.getfield(2, "algorithm")) {
+                .String => algorithm = AlgorithmMap.get(L.tolstring(-1) orelse unreachable) orelse return L.Zerror("Invalid Algorithm"),
+                .None, .Nil => {},
+                else => return L.Zerror("Invalid `algorithm` (String expected)"),
             }
+            L.pop(1);
             switch (algorithm) {
                 .argon2 => {
-                    switch (try L.getFieldObjConsumed(2, "memoryCost")) {
-                        .number => |n| cost = @intFromFloat(n),
-                        .none, .nil => {},
-                        else => return L.Error("Invalid 'memoryCost' (Number expected)"),
+                    switch (L.getfield(2, "memoryCost")) {
+                        .Number => cost = L.tounsigned(-1) orelse unreachable,
+                        .None, .Nil => {},
+                        else => return L.Zerror("Invalid 'memoryCost' (Number expected)"),
                     }
-                    switch (try L.getFieldObjConsumed(2, "timeCost")) {
-                        .number => |n| cost2 = @intFromFloat(n),
-                        .none, .nil => {},
-                        else => return L.Error("Invalid 'timeCost' (Number expected)"),
+                    switch (L.getfield(2, "timeCost")) {
+                        .Number => cost2 = L.tounsigned(-1) orelse unreachable,
+                        .None, .Nil => {},
+                        else => return L.Zerror("Invalid 'timeCost' (Number expected)"),
                     }
-                    switch (try L.getFieldObjConsumed(2, "threads")) {
-                        .number => |n| threads = @intFromFloat(n),
-                        .none, .nil => {},
-                        else => return L.Error("Invalid 'threads' (Number expected)"),
+                    switch (L.getfield(2, "threads")) {
+                        .Number => threads = @truncate(L.tounsigned(-1) orelse unreachable),
+                        .None, .Nil => {},
+                        else => return L.Zerror("Invalid 'threads' (Number expected)"),
                     }
+                    L.pop(3);
                 },
                 .bcrypt => {
                     cost = 4;
-                    switch (try L.getFieldObjConsumed(2, "cost")) {
-                        .number => |n| {
-                            cost = @intFromFloat(n);
+                    switch (L.getfield(2, "cost")) {
+                        .Number => {
+                            cost = L.tounsigned(-1) orelse unreachable;
                             if (cost < 4 or cost > 31)
-                                return L.Error("Invalid 'cost' (Must be between 4 to 31)");
+                                return L.Zerror("Invalid 'cost' (Must be between 4 to 31)");
                         },
-                        .none, .nil => {},
-                        else => return L.Error("Invalid 'cost' (Number expected)"),
+                        .None, .Nil => {},
+                        else => return L.Zerror("Invalid 'cost' (Number expected)"),
                     }
+                    L.pop(1);
                 },
             }
         },
-        .none, .nil => {},
-        else => L.checkType(2, .table),
+        .None, .Nil => {},
+        else => L.Lchecktype(2, .Table),
     }
 
     var buf: [128]u8 = undefined;
@@ -81,7 +84,7 @@ pub fn lua_hash(L: *Luau) !i32 {
                 .params = .{ .m = cost, .t = cost2, .p = threads },
                 .mode = mode,
             }, &buf);
-            L.pushLString(hash);
+            L.pushlstring(hash);
         },
         .bcrypt => {
             const hash = try bcrypt.strHash(password, .{
@@ -89,7 +92,7 @@ pub fn lua_hash(L: *Luau) !i32 {
                 .params = .{ .rounds_log = @intCast(cost) },
                 .encoding = .phc,
             }, &buf);
-            L.pushLString(hash);
+            L.pushlstring(hash);
         },
     }
     return 1;
@@ -97,22 +100,22 @@ pub fn lua_hash(L: *Luau) !i32 {
 
 const TAG_BCRYPT: u32 = @bitCast([4]u8{ '$', 'b', 'c', 'r' });
 
-pub fn lua_verify(L: *Luau) !i32 {
-    const allocator = L.allocator();
-    const password = L.checkString(1);
-    const hash = L.checkString(2);
+pub fn lua_verify(L: *VM.lua.State) !i32 {
+    const allocator = luau.getallocator(L);
+    const password = L.Lcheckstring(1);
+    const hash = L.Lcheckstring(2);
 
     if (hash.len < 8)
-        return L.Error("InvalidHash (Must be PHC encoded)");
+        return L.Zerror("InvalidHash (Must be PHC encoded)");
 
     if (@as(u32, @bitCast(hash[0..4].*)) == TAG_BCRYPT)
-        L.pushBoolean(if (bcrypt.strVerify(
+        L.pushboolean(if (bcrypt.strVerify(
             hash,
             password,
             .{ .allocator = allocator },
         )) true else |_| false)
     else
-        L.pushBoolean(if (argon2.strVerify(
+        L.pushboolean(if (argon2.strVerify(
             hash,
             password,
             .{ .allocator = allocator },

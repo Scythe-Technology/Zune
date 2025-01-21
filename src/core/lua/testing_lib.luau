@@ -453,8 +453,9 @@ local conditionals = {
         assertExpect(false, type(self.received) == "function", "Expected %s to %sbe a function", readable(self.received), flipTag(self.flipped));
         local success, err = pcall(self.received);
         if (expected ~= nil) then
+            assertExpect(false, type(err) == "string", "Expected error to be a string (got %s)", readable(err));
             assertExpect(false, not success, "Expected %s to %sthrow an error", readable(self.received), flipTag(self.flipped));
-            local stripped = err:match("^%[string \"[^\"]+\"%]:%d+: (.+)$");
+            local stripped = err:match("^[^:]+:%d+: (.+)$");
             if (stripped) then
                 assertExpect(self.flipped, stripped == expected, "Got error %s expected to %sthrow %s", readable(stripped), flipTag(self.flipped), readable(expected));
             else
@@ -478,7 +479,7 @@ local function deepScan(a : any, b : any, state : {[any] : any}, key: string?) :
         if (a.name ~= "@similar") then
             local result, _, reason = a(b);
             if (not result) then
-                return {`{key or ''}{if (reason) then reason else "failed condition"}`};
+                return {`{key or ''}{if (reason) then string.format(reason, "") else "failed condition"}`};
             end
             return {}
         else

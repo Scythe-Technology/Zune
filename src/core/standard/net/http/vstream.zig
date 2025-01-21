@@ -44,6 +44,12 @@ pub fn read(self: *Self, buffer: []u8) !usize {
     return self.stream.read(buffer);
 }
 
+pub fn readAll(self: *Self, buffer: []u8) !usize {
+    if (self.tls) |*tls|
+        return tls.readAll(self.stream, buffer);
+    return self.stream.readAll(buffer);
+}
+
 pub fn writeAll(self: *Self, data: []const u8) !void {
     if (self.tls) |*tls|
         return tls.writeAll(self.stream, data);

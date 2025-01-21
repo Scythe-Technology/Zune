@@ -1,7 +1,7 @@
 const std = @import("std");
 const luau = @import("luau");
 
-const Luau = luau.Luau;
+const VM = luau.VM;
 
 const Url = @import("url.zig");
 
@@ -302,33 +302,33 @@ fn safeStatusCast(int: u10) ?std.http.Status {
     };
 }
 
-pub fn pushToStack(self: *Self, L: *Luau, customBody: ?[]const u8) !void {
-    L.newTable();
+pub fn pushToStack(self: *Self, L: *VM.lua.State, customBody: ?[]const u8) !void {
+    L.newtable();
     errdefer L.pop(1);
 
-    L.setFieldBoolean(-1, "ok", self.statusCode >= 200 and self.statusCode < 300);
-    L.setFieldInteger(-1, "statusCode", @intCast(self.statusCode));
+    L.Zsetfield(-1, "ok", self.statusCode >= 200 and self.statusCode < 300);
+    L.Zsetfield(-1, "statusCode", self.statusCode);
 
     if (self.statusReason) |reason| {
-        L.setFieldLString(-1, "statusReason", reason);
+        L.Zsetfield(-1, "statusReason", reason);
     } else if (safeStatusCast(self.statusCode)) |status| {
         if (status.phrase()) |reason|
-            L.setFieldLString(-1, "statusReason", reason);
+            L.Zsetfield(-1, "statusReason", reason);
     }
 
     if (self.headers) |headers| {
-        L.newTable();
+        L.newtable();
         errdefer L.pop(1);
         for (headers) |header| {
-            L.pushLString(header.key);
-            L.pushLString(header.value);
-            L.rawSetTable(-3);
+            L.pushlstring(header.key);
+            L.pushlstring(header.value);
+            L.rawset(-3);
         }
-        L.setField(-2, "headers");
+        L.setfield(-2, "headers");
     }
 
     if (customBody orelse self.body) |body| {
-        L.setFieldLString(-1, "body", body);
+        L.Zsetfield(-1, "body", body);
     }
 }
 

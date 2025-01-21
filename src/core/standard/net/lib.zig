@@ -1,7 +1,7 @@
 const std = @import("std");
 const luau = @import("luau");
 
-const Luau = luau.Luau;
+const VM = luau.VM;
 
 const Scheduler = @import("../../runtime/scheduler.zig");
 
@@ -15,30 +15,30 @@ const WebSocketClient = @import("websocket.zig");
 
 pub const LIB_NAME = "net";
 
-pub fn loadLib(L: *Luau) void {
+pub fn loadLib(L: *VM.lua.State) void {
     HttpServer.lua_load(L);
     WebSocketClient.lua_load(L);
     UDP.lua_load(L);
     TCP.lua_load(L);
 
-    L.newTable();
+    L.newtable();
 
-    L.setFieldFn(-1, "udpSocket", UDP.lua_udpsocket);
-    L.setFieldFn(-1, "tcpConnect", TCP.lua_tcp_client);
-    L.setFieldFn(-1, "tcpHost", TCP.lua_tcp_server);
+    L.Zsetfieldc(-1, "udpSocket", UDP.lua_udpsocket);
+    L.Zsetfieldc(-1, "tcpConnect", TCP.lua_tcp_client);
+    L.Zsetfieldc(-1, "tcpHost", TCP.lua_tcp_server);
 
     {
-        L.newTable();
+        L.newtable();
 
-        L.setFieldFn(-1, "serve", HttpServer.lua_serve);
-        L.setFieldFn(-1, "request", HttpClient.lua_request);
-        L.setFieldFn(-1, "websocket", WebSocketClient.lua_websocket);
+        L.Zsetfieldc(-1, "serve", HttpServer.lua_serve);
+        L.Zsetfieldc(-1, "request", HttpClient.lua_request);
+        L.Zsetfieldc(-1, "websocket", WebSocketClient.lua_websocket);
 
-        L.setReadOnly(-1, true);
-        L.setField(-2, "http");
+        L.setreadonly(-1, true);
+        L.setfield(-2, "http");
     }
 
-    L.setReadOnly(-1, true);
+    L.setreadonly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);
 }
 

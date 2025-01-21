@@ -7,6 +7,7 @@ const Zune = @import("zune.zig");
 const Scheduler = @import("core/runtime/scheduler.zig");
 
 const Repl = @import("commands/repl/lib.zig");
+const Debug = @import("commands/debug.zig");
 
 pub fn main() !void {
     switch (builtin.os.tag) {
@@ -45,10 +46,10 @@ fn shutdown() void {
             return;
     } else if (Zune.corelib.process.SIGINT_LUA) |handler| {
         const L = handler.state;
-        if (L.rawGetIndex(luau.REGISTRYINDEX, handler.ref) == .function) {
-            const ML = L.newThread();
-            L.xPush(ML, -2);
-            if (ML.pcall(0, 0, 0)) {
+        if (L.rawgeti(luau.VM.lua.REGISTRYINDEX, handler.ref) == .Function) {
+            const ML = L.newthread();
+            L.xpush(ML, -2);
+            if (ML.pcall(0, 0, 0).check()) |_| {
                 L.pop(2); // drop: thread, function
                 return; // User will handle process close.
             } else |err| Zune.runtime_engine.logError(ML, err, false);
@@ -56,6 +57,7 @@ fn shutdown() void {
         }
         L.pop(1); // drop: ?function
     }
+    Debug.SigInt();
     Scheduler.KillSchedulers();
     Zune.runtime_engine.stateCleanUp();
     std.process.exit(0);
