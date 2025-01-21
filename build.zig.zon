@@ -16,8 +16,8 @@
             .hash = "1220d6bbca59a59f16bda33b69e140d90bad313d11c07c0e2ab16076c59355845112",
         },
         .luau = .{
-            .url = "https://codeload.github.com/Scythe-Technology/zig-luau/tar.gz/3e3aa0502b567c762cb8c0a1aeef64b926bdea8c",
-            .hash = "122025f03da18be03f0f2535d9d262f7cd9dad2cbbead180a7ed6716ebad8de37a6f",
+            .url = "https://codeload.github.com/Scythe-Technology/zig-luau/tar.gz/320aa5fbe7f8c1a7bedcfad547236f4254e7c26c",
+            .hash = "12202551b2d14a541ff62f0c085ad9d12affcf3df57d4dab47391c56e0a8acbc145c",
         },
         .czrex = .{
             .url = "https://codeload.github.com/Scythe-Technology/czrex/tar.gz/099db43b9074001329dfb04aef92b7589a00f983",
