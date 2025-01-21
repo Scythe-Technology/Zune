@@ -273,11 +273,11 @@ fn promptOpBreak(L: *VM.lua.State, allocator: std.mem.Allocator, break_args: []c
             if (rest.len <= 0)
                 return printResult("Usage: break {s} <file>:<line>\n", .{command_input});
             const dir = std.fs.cwd();
-            var args = std.mem.splitScalar(u8, rest, ':');
-            const file_str = std.mem.trim(u8, args.first(), " ");
-            const line_str = args.next() orelse {
+            var args = std.mem.splitBackwardsScalar(u8, rest, ':');
+            const line_str = std.mem.trim(u8, args.first(), " ");
+            const file_str = std.mem.trim(u8, args.rest(), " ");
+            if (line_str.len == 0 or file_str.len == 0)
                 return printResult("Usage: break {s} <file>:<line>\n", .{command_input});
-            };
             const line = std.fmt.parseInt(i32, line_str, 10) catch |err| {
                 return printResult("Line Parse Error: {}\n", .{err});
             };
