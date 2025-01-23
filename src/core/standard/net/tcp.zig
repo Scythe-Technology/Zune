@@ -5,7 +5,7 @@ const Common = @import("common.zig");
 
 const Scheduler = @import("../../runtime/scheduler.zig");
 
-const Luau = luau.Luau;
+const VM = luau.VM;
 
 const context = Common.context;
 const prepRefType = Common.prepRefType;
@@ -22,25 +22,25 @@ const TCPClient = struct {
 
     pub const LuaMeta = struct {
         pub const META = "net_tcp_client_instance";
-        pub fn __index(L: *Luau) i32 {
-            L.checkType(1, .userdata);
-            const self = L.toUserdata(Self, 1) catch unreachable;
+        pub fn __index(L: *VM.lua.State) i32 {
+            L.Lchecktype(1, .Userdata);
+            const self = L.touserdata(Self, 1) orelse unreachable;
 
-            const arg = L.checkString(2);
+            const arg = L.Lcheckstring(2);
 
             // TODO: prob should switch to static string map
             if (std.mem.eql(u8, arg, "stopped")) {
-                L.pushBoolean(self.stopped);
+                L.pushboolean(self.stopped);
                 return 1;
             }
             return 0;
         }
 
-        pub fn __namecall(L: *Luau) !i32 {
-            L.checkType(1, .userdata);
-            const self = L.toUserdata(Self, 1) catch unreachable;
+        pub fn __namecall(L: *VM.lua.State) !i32 {
+            L.Lchecktype(1, .Userdata);
+            const self = L.touserdata(Self, 1) orelse unreachable;
 
-            const namecall = L.nameCallAtom() catch return 0;
+            const namecall = L.namecallstr() orelse return 0;
 
             // TODO: prob should switch to static string map
             if (std.mem.eql(u8, namecall, "stop")) {
@@ -51,13 +51,13 @@ const TCPClient = struct {
             } else if (std.mem.eql(u8, namecall, "send")) {
                 if (self.stopped)
                     return 0;
-                const data = if (L.typeOf(2) == .buffer) L.checkBuffer(2) else L.checkString(2);
+                const data = if (L.typeOf(2) == .Buffer) L.Lcheckbuffer(2) else L.Lcheckstring(2);
                 self.stream.writeAll(data) catch |err| {
                     self.stopped = true;
                     return err;
                 };
                 return 0;
-            } else return L.ErrorFmt("Unknown method: {s}", .{namecall});
+            } else return L.Zerrorf("Unknown method: {s}", .{namecall});
             return 0;
         }
 
@@ -67,7 +67,7 @@ const TCPClient = struct {
         };
     };
 
-    pub fn update(ctx: *Self, L: *Luau, _: *Scheduler) Scheduler.TaskResult {
+    pub fn update(ctx: *Self, L: *VM.lua.State, _: *Scheduler) Scheduler.TaskResult {
         if (ctx.stopped)
             return .Stop;
 
@@ -92,17 +92,17 @@ const TCPClient = struct {
             return .Stop;
         const bytes: []const u8 = buf[0..read];
         if (ctx.handlers.message) |fnRef| {
-            if (!prepRefType(.function, L, fnRef))
+            if (!prepRefType(.Function, L, fnRef))
                 return .Stop;
-            if (!prepRefType(.userdata, L, ctx.ref)) {
+            if (!prepRefType(.Userdata, L, ctx.ref)) {
                 L.pop(1);
                 return .Stop;
             }
 
-            const thread = L.newThread();
-            L.xPush(thread, -3); // push: Function
-            L.xPush(thread, -2); // push: Userdata
-            thread.pushLString(bytes);
+            const thread = L.newthread();
+            L.xpush(thread, -3); // push: Function
+            L.xpush(thread, -2); // push: Userdata
+            thread.pushlstring(bytes);
             L.pop(3); // drop thread, function & userdata
 
             _ = Scheduler.resumeState(thread, L, 2) catch {};
@@ -111,22 +111,22 @@ const TCPClient = struct {
         return .Continue;
     }
 
-    pub fn dtor(ctx: *Self, L: *Luau, _: *Scheduler) void {
+    pub fn dtor(ctx: *Self, L: *VM.lua.State, _: *Scheduler) void {
         ctx.stream.close();
         defer L.unref(ctx.ref);
         ctx.stopped = true;
         if (ctx.handlers.close) |ref| jmp: {
             defer L.unref(ref);
-            if (!prepRefType(.function, L, ref))
+            if (!prepRefType(.Function, L, ref))
                 break :jmp;
-            if (!prepRefType(.userdata, L, ctx.ref)) {
+            if (!prepRefType(.Userdata, L, ctx.ref)) {
                 L.pop(1);
                 break :jmp;
             }
 
-            const thread = L.newThread();
-            L.xPush(thread, -3); // push: Function
-            L.xPush(thread, -2); // push: Userdata
+            const thread = L.newthread();
+            L.xpush(thread, -3); // push: Function
+            L.xpush(thread, -2); // push: Userdata
             L.pop(3); // drop thread, function & userdata
 
             _ = Scheduler.resumeState(thread, L, 1) catch {};
@@ -139,7 +139,7 @@ const TCPClient = struct {
     }
 };
 
-pub fn lua_tcp_client(L: *Luau) !i32 {
+pub fn lua_tcp_client(L: *VM.lua.State) !i32 {
     const scheduler = Scheduler.getScheduler(L);
     var address_ip: []const u8 = "";
     var port: u16 = 0;
@@ -151,58 +151,58 @@ pub fn lua_tcp_client(L: *Luau) !i32 {
     var close_ref: ?i32 = null;
     errdefer if (close_ref) |ref| L.unref(ref);
 
-    L.checkType(1, .table);
+    L.Lchecktype(1, .Table);
 
-    const addressType = L.getField(1, "address");
-    if (addressType != .string)
-        return L.Error("Field 'address' must be a string");
-    address_ip = L.toString(-1) catch unreachable;
+    const addressType = L.getfield(1, "address");
+    if (addressType != .String)
+        return L.Zerror("Field 'address' must be a string");
+    address_ip = L.tostring(-1) orelse unreachable;
     L.pop(1);
 
-    const portType = L.getField(1, "port");
-    if (portType != .number)
-        return L.Error("Field 'port' must be a number");
-    const lport = L.toInteger(-1) catch unreachable;
+    const portType = L.getfield(1, "port");
+    if (portType != .Number)
+        return L.Zerror("Field 'port' must be a number");
+    const lport = L.tointeger(-1) orelse unreachable;
     if (lport < 0 and lport > 65535)
-        return L.Error("Field 'port' must be between 0 and 65535");
+        return L.Zerror("Field 'port' must be between 0 and 65535");
     port = @truncate(@as(u32, @intCast(lport)));
     L.pop(1);
 
-    const openType = L.getField(1, "open");
-    if (!luau.isNoneOrNil(openType)) {
-        if (openType != .function)
-            return L.Error("Field 'open' must be a function");
-        open_ref = L.ref(-1) catch unreachable;
+    const openType = L.getfield(1, "open");
+    if (!openType.isnoneornil()) {
+        if (openType != .Function)
+            return L.Zerror("Field 'open' must be a function");
+        open_ref = L.ref(-1) orelse unreachable;
     }
     L.pop(1);
 
-    const dataType = L.getField(1, "data");
-    if (!luau.isNoneOrNil(dataType)) {
-        if (dataType != .function)
-            return L.Error("Field 'data' must be a function");
-        data_ref = L.ref(-1) catch unreachable;
+    const dataType = L.getfield(1, "data");
+    if (!dataType.isnoneornil()) {
+        if (dataType != .Function)
+            return L.Zerror("Field 'data' must be a function");
+        data_ref = L.ref(-1) orelse unreachable;
     }
     L.pop(1);
 
-    const closeType = L.getField(1, "close");
-    if (!luau.isNoneOrNil(closeType)) {
-        if (closeType != .function)
-            return L.Error("Field 'close' must be a function");
-        close_ref = L.ref(-1) catch unreachable;
+    const closeType = L.getfield(1, "close");
+    if (!closeType.isnoneornil()) {
+        if (closeType != .Function)
+            return L.Zerror("Field 'close' must be a function");
+        close_ref = L.ref(-1) orelse unreachable;
     }
     L.pop(1);
 
-    const allocator = L.allocator();
+    const allocator = luau.getallocator(L);
 
     const stream = std.net.tcpConnectToHost(allocator, address_ip, port) catch |err| {
         std.debug.print("Tcp Error: {}\n", .{err});
         return err;
     };
 
-    const self = L.newUserdata(TCPClient);
+    const self = L.newuserdata(TCPClient);
 
     self.* = .{
-        .ref = L.ref(-1) catch unreachable,
+        .ref = L.ref(-1) orelse unreachable,
         .stream = stream,
         .stopped = false,
         .handlers = .{
@@ -211,17 +211,17 @@ pub fn lua_tcp_client(L: *Luau) !i32 {
         },
     };
 
-    if (L.getMetatableRegistry(TCPClient.LuaMeta.META) == .table) {
-        L.setMetatable(-2);
+    if (L.Lgetmetatable(TCPClient.LuaMeta.META) == .Table) {
+        _ = L.setmetatable(-2);
     } else std.debug.panic("InternalError (UDP Metatable not initialized)", .{});
 
     scheduler.addTask(TCPClient, self, L, TCPClient.update, TCPClient.dtor);
 
     if (open_ref) |ref| {
-        if (prepRefType(.function, L, ref)) {
-            const thread = L.newThread();
-            L.xPush(thread, -2); // push: Function
-            L.xPush(thread, -3); // push: Userdata
+        if (prepRefType(.Function, L, ref)) {
+            const thread = L.newthread();
+            L.xpush(thread, -2); // push: Function
+            L.xpush(thread, -3); // push: Userdata
             L.pop(2); // drop thread, function
             scheduler.deferThread(thread, L, 1);
         }
@@ -250,17 +250,17 @@ const TCPServer = struct {
 
         pub const LuaMeta = struct {
             pub const META = "net_tcp_server_connection_instance";
-            pub fn __namecall(L: *Luau) !i32 {
-                L.checkType(1, .userdata);
-                const self = L.toUserdata(Connection, 1) catch unreachable;
+            pub fn __namecall(L: *VM.lua.State) !i32 {
+                L.Lchecktype(1, .Userdata);
+                const self = L.touserdata(Connection, 1) orelse unreachable;
                 if (!self.connected)
                     return 0;
 
-                const namecall = L.nameCallAtom() catch return 0;
+                const namecall = L.namecallstr() orelse return 0;
 
                 // TODO: prob should switch to static string map
                 if (std.mem.eql(u8, namecall, "send")) {
-                    const data = if (L.typeOf(2) == .buffer) L.checkBuffer(2) else L.checkString(2);
+                    const data = if (L.typeOf(2) == .Buffer) L.Lcheckbuffer(2) else L.Lcheckstring(2);
                     self.conn.stream.writeAll(data) catch |err| {
                         std.debug.print("Error sending data to client: {}\n", .{err});
                         return err;
@@ -269,7 +269,7 @@ const TCPServer = struct {
                 } else if (std.mem.eql(u8, namecall, "close")) {
                     self.server.closeConnection(L, self.id);
                     return 0;
-                } else return L.ErrorFmt("Unknown method: {s}", .{namecall});
+                } else return L.Zerrorf("Unknown method: {s}", .{namecall});
                 return 0;
             }
 
@@ -283,25 +283,25 @@ const TCPServer = struct {
 
     pub const LuaMeta = struct {
         pub const META = "net_tcp_server_instance";
-        pub fn __index(L: *Luau) i32 {
-            L.checkType(1, .userdata);
-            const self = L.toUserdata(Self, 1) catch unreachable;
+        pub fn __index(L: *VM.lua.State) i32 {
+            L.Lchecktype(1, .Userdata);
+            const self = L.touserdata(Self, 1) orelse unreachable;
 
-            const arg = L.checkString(2);
+            const arg = L.Lcheckstring(2);
 
             // TODO: prob should switch to static string map
             if (std.mem.eql(u8, arg, "stopped")) {
-                L.pushBoolean(self.stopped);
+                L.pushboolean(self.stopped);
                 return 1;
             }
             return 0;
         }
 
-        pub fn __namecall(L: *Luau) !i32 {
-            L.checkType(1, .userdata);
-            const self = L.toUserdata(Self, 1) catch unreachable;
+        pub fn __namecall(L: *VM.lua.State) !i32 {
+            L.Lchecktype(1, .Userdata);
+            const self = L.touserdata(Self, 1) orelse unreachable;
 
-            const namecall = L.nameCallAtom() catch return 0;
+            const namecall = L.namecallstr() orelse return 0;
 
             // TODO: prob should switch to static string map
             if (std.mem.eql(u8, namecall, "stop")) {
@@ -309,7 +309,7 @@ const TCPServer = struct {
                     return 0;
                 self.stopped = true;
                 return 0;
-            } else return L.ErrorFmt("Unknown method: {s}", .{namecall});
+            } else return L.Zerrorf("Unknown method: {s}", .{namecall});
             return 0;
         }
 
@@ -320,7 +320,7 @@ const TCPServer = struct {
         };
     };
 
-    pub fn closeConnection(ctx: *Self, L: *Luau, id: usize) void {
+    pub fn closeConnection(ctx: *Self, L: *VM.lua.State, id: usize) void {
         if (ctx.connections[id]) |*connection| {
             connection.connected = false;
             defer {
@@ -330,16 +330,16 @@ const TCPServer = struct {
                 ctx.connections[id] = null;
             }
             if (ctx.handlers.close) |fnRef| {
-                if (!prepRefType(.function, L, fnRef))
+                if (!prepRefType(.Function, L, fnRef))
                     return;
-                if (!prepRefType(.userdata, L, connection.ref)) {
+                if (!prepRefType(.Userdata, L, connection.ref)) {
                     L.pop(1);
                     return;
                 }
 
-                const thread = L.newThread();
-                L.xPush(thread, -3); // push: Function
-                L.xPush(thread, -2); // push: Userdata
+                const thread = L.newthread();
+                L.xpush(thread, -3); // push: Function
+                L.xpush(thread, -2); // push: Userdata
                 L.pop(3); // drop thread, function & userdata
 
                 _ = Scheduler.resumeState(thread, L, 1) catch {};
@@ -347,7 +347,7 @@ const TCPServer = struct {
         }
     }
 
-    pub fn update(ctx: *Self, L: *Luau, _: *Scheduler) Scheduler.TaskResult {
+    pub fn update(ctx: *Self, L: *VM.lua.State, _: *Scheduler) Scheduler.TaskResult {
         if (ctx.stopped)
             return .Stop;
 
@@ -383,17 +383,17 @@ const TCPServer = struct {
                         continue;
                     }
                     if (ctx.handlers.message) |fnRef| {
-                        if (!prepRefType(.function, L, fnRef))
+                        if (!prepRefType(.Function, L, fnRef))
                             continue;
-                        if (!prepRefType(.userdata, L, connection.ref)) {
+                        if (!prepRefType(.Userdata, L, connection.ref)) {
                             L.pop(1);
                             continue;
                         }
 
-                        const thread = L.newThread();
-                        L.xPush(thread, -3); // push: Function
-                        L.xPush(thread, -2); // push: Userdata
-                        thread.pushLString(bytes[0..read_len]);
+                        const thread = L.newthread();
+                        L.xpush(thread, -3); // push: Function
+                        L.xpush(thread, -2); // push: Userdata
+                        thread.pushlstring(bytes[0..read_len]);
                         L.pop(3); // drop thread, function & userdata
 
                         _ = Scheduler.resumeState(thread, L, 2) catch {};
@@ -411,8 +411,8 @@ const TCPServer = struct {
             for (1..MAX_SOCKETS) |i| {
                 if (fds[i].fd == context.INVALID_SOCKET) {
                     fds[i].fd = client.stream.handle;
-                    const ptr = L.newUserdata(Connection);
-                    const ref = L.ref(-1) catch unreachable;
+                    const ptr = L.newuserdata(Connection);
+                    const ref = L.ref(-1) orelse unreachable;
                     ptr.* = .{
                         .id = i,
                         .ref = ref,
@@ -421,16 +421,16 @@ const TCPServer = struct {
                         .connected = true,
                     };
                     connections[i] = ptr.*;
-                    if (L.getMetatableRegistry(TCPServer.Connection.LuaMeta.META) == .table) {
-                        L.setMetatable(-2);
+                    if (L.Lgetmetatable(TCPServer.Connection.LuaMeta.META) == .Table) {
+                        _ = L.setmetatable(-2);
                     } else std.debug.panic("InternalError (TCPServer Metatable not initialized)", .{});
                     if (ctx.handlers.open) |fnRef| {
-                        if (!prepRefType(.function, L, fnRef))
+                        if (!prepRefType(.Function, L, fnRef))
                             continue;
 
-                        const thread = L.newThread();
-                        L.xPush(thread, -2); // push: Function
-                        L.xPush(thread, -3); // push: Userdata
+                        const thread = L.newthread();
+                        L.xpush(thread, -2); // push: Function
+                        L.xpush(thread, -3); // push: Userdata
                         L.pop(2); // drop thread, function
 
                         _ = Scheduler.resumeState(thread, L, 1) catch {};
@@ -447,8 +447,8 @@ const TCPServer = struct {
         return .ContinueFast;
     }
 
-    pub fn dtor(ctx: *Self, L: *Luau, _: *Scheduler) void {
-        const allocator = L.allocator();
+    pub fn dtor(ctx: *Self, L: *VM.lua.State, _: *Scheduler) void {
+        const allocator = luau.getallocator(L);
         defer {
             allocator.free(ctx.connections);
             allocator.free(ctx.fds);
@@ -472,7 +472,7 @@ const TCPServer = struct {
     }
 };
 
-pub fn lua_tcp_server(L: *Luau) !i32 {
+pub fn lua_tcp_server(L: *VM.lua.State) !i32 {
     const scheduler = Scheduler.getScheduler(L);
     var data_ref: ?i32 = null;
     errdefer if (data_ref) |ref| L.unref(ref);
@@ -485,60 +485,60 @@ pub fn lua_tcp_server(L: *Luau) !i32 {
     var port: u16 = 0;
     var reuseAddress = false;
 
-    L.checkType(1, .table);
+    L.Lchecktype(1, .Table);
 
-    const addressType = L.getField(1, "address");
-    if (!luau.isNoneOrNil(addressType)) {
-        if (addressType != .string)
-            return L.Error("Field 'address' must be a string");
-        address_ip = L.toString(-1) catch unreachable;
+    const addressType = L.getfield(1, "address");
+    if (!addressType.isnoneornil()) {
+        if (addressType != .String)
+            return L.Zerror("Field 'address' must be a string");
+        address_ip = L.tostring(-1) orelse unreachable;
     }
     L.pop(1);
 
-    const portType = L.getField(1, "port");
-    if (!luau.isNoneOrNil(portType)) {
-        if (portType != .number)
-            return L.Error("Field 'port' must be a number");
-        const lport = L.toInteger(-1) catch unreachable;
+    const portType = L.getfield(1, "port");
+    if (!portType.isnoneornil()) {
+        if (portType != .Number)
+            return L.Zerror("Field 'port' must be a number");
+        const lport = L.tointeger(-1) orelse unreachable;
         if (lport < 0 and lport > 65535)
-            return L.Error("Field 'port' must be between 0 and 65535");
+            return L.Zerror("Field 'port' must be between 0 and 65535");
         port = @truncate(@as(u32, @intCast(lport)));
     }
     L.pop(1);
 
-    const reuseAddressType = L.getField(1, "reuseAddress");
-    if (!luau.isNoneOrNil(reuseAddressType)) {
-        if (reuseAddressType != .boolean)
-            return L.Error("Field 'reuseAddress' must be a boolean");
-        reuseAddress = L.toBoolean(-1);
+    const reuseAddressType = L.getfield(1, "reuseAddress");
+    if (!reuseAddressType.isnoneornil()) {
+        if (reuseAddressType != .Boolean)
+            return L.Zerror("Field 'reuseAddress' must be a boolean");
+        reuseAddress = L.toboolean(-1);
     }
     L.pop(1);
 
-    const openType = L.getField(1, "open");
-    if (!luau.isNoneOrNil(openType)) {
-        if (openType != .function)
-            return L.Error("Field 'open' must be a function");
-        open_ref = L.ref(-1) catch unreachable;
+    const openType = L.getfield(1, "open");
+    if (!openType.isnoneornil()) {
+        if (openType != .Function)
+            return L.Zerror("Field 'open' must be a function");
+        open_ref = L.ref(-1) orelse unreachable;
     }
     L.pop(1);
 
-    const dataType = L.getField(1, "data");
-    if (!luau.isNoneOrNil(dataType)) {
-        if (dataType != .function)
-            return L.Error("Field 'data' must be a function");
-        data_ref = L.ref(-1) catch unreachable;
+    const dataType = L.getfield(1, "data");
+    if (!dataType.isnoneornil()) {
+        if (dataType != .Function)
+            return L.Zerror("Field 'data' must be a function");
+        data_ref = L.ref(-1) orelse unreachable;
     }
     L.pop(1);
 
-    const closeType = L.getField(1, "close");
-    if (!luau.isNoneOrNil(closeType)) {
-        if (closeType != .function)
-            return L.Error("Field 'close' must be a function");
-        close_ref = L.ref(-1) catch unreachable;
+    const closeType = L.getfield(1, "close");
+    if (!closeType.isnoneornil()) {
+        if (closeType != .Function)
+            return L.Zerror("Field 'close' must be a function");
+        close_ref = L.ref(-1) orelse unreachable;
     }
     L.pop(1);
 
-    const allocator = L.allocator();
+    const allocator = luau.getallocator(L);
 
     const address = try std.net.Address.parseIp4(address_ip, port);
 
@@ -548,7 +548,7 @@ pub fn lua_tcp_server(L: *Luau) !i32 {
         .force_nonblocking = false,
     });
 
-    const self = L.newUserdata(TCPServer);
+    const self = L.newuserdata(TCPServer);
 
     const connections = try allocator.alloc(?TCPServer.Connection, MAX_SOCKETS);
     errdefer allocator.free(connections);
@@ -564,7 +564,7 @@ pub fn lua_tcp_server(L: *Luau) !i32 {
     fds[0].fd = server.stream.handle;
 
     self.* = .{
-        .ref = L.ref(-1) catch unreachable,
+        .ref = L.ref(-1) orelse unreachable,
         .server = server,
         .stopped = false,
         .fds = fds,
@@ -576,8 +576,8 @@ pub fn lua_tcp_server(L: *Luau) !i32 {
         },
     };
 
-    if (L.getMetatableRegistry(TCPServer.LuaMeta.META) == .table) {
-        L.setMetatable(-2);
+    if (L.Lgetmetatable(TCPServer.LuaMeta.META) == .Table) {
+        _ = L.setmetatable(-2);
     } else std.debug.panic("InternalError (TCPServer Metatable not initialized)", .{});
 
     scheduler.addTask(TCPServer, self, L, TCPServer.update, TCPServer.dtor);
@@ -585,31 +585,31 @@ pub fn lua_tcp_server(L: *Luau) !i32 {
     return 1;
 }
 
-pub fn lua_load(L: *Luau) void {
+pub fn lua_load(L: *VM.lua.State) void {
     {
-        L.newMetatable(TCPClient.LuaMeta.META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
+        _ = L.Lnewmetatable(TCPClient.LuaMeta.META);
 
-        L.setFieldFn(-1, luau.Metamethods.index, TCPClient.LuaMeta.__index); // metatable.__index
-        L.setFieldFn(-1, luau.Metamethods.namecall, TCPClient.LuaMeta.__namecall); // metatable.__namecall
+        L.Zsetfieldc(-1, luau.Metamethods.index, TCPClient.LuaMeta.__index); // metatable.__index
+        L.Zsetfieldc(-1, luau.Metamethods.namecall, TCPClient.LuaMeta.__namecall); // metatable.__namecall
 
-        L.setFieldString(-1, luau.Metamethods.metatable, "Metatable is locked");
+        L.Zsetfieldc(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.pop(1);
     }
     {
-        L.newMetatable(TCPServer.LuaMeta.META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
+        _ = L.Lnewmetatable(TCPServer.LuaMeta.META);
 
-        L.setFieldFn(-1, luau.Metamethods.index, TCPServer.LuaMeta.__index); // metatable.__index
-        L.setFieldFn(-1, luau.Metamethods.namecall, TCPServer.LuaMeta.__namecall); // metatable.__namecall
+        L.Zsetfieldc(-1, luau.Metamethods.index, TCPServer.LuaMeta.__index); // metatable.__index
+        L.Zsetfieldc(-1, luau.Metamethods.namecall, TCPServer.LuaMeta.__namecall); // metatable.__namecall
 
-        L.setFieldString(-1, luau.Metamethods.metatable, "Metatable is locked");
+        L.Zsetfieldc(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.pop(1);
     }
     {
-        L.newMetatable(TCPServer.Connection.LuaMeta.META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
+        _ = L.Lnewmetatable(TCPServer.Connection.LuaMeta.META);
 
-        L.setFieldFn(-1, luau.Metamethods.namecall, TCPServer.Connection.LuaMeta.__namecall); // metatable.__namecall
+        L.Zsetfieldc(-1, luau.Metamethods.namecall, TCPServer.Connection.LuaMeta.__namecall); // metatable.__namecall
 
-        L.setFieldString(-1, luau.Metamethods.metatable, "Metatable is locked");
+        L.Zsetfieldc(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.pop(1);
     }
 }

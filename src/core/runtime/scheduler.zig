@@ -5,7 +5,7 @@ const luau = @import("luau");
 const Engine = @import("engine.zig");
 const Zune = @import("../../zune.zig");
 
-const Luau = luau.Luau;
+const VM = luau.VM;
 
 pub var SCHEDULERS = std.ArrayList(*Self).init(Zune.DEFAULT_ALLOCATOR);
 
@@ -28,22 +28,24 @@ pub fn KillScheduler(scheduler: *Self, cleanUp: bool) void {
             _ = scheduler.awaits.orderedRemove(i);
         }
     }
-    if (cleanUp) for (SCHEDULERS.items, 0..) |o, p| if (scheduler == o) {
-        _ = SCHEDULERS.orderedRemove(p);
-        break;
-    };
+    if (cleanUp)
+        for (SCHEDULERS.items, 0..) |o, p|
+            if (scheduler == o) {
+                _ = SCHEDULERS.orderedRemove(p);
+                break;
+            };
 }
 
 pub fn KillSchedulers() void {
     for (SCHEDULERS.items) |scheduler|
         KillScheduler(scheduler, false);
-    SCHEDULERS.deinit();
+    SCHEDULERS.clearAndFree();
 }
 
-pub const LuauPair = struct { *Luau, ?i32 };
+pub const LuauPair = struct { *VM.lua.State, ?i32 };
 
 const SleepingThread = struct {
-    from: ?*Luau,
+    from: ?*VM.lua.State,
     thread: LuauPair,
     wake: f64,
     start: f64,
@@ -52,7 +54,7 @@ const SleepingThread = struct {
 };
 
 const DeferredThread = struct {
-    from: ?*Luau,
+    from: ?*VM.lua.State,
     thread: LuauPair,
     args: i32,
 };
@@ -67,9 +69,9 @@ pub const TaskResult = enum {
 
 pub const AwaitTaskPriority = enum { Internal, User };
 
-const TaskFn = fn (ctx: *anyopaque, L: *Luau, scheduler: *Self) TaskResult;
-const TaskFnDtor = fn (ctx: *anyopaque, L: *Luau, scheduler: *Self) void;
-const AsyncCallbackFn = fn (ctx: ?*anyopaque, L: *Luau, scheduler: *Self, failed: bool) void;
+const TaskFn = fn (ctx: *anyopaque, L: *VM.lua.State, scheduler: *Self) TaskResult;
+const TaskFnDtor = fn (ctx: *anyopaque, L: *VM.lua.State, scheduler: *Self) void;
+const AsyncCallbackFn = fn (ctx: ?*anyopaque, L: *VM.lua.State, scheduler: *Self, failed: bool) void;
 const AwaitedFn = TaskFnDtor; // Similar to TaskFnDtor
 
 pub fn TaskObject(comptime T: type) type {
@@ -137,7 +139,7 @@ fn DeferredOrder(_: void, a: DeferredThread, b: DeferredThread) std.math.Order {
 const SleepingQueue = std.PriorityQueue(SleepingThread, void, SleepOrder);
 const DeferredLinkedList = std.DoublyLinkedList(DeferredThread);
 
-state: *Luau,
+state: *VM.lua.State,
 allocator: std.mem.Allocator,
 sleeping: SleepingQueue,
 deferred: DeferredLinkedList,
@@ -148,7 +150,7 @@ async_tasks: usize = 0,
 
 frame: FrameKind = .None,
 
-pub fn init(allocator: std.mem.Allocator, state: *Luau) Self {
+pub fn init(allocator: std.mem.Allocator, state: *VM.lua.State) Self {
     var dyn = aio.Dynamic.init(allocator, 4096) catch |err| std.debug.panic("Error: {}\n", .{err});
     dyn.queue_callback = ioQueue;
     dyn.completion_callback = ioCompletion;
@@ -185,21 +187,21 @@ fn ioCompletion(uop: aio.Dynamic.Uop, _: aio.Id, failed: bool) void {
     }
 }
 
-pub fn refThread(L: *Luau) LuauPair {
-    const GL = L.getMainThread();
+pub fn refThread(L: *VM.lua.State) LuauPair {
+    const GL = L.mainthread();
     if (GL == L)
         return .{ L, null };
-    if (L.pushThread()) {
+    if (L.pushthread()) {
         L.pop(1);
         return .{ L, null };
     }
-    L.xMove(GL, 1);
-    const ref = GL.ref(-1) catch std.debug.panic("Tash Scheduler failed to create thread ref\n", .{});
+    L.xmove(GL, 1);
+    const ref = GL.ref(-1) orelse std.debug.panic("Tash Scheduler failed to create thread ref\n", .{});
     GL.pop(1);
     return .{ L, ref };
 }
 
-pub inline fn stateFromPair(pair: LuauPair) *Luau {
+pub inline fn stateFromPair(pair: LuauPair) *VM.lua.State {
     return pair[0];
 }
 
@@ -208,16 +210,16 @@ pub fn derefThread(pair: LuauPair) void {
     if (ref) |r| {
         if (r <= 0)
             return;
-        L.getMainThread().unref(r);
+        L.mainthread().unref(r);
     }
 }
 
-pub fn spawnThread(self: *Self, thread: *Luau, from: ?*Luau, args: i32) void {
+pub fn spawnThread(self: *Self, thread: *VM.lua.State, from: ?*VM.lua.State, args: i32) void {
     _ = self;
     _ = resumeState(thread, from, args) catch {};
 }
 
-pub fn deferThread(self: *Self, thread: *Luau, from: ?*Luau, args: i32) void {
+pub fn deferThread(self: *Self, thread: *VM.lua.State, from: ?*VM.lua.State, args: i32) void {
     const ptr = self.allocator.create(DeferredLinkedList.Node) catch |err| std.debug.panic("Error: {}\n", .{err});
     ptr.* = .{
         .data = .{
@@ -231,13 +233,13 @@ pub fn deferThread(self: *Self, thread: *Luau, from: ?*Luau, args: i32) void {
 
 pub fn sleepThread(
     self: *Self,
-    thread: *Luau,
-    from: ?*Luau,
+    thread: *VM.lua.State,
+    from: ?*VM.lua.State,
     time: f64,
     args: i32,
     waited: bool,
 ) void {
-    const start = luau.clock();
+    const start = VM.lperf.clock();
     const wake = start + time + if (time == 0 and self.frame == .Sleeping) @as(f64, 0.0001) else @as(f64, 0);
 
     self.sleeping.add(.{
@@ -250,15 +252,15 @@ pub fn sleepThread(
     }) catch |err| std.debug.panic("Error: {}\n", .{err});
 }
 
-pub fn addTask(self: *Self, comptime T: type, data: *T, L: *Luau, comptime handler: *const fn (ctx: *T, L: *Luau, scheduler: *Self) TaskResult, comptime destructor: *const fn (ctx: *T, L: *Luau, scheduler: *Self) void) void {
+pub fn addTask(self: *Self, comptime T: type, data: *T, L: *VM.lua.State, comptime handler: *const fn (ctx: *T, L: *VM.lua.State, scheduler: *Self) TaskResult, comptime destructor: *const fn (ctx: *T, L: *VM.lua.State, scheduler: *Self) void) void {
     const virtualFn = struct {
-        fn inner(ctx: *anyopaque, l: *Luau, scheduler: *Self) TaskResult {
+        fn inner(ctx: *anyopaque, l: *VM.lua.State, scheduler: *Self) TaskResult {
             return @call(.always_inline, handler, .{ @as(*T, @alignCast(@ptrCast(ctx))), l, scheduler });
         }
     }.inner;
 
     const virtualDtor = struct {
-        fn inner(ctx: *anyopaque, l: *Luau, scheduler: *Self) void {
+        fn inner(ctx: *anyopaque, l: *VM.lua.State, scheduler: *Self) void {
             return @call(.always_inline, destructor, .{ @as(*T, @alignCast(@ptrCast(ctx))), l, scheduler });
         }
     }.inner;
@@ -271,22 +273,22 @@ pub fn addTask(self: *Self, comptime T: type, data: *T, L: *Luau, comptime handl
     }) catch |err| std.debug.panic("Error: {}\n", .{err});
 }
 
-pub fn addSimpleTask(self: *Self, comptime T: type, data: T, L: *Luau, comptime handler: *const fn (ctx: *T, L: *Luau, scheduler: *Self) anyerror!i32) !i32 {
-    const allocator = L.allocator();
+pub fn addSimpleTask(self: *Self, comptime T: type, data: T, L: *VM.lua.State, comptime handler: *const fn (ctx: *T, L: *VM.lua.State, scheduler: *Self) anyerror!i32) !i32 {
+    const allocator = luau.getallocator(L);
     const virtualFn = struct {
-        fn inner(ctx: *anyopaque, l: *Luau, scheduler: *Self) TaskResult {
-            if (l.status() != .yield)
+        fn inner(ctx: *anyopaque, l: *VM.lua.State, scheduler: *Self) TaskResult {
+            if (l.status() != .Yield)
                 return .Stop;
-            const top = l.getTop();
+            const top = l.gettop();
             if (@call(.always_inline, handler, .{ @as(*T, @alignCast(@ptrCast(ctx))), l, scheduler })) |res| {
                 if (res < 0) {
                     if (res == -3) {
                         _ = resumeStateError(l, null) catch {};
                         return .Stop;
                     }
-                    const top_now = l.getTop();
+                    const top_now = l.gettop();
                     if (top_now > top)
-                        l.pop(top_now - top);
+                        l.pop(@intCast(top_now - top));
                     if (res == -2)
                         return .ContinueFast;
                     return .Continue;
@@ -294,7 +296,7 @@ pub fn addSimpleTask(self: *Self, comptime T: type, data: T, L: *Luau, comptime 
                 _ = resumeState(l, null, res) catch {};
                 return .Stop;
             } else |err| {
-                l.pushString(@errorName(err));
+                l.pushstring(@errorName(err));
                 _ = resumeStateError(l, null) catch {};
                 return .Stop;
             }
@@ -302,8 +304,8 @@ pub fn addSimpleTask(self: *Self, comptime T: type, data: T, L: *Luau, comptime 
     }.inner;
 
     const virtualDtor = struct {
-        fn inner(ctx: *anyopaque, l: *Luau, _: *Self) void {
-            l.allocator().destroy(@as(*T, @alignCast(@ptrCast(ctx))));
+        fn inner(ctx: *anyopaque, l: *VM.lua.State, _: *Self) void {
+            luau.getallocator(l).destroy(@as(*T, @alignCast(@ptrCast(ctx))));
         }
     }.inner;
 
@@ -325,19 +327,19 @@ pub fn awaitResult(
     self: *Self,
     comptime T: type,
     data: T,
-    L: *Luau,
-    comptime handlerFn: *const fn (ctx: *T, L: *Luau, scheduler: *Self) void,
-    comptime dtorFn: ?*const fn (ctx: *T, L: *Luau, scheduler: *Self) void,
+    L: *VM.lua.State,
+    comptime handlerFn: *const fn (ctx: *T, L: *VM.lua.State, scheduler: *Self) void,
+    comptime dtorFn: ?*const fn (ctx: *T, L: *VM.lua.State, scheduler: *Self) void,
     priority: ?AwaitTaskPriority,
 ) ?*T {
-    const allocator = L.allocator();
+    const allocator = luau.getallocator(L);
 
     const ptr = allocator.create(T) catch |err| std.debug.panic("Error: {}\n", .{err});
 
     ptr.* = data;
 
     const status = L.status();
-    if (status != .yield) {
+    if (status != .Yield) {
         defer allocator.destroy(ptr);
         handlerFn(ptr, L, self);
         if (dtorFn) |dtor|
@@ -346,17 +348,17 @@ pub fn awaitResult(
     }
 
     const resumeFn = struct {
-        fn inner(ctx: *anyopaque, l: *Luau, scheduler: *Self) void {
+        fn inner(ctx: *anyopaque, l: *VM.lua.State, scheduler: *Self) void {
             @call(.always_inline, handlerFn, .{ @as(*T, @alignCast(@ptrCast(ctx))), l, scheduler });
         }
     }.inner;
 
     const virtualDtor = struct {
-        fn inner(ctx: *anyopaque, l: *Luau, scheduler: *Self) void {
+        fn inner(ctx: *anyopaque, l: *VM.lua.State, scheduler: *Self) void {
             if (dtorFn) |dtor| {
                 @call(.always_inline, dtor, .{ @as(*T, @alignCast(@ptrCast(ctx))), l, scheduler });
             }
-            l.allocator().destroy(@as(*T, @alignCast(@ptrCast(ctx))));
+            luau.getallocator(l).destroy(@as(*T, @alignCast(@ptrCast(ctx))));
         }
     }.inner;
 
@@ -375,28 +377,28 @@ pub fn awaitCall(
     self: *Self,
     comptime T: type,
     data: T,
-    L: *Luau,
+    L: *VM.lua.State,
     args: i32,
-    comptime handlerFn: *const fn (ctx: *T, L: *Luau, scheduler: *Self) void,
-    comptime dtorFn: ?*const fn (ctx: *T, L: *Luau, scheduler: *Self) void,
-    from: ?*Luau,
+    comptime handlerFn: *const fn (ctx: *T, L: *VM.lua.State, scheduler: *Self) void,
+    comptime dtorFn: ?*const fn (ctx: *T, L: *VM.lua.State, scheduler: *Self) void,
+    from: ?*VM.lua.State,
 ) !?*T {
     _ = try resumeState(L, from, args);
     return awaitResult(self, T, data, L, handlerFn, dtorFn, .User);
 }
 
-pub fn asyncIoResumeState(L: *Luau, _: *Self, failed: bool) void {
+pub fn asyncIoResumeState(L: *VM.lua.State, _: *Self, failed: bool) void {
     if (failed) {
-        L.pushString("Async IO failed");
+        L.pushstring("Async IO failed");
         _ = resumeStateError(L, null) catch {};
     } else _ = resumeState(L, null, 0) catch {};
 }
 
 pub fn queueIoCallback(
     self: *Self,
-    L: *Luau,
+    L: *VM.lua.State,
     io: anytype,
-    comptime handlerFn: ?*const fn (L: *Luau, scheduler: *Self, failed: bool) void,
+    comptime handlerFn: ?*const fn (L: *VM.lua.State, scheduler: *Self, failed: bool) void,
 ) !void {
     const allocator = self.allocator;
 
@@ -404,7 +406,7 @@ pub fn queueIoCallback(
     errdefer allocator.destroy(async_ptr);
 
     const handler = struct {
-        fn inner(_: ?*anyopaque, l: *Luau, scheduler: *Self, failed: bool) void {
+        fn inner(_: ?*anyopaque, l: *VM.lua.State, scheduler: *Self, failed: bool) void {
             @call(.always_inline, handlerFn.?, .{ l, scheduler, failed });
         }
     }.inner;
@@ -428,9 +430,9 @@ pub fn queueIoCallbackCtx(
     self: *Self,
     comptime T: type,
     data: *T,
-    L: *Luau,
+    L: *VM.lua.State,
     io: anytype,
-    comptime handlerFn: ?*const fn (ctx: *T, L: *Luau, scheduler: *Self, failed: bool) void,
+    comptime handlerFn: ?*const fn (ctx: *T, L: *VM.lua.State, scheduler: *Self, failed: bool) void,
 ) !void {
     const allocator = self.allocator;
 
@@ -438,7 +440,7 @@ pub fn queueIoCallbackCtx(
     errdefer allocator.destroy(async_ptr);
 
     const handler = struct {
-        fn inner(ctx: ?*anyopaque, l: *Luau, scheduler: *Self, failed: bool) void {
+        fn inner(ctx: ?*anyopaque, l: *VM.lua.State, scheduler: *Self, failed: bool) void {
             @call(.always_inline, handlerFn.?, .{ @as(*T, @alignCast(@ptrCast(ctx.?))), l, scheduler, failed });
         }
     }.inner;
@@ -460,7 +462,7 @@ pub fn queueIoCallbackCtx(
 
 pub fn queueIo(
     self: *Self,
-    L: *Luau,
+    L: *VM.lua.State,
     io: anytype,
 ) !void {
     const allocator = self.allocator;
@@ -483,28 +485,35 @@ pub fn queueIo(
     self.async_tasks += 1;
 }
 
-pub fn resumeState(state: *Luau, from: ?*Luau, args: i32) !luau.ResumeStatus {
-    return state.resumeThread(from, args) catch |err| {
+pub fn resumeState(state: *VM.lua.State, from: ?*VM.lua.State, args: i32) !VM.lua.Status {
+    return state.resumethread(from, args).check() catch |err| {
         Engine.logError(state, err, false);
+        if (Zune.Debugger.ACTIVE) {
+            @branchHint(.unlikely);
+            switch (err) {
+                error.Runtime => Zune.Debugger.luau_panic(state, -2),
+                else => {},
+            }
+        }
         return err;
     };
 }
 
-pub fn resumeStateError(state: *Luau, from: ?*Luau) !luau.ResumeStatus {
-    return state.resumeThreadError(from) catch |err| {
+pub fn resumeStateError(state: *VM.lua.State, from: ?*VM.lua.State) !VM.lua.Status {
+    return state.resumeerror(from).check() catch |err| {
         Engine.logError(state, err, false);
+        if (Zune.Debugger.ACTIVE) {
+            @branchHint(.unlikely);
+            switch (err) {
+                error.Runtime => Zune.Debugger.luau_panic(state, -2),
+                else => {},
+            }
+        }
         return err;
     };
 }
 
-pub fn resumeStateErrorFmt(state: *Luau, from: ?*Luau, comptime fmt: []const u8, args: anytype) !luau.ResumeStatus {
-    return state.resumeThreadErrorFmt(from, fmt, args) catch |err| {
-        Engine.logError(state, err, false);
-        return err;
-    };
-}
-
-pub fn cancelThread(self: *Self, thread: *Luau) void {
+pub fn cancelThread(self: *Self, thread: *VM.lua.State) void {
     const sleeping_items = self.sleeping.items;
     for (sleeping_items, 0..) |item, i| {
         if (stateFromPair(item.thread) == thread) {
@@ -526,17 +535,17 @@ pub fn cancelThread(self: *Self, thread: *Luau) void {
     }
 }
 
-pub fn run(self: *Self, comptime testing: bool) void {
+pub fn run(self: *Self, comptime mode: Zune.RunMode) void {
     var active: usize = 0;
     while ((self.sleeping.items.len > 0 or self.deferred.len > 0 or self.tasks.items.len > 0 or self.awaits.items.len > 0 or self.async_tasks > 0)) {
-        const now = luau.clock();
+        const now = VM.lperf.clock();
         if (self.awaits.items.len > 0) {
             self.frame = .Awaiting;
             var i = self.awaits.items.len;
             while (i > 0) {
                 i -= 1;
                 const awaiting = self.awaits.items[i];
-                if (awaiting.state[0].status() != .yield) {
+                if (awaiting.state[0].status() != .Yield) {
                     defer derefThread(awaiting.state);
                     _ = self.awaits.orderedRemove(i);
                     const state, _ = awaiting.state;
@@ -574,14 +583,14 @@ pub fn run(self: *Self, comptime testing: bool) void {
                     const thread, _ = slept.thread;
                     const status = thread.status();
                     defer derefThread(slept.thread);
-                    if (status != .ok and status != .yield) {
+                    if (status != .Ok and status != .Yield) {
                         std.debug.print("Cannot resume thread error status: {}\n", .{status});
                         continue;
                     }
-                    if (thread.isThreadReset())
+                    if (thread.isthreadreset())
                         continue;
                     if (slept.waited) {
-                        thread.pushNumber(now - slept.start);
+                        thread.pushnumber(now - slept.start);
                         args += 1;
                     }
                     _ = resumeState(
@@ -615,7 +624,7 @@ pub fn run(self: *Self, comptime testing: bool) void {
                 const thread, _ = deferred.thread;
                 const status = thread.status();
                 defer derefThread(deferred.thread);
-                if (status != .ok and status != .yield)
+                if (status != .Ok and status != .Yield)
                     continue;
                 _ = resumeState(
                     thread,
@@ -631,8 +640,8 @@ pub fn run(self: *Self, comptime testing: bool) void {
         if (active == 0) {
             std.time.sleep(std.time.ns_per_ms * 2);
         } else active -= 1;
-        if (comptime testing)
-            self.state.gcCollect();
+        if (comptime mode == .Test)
+            _ = self.state.gc(.Collect, 0);
     }
 }
 
@@ -648,8 +657,8 @@ pub fn deinit(self: *Self) void {
     self.dynamic.deinit(self.allocator);
 }
 
-pub fn getScheduler(L: *Luau) *Self {
-    const GL = L.getMainThread();
-    const scheduler = GL.getThreadData(Self) catch L.raiseErrorStr("InternalError (Scheduler not found)", .{});
+pub fn getScheduler(L: *VM.lua.State) *Self {
+    const GL = L.mainthread();
+    const scheduler = GL.getthreaddata(*Self);
     return scheduler;
 }

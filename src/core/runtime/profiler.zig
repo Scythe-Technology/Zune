@@ -1,7 +1,7 @@
 const std = @import("std");
 const luau = @import("luau");
 
-const Luau = luau.Luau;
+const VM = luau.VM;
 
 var active = false;
 
@@ -13,7 +13,7 @@ var frequency: u64 = 100;
 
 var gcstats: [16]u64 = [_]u64{0} ** 16;
 
-var callbacks: ?[*c]luau.CNative.lua_Callbacks = null;
+var callbacks: ?*VM.lua.Callbacks = null;
 
 var stack = std.ArrayList(u8).init(std.heap.page_allocator);
 var data = std.StringHashMap(u64).init(std.heap.page_allocator);
@@ -21,8 +21,8 @@ var data = std.StringHashMap(u64).init(std.heap.page_allocator);
 var thread: ?std.Thread = null;
 
 // This code is based on https://github.com/luau-lang/luau/blob/946a097e93fda5df23c9afaf29b101e168a03bd5/CLI/Profiler.cpp
-fn lua_interrupt(lua_state: ?*luau.LuaState, gc: c_int) callconv(.C) void {
-    const L: *Luau = @ptrCast(lua_state.?);
+fn lua_interrupt(lua_state: ?*VM.lua.State, gc: c_int) callconv(.C) void {
+    const L: *VM.lua.State = @ptrCast(lua_state.?);
 
     const currTicks = ticks;
     const elapsedTicks = currTicks - currentTicks;
@@ -33,13 +33,13 @@ fn lua_interrupt(lua_state: ?*luau.LuaState, gc: c_int) callconv(.C) void {
         if (gc > 0)
             stack.appendSlice("GC,GC,") catch |err| std.debug.panic("{}", .{err});
 
-        var ar: luau.DebugInfo = undefined;
         var level: i32 = 0;
-        while (L.getInfo(level, .{ .s = true, .n = true }, &ar)) : (level += 1) {
+        var ar: VM.lua.Debug = .{ .ssbuf = undefined };
+        while (L.getinfo(level, "sn", &ar)) : (level += 1) {
             if (stack.items.len > 0)
                 stack.append(';') catch |err| std.debug.panic("{}", .{err});
 
-            stack.appendSlice(ar.short_src[0..ar.short_src_len]) catch |err| std.debug.panic("{}", .{err});
+            stack.appendSlice(ar.short_src.?) catch |err| std.debug.panic("{}", .{err});
             stack.append(',') catch |err| std.debug.panic("{}", .{err});
 
             if (ar.name) |name|
@@ -47,8 +47,7 @@ fn lua_interrupt(lua_state: ?*luau.LuaState, gc: c_int) callconv(.C) void {
 
             stack.append(',') catch |err| std.debug.panic("{}", .{err});
 
-            if (ar.line_defined) |line|
-                stack.writer().print("{d}", .{line}) catch |err| std.debug.panic("{}", .{err});
+            stack.writer().print("{d}", .{ar.linedefined.?}) catch |err| std.debug.panic("{}", .{err});
         }
 
         if (stack.items.len > 0) {
@@ -70,9 +69,9 @@ fn lua_interrupt(lua_state: ?*luau.LuaState, gc: c_int) callconv(.C) void {
 }
 
 fn loop() void {
-    var last = luau.clock();
+    var last = VM.lperf.clock();
     while (active) {
-        const now = luau.clock();
+        const now = VM.lperf.clock();
         if (now - last >= 1.0 / @as(f64, @floatFromInt(frequency))) {
             const lticks: u64 = @intFromFloat((now - last) * 1e6);
 
@@ -88,12 +87,12 @@ fn loop() void {
     }
 }
 
-pub fn start(L: *Luau, freq: u64) !void {
-    const allocator = L.allocator();
+pub fn start(L: *VM.lua.State, freq: u64) !void {
+    const allocator = luau.getallocator(L);
 
     active = true;
     frequency = freq;
-    callbacks = luau.CNative.lua_callbacks(luau.State.LuauToState(L));
+    callbacks = L.callbacks();
 
     thread = try std.Thread.spawn(.{ .allocator = allocator }, loop, .{});
 }

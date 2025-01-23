@@ -1,11 +1,11 @@
 const luau = @import("luau");
 
-const Luau = luau.Luau;
+const VM = luau.VM;
 
 pub const filesystem = struct {
     pub const File = @import("filesystem/File.zig");
 };
 
-pub fn load(L: *Luau) void {
+pub fn load(L: *VM.lua.State) void {
     filesystem.File.load(L);
 }

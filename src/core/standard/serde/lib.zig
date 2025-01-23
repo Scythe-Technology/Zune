@@ -17,128 +17,128 @@ const flate = @import("flate.zig");
 const lz4 = @import("lz4.zig");
 const zstd = @import("zstd.zig");
 
-const Luau = luau.Luau;
+const VM = luau.VM;
 
 pub const LIB_NAME = "serde";
 
-pub fn loadLib(L: *Luau) void {
-    L.newTable();
+pub fn loadLib(L: *VM.lua.State) void {
+    L.newtable();
 
     { // Json
-        L.newTable();
+        L.newtable();
 
-        L.setFieldFn(-1, "encode", json.LuaEncoder(.JSON));
-        L.setFieldFn(-1, "decode", json.LuaDecoder(.JSON));
+        L.Zsetfieldc(-1, "encode", json.LuaEncoder(.JSON));
+        L.Zsetfieldc(-1, "decode", json.LuaDecoder(.JSON));
 
         json.lua_setprops(L);
 
-        L.setReadOnly(-1, true);
-        L.setFieldAhead(-1, "json");
+        L.setreadonly(-1, true);
+        L.setfield(-2, "json");
     }
 
     { // Json5
-        L.newTable();
+        L.newtable();
 
-        L.setFieldFn(-1, "encode", json.LuaEncoder(.JSON5));
-        L.setFieldFn(-1, "decode", json.LuaDecoder(.JSON5));
+        L.Zsetfieldc(-1, "encode", json.LuaEncoder(.JSON5));
+        L.Zsetfieldc(-1, "decode", json.LuaDecoder(.JSON5));
 
-        _ = L.getField(-2, "json");
+        _ = L.getfield(-2, "json");
 
-        _ = L.getField(-1, "Indents");
-        L.setField(-3, "Indents");
+        _ = L.getfield(-1, "Indents");
+        L.setfield(-3, "Indents");
 
-        _ = L.getField(-1, "Values");
-        L.setField(-3, "Values");
+        _ = L.getfield(-1, "Values");
+        L.setfield(-3, "Values");
 
         L.pop(1);
 
-        L.setReadOnly(-1, true);
-        L.setFieldAhead(-1, "json5");
+        L.setreadonly(-1, true);
+        L.setfield(-2, "json5");
     }
 
     { // Toml
-        L.newTable();
+        L.newtable();
 
-        L.setFieldFn(-1, "encode", toml.lua_encode);
-        L.setFieldFn(-1, "decode", toml.lua_decode);
+        L.Zsetfieldc(-1, "encode", toml.lua_encode);
+        L.Zsetfieldc(-1, "decode", toml.lua_decode);
 
-        L.setReadOnly(-1, true);
-        L.setFieldAhead(-1, "toml");
+        L.setreadonly(-1, true);
+        L.setfield(-2, "toml");
     }
 
     { // Yaml
-        L.newTable();
+        L.newtable();
 
-        L.setFieldFn(-1, "encode", yaml.lua_encode);
-        L.setFieldFn(-1, "decode", yaml.lua_decode);
+        L.Zsetfieldc(-1, "encode", yaml.lua_encode);
+        L.Zsetfieldc(-1, "decode", yaml.lua_decode);
 
-        L.setReadOnly(-1, true);
-        L.setFieldAhead(-1, "yaml");
+        L.setreadonly(-1, true);
+        L.setfield(-2, "yaml");
     }
 
     { // Base64
-        L.newTable();
+        L.newtable();
 
-        L.setFieldFn(-1, "encode", base64.lua_encode);
-        L.setFieldFn(-1, "decode", base64.lua_decode);
+        L.Zsetfieldc(-1, "encode", base64.lua_encode);
+        L.Zsetfieldc(-1, "decode", base64.lua_decode);
 
-        L.setReadOnly(-1, true);
-        L.setFieldAhead(-1, "base64");
+        L.setreadonly(-1, true);
+        L.setfield(-2, "base64");
     }
 
     { // Gzip
-        L.newTable();
+        L.newtable();
 
-        L.setFieldFn(-1, "compress", gzip.lua_compress);
-        L.setFieldFn(-1, "decompress", gzip.lua_decompress);
+        L.Zsetfieldc(-1, "compress", gzip.lua_compress);
+        L.Zsetfieldc(-1, "decompress", gzip.lua_decompress);
 
-        L.setReadOnly(-1, true);
-        L.setFieldAhead(-1, "gzip");
+        L.setreadonly(-1, true);
+        L.setfield(-2, "gzip");
     }
 
     { // Zlib
-        L.newTable();
+        L.newtable();
 
-        L.setFieldFn(-1, "compress", zlib.lua_compress);
-        L.setFieldFn(-1, "decompress", zlib.lua_decompress);
+        L.Zsetfieldc(-1, "compress", zlib.lua_compress);
+        L.Zsetfieldc(-1, "decompress", zlib.lua_decompress);
 
-        L.setReadOnly(-1, true);
-        L.setFieldAhead(-1, "zlib");
+        L.setreadonly(-1, true);
+        L.setfield(-2, "zlib");
     }
 
     { // Flate
-        L.newTable();
+        L.newtable();
 
-        L.setFieldFn(-1, "compress", flate.lua_compress);
-        L.setFieldFn(-1, "decompress", flate.lua_decompress);
+        L.Zsetfieldc(-1, "compress", flate.lua_compress);
+        L.Zsetfieldc(-1, "decompress", flate.lua_decompress);
 
-        L.setReadOnly(-1, true);
-        L.setFieldAhead(-1, "flate");
+        L.setreadonly(-1, true);
+        L.setfield(-2, "flate");
     }
 
     { // Lz4
-        L.newTable();
+        L.newtable();
 
-        L.setFieldFn(-1, "compress", lz4.lua_compress);
-        L.setFieldFn(-1, "compressFrame", lz4.lua_frame_compress);
-        L.setFieldFn(-1, "decompress", lz4.lua_decompress);
-        L.setFieldFn(-1, "decompressFrame", lz4.lua_frame_decompress);
+        L.Zsetfieldc(-1, "compress", lz4.lua_compress);
+        L.Zsetfieldc(-1, "compressFrame", lz4.lua_frame_compress);
+        L.Zsetfieldc(-1, "decompress", lz4.lua_decompress);
+        L.Zsetfieldc(-1, "decompressFrame", lz4.lua_frame_decompress);
 
-        L.setReadOnly(-1, true);
-        L.setFieldAhead(-1, "lz4");
+        L.setreadonly(-1, true);
+        L.setfield(-2, "lz4");
     }
 
     { // Zstd
-        L.newTable();
+        L.newtable();
 
-        L.setFieldFn(-1, "compress", zstd.lua_compress);
-        L.setFieldFn(-1, "decompress", zstd.lua_decompress);
+        L.Zsetfieldc(-1, "compress", zstd.lua_compress);
+        L.Zsetfieldc(-1, "decompress", zstd.lua_decompress);
 
-        L.setReadOnly(-1, true);
-        L.setFieldAhead(-1, "zstd");
+        L.setreadonly(-1, true);
+        L.setfield(-2, "zstd");
     }
 
-    L.setReadOnly(-1, true);
+    L.setreadonly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);
 }
 

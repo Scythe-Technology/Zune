@@ -11,7 +11,7 @@ const Scheduler = @import("../core/runtime/scheduler.zig");
 const file = @import("../core/resolvers/file.zig");
 const require = @import("../core/resolvers/require.zig");
 
-const Luau = luau.Luau;
+const VM = luau.VM;
 
 fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len < 1) {
@@ -71,7 +71,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     const gpa_allocator = gpa.allocator();
 
-    var L = try Luau.init(&gpa_allocator);
+    var L = try luau.init(&gpa_allocator);
     defer L.deinit();
     var scheduler = Scheduler.init(gpa_allocator, L);
     defer scheduler.deinit();
@@ -84,11 +84,11 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         .mode = .Test,
     });
 
-    L.setSafeEnv(luau.GLOBALSINDEX, true);
+    L.setsafeenv(VM.lua.GLOBALSINDEX, true);
 
-    const ML = L.newThread();
+    const ML = L.newthread();
 
-    ML.sandboxThread();
+    ML.Lsandboxthread();
 
     Zune.resolvers_require.load_require(ML);
 
@@ -104,20 +104,20 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         .source = fileContent,
     });
 
-    ML.setSafeEnv(luau.GLOBALSINDEX, true);
+    ML.setsafeenv(VM.lua.GLOBALSINDEX, true);
 
-    const moduleRelativeNameZ = try gpa_allocator.dupeZ(u8, moduleRelativeName);
-    defer gpa_allocator.free(moduleRelativeNameZ);
+    const sourceNameZ = try std.mem.joinZ(gpa_allocator, "", &.{ "@", fileName });
+    defer gpa_allocator.free(sourceNameZ);
 
-    Engine.loadModule(ML, moduleRelativeNameZ, fileContent, null) catch |err| switch (err) {
+    Engine.loadModule(ML, sourceNameZ, fileContent, null) catch |err| switch (err) {
         error.Syntax => {
-            std.debug.print("SyntaxError: {s}\n", .{ML.toString(-1) catch "UnknownError"});
+            std.debug.print("SyntaxError: {s}\n", .{ML.tostring(-1) orelse "UnknownError"});
             return;
         },
         else => return err,
     };
 
-    const start = luau.clock();
+    const start = VM.lperf.clock();
 
     Engine.runAsync(ML, &scheduler, .{ .cleanUp = true }) catch {};
 

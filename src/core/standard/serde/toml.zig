@@ -5,7 +5,7 @@ const Parser = @import("../../utils/parser.zig");
 
 const json = @import("json.zig");
 
-const Luau = luau.Luau;
+const VM = luau.VM;
 
 const Error = error{
     InvalidString,
@@ -100,62 +100,62 @@ fn createIndex(allocator: std.mem.Allocator, all: []const u8, key: []const u8) !
     return try std.mem.join(allocator, ".", &[_][]const u8{ all, key });
 }
 
-fn encodeArrayPartial(L: *Luau, allocator: std.mem.Allocator, arraySize: i32, buf: *std.ArrayList(u8), info: EncodeInfo) anyerror!void {
+fn encodeArrayPartial(L: *VM.lua.State, allocator: std.mem.Allocator, arraySize: usize, buf: *std.ArrayList(u8), info: EncodeInfo) anyerror!void {
     var size: usize = 0;
-    L.pushNil();
+    L.pushnil();
     while (L.next(-2)) {
-        if (L.typeOf(-2) != .number)
+        if (L.typeOf(-2) != .Number)
             return Error.InvalidKey;
         switch (L.typeOf(-1)) {
-            .string => {
+            .String => {
                 size += 1;
-                const value = L.toString(-1) catch unreachable;
+                const value = L.tostring(-1) orelse unreachable;
                 try escape_string(buf, value);
                 if (size != arraySize) try buf.appendSlice(", ");
             },
-            .number => {
+            .Number => {
                 size += 1;
-                const num = L.checkNumber(-1);
+                const num = L.Lchecknumber(-1);
                 if (std.math.isNan(num) or std.math.isInf(num))
                     return Error.InvalidNumber;
-                const value = L.toString(-1) catch std.debug.panic("Number failed to convert to string\n", .{});
+                const value = L.tostring(-1) orelse std.debug.panic("Number failed to convert to string\n", .{});
                 try buf.appendSlice(value);
                 if (size != arraySize)
                     try buf.appendSlice(", ");
             },
-            .boolean => {
+            .Boolean => {
                 size += 1;
-                if (L.toBoolean(-1))
+                if (L.toboolean(-1))
                     try buf.appendSlice("true")
                 else
                     try buf.appendSlice("false");
                 if (size != arraySize)
                     try buf.appendSlice(", ");
             },
-            .table => {},
+            .Table => {},
             else => return Error.UnsupportedType,
         }
         L.pop(1);
     }
 
-    L.pushNil();
+    L.pushnil();
     while (L.next(-2)) {
-        if (L.typeOf(-2) != .number) return Error.InvalidKey;
+        if (L.typeOf(-2) != .Number) return Error.InvalidKey;
         switch (L.typeOf(-1)) {
-            .string, .number, .boolean => {},
-            .table => {
+            .String, .Number, .Boolean => {},
+            .Table => {
                 size += 1;
-                const tablePtr = try L.toPointer(-1);
+                const tablePtr = L.topointer(-1) orelse return error.Failed;
 
                 for (info.tracked.items) |t| if (t == tablePtr) return Error.CircularReference;
                 try info.tracked.append(tablePtr);
 
-                const tableSize = L.objLen(-1);
-                L.pushNil();
+                const tableSize = L.objlen(-1);
+                L.pushnil();
                 const nextKey = L.next(-2);
                 if (tableSize > 0 or !nextKey) {
                     if (nextKey) {
-                        if (L.typeOf(-2) != .number)
+                        if (L.typeOf(-2) != .Number)
                             return Error.InvalidKey;
                         L.pop(2);
                         try buf.append('[');
@@ -191,76 +191,77 @@ fn encodeArrayPartial(L: *Luau, allocator: std.mem.Allocator, arraySize: i32, bu
     if (arraySize != size) return Error.InvalidArray;
 }
 
-fn encodeTable(L: *Luau, allocator: std.mem.Allocator, buf: *std.ArrayList(u8), info: EncodeInfo) anyerror!void {
-    L.pushNil();
+fn encodeTable(L: *VM.lua.State, allocator: std.mem.Allocator, buf: *std.ArrayList(u8), info: EncodeInfo) anyerror!void {
+    L.pushnil();
     while (L.next(-2)) {
-        if (L.typeOf(-2) != .string)
+        if (L.typeOf(-2) != .String)
             return Error.InvalidKey;
-        const key = L.toString(-2) catch unreachable;
+        const key = L.tostring(-2) orelse unreachable;
         switch (L.typeOf(-1)) {
-            .string => {
+            .String => {
                 const name = try createIndex(allocator, if (info.root) "" else info.keyName, key);
                 defer allocator.free(name);
                 try buf.appendSlice(name);
                 try buf.appendSlice(" = ");
-                const value = L.toString(-1) catch unreachable;
+                const value = L.tostring(-1) orelse unreachable;
                 try escape_string(buf, value);
                 if (!info.root) try buf.appendSlice(",\n") else try buf.append('\n');
             },
-            .number => {
-                const num = L.checkNumber(-1);
+            .Number => {
+                const num = L.Lchecknumber(-1);
                 if (std.math.isNan(num) or std.math.isInf(num))
                     return Error.InvalidNumber;
                 const name = try createIndex(allocator, if (info.root) "" else info.keyName, key);
                 defer allocator.free(name);
                 try buf.appendSlice(name);
                 try buf.appendSlice(" = ");
-                const value = L.toString(-1) catch std.debug.panic("Number failed to convert to string\n", .{});
+                const value = L.tostring(-1) orelse std.debug.panic("Number failed to convert to string\n", .{});
                 try buf.appendSlice(value);
                 if (!info.root)
                     try buf.appendSlice(",\n")
                 else
                     try buf.append('\n');
             },
-            .boolean => {
+            .Boolean => {
                 const name = try createIndex(allocator, if (info.root) "" else info.keyName, key);
                 defer allocator.free(name);
                 try buf.appendSlice(name);
                 try buf.appendSlice(" = ");
-                if (L.toBoolean(-1)) try buf.appendSlice("true") else try buf.appendSlice("false");
+                if (L.toboolean(-1)) try buf.appendSlice("true") else try buf.appendSlice("false");
                 if (!info.root) try buf.appendSlice(",\n") else try buf.append('\n');
             },
-            .table => {},
+            .Table => {},
             else => return Error.UnsupportedType,
         }
         L.pop(1);
     }
 
-    L.pushNil();
+    L.pushnil();
     while (L.next(-2)) {
-        if (L.typeOf(-2) != .string) return Error.InvalidKey;
+        if (L.typeOf(-2) != .String) return Error.InvalidKey;
         switch (L.typeOf(-1)) {
-            .string, .number, .boolean => {},
-            .table => {
-                const key = L.toString(-2) catch unreachable;
+            .String, .Number, .Boolean => {},
+            .Table => {
+                const key = L.tostring(-2) orelse unreachable;
                 const name = try createIndex(allocator, info.keyName, key);
                 defer allocator.free(name);
 
-                const tablePtr = try L.toPointer(-1);
+                const tablePtr = L.topointer(-1) orelse return error.Failed;
 
-                for (info.tracked.items) |t| if (t == tablePtr)
-                    return Error.CircularReference;
+                for (info.tracked.items) |t|
+                    if (t == tablePtr)
+                        return Error.CircularReference;
 
                 try info.tracked.append(tablePtr);
 
-                const tableSize = L.objLen(-1);
-                L.pushNil();
+                const tableSize = L.objlen(-1);
+                L.pushnil();
                 const nextKey = L.next(-2);
                 if (tableSize > 0 or !nextKey) {
                     try buf.appendSlice(name);
                     try buf.appendSlice(" = ");
                     if (nextKey) {
-                        if (L.typeOf(-2) != .number)
+                        if (L.typeOf(-2) != .Number)
                             return Error.InvalidKey;
                         L.pop(2);
                         try buf.append('[');
@@ -319,7 +320,7 @@ fn encodeTable(L: *Luau, allocator: std.mem.Allocator, buf: *std.ArrayList(u8), 
     }
 }
 
-fn encode(L: *Luau, allocator: std.mem.Allocator, buf: *std.ArrayList(u8), info: EncodeInfo) !void {
+fn encode(L: *VM.lua.State, allocator: std.mem.Allocator, buf: *std.ArrayList(u8), info: EncodeInfo) !void {
     try encodeTable(L, allocator, buf, info);
 
     const tagged_count = info.tagged.count();
@@ -348,13 +349,13 @@ const WHITESPACE_LINE = [_]u8{ 32, '\t', '\r', '\n' };
 const DELIMITER = [_]u8{ 32, '\t', '\r', '\n', '}', ']', ',' };
 const NEWLINE = [_]u8{ '\r', '\n' };
 
-fn decodeGenerateName(L: *Luau, name: []const u8, comptime includeLast: bool) Error!void {
+fn decodeGenerateName(L: *VM.lua.State, name: []const u8, comptime includeLast: bool) Error!void {
     var last_pos: usize = 0;
     var p: usize = 0;
     while (p < name.len) switch (name[p]) {
         '"', '\'' => {
             const slice = name[last_pos..];
-            L.newTable();
+            L.newtable();
             var tempInfo = DecodeInfo{};
             const str_p = try decodeString(L, slice, false, &tempInfo);
             if (slice.len == str_p) {
@@ -362,13 +363,13 @@ fn decodeGenerateName(L: *Luau, name: []const u8, comptime includeLast: bool) Er
                 break;
             }
             p += str_p;
-            L.pushValue(-1);
-            const ttype = L.getTable(-4);
-            if (luau.isNoneOrNil(ttype)) {
+            L.pushvalue(-1);
+            const ttype = L.gettable(-4);
+            if (ttype.isnoneornil()) {
                 L.pop(1);
-                L.pushValue(-2);
-                L.setTable(-4);
-            } else if (ttype != .table) return Error.InvalidTable else {
+                L.pushvalue(-2);
+                L.settable(-4);
+            } else if (ttype != .Table) return Error.InvalidTable else {
                 L.remove(-2);
                 L.remove(-2);
             }
@@ -377,16 +378,16 @@ fn decodeGenerateName(L: *Luau, name: []const u8, comptime includeLast: bool) Er
         '.' => {
             const slice = name[last_pos..p];
             p += 1;
-            L.newTable();
+            L.newtable();
             try validateWord(slice);
-            L.pushLString(slice);
-            L.pushValue(-1);
-            const ttype = L.getTable(-4);
-            if (luau.isNoneOrNil(ttype)) {
+            L.pushlstring(slice);
+            L.pushvalue(-1);
+            const ttype = L.gettable(-4);
+            if (ttype.isnoneornil()) {
                 L.pop(1);
-                L.pushValue(-2);
-                L.setTable(-4);
-            } else if (ttype != .table) return Error.InvalidTable else {
+                L.pushvalue(-2);
+                L.settable(-4);
+            } else if (ttype != .Table) return Error.InvalidTable else {
                 L.remove(-2);
                 L.remove(-2);
             }
@@ -400,45 +401,45 @@ fn decodeGenerateName(L: *Luau, name: []const u8, comptime includeLast: bool) Er
 
     const slice = name[last_pos..];
     if (includeLast)
-        L.newTable();
+        L.newtable();
     if (slice[0] == '\'' or slice[0] == '"') {
         var tempInfo = DecodeInfo{};
         _ = decodeString(L, slice, false, &tempInfo) catch return Error.InvalidIndexString;
     } else {
         try validateWord(slice);
-        L.pushLString(slice);
+        L.pushlstring(slice);
     }
     if (includeLast) {
-        L.pushValue(-1);
-        const ttype = L.getTable(-4);
-        if (luau.isNoneOrNil(ttype)) {
+        L.pushvalue(-1);
+        const ttype = L.gettable(-4);
+        if (ttype.isnoneornil()) {
             L.pop(1);
-            L.pushValue(-2);
-            L.setTable(-4);
-        } else if (ttype != .table) return Error.InvalidTable else {
+            L.pushvalue(-2);
+            L.settable(-4);
+        } else if (ttype != .Table) return Error.InvalidTable else {
             L.remove(-2);
             L.remove(-2);
         }
     }
 }
 
-fn decodeString(L: *Luau, string: []const u8, comptime multi: bool, info: *DecodeInfo) Error!usize {
+fn decodeString(L: *VM.lua.State, string: []const u8, comptime multi: bool, info: *DecodeInfo) Error!usize {
     if (string.len < if (multi) 6 else 2)
         return Error.InvalidString;
     if (multi) {
         if (std.mem.eql(u8, string[0..2], string[3..6])) {
-            L.pushString("");
+            L.pushstring("");
             return 6;
         }
     } else if (string[0] == string[1]) {
-        L.pushString("");
+        L.pushstring("");
         return 2;
     }
 
     const delim = string[0];
     const literal = delim == '\'';
 
-    var buf = std.ArrayList(u8).init(L.allocator());
+    var buf = std.ArrayList(u8).init(luau.getallocator(L));
     defer buf.deinit();
     var end: usize = if (multi) 3 else 1;
     info.pos += end;
@@ -529,14 +530,14 @@ fn decodeString(L: *Luau, string: []const u8, comptime multi: bool, info: *Decod
     };
     if (!eof)
         return Error.InvalidStringEof;
-    L.pushLString(buf.items);
+    L.pushlstring(buf.items);
     return end;
 }
 
-fn decodeArray(L: *Luau, string: []const u8, info: *DecodeInfo) Error!usize {
+fn decodeArray(L: *VM.lua.State, string: []const u8, info: *DecodeInfo) Error!usize {
     if (string.len < 2)
         return Error.MissingArray;
-    L.newTable();
+    L.newtable();
 
     if (string[0] == string[1])
         return 2;
@@ -559,7 +560,7 @@ fn decodeArray(L: *Luau, string: []const u8, info: *DecodeInfo) Error!usize {
 
             end += try decodeValue(L, string[end..], info);
 
-            L.rawSetIndex(-2, size);
+            L.rawseti(-2, size);
 
             adjustment = Parser.nextNonCharacter(string[end..], &WHITESPACE_LINE);
             end += adjustment;
@@ -581,16 +582,16 @@ fn decodeArray(L: *Luau, string: []const u8, info: *DecodeInfo) Error!usize {
     return end;
 }
 
-fn decodeTable(L: *Luau, string: []const u8, info: *DecodeInfo) Error!usize {
+fn decodeTable(L: *VM.lua.State, string: []const u8, info: *DecodeInfo) Error!usize {
     if (string.len < 2)
         return Error.MissingTable;
 
-    L.newTable();
+    L.newtable();
 
     if (string[0] == string[1])
         return 2;
 
-    const main = L.getTop();
+    const main = L.gettop();
 
     info.pos += 1;
     var end: usize = 1;
@@ -626,9 +627,9 @@ fn decodeTable(L: *Luau, string: []const u8, info: *DecodeInfo) Error!usize {
 
             end += try decodeValue(L, string[end..], info);
 
-            L.setTable(-3);
+            L.settable(-3);
 
-            returnTop(L, main);
+            returnTop(L, @intCast(main));
 
             adjustment = Parser.nextNonCharacter(string[end..], &WHITESPACE_LINE);
             end += adjustment;
@@ -650,7 +651,7 @@ fn decodeTable(L: *Luau, string: []const u8, info: *DecodeInfo) Error!usize {
     return end;
 }
 
-fn decodeValue(L: *Luau, string: []const u8, info: *DecodeInfo) !usize {
+fn decodeValue(L: *VM.lua.State, string: []const u8, info: *DecodeInfo) !usize {
     switch (string[0]) {
         '"', '\'' => |c| {
             if (string.len > 2 and string[1] == c and string[2] == c)
@@ -662,17 +663,17 @@ fn decodeValue(L: *Luau, string: []const u8, info: *DecodeInfo) !usize {
         '0'...'9', '-' => {
             const end = Parser.nextCharacter(string, &DELIMITER);
             if (std.mem.indexOfScalar(u8, string[0..end], ':') != null)
-                L.pushLString(string[0..end])
+                L.pushlstring(string[0..end])
             else {
                 const num = std.fmt.parseFloat(f64, string[0..end]) catch return Error.InvalidNumber;
-                L.pushNumber(num);
+                L.pushnumber(num);
             }
             return end;
         },
         't' => {
             // TODO: static eql u32 == u32 [0..4] "true"
             if (string.len > 3 and std.mem.eql(u8, string[0..4], "true"))
-                L.pushBoolean(true)
+                L.pushboolean(true)
             else
                 return Error.InvalidLiteral;
             return 4;
@@ -680,7 +681,7 @@ fn decodeValue(L: *Luau, string: []const u8, info: *DecodeInfo) !usize {
         'f' => {
             // TODO: static eql u32 == u32 [1..5] "alse"
             if (string.len > 4 and std.mem.eql(u8, string[0..5], "false"))
-                L.pushBoolean(false)
+                L.pushboolean(false)
             else
                 return Error.InvalidLiteral;
             return 5;
@@ -696,8 +697,8 @@ fn validateWord(slice: []const u8) !void {
     };
 }
 
-fn returnTop(L: *Luau, lastTop: i32) void {
-    const diff = L.getTop() - lastTop;
+fn returnTop(L: *VM.lua.State, lastTop: i32) void {
+    const diff = @as(i32, @intCast(L.gettop())) - lastTop;
     if (diff > 0)
         L.pop(diff);
 }
@@ -706,10 +707,10 @@ const DecodeInfo = struct {
     pos: usize = 0,
 };
 
-fn decode(L: *Luau, string: []const u8, info: *DecodeInfo) !void {
-    L.newTable();
+fn decode(L: *VM.lua.State, string: []const u8, info: *DecodeInfo) !void {
+    L.newtable();
     errdefer L.pop(1);
-    const main = L.getTop();
+    const main = L.gettop();
     var pos = Parser.nextNonCharacter(string, &WHITESPACE);
     var scan: usize = 0;
     while (pos < string.len) switch (string[pos]) {
@@ -728,16 +729,16 @@ fn decode(L: *Luau, string: []const u8, info: *DecodeInfo) !void {
 
             pos += Parser.nextNonCharacter(string[pos..], &WHITESPACE);
 
-            const last = L.getTop();
+            const last = L.gettop();
             info.pos = pos;
             try decodeGenerateName(L, variable_name, false);
 
             pos += try decodeValue(L, string[pos..], info);
             info.pos = pos;
 
-            L.setTable(-3);
+            L.settable(-3);
 
-            returnTop(L, last);
+            returnTop(L, @intCast(last));
 
             pos += Parser.nextNonCharacter(string[pos..], &WHITESPACE);
         },
@@ -745,7 +746,7 @@ fn decode(L: *Luau, string: []const u8, info: *DecodeInfo) !void {
             if (pos + 2 >= string.len)
                 return Error.InvalidTable;
 
-            returnTop(L, main);
+            returnTop(L, @intCast(main));
 
             const slice = string[pos + 1 ..];
             const last = std.mem.indexOfScalar(u8, slice, ']') orelse slice.len;
@@ -758,12 +759,12 @@ fn decode(L: *Luau, string: []const u8, info: *DecodeInfo) !void {
         },
         else => pos += 1,
     };
-    returnTop(L, main);
+    returnTop(L, @intCast(main));
 }
 
-pub fn lua_encode(L: *Luau) !i32 {
-    L.checkType(1, .table);
-    const allocator = L.allocator();
+pub fn lua_encode(L: *VM.lua.State) !i32 {
+    L.Lchecktype(1, .Table);
+    const allocator = luau.getallocator(L);
 
     var buf = std.ArrayList(u8).init(allocator);
     defer buf.deinit();
@@ -782,15 +783,15 @@ pub fn lua_encode(L: *Luau) !i32 {
 
     try encode(L, allocator, &buf, info);
 
-    L.pushLString(buf.items);
+    L.pushlstring(buf.items);
 
     return 1;
 }
 
-pub fn lua_decode(L: *Luau) !i32 {
-    const string = L.checkString(1);
+pub fn lua_decode(L: *VM.lua.State) !i32 {
+    const string = L.Lcheckstring(1);
     if (string.len == 0) {
-        L.pushNil();
+        L.pushnil();
         return 1;
     }
 
@@ -799,7 +800,7 @@ pub fn lua_decode(L: *Luau) !i32 {
     decode(L, string, &info) catch |err| {
         const lineInfo = Parser.getLineInfo(string, info.pos);
         switch (err) {
-            else => return L.ErrorFmt("{s} at line {d}, col {d}", .{ @errorName(err), lineInfo.line, lineInfo.col }),
+            else => return L.Zerrorf("{s} at line {d}, col {d}", .{ @errorName(err), lineInfo.line, lineInfo.col }),
         }
     };
 

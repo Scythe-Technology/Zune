@@ -9,7 +9,7 @@ const Parser = @import("../utils/parser.zig");
 const luaHelper = @import("../utils/luahelper.zig");
 const sysfd = @import("../utils/sysfd.zig");
 
-const Luau = luau.Luau;
+const VM = luau.VM;
 
 const process = std.process;
 
@@ -20,7 +20,7 @@ pub const LIB_NAME = "process";
 pub var SIGINT_LUA: ?LuaSigHandler = null;
 
 const LuaSigHandler = struct {
-    state: *Luau,
+    state: *VM.lua.State,
     ref: i32,
 };
 
@@ -34,25 +34,25 @@ const ProcessEnvError = error{
     InvalidValueType,
 };
 
-fn internal_process_getargs(L: *Luau, array: *std.ArrayList([]const u8), idx: i32) !void {
-    L.checkType(idx, luau.LuaType.table);
-    L.pushValue(idx);
-    L.pushNil();
+fn internal_process_getargs(L: *VM.lua.State, array: *std.ArrayList([]const u8), idx: i32) !void {
+    L.Lchecktype(idx, .Table);
+    L.pushvalue(idx);
+    L.pushnil();
 
     var i: i32 = 1;
     while (L.next(-2)) {
         const keyType = L.typeOf(-2);
         const valueType = L.typeOf(-1);
-        if (keyType != luau.LuaType.number)
+        if (keyType != .Number)
             return ProcessArgsError.NotArray;
 
-        const num = L.toInteger(-2) catch return ProcessArgsError.NotArray;
+        const num = L.tointeger(-2) orelse return ProcessArgsError.NotArray;
         if (num != i)
             return ProcessArgsError.NotArray;
-        if (valueType != luau.LuaType.string)
+        if (valueType != .String)
             return ProcessArgsError.InvalidArgType;
 
-        const value = L.toString(-1) catch return ProcessArgsError.InvalidArgType;
+        const value = L.tostring(-1) orelse return ProcessArgsError.InvalidArgType;
 
         try array.append(value);
         L.pop(1);
@@ -61,47 +61,47 @@ fn internal_process_getargs(L: *Luau, array: *std.ArrayList([]const u8), idx: i3
     L.pop(1);
 }
 
-fn internal_process_envmap(L: *Luau, envMap: *std.process.EnvMap, idx: i32) !void {
-    L.checkType(idx, luau.LuaType.table);
-    L.pushValue(idx);
-    L.pushNil();
+fn internal_process_envmap(L: *VM.lua.State, envMap: *std.process.EnvMap, idx: i32) !void {
+    L.Lchecktype(idx, .Table);
+    L.pushvalue(idx);
+    L.pushnil();
 
     while (L.next(-2)) {
         const keyType = L.typeOf(-2);
         const valueType = L.typeOf(-1);
-        if (keyType != luau.LuaType.string)
+        if (keyType != .String)
             return ProcessEnvError.InvalidKeyType;
-        if (valueType != luau.LuaType.string)
+        if (valueType != .String)
             return ProcessEnvError.InvalidValueType;
-        const key = L.toString(-2) catch return ProcessEnvError.InvalidKeyType;
-        const value = L.toString(-1) catch return ProcessEnvError.InvalidValueType;
+        const key = L.tostring(-2) orelse return ProcessEnvError.InvalidKeyType;
+        const value = L.tostring(-1) orelse return ProcessEnvError.InvalidValueType;
         try envMap.put(key, value);
         L.pop(1);
     }
     L.pop(1);
 }
 
-fn internal_process_term(L: *Luau, term: process.Child.Term) void {
+fn internal_process_term(L: *VM.lua.State, term: process.Child.Term) void {
     switch (term) {
         .Exited => |code| {
-            L.setFieldString(-1, "status", "Exited");
-            L.setFieldInteger(-1, "code", @intCast(code));
-            L.setFieldBoolean(-1, "ok", code == 0);
+            L.Zsetfieldc(-1, "status", "Exited");
+            L.Zsetfield(-1, "code", code);
+            L.Zsetfield(-1, "ok", code == 0);
         },
         .Stopped => |code| {
-            L.setFieldString(-1, "status", "Stopped");
-            L.setFieldInteger(-1, "code", @intCast(code));
-            L.setFieldBoolean(-1, "ok", false);
+            L.Zsetfieldc(-1, "status", "Stopped");
+            L.Zsetfield(-1, "code", code);
+            L.Zsetfieldc(-1, "ok", false);
         },
         .Signal => |code| {
-            L.setFieldString(-1, "status", "Signal");
-            L.setFieldInteger(-1, "code", @intCast(code));
-            L.setFieldBoolean(-1, "ok", false);
+            L.Zsetfieldc(-1, "status", "Signal");
+            L.Zsetfield(-1, "code", code);
+            L.Zsetfieldc(-1, "ok", false);
         },
         .Unknown => |code| {
-            L.setFieldString(-1, "status", "Unknown");
-            L.setFieldInteger(-1, "code", @intCast(code));
-            L.setFieldBoolean(-1, "ok", false);
+            L.Zsetfieldc(-1, "status", "Unknown");
+            L.Zsetfield(-1, "code", code);
+            L.Zsetfieldc(-1, "ok", false);
         },
     }
 }
@@ -119,24 +119,24 @@ const ProcessChildHandle = struct {
 
     pub const META = "process_child_instance";
 
-    fn method_kill(self: *ProcessChildHandle, L: *Luau) !i32 {
+    fn method_kill(self: *ProcessChildHandle, L: *VM.lua.State) !i32 {
         const term = try self.child.kill();
         self.dead = true;
-        L.newTable();
+        L.newtable();
         internal_process_term(L, term);
         return 1;
     }
 
-    fn method_wait(self: *ProcessChildHandle, L: *Luau) !i32 {
+    fn method_wait(self: *ProcessChildHandle, L: *VM.lua.State) !i32 {
         const term = try self.child.wait();
         self.dead = true;
-        L.newTable();
+        L.newtable();
         internal_process_term(L, term);
         return 1;
     }
 
-    fn method_readOut(self: *ProcessChildHandle, L: *Luau) !i32 {
-        const maxBytes = L.optUnsigned(2) orelse luaHelper.MAX_LUAU_SIZE;
+    fn method_readOut(self: *ProcessChildHandle, L: *VM.lua.State) !i32 {
+        const maxBytes = L.tounsigned(2) orelse luaHelper.MAX_LUAU_SIZE;
         if (maxBytes == 0)
             return 0;
 
@@ -150,7 +150,7 @@ const ProcessChildHandle = struct {
                 return 0;
 
             const read = @min(maxBytes, fifo.count);
-            L.pushLString(fifo.readableSliceOfLen(read));
+            L.pushlstring(fifo.readableSliceOfLen(read));
             fifo.discard(read);
 
             return 1;
@@ -158,8 +158,8 @@ const ProcessChildHandle = struct {
         return 0;
     }
 
-    fn method_readOutAsync(self: *ProcessChildHandle, L: *Luau, scheduler: *Scheduler) !i32 {
-        const maxBytes = L.optUnsigned(2) orelse luaHelper.MAX_LUAU_SIZE;
+    fn method_readOutAsync(self: *ProcessChildHandle, L: *VM.lua.State, scheduler: *Scheduler) !i32 {
+        const maxBytes = L.tounsigned(2) orelse luaHelper.MAX_LUAU_SIZE;
         if (maxBytes == 0)
             return 0;
 
@@ -172,7 +172,7 @@ const ProcessChildHandle = struct {
             if (fifo.count == 0) {
                 const TaskContext = struct { *ProcessChildHandle, usize };
                 return try scheduler.addSimpleTask(TaskContext, .{ self, maxBytes }, L, struct {
-                    fn inner(ctx: *TaskContext, l: *Luau, _: *Scheduler) !i32 {
+                    fn inner(ctx: *TaskContext, l: *VM.lua.State, _: *Scheduler) !i32 {
                         const ptr, const max_bytes = ctx.*;
                         if (ptr.poller) |*p| {
                             if (!try p.pollTimeout(0)) {
@@ -184,7 +184,7 @@ const ProcessChildHandle = struct {
                                 return -1;
 
                             const read = @min(max_bytes, sub_fifo.count);
-                            l.pushLString(sub_fifo.readableSliceOfLen(read));
+                            l.pushlstring(sub_fifo.readableSliceOfLen(read));
                             sub_fifo.discard(read);
 
                             return 1;
@@ -195,15 +195,15 @@ const ProcessChildHandle = struct {
             }
 
             const read = @min(maxBytes, fifo.count);
-            L.pushLString(fifo.readableSliceOfLen(read));
+            L.pushlstring(fifo.readableSliceOfLen(read));
             fifo.discard(read);
             return 1;
         }
         return 0;
     }
 
-    fn method_readErr(self: *ProcessChildHandle, L: *Luau) !i32 {
-        const maxBytes = L.optUnsigned(2) orelse luaHelper.MAX_LUAU_SIZE;
+    fn method_readErr(self: *ProcessChildHandle, L: *VM.lua.State) !i32 {
+        const maxBytes = L.tounsigned(2) orelse luaHelper.MAX_LUAU_SIZE;
         if (maxBytes == 0)
             return 0;
 
@@ -217,7 +217,7 @@ const ProcessChildHandle = struct {
                 return 0;
 
             const read = @min(maxBytes, fifo.count);
-            L.pushLString(fifo.readableSliceOfLen(read));
+            L.pushlstring(fifo.readableSliceOfLen(read));
             fifo.discard(read);
 
             return 1;
@@ -225,8 +225,8 @@ const ProcessChildHandle = struct {
         return 0;
     }
 
-    fn method_readErrAsync(self: *ProcessChildHandle, L: *Luau, scheduler: *Scheduler) !i32 {
-        const maxBytes = L.optUnsigned(2) orelse luaHelper.MAX_LUAU_SIZE;
+    fn method_readErrAsync(self: *ProcessChildHandle, L: *VM.lua.State, scheduler: *Scheduler) !i32 {
+        const maxBytes = L.tounsigned(2) orelse luaHelper.MAX_LUAU_SIZE;
         if (maxBytes == 0)
             return 0;
 
@@ -239,7 +239,7 @@ const ProcessChildHandle = struct {
             if (fifo.count == 0) {
                 const TaskContext = struct { *ProcessChildHandle, usize };
                 return try scheduler.addSimpleTask(TaskContext, .{ self, maxBytes }, L, struct {
-                    fn inner(ctx: *TaskContext, l: *Luau, _: *Scheduler) !i32 {
+                    fn inner(ctx: *TaskContext, l: *VM.lua.State, _: *Scheduler) !i32 {
                         const ptr, const max_bytes = ctx.*;
                         if (ptr.poller) |*p| {
                             if (!try p.pollTimeout(0)) {
@@ -251,7 +251,7 @@ const ProcessChildHandle = struct {
                                 return -1;
 
                             const read = @min(max_bytes, sub_fifo.count);
-                            l.pushLString(sub_fifo.readableSliceOfLen(read));
+                            l.pushlstring(sub_fifo.readableSliceOfLen(read));
                             sub_fifo.discard(read);
 
                             return 1;
@@ -262,7 +262,7 @@ const ProcessChildHandle = struct {
             }
 
             const read = @min(maxBytes, fifo.count);
-            L.pushLString(fifo.readableSliceOfLen(read));
+            L.pushlstring(fifo.readableSliceOfLen(read));
             fifo.discard(read);
 
             return 1;
@@ -270,12 +270,12 @@ const ProcessChildHandle = struct {
         return 0;
     }
 
-    fn method_writeIn(self: *ProcessChildHandle, L: *Luau) !i32 {
-        const buffer = L.checkString(2);
+    fn method_writeIn(self: *ProcessChildHandle, L: *VM.lua.State) !i32 {
+        const buffer = L.Lcheckstring(2);
         if (self.child.stdin == null)
-            return L.Error("InternalError (No stdin stream found)");
+            return L.Zerror("InternalError (No stdin stream found)");
         if (self.child.stdin_behavior != .Pipe)
-            return L.Error("InternalError (stdin stream is not a pipe)");
+            return L.Zerror("InternalError (stdin stream is not a pipe)");
 
         try self.child.stdin.?.writeAll(buffer);
         return 1;
@@ -299,14 +299,14 @@ const ProcessChildHandle = struct {
         .{ "writeIn", .WriteIn },
     });
 
-    pub fn __namecall(L: *Luau) !i32 {
+    pub fn __namecall(L: *VM.lua.State) !i32 {
         const scheduler = Scheduler.getScheduler(L);
 
-        L.checkType(1, .userdata);
-        const ptr = L.toUserdata(ProcessChildHandle, 1) catch unreachable;
-        const namecall = L.nameCallAtom() catch unreachable;
+        L.Lchecktype(1, .Userdata);
+        const ptr = L.touserdata(ProcessChildHandle, 1) orelse unreachable;
+        const namecall = L.namecallstr() orelse unreachable;
 
-        return switch (NamecallMap.get(namecall) orelse return L.ErrorFmt("Unknown method: {s}", .{namecall})) {
+        return switch (NamecallMap.get(namecall) orelse return L.Zerrorf("Unknown method: {s}", .{namecall})) {
             .Kill => method_kill(ptr, L),
             .Wait => method_wait(ptr, L),
             .ReadOut => method_readOut(ptr, L),
@@ -323,13 +323,13 @@ const ProcessChildHandle = struct {
         .{ "dead", .Dead },
     });
 
-    pub fn __index(L: *Luau) !i32 {
-        L.checkType(1, .userdata);
-        const handlePtr = L.toUserdata(ProcessChildHandle, 1) catch unreachable;
-        const index = L.checkString(2);
+    pub fn __index(L: *VM.lua.State) !i32 {
+        L.Lchecktype(1, .Userdata);
+        const handlePtr = L.touserdata(ProcessChildHandle, 1) orelse unreachable;
+        const index = L.Lcheckstring(2);
 
-        switch (IndexMap.get(index) orelse return L.ErrorFmt("Unknown index: {s}", .{index})) {
-            .Dead => L.pushBoolean(handlePtr.dead),
+        switch (IndexMap.get(index) orelse return L.Zerrorf("Unknown index: {s}", .{index})) {
+            .Dead => L.pushboolean(handlePtr.dead),
         }
 
         return 1;
@@ -352,12 +352,12 @@ const ProcessChildOptions = struct {
     argArray: std.ArrayList([]const u8),
     tagged: std.ArrayList([]const u8),
 
-    pub fn init(L: *Luau) !ProcessChildOptions {
-        const cmd = L.checkString(1);
-        const useArgs = L.typeOf(2) == .table;
-        const options = L.typeOf(3) != .none;
+    pub fn init(L: *VM.lua.State) !ProcessChildOptions {
+        const cmd = L.Lcheckstring(1);
+        const useArgs = L.typeOf(2) == .Table;
+        const options = !L.typeOf(3).isnoneornil();
 
-        const allocator = L.allocator();
+        const allocator = luau.getallocator(L);
 
         var childOptions = ProcessChildOptions{
             .cmd = cmd,
@@ -367,33 +367,33 @@ const ProcessChildOptions = struct {
         errdefer childOptions.argArray.deinit();
 
         if (options) {
-            L.checkType(3, .table);
+            L.Lchecktype(3, .Table);
 
-            const cwdType = L.getField(3, "cwd");
-            if (!luau.isNoneOrNil(cwdType)) {
-                if (cwdType == .string) {
-                    childOptions.cwd = L.toString(-1) catch null;
-                } else return L.ErrorFmt("invalid cwd (string expected, got {s})", .{L.typeName(cwdType)});
+            const cwdType = L.getfield(3, "cwd");
+            if (!cwdType.isnoneornil()) {
+                if (cwdType == .String) {
+                    childOptions.cwd = L.tostring(-1) orelse null;
+                } else return L.Zerrorf("invalid cwd (string expected, got {s})", .{VM.lapi.typename(cwdType)});
             }
             L.pop(1);
 
-            const envType = L.getField(3, "env");
-            if (!luau.isNoneOrNil(envType)) {
-                if (envType == .table) {
+            const envType = L.getfield(3, "env");
+            if (!envType.isnoneornil()) {
+                if (envType == .Table) {
                     childOptions.env = std.process.EnvMap.init(allocator);
                     internal_process_envmap(L, &childOptions.env.?, -1) catch |err| switch (err) {
-                        ProcessEnvError.InvalidKeyType => return L.Error("Invalid environment key"),
-                        ProcessEnvError.InvalidValueType => return L.Error("Invalid environment value"),
-                        else => return L.Error("Unknown Error"),
+                        ProcessEnvError.InvalidKeyType => return L.Zerror("Invalid environment key"),
+                        ProcessEnvError.InvalidValueType => return L.Zerror("Invalid environment value"),
+                        else => return L.Zerror("Unknown Error"),
                     };
-                } else return L.ErrorFmt("Invalid environment (table expected, got {s})", .{L.typeName(envType)});
+                } else return L.Zerrorf("Invalid environment (table expected, got {s})", .{VM.lapi.typename(envType)});
             }
             L.pop(1);
 
-            const shellType = L.getField(3, "shell");
-            if (!luau.isNoneOrNil(shellType)) {
-                if (shellType == .string) {
-                    const shellOption = L.toString(-1) catch unreachable;
+            const shellType = L.getfield(3, "shell");
+            if (!shellType.isnoneornil()) {
+                if (shellType == .String) {
+                    const shellOption = L.tostring(-1) orelse unreachable;
 
                     // TODO: prob should switch to static string map
                     if (std.mem.eql(u8, shellOption, "sh") or std.mem.eql(u8, shellOption, "/bin/sh")) {
@@ -409,15 +409,15 @@ const ProcessChildOptions = struct {
                         childOptions.shell = shellOption;
                         childOptions.shell_inline = null;
                     }
-                } else if (shellType == .boolean) {
-                    if (L.toBoolean(-1)) {
+                } else if (shellType == .Boolean) {
+                    if (L.toboolean(-1)) {
                         switch (native_os) {
                             .windows => childOptions.shell = "powershell",
                             .macos, .linux => childOptions.shell = "/bin/sh",
                             else => childOptions.shell = "/bin/sh",
                         }
                     }
-                } else return L.ErrorFmt("Invalid shell (string or boolean expected, got {s})", .{L.typeName(shellType)});
+                } else return L.Zerrorf("Invalid shell (string or boolean expected, got {s})", .{VM.lapi.typename(shellType)});
             }
             L.pop(1);
         }
@@ -454,7 +454,7 @@ const ProcessAsyncRun = struct {
     poller: std.io.Poller(ProcessChildHandle.PollEnum),
     max_output_bytes: usize = 50 * 1024,
 
-    pub fn update(ctx: *ProcessAsyncRun, L: *Luau, _: *Scheduler) !i32 {
+    pub fn update(ctx: *ProcessAsyncRun, L: *VM.lua.State, _: *Scheduler) !i32 {
         if (try ctx.poller.pollTimeout(0)) {
             errdefer _ = ctx.child.kill() catch {};
             errdefer ctx.poller.deinit();
@@ -473,10 +473,10 @@ const ProcessAsyncRun = struct {
 
         const term = try ctx.child.wait();
 
-        L.newTable();
+        L.newtable();
 
-        L.setFieldLString(-1, "stdout", stdout);
-        L.setFieldLString(-1, "stderr", stderr);
+        L.Zsetfield(-1, "stdout", stdout);
+        L.Zsetfield(-1, "stderr", stderr);
 
         internal_process_term(L, term);
 
@@ -484,9 +484,9 @@ const ProcessAsyncRun = struct {
     }
 };
 
-fn process_run(L: *Luau) !i32 {
+fn process_run(L: *VM.lua.State) !i32 {
     const scheduler = Scheduler.getScheduler(L);
-    const allocator = L.allocator();
+    const allocator = luau.getallocator(L);
 
     var childOptions = try ProcessChildOptions.init(L);
     defer childOptions.deinit();
@@ -515,12 +515,12 @@ fn process_run(L: *Luau) !i32 {
     }, L, ProcessAsyncRun.update);
 }
 
-fn process_create(L: *Luau) !i32 {
-    const allocator = L.allocator();
+fn process_create(L: *VM.lua.State) !i32 {
+    const allocator = luau.getallocator(L);
 
     const childOptions = try ProcessChildOptions.init(L);
 
-    const handlePtr = L.newUserdataDtor(ProcessChildHandle, ProcessChildHandle.__dtor);
+    const handlePtr = L.newuserdatadtor(ProcessChildHandle, ProcessChildHandle.__dtor);
     var childProcess = process.Child.init(childOptions.argArray.items, allocator);
 
     childProcess.id = undefined;
@@ -561,19 +561,19 @@ fn process_create(L: *Luau) !i32 {
 
     handlePtr.child = childProcess;
 
-    if (L.getMetatableRegistry(ProcessChildHandle.META) == .table)
-        L.setMetatable(-2)
+    if (L.Lgetmetatable(ProcessChildHandle.META) == .Table)
+        _ = L.setmetatable(-2)
     else
         std.debug.panic("InternalError (ProcessChild Metatable not initialized)", .{});
 
     return 1;
 }
 
-fn process_exit(L: *Luau) i32 {
-    const code = L.checkUnsigned(1);
+fn process_exit(L: *VM.lua.State) i32 {
+    const code = L.Lcheckunsigned(1);
     Scheduler.KillSchedulers();
     Engine.stateCleanUp();
-    std.process.exit(@intCast(code));
+    std.process.exit(@truncate(code));
     return 0;
 }
 
@@ -582,14 +582,14 @@ const DotEnvError = error{
     InvalidCharacter,
 };
 
-fn decodeString(L: *Luau, slice: []const u8) !usize {
-    var buf = std.ArrayList(u8).init(L.allocator());
+fn decodeString(L: *VM.lua.State, slice: []const u8) !usize {
+    var buf = std.ArrayList(u8).init(luau.getallocator(L));
     defer buf.deinit();
 
     if (slice.len < 2)
         return DotEnvError.InvalidString;
     if (slice[0] == slice[1]) {
-        L.pushString("");
+        L.pushstring("");
         return 2;
     }
 
@@ -619,9 +619,9 @@ fn decodeString(L: *Luau, slice: []const u8) !usize {
         pos += 1;
     }
     if (eof) {
-        L.pushLString(buf.items);
+        L.pushlstring(buf.items);
         return pos;
-    } else L.pushString("");
+    } else L.pushstring("");
     return 0;
 }
 
@@ -635,7 +635,7 @@ fn validateWord(slice: []const u8) !void {
     };
 }
 
-fn decodeEnvironment(L: *Luau, string: []const u8) !void {
+fn decodeEnvironment(L: *VM.lua.State, string: []const u8) !void {
     var pos: usize = 0;
     var scan: usize = 0;
     while (pos < string.len) switch (string[pos]) {
@@ -654,14 +654,14 @@ fn decodeEnvironment(L: *Luau, string: []const u8) !void {
                 break;
             try validateWord(variableName);
             pos += Parser.nextNonCharacter(string[pos..], &WHITESPACE);
-            L.pushLString(variableName);
+            L.pushlstring(variableName);
             errdefer L.pop(1);
             if (string[pos] == '"' or string[pos] == '\'' or string[pos] == '`') {
                 const stringEof = try decodeString(L, string[pos..]);
                 const remaining_slice = string[pos + stringEof ..];
                 const eof = Parser.nextCharacter(remaining_slice, &DECODE_BREAK);
                 if (Parser.trimSpace(remaining_slice[0..eof]).len == 0) {
-                    L.setTable(-3);
+                    L.settable(-3);
                     pos += stringEof;
                     pos += eof;
                     continue;
@@ -669,18 +669,18 @@ fn decodeEnvironment(L: *Luau, string: []const u8) !void {
                 L.pop(1);
             }
             const eof = Parser.nextCharacter(string[pos..], &DECODE_BREAK);
-            L.pushLString(Parser.trimSpace(string[pos .. pos + eof]));
-            L.setTable(-3);
+            L.pushlstring(Parser.trimSpace(string[pos .. pos + eof]));
+            L.settable(-3);
             pos += eof;
         },
         else => pos += 1,
     };
 }
 
-fn loadEnvironment(L: *Luau, allocator: std.mem.Allocator, file: []const u8) !void {
+fn loadEnvironment(L: *VM.lua.State, allocator: std.mem.Allocator, file: []const u8) !void {
     const bytes: []const u8 = std.fs.cwd().readFileAlloc(allocator, file, std.math.maxInt(usize)) catch |err| switch (err) {
         error.FileNotFound => return,
-        else => return L.ErrorFmt("InternalError ({s})", .{@errorName(err)}),
+        else => return L.Zerrorf("InternalError ({s})", .{@errorName(err)}),
     };
     defer allocator.free(bytes);
 
@@ -689,12 +689,12 @@ fn loadEnvironment(L: *Luau, allocator: std.mem.Allocator, file: []const u8) !vo
     };
 }
 
-fn process_loadEnv(L: *Luau) !i32 {
-    const allocator = L.allocator();
-    L.newTable();
+fn process_loadEnv(L: *VM.lua.State) !i32 {
+    const allocator = luau.getallocator(L);
+    L.newtable();
 
     const env_map = try allocator.create(std.process.EnvMap);
-    env_map.* = std.process.getEnvMap(allocator) catch return L.Error("OutOfMemory");
+    env_map.* = std.process.getEnvMap(allocator) catch return L.Zerror("OutOfMemory");
     defer {
         env_map.deinit();
         allocator.destroy(env_map);
@@ -703,12 +703,8 @@ fn process_loadEnv(L: *Luau) !i32 {
     var iterator = env_map.iterator();
     while (iterator.next()) |entry| {
         const zkey = try allocator.dupeZ(u8, entry.key_ptr.*);
-        const zvalue = try allocator.dupeZ(u8, entry.value_ptr.*);
-        defer {
-            allocator.free(zkey);
-            allocator.free(zvalue);
-        }
-        L.setFieldString(-1, zkey, zvalue);
+        defer allocator.free(zkey);
+        L.Zsetfield(-1, zkey, entry.value_ptr.*);
     }
 
     try loadEnvironment(L, allocator, ".env");
@@ -726,16 +722,16 @@ fn process_loadEnv(L: *Luau) !i32 {
     return 1;
 }
 
-fn process_onsignal(L: *Luau) !i32 {
-    const sig = L.checkString(1);
-    L.checkType(2, .function);
+fn process_onsignal(L: *VM.lua.State) !i32 {
+    const sig = L.Lcheckstring(1);
+    L.Lchecktype(2, .Function);
 
     if (std.mem.eql(u8, sig, "INT")) {
-        const GL = L.getMainThread();
+        const GL = L.mainthread();
         if (GL != L)
-            L.xPush(GL, 2);
+            L.xpush(GL, 2);
 
-        const ref = GL.ref(if (GL != L) -1 else 2) catch return L.Error("Failed to create reference");
+        const ref = GL.ref(if (GL != L) -1 else 2) orelse return L.Zerror("Failed to create reference");
         if (GL != L)
             GL.pop(1);
 
@@ -746,97 +742,97 @@ fn process_onsignal(L: *Luau) !i32 {
             .state = GL,
             .ref = ref,
         };
-    } else return L.ErrorFmt("Unknown signal: {s}", .{sig});
+    } else return L.Zerrorf("Unknown signal: {s}", .{sig});
 
     return 0;
 }
 
-fn lib__newindex(L: *Luau) !i32 {
-    L.checkType(1, .table);
-    const index = L.checkString(2);
-    const process_lib = Luau.upvalueIndex(1);
+fn lib__newindex(L: *VM.lua.State) !i32 {
+    L.Lchecktype(1, .Table);
+    const index = L.Lcheckstring(2);
+    const process_lib = VM.lua.upvalueindex(1);
 
     if (std.mem.eql(u8, index, "cwd")) {
-        const allocator = L.allocator();
+        const allocator = luau.getallocator(L);
 
-        const value = L.checkString(3);
+        const value = L.Lcheckstring(3);
         const dir = try std.fs.cwd().openDir(value, .{});
         const path = try dir.realpathAlloc(allocator, "./");
         defer allocator.free(path);
 
         try dir.setAsCwd();
 
-        L.pushLString(path);
-        L.setField(process_lib, "cwd");
-    } else return L.ErrorFmt("Cannot change field ({s})", .{index});
+        L.pushlstring(path);
+        L.setfield(process_lib, "cwd");
+    } else return L.Zerrorf("Cannot change field ({s})", .{index});
 
     return 0;
 }
 
-pub fn loadLib(L: *Luau, args: []const []const u8) !void {
-    const allocator = L.allocator();
+pub fn loadLib(L: *VM.lua.State, args: []const []const u8) !void {
+    const allocator = luau.getallocator(L);
 
     {
-        L.newMetatable(ProcessChildHandle.META) catch std.debug.panic("InternalError (Luau Failed to create Internal Metatable)", .{});
+        _ = L.Lnewmetatable(ProcessChildHandle.META);
 
-        L.setFieldFn(-1, luau.Metamethods.index, ProcessChildHandle.__index); // metatable.__index
-        L.setFieldFn(-1, luau.Metamethods.namecall, ProcessChildHandle.__namecall); // metatable.__namecall
+        L.Zsetfieldc(-1, luau.Metamethods.index, ProcessChildHandle.__index); // metatable.__index
+        L.Zsetfieldc(-1, luau.Metamethods.namecall, ProcessChildHandle.__namecall); // metatable.__namecall
 
-        L.setFieldString(-1, luau.Metamethods.metatable, "Metatable is locked");
+        L.Zsetfieldc(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.pop(1);
     }
 
-    L.newTable();
+    L.newtable();
 
-    L.setFieldString(-1, "arch", @tagName(builtin.cpu.arch));
-    L.setFieldString(-1, "os", @tagName(native_os));
+    L.Zsetfieldc(-1, "arch", @tagName(builtin.cpu.arch));
+    L.Zsetfieldc(-1, "os", @tagName(native_os));
 
     {
-        L.newTable();
+        L.newtable();
         for (args, 1..) |arg, i| {
             const zarg = try allocator.dupeZ(u8, arg);
             defer allocator.free(zarg);
-            L.pushString(zarg);
-            L.rawSetIndex(-2, @intCast(i));
+            L.pushstring(zarg);
+            L.rawseti(-2, @intCast(i));
         }
-        L.setReadOnly(-1, true);
-        L.setField(-2, "args");
+        L.setreadonly(-1, true);
+        L.setfield(-2, "args");
     }
 
     _ = try process_loadEnv(L);
-    L.setField(-2, "env");
-    L.setFieldFn(-1, "loadEnv", process_loadEnv);
+    L.setfield(-2, "env");
+    L.Zsetfieldc(-1, "loadEnv", process_loadEnv);
 
     {
         const path = try std.fs.cwd().realpathAlloc(allocator, "./");
         defer allocator.free(path);
-        L.setFieldLString(-1, "cwd", path);
+        L.Zsetfield(-1, "cwd", path);
     }
 
-    L.setFieldFn(-1, "exit", process_exit);
-    L.setFieldFn(-1, "run", process_run);
-    L.setFieldFn(-1, "create", process_create);
-    L.setFieldFn(-1, "onSignal", process_onsignal);
+    L.Zsetfieldc(-1, "exit", process_exit);
+    L.Zsetfieldc(-1, "run", process_run);
+    L.Zsetfieldc(-1, "create", process_create);
+    L.Zsetfieldc(-1, "onSignal", process_onsignal);
 
-    L.newTable();
+    L.newtable();
     {
-        L.newTable();
+        L.newtable();
 
-        L.pushValue(-3);
-        L.setFieldAhead(-1, luau.Metamethods.index); // metatable.__index
+        L.pushvalue(-3);
+        L.setfield(-2, luau.Metamethods.index); // metatable.__index
 
-        L.pushValue(-3);
-        L.pushClosure(luau.toCFn(lib__newindex), luau.Metamethods.newindex, 1);
-        L.setFieldAhead(-1, luau.Metamethods.newindex); // metatable.__newindex
+        L.pushvalue(-3);
+        L.pushcclosure(VM.zapi.toCFn(lib__newindex), luau.Metamethods.newindex, 1);
+        L.setfield(-2, luau.Metamethods.newindex); // metatable.__newindex
 
-        L.setFieldString(-1, luau.Metamethods.metatable, "Metatable is locked");
+        L.Zsetfieldc(-1, luau.Metamethods.metatable, "Metatable is locked");
 
-        L.setMetatable(-2);
+        _ = L.setmetatable(-2);
     }
 
     L.remove(-2);
 
-    L.setReadOnly(-1, true);
+    L.setreadonly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);
 }
 

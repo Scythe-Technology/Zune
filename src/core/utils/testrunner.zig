@@ -5,7 +5,7 @@ const Zune = @import("../../zune.zig");
 const Engine = @import("../runtime/engine.zig");
 const Scheduler = @import("../runtime/scheduler.zig");
 
-const Luau = luau.Luau;
+const VM = luau.VM;
 
 const zune_test_files = @import("zune-test-files");
 
@@ -24,11 +24,11 @@ pub fn runTest(allocator: std.mem.Allocator, comptime testFile: zune_test_files.
 
     Zune.loadConfiguration();
 
-    var L = try Luau.init(&allocator);
+    var L = try luau.init(&allocator);
     defer L.deinit();
 
     if (!stdOutEnabled)
-        L.setFieldBoolean(luau.GLOBALSINDEX, "_testing_stdOut", false);
+        L.Zsetfieldc(VM.lua.GLOBALSINDEX, "_testing_stdOut", false);
 
     var scheduler = Scheduler.init(allocator, L);
     defer scheduler.deinit();
@@ -44,7 +44,7 @@ pub fn runTest(allocator: std.mem.Allocator, comptime testFile: zune_test_files.
         &temporaryDir.sub_path,
     });
     defer allocator.free(tempPath);
-    L.setGlobalString("__test_tempdir", tempPath);
+    L.Zsetglobal("__test_tempdir", tempPath);
 
     const testFileAbsolute = try cwd_dir.realpathAlloc(allocator, testFile.path);
     defer allocator.free(testFileAbsolute);
@@ -55,11 +55,11 @@ pub fn runTest(allocator: std.mem.Allocator, comptime testFile: zune_test_files.
         .mode = .Test,
     });
 
-    L.setSafeEnv(luau.GLOBALSINDEX, true);
+    L.setsafeenv(VM.lua.GLOBALSINDEX, true);
 
-    const ML = L.newThread();
+    const ML = L.newthread();
 
-    ML.sandboxThread();
+    ML.Lsandboxthread();
 
     Zune.resolvers_require.load_require(ML);
 
@@ -69,16 +69,16 @@ pub fn runTest(allocator: std.mem.Allocator, comptime testFile: zune_test_files.
         .source = testFile.content,
     });
 
-    ML.setSafeEnv(luau.GLOBALSINDEX, true);
+    ML.setsafeenv(VM.lua.GLOBALSINDEX, true);
 
-    const zbasename = try allocator.dupeZ(u8, std.fs.path.basename(testFile.path));
-    defer allocator.free(zbasename);
+    const sourceNameZ = try std.mem.joinZ(allocator, "", &.{ "@", testFileAbsolute });
+    defer allocator.free(sourceNameZ);
 
-    Engine.loadModule(ML, zbasename, testFile.content, .{
+    Engine.loadModule(ML, sourceNameZ, testFile.content, .{
         .debug_level = 2,
     }) catch |err| switch (err) {
         error.Syntax => {
-            std.debug.print("Syntax: {s}\n", .{ML.toString(-1) catch "UnknownError"});
+            std.debug.print("Syntax: {s}\n", .{ML.tostring(-1) orelse "UnknownError"});
             return err;
         },
         else => return err,

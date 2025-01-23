@@ -3,7 +3,7 @@
 const std = @import("std");
 const luau = @import("luau");
 
-const Luau = luau.Luau;
+const VM = luau.VM;
 
 const Url = @import("url.zig");
 
@@ -462,48 +462,48 @@ pub fn canUpgradeWebSocket(self: *Self) !?UpgradeInfo {
     return null;
 }
 
-pub fn pushToStack(self: *Self, L: *Luau) !void {
-    L.newTable();
+pub fn pushToStack(self: *Self, L: *VM.lua.State) !void {
+    L.newtable();
     errdefer L.pop(1);
 
     if (self.method) |method| {
-        L.setFieldLString(-1, "method", method);
+        L.Zsetfield(-1, "method", method);
     }
 
     if (self.url) |url| {
-        L.setFieldLString(-1, "path", url.path);
+        L.Zsetfield(-1, "path", url.path);
     }
 
-    L.newTable();
+    L.newtable();
     if (self.query) |queries| {
         errdefer L.pop(1);
         var order: i32 = 1;
         for (queries) |query| {
-            L.pushLString(query.key);
+            L.pushlstring(query.key);
             if (query.value) |value| {
-                L.pushLString(value);
-                L.rawSetTable(-3);
+                L.pushlstring(value);
+                L.rawset(-3);
             } else {
-                L.rawSetIndex(-2, order);
+                L.rawseti(-2, order);
                 order += 1;
             }
         }
     }
-    L.setField(-2, "query");
+    L.setfield(-2, "query");
 
-    L.newTable();
+    L.newtable();
     if (self.headers) |headers| {
         errdefer L.pop(1);
         for (headers) |header| {
-            L.pushLString(header.key);
-            L.pushLString(header.value);
-            L.rawSetTable(-3);
+            L.pushlstring(header.key);
+            L.pushlstring(header.value);
+            L.rawset(-3);
         }
     }
-    L.setField(-2, "headers");
+    L.setfield(-2, "headers");
 
     if (self.body) |body|
-        L.setFieldLString(-1, "body", body);
+        L.Zsetfield(-1, "body", body);
 }
 
 pub fn deinit(self: *Self) void {

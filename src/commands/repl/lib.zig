@@ -10,7 +10,7 @@ const Scheduler = @import("../../core/runtime/scheduler.zig");
 const History = @import("History.zig");
 const Terminal = @import("Terminal.zig");
 
-const Luau = luau.Luau;
+const VM = luau.VM;
 
 pub var REPL_STATE: u2 = 0;
 
@@ -35,12 +35,12 @@ pub fn SigInt() bool {
 fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
     REPL_STATE = 1;
 
-    var history = try History.init(allocator, ".zune_history");
+    var history = try History.init(allocator, ".zune/.history");
     errdefer history.deinit();
 
     HISTORY = &history;
 
-    var L = try Luau.init(&allocator);
+    var L = try luau.init(&allocator);
     defer L.deinit();
 
     var scheduler = Scheduler.init(allocator, L);
@@ -68,7 +68,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     Zune.resolvers_require.load_require(L);
 
-    L.setSafeEnv(luau.GLOBALSINDEX, true);
+    L.setsafeenv(VM.lua.GLOBALSINDEX, true);
 
     var stdin = std.io.getStdIn();
     var in_reader = stdin.reader();
@@ -93,10 +93,12 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
     try terminal.setRawMode();
     try terminal.setOutputMode();
 
-    switch (try L.getGlobalObjConsumed("_VERSION")) {
-        .string => |s| try out.print("{s}\n", .{s}),
+    switch (L.getglobal("_VERSION")) {
+        .String => try out.print("{s}\n", .{L.tostring(-1).?}),
         else => try out.writeAll("Unknown Zune version\n"),
     }
+    L.pop(1);
+
     try out.writeAll("> ");
     while (true) {
         const byte = try in_reader.readByte();
@@ -153,7 +155,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
             history.save(buffer.items);
 
-            const ML = L.newThread();
+            const ML = L.newthread();
 
             if (Engine.loadModule(ML, "CLI", buffer.items, null)) {
                 try terminal.setNormalMode();
@@ -163,7 +165,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
                 try terminal.setRawMode();
             } else |err| switch (err) {
                 error.Syntax => {
-                    try out.print("SyntaxError: {s}\n", .{ML.toString(-1) catch "UnknownError"});
+                    try out.print("SyntaxError: {s}\n", .{ML.tostring(-1) orelse "UnknownError"});
                     ML.pop(1);
                 },
                 else => return err,

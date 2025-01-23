@@ -26,7 +26,7 @@ describe("Test Scope", function()
             expect(1).toBe(2);
         end)
         expect(ok).toBe(false);
-        expect(err:find("[string \"testing.test.luau\"]:26: Expected", 1, true)).toBe(1);
+        expect(err:find("testing.test.luau:26: Expected", 1)).toBeGreaterThan(1);
     end)
     test("test failed", function()
         expect(1).never.toBe(1);
@@ -48,7 +48,7 @@ describe("Test Scope", function()
                 expect(1).toBe(2);
             end)
             expect(ok).toBe(false);
-            expect(err:find("[string \"testing.test.luau\"]:48: Expected", 1, true)).toBe(1);
+            expect(err:find("testing.test.luau:48: Expected", 1)).toBeGreaterThan(1);
         end)
         test("test failed", function()
             expect(1).never.toBe(1);

@@ -1,29 +1,29 @@
 const std = @import("std");
 const luau = @import("luau");
 
-const Luau = luau.Luau;
+const VM = luau.VM;
 
-pub fn lua_compress(L: *Luau) !i32 {
-    const allocator = L.allocator();
+pub fn lua_compress(L: *VM.lua.State) !i32 {
+    const allocator = luau.getallocator(L);
 
-    const is_buffer = L.typeOf(1) == .buffer;
+    const is_buffer = L.typeOf(1) == .Buffer;
 
-    const string = if (is_buffer) L.checkBuffer(1) else L.checkString(1);
+    const string = if (is_buffer) L.Lcheckbuffer(1) else L.Lcheckstring(1);
     const options = L.typeOf(2);
 
     var level: u4 = 12;
 
-    if (!luau.isNoneOrNil(options)) {
-        L.checkType(2, .table);
-        const levelType = L.getField(2, "level");
-        if (!luau.isNoneOrNil(levelType)) {
-            if (levelType != .number)
-                return L.Error("Options 'level' field must be a number");
-            const num = L.toInteger(-1) catch unreachable;
+    if (!options.isnoneornil()) {
+        L.Lchecktype(2, .Table);
+        const levelType = L.getfield(2, "level");
+        if (!levelType.isnoneornil()) {
+            if (levelType != .Number)
+                return L.Zerror("Options 'level' field must be a number");
+            const num = L.tointeger(-1) orelse unreachable;
             if (num < 4 or num > 13)
-                return L.Error("Options 'level' must not be over 13 or less than 4 or equal to 10");
+                return L.Zerror("Options 'level' must not be over 13 or less than 4 or equal to 10");
             if (num == 10)
-                return L.ErrorFmt("Options 'level' cannot be {d}, level does not exist", .{num});
+                return L.Zerrorf("Options 'level' cannot be {d}, level does not exist", .{num});
             level = @intCast(num);
         }
         L.pop(1);
@@ -38,16 +38,16 @@ pub fn lua_compress(L: *Luau) !i32 {
         .level = @enumFromInt(level),
     });
 
-    if (is_buffer) L.pushBuffer(buf.items) else L.pushLString(buf.items);
+    if (is_buffer) L.Zpushbuffer(buf.items) else L.pushlstring(buf.items);
 
     return 1;
 }
 
-pub fn lua_decompress(L: *Luau) !i32 {
-    const allocator = L.allocator();
+pub fn lua_decompress(L: *VM.lua.State) !i32 {
+    const allocator = luau.getallocator(L);
 
-    const is_buffer = L.typeOf(1) == .buffer;
-    const string = if (is_buffer) L.checkBuffer(1) else L.checkString(1);
+    const is_buffer = L.typeOf(1) == .Buffer;
+    const string = if (is_buffer) L.Lcheckbuffer(1) else L.Lcheckstring(1);
 
     var buf = std.ArrayList(u8).init(allocator);
     defer buf.deinit();
@@ -56,7 +56,7 @@ pub fn lua_decompress(L: *Luau) !i32 {
 
     try std.compress.gzip.decompress(stream.reader(), buf.writer());
 
-    if (is_buffer) L.pushBuffer(buf.items) else L.pushLString(buf.items);
+    if (is_buffer) L.Zpushbuffer(buf.items) else L.pushlstring(buf.items);
 
     return 1;
 }

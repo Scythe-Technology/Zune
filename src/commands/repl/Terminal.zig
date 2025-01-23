@@ -49,8 +49,10 @@ pub fn init(stdin_file: std.fs.File, stdout_file: std.fs.File) Terminal {
 }
 
 pub fn validateInteractive(self: *Terminal) !void {
-    if (!self.stdin_istty) return std.posix.TIOCError.NotATerminal;
-    if (!self.stdout_istty) return std.posix.TIOCError.NotATerminal;
+    if (!self.stdin_istty)
+        return std.posix.TIOCError.NotATerminal;
+    if (!self.stdout_istty)
+        return std.posix.TIOCError.NotATerminal;
 }
 
 pub fn getSize(self: *Terminal) !struct { u16, u16 } {
@@ -71,7 +73,10 @@ pub fn getSize(self: *Terminal) !struct { u16, u16 } {
 }
 
 pub fn saveSettings(self: *Terminal) !void {
-    if (self.settings != null) return;
+    if (!self.stdin_istty or !self.stdout_istty)
+        return;
+    if (self.settings != null)
+        return;
     if (builtin.os.tag != .windows) {
         self.settings = try std.posix.tcgetattr(self.stdin_file.handle);
     } else {
@@ -120,6 +125,8 @@ pub fn moveCursor(self: *Terminal, action: MoveCursorAction) !void {
 
 pub fn setOutputMode(self: *Terminal) !void {
     if (builtin.os.tag == .windows) {
+        if (!self.stdout_istty)
+            return;
         const CP_UTF8 = 65001;
         self.current_settings.codepoint = std.os.windows.kernel32.GetConsoleOutputCP();
         _ = std.os.windows.kernel32.SetConsoleOutputCP(CP_UTF8);
@@ -128,6 +135,8 @@ pub fn setOutputMode(self: *Terminal) !void {
 
 pub fn restoreOutputMode(self: *Terminal) !void {
     if (builtin.os.tag == .windows) {
+        if (!self.stdout_istty)
+            return;
         if (self.current_settings.codepoint != 0) {
             _ = std.os.windows.kernel32.SetConsoleOutputCP(self.current_settings.codepoint);
         }
@@ -135,7 +144,8 @@ pub fn restoreOutputMode(self: *Terminal) !void {
 }
 
 pub fn setRawMode(self: *Terminal) !void {
-    try self.validateInteractive();
+    if (!self.stdin_istty or !self.stdout_istty)
+        return;
     try self.saveSettings();
     self.mode = .Virtual;
     errdefer self.mode = .Plain;
@@ -179,7 +189,8 @@ pub fn setRawMode(self: *Terminal) !void {
 }
 
 pub fn setNormalMode(self: *Terminal) !void {
-    try self.validateInteractive();
+    if (!self.stdin_istty or !self.stdout_istty)
+        return;
     try self.saveSettings();
     self.mode = .Virtual;
     errdefer self.mode = .Plain;
@@ -223,7 +234,8 @@ pub fn setNormalMode(self: *Terminal) !void {
 }
 
 pub fn restoreSettings(self: *Terminal) !void {
-    try self.validateInteractive();
+    if (!self.stdin_istty or !self.stdout_istty)
+        return;
     const settings = self.settings orelse return;
     if (self.mode == .Plain) return;
     self.mode = .Plain;

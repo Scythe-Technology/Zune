@@ -2,7 +2,7 @@ const std = @import("std");
 const yaml = @import("yaml");
 const luau = @import("luau");
 
-const Luau = luau.Luau;
+const VM = luau.VM;
 
 const Error = error{
     InvalidKey,
@@ -39,29 +39,29 @@ fn escape_string(bytes: *std.ArrayList(u8), str: []const u8) !void {
     try bytes.append('"');
 }
 
-fn encodeValue(L: *Luau, allocator: std.mem.Allocator, tracked: *std.ArrayList(*const anyopaque)) !yaml.Value {
+fn encodeValue(L: *VM.lua.State, allocator: std.mem.Allocator, tracked: *std.ArrayList(*const anyopaque)) !yaml.Value {
     switch (L.typeOf(-1)) {
-        .string => {
+        .String => {
             var buf = std.ArrayList(u8).init(allocator);
             errdefer buf.deinit();
-            const string = L.checkString(-1);
+            const string = L.Lcheckstring(-1);
             try escape_string(&buf, string);
             return yaml.Value{ .string = try buf.toOwnedSlice() };
         },
-        .number => {
-            const num = L.checkNumber(-1);
+        .Number => {
+            const num = L.Lchecknumber(-1);
             if (std.math.isNan(num) or std.math.isInf(num)) return Error.InvalidNumber;
             return yaml.Value{ .float = num };
         },
-        .table => {
-            const tablePtr = try L.toPointer(-1);
+        .Table => {
+            const tablePtr = L.topointer(-1) orelse return error.Failed;
 
             for (tracked.items) |t| if (t == tablePtr) return Error.CircularReference;
             try tracked.append(tablePtr);
 
-            const tableSize = L.objLen(-1);
+            const tableSize = L.objlen(-1);
 
-            L.pushNil();
+            L.pushnil();
             const nextKey = L.next(-2);
             if (tableSize > 0 or !nextKey) {
                 const list = try allocator.alloc(yaml.Value, @intCast(tableSize));
@@ -69,13 +69,13 @@ fn encodeValue(L: *Luau, allocator: std.mem.Allocator, tracked: *std.ArrayList(*
                 if (nextKey) {
                     var order: usize = 0;
 
-                    if (L.typeOf(-2) != .number)
+                    if (L.typeOf(-2) != .Number)
                         return Error.InvalidKey;
 
                     list[order] = try encodeValue(L, allocator, tracked);
                     L.pop(1); // drop: value
                     while (L.next(-2)) {
-                        if (L.typeOf(-2) != .number)
+                        if (L.typeOf(-2) != .Number)
                             return Error.InvalidKey;
 
                         order += 1;
@@ -92,27 +92,27 @@ fn encodeValue(L: *Luau, allocator: std.mem.Allocator, tracked: *std.ArrayList(*
                 var map = std.StringArrayHashMap(yaml.Value).init(allocator);
                 errdefer map.deinit();
 
-                if (L.typeOf(-2) != .string)
+                if (L.typeOf(-2) != .String)
                     return Error.InvalidKey;
 
-                try map.put(L.toString(-2) catch unreachable, try encodeValue(L, allocator, tracked));
+                try map.put(L.tostring(-2) orelse unreachable, try encodeValue(L, allocator, tracked));
                 L.pop(1); // drop: value
                 while (L.next(-2)) {
-                    if (L.typeOf(-2) != .string)
+                    if (L.typeOf(-2) != .String)
                         return Error.InvalidKey;
 
-                    try map.put(L.toString(-2) catch unreachable, try encodeValue(L, allocator, tracked));
+                    try map.put(L.tostring(-2) orelse unreachable, try encodeValue(L, allocator, tracked));
                     L.pop(1); // drop: value
                 }
                 return yaml.Value{ .map = map };
             }
         },
-        else => return L.Error("UnsupportedType"),
+        else => return L.Zerror("UnsupportedType"),
     }
 }
 
-pub fn lua_encode(L: *Luau) !i32 {
-    const allocator = L.allocator();
+pub fn lua_encode(L: *VM.lua.State) !i32 {
+    const allocator = luau.getallocator(L);
 
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
@@ -125,31 +125,31 @@ pub fn lua_encode(L: *Luau) !i32 {
     var buf = std.ArrayList(u8).init(arena.allocator());
     try value.stringify(buf.writer(), .{});
 
-    L.pushLString(buf.items);
+    L.pushlstring(buf.items);
 
     return 1;
 }
 
-fn decodeList(L: *Luau, list: yaml.List) void {
-    L.newTable();
+fn decodeList(L: *VM.lua.State, list: yaml.List) void {
+    L.newtable();
 
     if (list.len == 0) return;
 
     for (list, 1..) |val, key| {
         switch (val) {
-            .float => |f| L.pushNumber(f),
-            .int => |i| L.pushNumber(@floatFromInt(i)),
-            .string => |str| L.pushLString(str),
+            .float => |f| L.pushnumber(f),
+            .int => |i| L.pushnumber(@floatFromInt(i)),
+            .string => |str| L.pushlstring(str),
             .map => |m| decodeMap(L, m),
             .list => |ls| decodeList(L, ls),
             .empty => continue,
         }
-        L.rawSetIndex(-2, @intCast(key));
+        L.rawseti(-2, @intCast(key));
     }
 }
 
-fn decodeMap(L: *Luau, map: yaml.Map) void {
-    L.newTable();
+fn decodeMap(L: *VM.lua.State, map: yaml.Map) void {
+    L.newtable();
     const count = map.count();
     if (count == 0) return;
 
@@ -157,24 +157,24 @@ fn decodeMap(L: *Luau, map: yaml.Map) void {
     while (iter.next()) |k| {
         const key = k.key_ptr.*;
         const value = k.value_ptr.*;
-        L.pushLString(key);
+        L.pushlstring(key);
         switch (value) {
-            .float => |f| L.pushNumber(f),
-            .int => |i| L.pushNumber(@floatFromInt(i)),
-            .string => |str| L.pushLString(str),
+            .float => |f| L.pushnumber(f),
+            .int => |i| L.pushnumber(@floatFromInt(i)),
+            .string => |str| L.pushlstring(str),
             .map => |m| decodeMap(L, m),
             .list => |ls| decodeList(L, ls),
             .empty => continue,
         }
-        L.setTable(-3);
+        L.settable(-3);
     }
 }
 
-pub fn lua_decode(L: *Luau) !i32 {
-    const allocator = L.allocator();
-    const string = L.checkString(1);
+pub fn lua_decode(L: *VM.lua.State) !i32 {
+    const allocator = luau.getallocator(L);
+    const string = L.Lcheckstring(1);
     if (string.len == 0) {
-        L.pushNil();
+        L.pushnil();
         return 1;
     }
 
@@ -182,14 +182,14 @@ pub fn lua_decode(L: *Luau) !i32 {
     defer raw.deinit();
 
     if (raw.docs.items.len == 0) {
-        L.newTable();
+        L.newtable();
         return 1;
     }
 
     switch (raw.docs.items[0]) {
-        .float => |f| L.pushNumber(f),
-        .int => |i| L.pushNumber(@floatFromInt(i)),
-        .string => |str| L.pushLString(str),
+        .float => |f| L.pushnumber(f),
+        .int => |i| L.pushnumber(@floatFromInt(i)),
+        .string => |str| L.pushlstring(str),
         .map => |m| decodeMap(L, m),
         .list => |ls| decodeList(L, ls),
         .empty => return 0,
