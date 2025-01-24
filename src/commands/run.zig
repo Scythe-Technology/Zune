@@ -37,6 +37,9 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     Zune.loadConfiguration();
 
+    var LOAD_FLAGS: Zune.Flags = .{
+        .mode = .Run,
+    };
     var PROFILER: ?u64 = null;
     if (flags) |f| for (f) |flag| {
         if (flag.len >= 9 and std.mem.eql(u8, flag[0..9], "--profile")) {
@@ -71,12 +74,14 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
                 std.debug.print("Flag: -g, Invalid Debug level, usage: -g<N>\n", .{});
                 return;
             }
-        } else if (flag.len == 8 and std.mem.eql(u8, flag[0..8], "--native")) {
+        } else if (std.mem.eql(u8, flag, "--native")) {
             Engine.CODEGEN = true;
-        } else if (flag.len == 11 and std.mem.eql(u8, flag[0..11], "--no-native")) {
+        } else if (std.mem.eql(u8, flag, "--no-native")) {
             Engine.CODEGEN = false;
-        } else if (flag.len == 8 and std.mem.eql(u8, flag[0..8], "--no-jit")) {
+        } else if (std.mem.eql(u8, flag, "--no-jit")) {
             Engine.JIT_ENABLED = false;
+        } else if (std.mem.eql(u8, flag, "--limbo")) {
+            LOAD_FLAGS.limbo = true;
         }
     };
 
@@ -124,9 +129,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     try Engine.prepAsync(L, &scheduler, .{
         .args = run_args,
-    }, .{
-        .mode = .Run,
-    });
+    }, LOAD_FLAGS);
 
     L.setsafeenv(VM.lua.GLOBALSINDEX, true);
 

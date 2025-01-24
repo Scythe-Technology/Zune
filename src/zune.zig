@@ -30,6 +30,7 @@ pub const RunMode = enum {
 
 pub const Flags = struct {
     mode: RunMode,
+    limbo: bool = false,
 };
 
 pub var CONFIGURATIONS = .{.format_max_depth};
@@ -200,23 +201,25 @@ pub fn openZune(L: *VM.lua.State, args: []const []const u8, flags: Flags) !void 
 
     L.Zsetglobal("_VERSION", VERSION);
 
-    corelib.fs.loadLib(L);
-    corelib.task.loadLib(L);
-    corelib.luau.loadLib(L);
-    corelib.serde.loadLib(L);
-    corelib.stdio.loadLib(L);
-    corelib.crypto.loadLib(L);
-    corelib.regex.loadLib(L);
-    corelib.net.loadLib(L);
-    corelib.datetime.loadLib(L);
-    try corelib.process.loadLib(L, args);
+    if (!flags.limbo) {
+        corelib.fs.loadLib(L);
+        corelib.task.loadLib(L);
+        corelib.luau.loadLib(L);
+        corelib.serde.loadLib(L);
+        corelib.stdio.loadLib(L);
+        corelib.crypto.loadLib(L);
+        corelib.regex.loadLib(L);
+        corelib.net.loadLib(L);
+        corelib.datetime.loadLib(L);
+        try corelib.process.loadLib(L, args);
 
-    if (EXPERIMENTAL_FFI)
-        corelib.ffi.loadLib(L);
-    if (EXPERIMENTAL_SQLITE)
-        corelib.sqlite.loadLib(L);
+        if (EXPERIMENTAL_FFI)
+            corelib.ffi.loadLib(L);
+        if (EXPERIMENTAL_SQLITE)
+            corelib.sqlite.loadLib(L);
 
-    corelib.testing.loadLib(L, flags.mode == .Test);
+        corelib.testing.loadLib(L, flags.mode == .Test);
+    }
 
     try loadLuaurc(DEFAULT_ALLOCATOR, std.fs.cwd());
 }

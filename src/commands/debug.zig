@@ -57,6 +57,9 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     Zune.loadConfiguration();
 
+    var LOAD_FLAGS: Zune.Flags = .{
+        .mode = .Debug,
+    };
     var ALWAYS_DEBUG = true;
 
     if (flags) |f| for (f) |flag| {
@@ -75,6 +78,8 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
             }
         } else if (std.mem.eql(u8, flag, "--once")) {
             ALWAYS_DEBUG = false;
+        } else if (std.mem.eql(u8, flag, "--limbo")) {
+            LOAD_FLAGS.limbo = true;
         }
     };
 
@@ -141,9 +146,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
         try Engine.prepAsync(L, &scheduler, .{
             .args = run_args,
-        }, .{
-            .mode = .Debug,
-        });
+        }, LOAD_FLAGS);
 
         L.setsafeenv(VM.lua.GLOBALSINDEX, true);
 
