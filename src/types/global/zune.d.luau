@@ -1031,7 +1031,7 @@ export type ServeOptions = {
     --[[
         Functions to handle websockets.
     ]]
-    webhook: ServerWebSocketHandlers?,
+    websocket: ServerWebSocketHandlers?,
 }
 
 export type Response = {
