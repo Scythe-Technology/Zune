@@ -251,6 +251,11 @@ fn getNextArg(buf: []const u8) struct { []const u8, []const u8 } {
     return .{ trimmed[0..idx], trimmed[idx..] };
 }
 
+fn toBase64(allocator: std.mem.Allocator, input: []const u8) !struct { []u8, []const u8 } {
+    const base64_buf = try allocator.alloc(u8, std.base64.standard.Encoder.calcSize(input.len));
+    return .{ base64_buf, std.base64.standard.Encoder.encode(base64_buf, input) };
+}
+
 fn promptOpBreak(L: *VM.lua.State, allocator: std.mem.Allocator, break_args: []const u8) !void {
     if (break_args.len <= 0) {
         printResult("Usage: break <command>\n", .{});
@@ -400,14 +405,18 @@ fn variableJsonDisassemble(allocator: std.mem.Allocator, L: *VM.lua.State, iter:
         const value = tostring(L, -2);
         defer L.pop(2);
 
-        const key_base64_buf = try allocator.alloc(u8, std.base64.standard.Encoder.calcSize(key_str.len));
+        const key_base64_buf, const base64_key = try toBase64(allocator, key_str);
         defer allocator.free(key_base64_buf);
-        const base64_key = std.base64.standard.Encoder.encode(key_base64_buf, key_str);
-
-        const value_base64_buf = try allocator.alloc(u8, std.base64.standard.Encoder.calcSize(value.len));
+        const value_base64_buf, const base64_value = try toBase64(allocator, value);
         defer allocator.free(value_base64_buf);
-        const base64_value = std.base64.standard.Encoder.encode(value_base64_buf, value);
-        try writer.print("{{\"id\":{d},\"key\":\"{s}\",\"value\":\"{s}\",\"ktype\":\"{s}\",\"vtype\":\"{s}\"}}", .{ order, base64_key, base64_value, key_typename, value_typename });
+
+        try writer.print("{{\"id\":{d},\"key\":\"{s}\",\"value\":\"{s}\",\"key_type\":\"{s}\",\"value_type\":\"{s}\"}}", .{
+            order,
+            base64_key,
+            base64_value,
+            key_typename,
+            value_typename,
+        });
     }
     return true;
 }
@@ -498,10 +507,14 @@ fn promptOpLocals(L: *VM.lua.State, allocator: std.mem.Allocator, locals_args: [
                                 const value = tostring(L, -1);
                                 defer L.pop(1);
 
-                                const value_base64_buf = try allocator.alloc(u8, std.base64.standard.Encoder.calcSize(value.len));
+                                const value_base64_buf, const base64_value = try toBase64(allocator, value);
                                 defer allocator.free(value_base64_buf);
-                                const base64_value = std.base64.standard.Encoder.encode(value_base64_buf, value);
-                                try writer.print("{{\"id\":{d},\"key\":\"{s}\",\"value\":\"{s}\",\"ktype\":\"literal\",\"vtype\":\"{s}\"}}", .{ i, name, base64_value, typename });
+                                try writer.print("{{\"id\":{d},\"key\":\"{s}\",\"value\":\"{s}\",\"key_type\":\"literal\",\"value_type\":\"{s}\"}}", .{
+                                    i,
+                                    name,
+                                    base64_value,
+                                    typename,
+                                });
                             } else break;
                         }
                     }
@@ -606,13 +619,22 @@ fn promptOpParams(L: *VM.lua.State, allocator: std.mem.Allocator, params_args: [
                                 const value = tostring(L, -1);
                                 defer L.pop(1);
 
-                                const value_base64_buf = try allocator.alloc(u8, std.base64.standard.Encoder.calcSize(value.len));
+                                const value_base64_buf, const base64_value = try toBase64(allocator, value);
                                 defer allocator.free(value_base64_buf);
-                                const base64_value = std.base64.standard.Encoder.encode(value_base64_buf, value);
                                 if (i > ar.nparams)
-                                    try writer.print("{{\"id\":{d},\"key\":\"{s}\",\"value\":\"{s}\",\"ktype\":\"literal\",\"vtype\":\"{s}\"}}", .{ i, "var", base64_value, typename })
+                                    try writer.print("{{\"id\":{d},\"key\":\"{s}\",\"value\":\"{s}\",\"key_type\":\"literal\",\"value_type\":\"{s}\"}}", .{
+                                        i,
+                                        "var",
+                                        base64_value,
+                                        typename,
+                                    })
                                 else
-                                    try writer.print("{{\"id\":{d},\"key\":\"{s}\",\"value\":\"{s}\",\"ktype\":\"literal\",\"vtype\":\"{s}\"}}", .{ i, "param", base64_value, typename });
+                                    try writer.print("{{\"id\":{d},\"key\":\"{s}\",\"value\":\"{s}\",\"key_type\":\"literal\",\"value_type\":\"{s}\"}}", .{
+                                        i,
+                                        "param",
+                                        base64_value,
+                                        typename,
+                                    });
                             } else break;
                         }
                     }
@@ -719,10 +741,14 @@ fn promptOpUpvalues(L: *VM.lua.State, allocator: std.mem.Allocator, params_args:
                                 const value = tostring(L, -1);
                                 defer L.pop(1);
 
-                                const value_base64_buf = try allocator.alloc(u8, std.base64.standard.Encoder.calcSize(value.len));
+                                const value_base64_buf, const base64_value = try toBase64(allocator, value);
                                 defer allocator.free(value_base64_buf);
-                                const base64_value = std.base64.standard.Encoder.encode(value_base64_buf, value);
-                                try writer.print("{{\"id\":{d},\"key\":\"{s}\",\"value\":\"{s}\",\"ktype\":\"literal\",\"vtype\":\"{s}\"}}", .{ i, name, base64_value, typename });
+                                try writer.print("{{\"id\":{d},\"key\":\"{s}\",\"value\":\"{s}\",\"key_type\":\"literal\",\"value_type\":\"{s}\"}}", .{
+                                    i,
+                                    name,
+                                    base64_value,
+                                    typename,
+                                });
                             } else break;
                         }
                     }
@@ -828,16 +854,19 @@ fn promptOpGlobals(L: *VM.lua.State, allocator: std.mem.Allocator, globals_args:
                             const key_typename = VM.lapi.typename(L.typeOf(-2));
                             const value_typename = VM.lapi.typename(L.typeOf(-1));
                             const key = tostring(L, -2);
-                            const value = tostring(L, -1);
+                            const value = tostring(L, -2);
 
-                            const key_base64_buf = try allocator.alloc(u8, std.base64.standard.Encoder.calcSize(key.len));
+                            const key_base64_buf, const base64_key = try toBase64(allocator, key);
                             defer allocator.free(key_base64_buf);
-                            const base64_key = std.base64.standard.Encoder.encode(key_base64_buf, key);
-
-                            const value_base64_buf = try allocator.alloc(u8, std.base64.standard.Encoder.calcSize(value.len));
+                            const value_base64_buf, const base64_value = try toBase64(allocator, value);
                             defer allocator.free(value_base64_buf);
-                            const base64_value = std.base64.standard.Encoder.encode(value_base64_buf, value);
-                            try writer.print("{{\"id\":{d},\"key\":\"{s}\",\"value\":\"{s}\",\"ktype\":\"{s}\",\"vtype\":\"{s}\"}}", .{ order, base64_key, base64_value, key_typename, value_typename });
+                            try writer.print("{{\"id\":{d},\"key\":\"{s}\",\"value\":\"{s}\",\"key_type\":\"{s}\",\"value_type\":\"{s}\"}}", .{
+                                order,
+                                base64_key,
+                                base64_value,
+                                key_typename,
+                                value_typename,
+                            });
                         }
                     }
                     try buf.append(']');
@@ -1102,16 +1131,18 @@ pub fn prompt(L: *VM.lua.State, comptime kind: BreakKind, debug_info: ?*VM.lua.c
                                         break;
                                     if (level_depth > 0)
                                         try buf.append(',');
+                                    const src_base64_buf, const base64_src = try toBase64(allocator, ar.short_src.?);
+                                    defer allocator.free(src_base64_buf);
                                     if (ar.name) |fn_name|
                                         try writer.print("{{\"name\":\"{s}\",\"src\":\"{s}\",\"line\":{d},\"context\":{d}}}", .{
                                             fn_name,
-                                            ar.short_src.?,
+                                            base64_src,
                                             ar.currentline orelse ar.linedefined orelse 0,
                                             @intFromEnum(ar.what),
                                         })
                                     else
                                         try writer.print("{{\"name\":null,\"src\":\"{s}\",\"line\":{d},\"context\":{d}}}", .{
-                                            ar.short_src.?,
+                                            base64_src,
                                             ar.currentline orelse ar.linedefined orelse 0,
                                             @intFromEnum(ar.what),
                                         });
@@ -1247,7 +1278,9 @@ pub fn prompt(L: *VM.lua.State, comptime kind: BreakKind, debug_info: ?*VM.lua.c
                                             const typename = VM.lapi.typename(L.typeOf(-1));
                                             const err = tostring(L, -1);
                                             defer L.pop(1);
-                                            break :out printResult("{{\"reason\":\"{s}\",\"type\":\"{s}\",\"kind\":{d}}}\n", .{ err, typename, @intFromEnum(kind) });
+                                            const err_base64_buf, const base64_err = try toBase64(allocator, err);
+                                            defer allocator.free(err_base64_buf);
+                                            break :out printResult("{{\"reason\":\"{s}\",\"type\":\"{s}\",\"kind\":{d}}}\n", .{ base64_err, typename, @intFromEnum(kind) });
                                         }
                                     }
                                     printResult("{{\"reason\":null,\"type\":null,\"kind\":{d}}}\n", .{@intFromEnum(kind)});
