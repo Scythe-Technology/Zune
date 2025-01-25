@@ -129,7 +129,30 @@ pub fn logDetailedError(L: *VM.lua.State) !void {
         try list.append(info);
     }
 
-    var err_msg = L.tostring(-1) orelse "UnknownError";
+    var dynamic: bool = false;
+    var err_msg: []const u8 = undefined;
+    defer if (dynamic) allocator.free(err_msg);
+    switch (L.typeOf(-1)) {
+        .String, .Number => err_msg = L.tostring(-1).?,
+        else => {
+            const GL = L.mainthread();
+            if (!GL.checkstack(1))
+                @panic("Main StackOverflow");
+            const TL = GL.newthread();
+            defer GL.pop(1); // drop: thread
+            defer TL.resetthread();
+            L.xpush(TL, -1);
+            err_msg = try allocator.dupe(u8, TL.Ltolstring(1) catch |e| {
+                switch (e) {
+                    error.BadReturnType => std.debug.print("\x1b[32merror\x1b[0m: __tostring: Expected 'string' got {s}\n", .{VM.lapi.typename(TL.typeOf(-1))}),
+                    error.Runtime => logError(TL, e, false),
+                    else => std.debug.panic("{}\n", .{e}),
+                }
+                return;
+            });
+            dynamic = true;
+        },
+    }
 
     if (list.items.len < 1) {
         std.debug.print("\x1b[32merror\x1b[0m: {s}\n", .{err_msg});
@@ -273,7 +296,31 @@ pub fn logError(L: *VM.lua.State, err: anyerror, forceDetailed: bool) void {
             if (USE_DETAILED_ERROR or forceDetailed) {
                 logDetailedError(L) catch |e| std.debug.panic("{}", .{e});
             } else {
-                std.debug.print("{s}\n", .{L.tostring(-1) orelse "UnknownError"});
+                switch (L.typeOf(-1)) {
+                    .String, .Number => std.debug.print("{s}\n", .{L.tostring(-1).?}),
+                    else => {
+                        if (!L.checkstack(3)) // string + __tostring + call stack
+                            std.debug.print("BadErrorInfo/StackOverflow\n", .{})
+                        else jmp: {
+                            const GL = L.mainthread();
+                            if (!GL.checkstack(1))
+                                @panic("Main StackOverflow");
+                            const TL = GL.newthread();
+                            defer GL.pop(1); // drop: thread
+                            defer TL.resetthread();
+                            L.xpush(TL, -1);
+                            const str = TL.Ltolstring(1) catch |e| {
+                                switch (e) {
+                                    error.BadReturnType => std.debug.print("__tostring: Expected 'string' got {s}\n", .{VM.lapi.typename(TL.typeOf(-1))}),
+                                    error.Runtime => logError(TL, e, false),
+                                    else => std.debug.panic("{}\n", .{e}),
+                                }
+                                break :jmp;
+                            };
+                            std.debug.print("{s}\n", .{str});
+                        }
+                    },
+                }
                 std.debug.print("{s}\n", .{L.debugtrace()});
             }
         },
