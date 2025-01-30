@@ -256,7 +256,7 @@ local function connectToHostAsync(name: string, port: number): NetworkSocket
         local socket = net.createSocketAsync(
             address.family,
             bit32.bor(
-                net.SOCKF.STREAM, net.SOCKF.NONBLOCK,
+                net.SOCKF.STREAM,
                 if (process.os == "windows") then 0 else net.SOCKF.CLOEXEC
             ),
             net.IPPROTO.TCP
