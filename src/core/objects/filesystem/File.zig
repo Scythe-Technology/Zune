@@ -453,21 +453,21 @@ fn before_method(self: *File, L: *VM.lua.State) !void {
         return L.Zerror("File is closed");
 }
 
-const __namecall = method_map.CreateNamecallMap(File, before_method, .{
-    .{ "write", write },
-    .{ "writeSync", writeSync },
-    .{ "append", append },
-    .{ "getSeekPosition", getSeekPosition },
-    .{ "getSize", getSize },
-    .{ "seekFromEnd", seekFromEnd },
-    .{ "seekTo", seekTo },
-    .{ "seekBy", seekBy },
-    .{ "read", read },
-    .{ "readSync", readSync },
-    .{ "lock", lock },
-    .{ "unlock", unlock },
-    .{ "sync", sync },
-    .{ "readonly", readonly },
+const __namecall = method_map.CreateNamecallMap(File, .{
+    .{ "write", method_map.WithFn(File, write, before_method) },
+    .{ "writeSync", method_map.WithFn(File, writeSync, before_method) },
+    .{ "append", method_map.WithFn(File, append, before_method) },
+    .{ "getSeekPosition", method_map.WithFn(File, getSeekPosition, before_method) },
+    .{ "getSize", method_map.WithFn(File, getSize, before_method) },
+    .{ "seekFromEnd", method_map.WithFn(File, seekFromEnd, before_method) },
+    .{ "seekTo", method_map.WithFn(File, seekTo, before_method) },
+    .{ "seekBy", method_map.WithFn(File, seekBy, before_method) },
+    .{ "read", method_map.WithFn(File, read, before_method) },
+    .{ "readSync", method_map.WithFn(File, readSync, before_method) },
+    .{ "lock", method_map.WithFn(File, lock, before_method) },
+    .{ "unlock", method_map.WithFn(File, unlock, before_method) },
+    .{ "sync", method_map.WithFn(File, sync, before_method) },
+    .{ "readonly", method_map.WithFn(File, readonly, before_method) },
     .{ "close", closeAsync },
 });
 

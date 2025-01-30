@@ -304,7 +304,7 @@ fn sendMsgAsync(self: *Socket, L: *VM.lua.State) !i32 {
             },
         },
         .iov = switch (builtin.os.tag) {
-            .windows => [1]std.os.windows.ws2_32.WSABUF{.{ .buf = buf.ptr, .len = data.len }},
+            .windows => [1]std.os.windows.ws2_32.WSABUF{.{ .buf = buf.ptr, .len = @intCast(data.len) }},
             else => [1]std.posix.iovec_const{.{ .base = buf.ptr, .len = data.len }},
         },
         .lua_socket = self,
@@ -461,8 +461,6 @@ fn connectAsync(self: *Socket, L: *VM.lua.State) !i32 {
 }
 
 fn listen(self: *Socket, L: *VM.lua.State) !i32 {
-    if (!self.open)
-        return L.Zerror("SocketClosed");
     const backlog = L.Loptunsigned(2, 128);
     if (backlog > std.math.maxInt(u31))
         return L.Zerror("BacklogTooLarge");
@@ -471,8 +469,6 @@ fn listen(self: *Socket, L: *VM.lua.State) !i32 {
 }
 
 fn bindIp(self: *Socket, L: *VM.lua.State) !i32 {
-    if (!self.open)
-        return L.Zerror("SocketClosed");
     const address_ip = L.Lcheckstring(2);
     const port = L.Lcheckunsigned(3);
     if (port > std.math.maxInt(u16))
@@ -486,8 +482,6 @@ fn bindIp(self: *Socket, L: *VM.lua.State) !i32 {
 }
 
 fn getName(self: *Socket, L: *VM.lua.State) !i32 {
-    if (!self.open)
-        return L.Zerror("SocketClosed");
     var address: std.net.Address = undefined;
     var len: std.posix.socklen_t = @sizeOf(std.posix.sockaddr);
     try std.posix.getsockname(self.socket, &address.any, &len);
@@ -501,8 +495,6 @@ fn getName(self: *Socket, L: *VM.lua.State) !i32 {
 }
 
 fn setOption(self: *Socket, L: *VM.lua.State) !i32 {
-    if (!self.open)
-        return L.Zerror("SocketClosed");
     const level = L.Lcheckinteger(2);
     const optname = L.Lcheckunsigned(3);
     const value = switch (L.typeOf(4)) {
@@ -537,17 +529,17 @@ fn before_method(self: *Socket, L: *VM.lua.State) !void {
         return L.Zerror("SocketClosed");
 }
 
-const __namecall = method_map.CreateNamecallMap(Socket, before_method, .{
-    .{ "sendAsync", sendAsync },
-    .{ "sendMsgAsync", sendMsgAsync },
-    .{ "recvAsync", recvAsync },
-    .{ "recvMsgAsync", recvMsgAsync },
-    .{ "acceptAsync", acceptAsync },
-    .{ "connectAsync", connectAsync },
-    .{ "listen", listen },
-    .{ "bindIp", bindIp },
-    .{ "getName", getName },
-    .{ "setOption", setOption },
+const __namecall = method_map.CreateNamecallMap(Socket, .{
+    .{ "sendAsync", method_map.WithFn(Socket, sendAsync, before_method) },
+    .{ "sendMsgAsync", method_map.WithFn(Socket, sendMsgAsync, before_method) },
+    .{ "recvAsync", method_map.WithFn(Socket, recvAsync, before_method) },
+    .{ "recvMsgAsync", method_map.WithFn(Socket, recvMsgAsync, before_method) },
+    .{ "acceptAsync", method_map.WithFn(Socket, acceptAsync, before_method) },
+    .{ "connectAsync", method_map.WithFn(Socket, connectAsync, before_method) },
+    .{ "listen", method_map.WithFn(Socket, listen, before_method) },
+    .{ "bindIp", method_map.WithFn(Socket, bindIp, before_method) },
+    .{ "getName", method_map.WithFn(Socket, getName, before_method) },
+    .{ "setOption", method_map.WithFn(Socket, setOption, before_method) },
     .{ "close", close },
 });
 
