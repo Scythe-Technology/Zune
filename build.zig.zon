@@ -44,8 +44,8 @@
             .hash = "1220204f225b5afdc6409296073af9cef595e215e0d0fe76c9d2f585a945e09dea0d",
         },
         .aio = .{
-            .url = "https://codeload.github.com/Scythe-Technology/zig-aio/tar.gz/350be4133578565634e5cecf13f87d31062059a1",
-            .hash = "12203ec1829f84d65c2dcb1209c8960bd7a573bf87bc0c08530b99475577b7476021",
+            .url = "https://codeload.github.com/Scythe-Technology/zig-aio/tar.gz/aac47dd4d0ebb3d88df1671cfe94819fd8a37d2c",
+            .hash = "12205b1b44b73be762e7824998f17cb0569acb0c8c076e2f163e87c4cbc67a66c65c",
         },
     },
     .paths = .{
