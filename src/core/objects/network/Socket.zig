@@ -54,7 +54,9 @@ pub fn AddressToString(buf: []u8, address: std.net.Address) []const u8 {
 pub fn HandleSocketError(err: anyerror, socket: *Socket) void {
     switch (err) {
         // usually unexpected errors caused by closing socket while async task is active
-        error.Unexpected => socket.open = false,
+        // all: error.Unexpected
+        // windows: error.OperationAborted
+        error.Unexpected, error.OperationAborted => socket.open = false,
         else => {},
     }
 }
