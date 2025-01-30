@@ -22,7 +22,9 @@ pub fn runTest(allocator: std.mem.Allocator, comptime testFile: zune_test_files.
 
     try path_dir.setAsCwd();
 
-    Zune.loadConfiguration();
+    Zune.loadConfiguration(.{
+        .loadStd = false,
+    });
 
     var L = try luau.init(&allocator);
     defer L.deinit();

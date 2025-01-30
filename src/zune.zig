@@ -41,7 +41,11 @@ var EXPERIMENTAL_FFI = false;
 var EXPERIMENTAL_SQLITE = false;
 var STD_ENABLED = true;
 
-pub fn loadConfiguration() void {
+const ConstantConfig = struct {
+    loadStd: ?bool = null,
+};
+
+pub fn loadConfiguration(comptime config: ConstantConfig) void {
     const allocator = DEFAULT_ALLOCATOR;
     const config_content = std.fs.cwd().readFileAlloc(allocator, "zune.toml", std.math.maxInt(usize)) catch |err| switch (err) {
         error.FileNotFound => return,
@@ -121,6 +125,9 @@ pub fn loadConfiguration() void {
         if (toml.checkOptionBool(experimental_config, "sqlite")) |enabled|
             EXPERIMENTAL_SQLITE = enabled;
     }
+
+    if (comptime config.loadStd) |enabled|
+        STD_ENABLED = enabled;
 }
 
 pub fn loadLuaurc(allocator: std.mem.Allocator, dir: std.fs.Dir) anyerror!void {

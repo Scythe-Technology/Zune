@@ -55,7 +55,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         return;
     }
 
-    Zune.loadConfiguration();
+    Zune.loadConfiguration(.{});
 
     var LOAD_FLAGS: Zune.Flags = .{
         .mode = .Debug,
