@@ -83,7 +83,7 @@ function udp.createAsync(opts: UDPSocketOptions): UDPSocket
                 return;
             end)
             if (not ok) then
-                if (SocketUtils.isClosedError(err)) then
+                if (SocketUtils.SocketClosedError[err]) then
                     self:stop();
                     return;
                 end
@@ -100,7 +100,7 @@ function udp.createAsync(opts: UDPSocketOptions): UDPSocket
             end)
             if (not ok) then
                 local err = address::any;
-                if (SocketUtils.isClosedError(err)) then
+                if (SocketUtils.SocketClosedError[err]) then
                     self:stop();
                     break; -- closed
                 end

@@ -97,7 +97,7 @@ local function sendConnectionAsync(connection: TCPConnection, message: string | 
         if (not ok) then
             local err = amount::any;
             closeConnection(connection);
-            if (SocketUtils.isClosedError(err) or err == "BrokenPipe") then
+            if (SocketUtils.SocketClosedError[err] or err == "BrokenPipe") then
                 break; -- closed/disconnected
             end
             print("Error(Unhandled): ", err);
@@ -203,7 +203,7 @@ function tcp.hostAsync(opts: TCPServerOptions): TCPServer
             if (not ok) then
                 local err = client_socket::any;
                 self:stop();
-                if (SocketUtils.isClosedError(err)) then
+                if (SocketUtils.SocketClosedError[err]) then
                     break; -- closed/disconnected
                 end
                 print("Error(Unhandled): ", err);
@@ -224,7 +224,7 @@ function tcp.hostAsync(opts: TCPServerOptions): TCPServer
                     end)
                     if (not ok) then
                         local err = data::any;
-                        if (SocketUtils.isClosedError(err)) then
+                        if (SocketUtils.SocketClosedError[err]) then
                             break; -- closed/disconnected
                         end
                         print("Error(Unhandled): ", err);
@@ -263,9 +263,9 @@ local function connectToHostAsync(name: string, port: number): NetworkSocket
             ),
             net.IPPROTO.TCP
         );
-        local ok, err = pcall(function()
+        local ok, err = pcall(function(): any?
             socket:connectAsync(address.address, address.port);
-            return nil::any;
+            return;
         end)
         if (not ok) then
             if (err == "ConnectionRefused") then
@@ -315,7 +315,7 @@ function tcp.connectAsync(opts: TCPClientOptions): TCPConnection
             end)
             if (not ok) then
                 local err = data::any;
-                if (SocketUtils.isClosedError(err)) then
+                if (SocketUtils.SocketClosedError[err]) then
                     break; -- closed/disconnected
                 end
                 print("Error(Unhandled): ", err);
