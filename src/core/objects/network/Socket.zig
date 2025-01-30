@@ -510,7 +510,7 @@ fn setOption(self: *Socket, L: *VM.lua.State) !i32 {
     return 0;
 }
 
-fn close(self: *Socket, L: *VM.lua.State) !i32 {
+fn closeAsync(self: *Socket, L: *VM.lua.State) !i32 {
     if (self.open) {
         self.open = false;
         const scheduler = Scheduler.getScheduler(L);
@@ -538,7 +538,7 @@ const __namecall = method_map.CreateNamecallMap(Socket, .{
     .{ "bindIp", method_map.WithFn(Socket, bindIp, before_method) },
     .{ "getName", method_map.WithFn(Socket, getName, before_method) },
     .{ "setOption", method_map.WithFn(Socket, setOption, before_method) },
-    .{ "close", close },
+    .{ "closeAsync", closeAsync },
 });
 
 pub fn __dtor(L: *VM.lua.State, ptr: *Socket) void {

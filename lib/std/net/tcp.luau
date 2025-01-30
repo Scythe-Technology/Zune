@@ -81,7 +81,9 @@ local function closeConnection(connection: TCPConnection): ()
         return;
     end
     connection.stopped = true;
-    connection.socket:close();
+    task.spawn(function(socket: NetworkSocket)
+        socket:closeAsync();
+    end, connection.socket);
 end
 
 local function sendConnectionAsync(connection: TCPConnection, message: string | buffer): ()
@@ -125,7 +127,9 @@ local function stopServer(server: TCPServer): ()
     for _, connection in server.connections:iterate() do
         connection:stop();
     end
-    server.socket:close();
+    task.spawn(function(socket: NetworkSocket)
+        socket:closeAsync();
+    end, server.socket);
 end
 
 local tcp = {};

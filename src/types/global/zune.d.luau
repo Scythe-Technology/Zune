@@ -948,7 +948,7 @@ declare class NetworkSocket
     function bindIp(self, address: string, port: number): ()
     function getName(self): NetworkAddress
     function setOption(self, level: number, optname: number, value: boolean | buffer | string): ()
-    function close(self): ()
+    function closeAsync(self): ()
 end
 
 declare class NetTCPServer
