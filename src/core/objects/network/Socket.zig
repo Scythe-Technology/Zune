@@ -51,6 +51,14 @@ pub fn AddressToString(buf: []u8, address: std.net.Address) []const u8 {
     }
 }
 
+pub fn HandleSocketError(err: anyerror, socket: *Socket) void {
+    switch (err) {
+        // usually unexpected errors caused by closing socket while async task is active
+        error.Unexpected => socket.open = false,
+        else => {},
+    }
+}
+
 fn IOContentCompletion(error_type: type, comptime buffer: bool) type {
     return struct {
         buffer: []u8,
@@ -69,10 +77,7 @@ fn IOContentCompletion(error_type: type, comptime buffer: bool) type {
                 else => return,
             }
             if (failed) {
-                switch (self.out_err) {
-                    error.Unexpected => self.lua_socket.open = false,
-                    else => {},
-                }
+                HandleSocketError(self.out_err, self.lua_socket);
                 L.pushlstring(@errorName(self.out_err));
                 _ = Scheduler.resumeStateError(L, null) catch {};
                 return;
@@ -119,10 +124,7 @@ fn IOContentMsgCompletion(error_type: type, comptime recieve: bool) type {
                 else => return,
             }
             if (failed) {
-                switch (self.out_err) {
-                    error.Unexpected => self.lua_socket.open = false,
-                    else => {},
-                }
+                HandleSocketError(self.out_err, self.lua_socket);
                 L.pushlstring(@errorName(self.out_err));
                 _ = Scheduler.resumeStateError(L, null) catch {};
                 return;
@@ -170,10 +172,7 @@ const AcceptContext = struct {
             else => return,
         }
         if (failed) {
-            switch (self.out_err) {
-                error.Unexpected => self.lua_socket.open = false,
-                else => {},
-            }
+            HandleSocketError(self.out_err, self.lua_socket);
             L.pushlstring(@errorName(self.out_err));
             _ = Scheduler.resumeStateError(L, null) catch {};
             return;
@@ -206,10 +205,7 @@ const ConnectContext = struct {
             else => return,
         }
         if (failed) {
-            switch (self.out_err) {
-                error.Unexpected => self.lua_socket.open = false,
-                else => {},
-            }
+            HandleSocketError(self.out_err, self.lua_socket);
             L.pushlstring(@errorName(self.out_err));
             _ = Scheduler.resumeStateError(L, null) catch {};
             return;
