@@ -144,6 +144,7 @@ function tcp.hostAsync(opts: TCPServerOptions): TCPServer
 
     local address = opts.address or "127.0.0.1";
     local port = opts.port or 0;
+    local reuseAddress = opts.reuseAddress or false;
     local maxDataRead = opts.maxDataRead or 8192;
     local maxConnections = opts.maxConnections or 512;
 
@@ -153,6 +154,7 @@ function tcp.hostAsync(opts: TCPServerOptions): TCPServer
 
     assert(type(address) == "string", "Expected address to be a string");
     assert(type(port) == "number", "Expected port to be a number");
+    assert(type(reuseAddress) == "boolean", "Expected reuseAddress to be a boolean");
     assert(type(maxDataRead) == "number", "Expected maxDataRead to be a number");
     assert(type(maxConnections) == "number", "Expected maxConnections to be a number");
     assert(type(callback_open) == "function" or callback_open == nil, "Expected open to be a function");
@@ -164,6 +166,13 @@ function tcp.hostAsync(opts: TCPServerOptions): TCPServer
         bit32.bor(net.SOCKF.STREAM, net.SOCKF.CLOEXEC, net.SOCKF.NONBLOCK),
         net.IPPROTO.TCP
     );
+
+    if (reuseAddress) then
+        socket:setOption(net.SOCKOPTLV.SOCKET, net.SOCKOPT.REUSEADDR, true);
+        if (net.SOCKOPT.REUSEPORT) then
+            socket:setOption(net.SOCKOPTLV.SOCKET, net.SOCKOPT.REUSEPORT, true);
+        end
+    end
 
     socket:bindIp(address, port);
     socket:listen();
