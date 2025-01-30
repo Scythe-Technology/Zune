@@ -39,6 +39,7 @@ pub const VERSION = "Zune " ++ zune_info.version ++ "+" ++ std.fmt.comptimePrint
 
 var EXPERIMENTAL_FFI = false;
 var EXPERIMENTAL_SQLITE = false;
+var STD_ENABLED = true;
 
 pub fn loadConfiguration() void {
     const allocator = DEFAULT_ALLOCATOR;
@@ -81,6 +82,9 @@ pub fn loadConfiguration() void {
                 } else if (!std.mem.eql(u8, mode, "RelativeToFile")) {
                     std.debug.print("[zune.toml] 'Mode' must be 'RelativeToProject' or 'RelativeToFile'\n", .{});
                 }
+            }
+            if (toml.checkOptionBool(require_config, "loadStd")) |enabled| {
+                STD_ENABLED = enabled;
             }
         }
     }
@@ -169,14 +173,30 @@ pub fn loadLuaurc(allocator: std.mem.Allocator, dir: std.fs.Dir) anyerror!void {
     }
 }
 
+pub var EnvironmentMap: std.process.EnvMap = undefined;
+
+fn loadEnv(allocator: std.mem.Allocator) !void {
+    const path = EnvironmentMap.get("ZUNE_STD_PATH") orelse path: {
+        const exe_dir = try std.fs.selfExeDirPathAlloc(allocator);
+        defer allocator.free(exe_dir);
+        break :path try std.fs.path.resolve(allocator, &.{ exe_dir, "lib/std" });
+    };
+    try resolvers_require.ALIASES.put("std", path);
+    try EnvironmentMap.put("ZUNE_STD_PATH", path);
+}
+
 pub fn openZune(L: *VM.lua.State, args: []const []const u8, flags: Flags) !void {
+    const allocator = DEFAULT_ALLOCATOR;
+
+    EnvironmentMap = std.process.getEnvMap(allocator) catch std.debug.panic("OutOfMemory", .{});
+
     L.Lopenlibs();
 
     objects.load(L);
 
     L.newtable();
     L.newtable();
-    L.Zsetfieldc(-1, luau.Metamethods.index, struct {
+    L.Zsetfieldfn(-1, luau.Metamethods.index, struct {
         fn inner(l: *VM.lua.State) !i32 {
             _ = l.Lfindtable(VM.lua.REGISTRYINDEX, "_LIBS", 1);
             l.pushvalue(2);
@@ -184,7 +204,7 @@ pub fn openZune(L: *VM.lua.State, args: []const []const u8, flags: Flags) !void 
             return 1;
         }
     }.inner);
-    L.Zsetfieldc(-1, luau.Metamethods.metatable, "This metatable is locked");
+    L.Zsetfield(-1, luau.Metamethods.metatable, "This metatable is locked");
     _ = L.setmetatable(-2);
     L.setreadonly(-1, true);
     L.setglobal("zune");
@@ -222,6 +242,9 @@ pub fn openZune(L: *VM.lua.State, args: []const []const u8, flags: Flags) !void 
     }
 
     try loadLuaurc(DEFAULT_ALLOCATOR, std.fs.cwd());
+
+    if (STD_ENABLED)
+        try loadEnv(allocator);
 }
 
 test "Zune" {

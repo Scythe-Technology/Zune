@@ -223,13 +223,13 @@ pub fn loadLib(L: *VM.lua.State, enabled: bool) void {
         ML.Lsandboxthread();
 
         if (L.getfield(VM.lua.GLOBALSINDEX, "_testing_stdOut") == .Boolean and !L.toboolean(-1)) {
-            ML.Zsetfieldc(VM.lua.GLOBALSINDEX, "print", empty);
-        } else ML.Zsetfieldc(VM.lua.GLOBALSINDEX, "print", testing_debug);
+            ML.Zsetfieldfn(VM.lua.GLOBALSINDEX, "print", empty);
+        } else ML.Zsetfieldfn(VM.lua.GLOBALSINDEX, "print", testing_debug);
         L.pop(1);
-        ML.Zsetfieldc(VM.lua.GLOBALSINDEX, "declare_safeEnv", testing_declareSafeEnv);
-        ML.Zsetfieldc(VM.lua.GLOBALSINDEX, "stepcheck_references", testing_checkLeakedReferences);
-        ML.Zsetfieldc(VM.lua.GLOBALSINDEX, "scheduler_droptasks", testing_droptasks);
-        ML.Zsetfieldc(VM.lua.GLOBALSINDEX, "_FILE", false);
+        ML.Zsetfieldfn(VM.lua.GLOBALSINDEX, "declare_safeEnv", testing_declareSafeEnv);
+        ML.Zsetfieldfn(VM.lua.GLOBALSINDEX, "stepcheck_references", testing_checkLeakedReferences);
+        ML.Zsetfieldfn(VM.lua.GLOBALSINDEX, "scheduler_droptasks", testing_droptasks);
+        ML.Zsetfield(VM.lua.GLOBALSINDEX, "_FILE", false);
 
         const bytecode_buf = allocator.alloc(u8, test_lib_size) catch |err| std.debug.panic("Unable to allocate space for testing framework: {}", .{err});
         defer allocator.free(bytecode_buf);
@@ -250,10 +250,10 @@ pub fn loadLib(L: *VM.lua.State, enabled: bool) void {
         L.remove(-2);
     } else {
         L.newtable();
-        L.Zsetfieldc(-1, "running", false);
-        L.Zsetfieldc(-1, "describe", empty);
-        L.Zsetfieldc(-1, "test", empty);
-        L.Zsetfieldc(-1, "expect", empty);
+        L.Zsetfield(-1, "running", false);
+        L.Zsetfieldfn(-1, "describe", empty);
+        L.Zsetfieldfn(-1, "test", empty);
+        L.Zsetfieldfn(-1, "expect", empty);
         L.setreadonly(-1, true);
     }
 

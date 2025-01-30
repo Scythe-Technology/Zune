@@ -417,8 +417,8 @@ pub fn loadLib(L: *VM.lua.State) void {
     {
         _ = L.Lnewmetatable(LuaDatabase.META);
 
-        L.Zsetfieldc(-1, luau.Metamethods.index, LuaDatabase.__index); // metatable.__index
-        L.Zsetfieldc(-1, luau.Metamethods.namecall, LuaDatabase.__namecall); // metatable.__namecall
+        L.Zsetfieldfn(-1, luau.Metamethods.index, LuaDatabase.__index); // metatable.__index
+        L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaDatabase.__namecall); // metatable.__namecall
 
         L.setuserdatadtor(LuaDatabase, tagged.SQLITE_DATABASE, LuaDatabase.__dtor);
         L.setuserdatametatable(tagged.SQLITE_DATABASE, -1);
@@ -426,8 +426,8 @@ pub fn loadLib(L: *VM.lua.State) void {
     {
         _ = L.Lnewmetatable(LuaStatement.META);
 
-        L.Zsetfieldc(-1, luau.Metamethods.index, LuaStatement.__index); // metatable.__index
-        L.Zsetfieldc(-1, luau.Metamethods.namecall, LuaStatement.__namecall); // metatable.__namecall
+        L.Zsetfieldfn(-1, luau.Metamethods.index, LuaStatement.__index); // metatable.__index
+        L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaStatement.__namecall); // metatable.__namecall
 
         L.setuserdatadtor(LuaStatement, tagged.SQLITE_STATEMENT, LuaStatement.__dtor);
         L.setuserdatametatable(tagged.SQLITE_STATEMENT, -1);
@@ -435,7 +435,7 @@ pub fn loadLib(L: *VM.lua.State) void {
 
     L.newtable();
 
-    L.Zsetfieldc(-1, "open", sqlite_open);
+    L.Zsetfieldfn(-1, "open", sqlite_open);
 
     L.setreadonly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);

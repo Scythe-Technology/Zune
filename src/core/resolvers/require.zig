@@ -118,17 +118,19 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
     const absPath = try std.fs.cwd().realpathAlloc(allocator, ".");
     defer allocator.free(absPath);
 
+    var resolvedPath: ?[]const u8 = null;
+    defer if (resolvedPath) |path| allocator.free(path);
+
     if (moduleName.len > 2 and moduleName[0] == '@') {
         const delimiter = std.mem.indexOfScalar(u8, moduleName, '/') orelse moduleName.len;
         const alias = moduleName[1..delimiter];
         const path = ALIASES.get(alias) orelse return RequireError.NoAlias;
-        const modulePath = if (moduleName.len - delimiter > 1)
+        resolvedPath = if (moduleName.len - delimiter > 1)
             try std.fs.path.join(allocator, &.{ path, moduleName[delimiter + 1 ..] })
         else
             try allocator.dupe(u8, path);
-        defer allocator.free(modulePath);
 
-        searchResult = try Engine.findLuauFileFromPathZ(allocator, absPath, modulePath);
+        searchResult = try Engine.findLuauFileFromPathZ(allocator, absPath, resolvedPath orelse unreachable);
     } else {
         if ((moduleName.len < 2 or !std.mem.eql(u8, moduleName[0..2], "./")) and (moduleName.len < 3 or !std.mem.eql(u8, moduleName[0..3], "../")))
             return L.Zerror("must have either \"@\", \"./\", or \"../\" prefix");
@@ -169,7 +171,11 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
             }
             moduleAbsolutePath = results[0];
         },
-        .none => return error.FileNotFound,
+        .none => {
+            const resolved = try std.fs.path.resolve(allocator, &.{ absPath, resolvedPath orelse moduleName });
+            defer allocator.free(resolved);
+            return L.Zerrorf("FileNotFound ({s})", .{resolved});
+        },
     }
 
     jmp: {

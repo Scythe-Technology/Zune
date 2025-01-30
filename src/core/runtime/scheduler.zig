@@ -122,27 +122,13 @@ fn SleepOrder(_: void, a: SleepingThread, b: SleepingThread) std.math.Order {
     }
 }
 
-fn DeferredOrder(_: void, a: DeferredThread, b: DeferredThread) std.math.Order {
-    const wakeA = a;
-    const wakeB = b.wake;
-    if (wakeA == wakeB) {
-        return .eq;
-    } else if (wakeA < wakeB) {
-        return .lt;
-    } else if (wakeA > wakeB) {
-        return .gt;
-    } else {
-        unreachable;
-    }
-}
-
 const SleepingQueue = std.PriorityQueue(SleepingThread, void, SleepOrder);
 const DeferredLinkedList = std.DoublyLinkedList(DeferredThread);
 
 state: *VM.lua.State,
 allocator: std.mem.Allocator,
 sleeping: SleepingQueue,
-deferred: DeferredLinkedList,
+deferred: DeferredLinkedList = .{},
 tasks: std.ArrayList(TaskObject(anyopaque)),
 awaits: std.ArrayList(AwaitingObject(anyopaque)),
 dynamic: aio.Dynamic,
@@ -151,40 +137,32 @@ async_tasks: usize = 0,
 frame: FrameKind = .None,
 
 pub fn init(allocator: std.mem.Allocator, state: *VM.lua.State) Self {
-    var dyn = aio.Dynamic.init(allocator, 4096) catch |err| std.debug.panic("Error: {}\n", .{err});
-    dyn.queue_callback = ioQueue;
-    dyn.completion_callback = ioCompletion;
-    return .{
+    const dyn = aio.Dynamic.init(allocator, 4096) catch |err| std.debug.panic("Error: {}\n", .{err});
+    return Self{
         .state = state,
         .allocator = allocator,
         .sleeping = SleepingQueue.init(allocator, {}),
-        .deferred = DeferredLinkedList{},
         .tasks = std.ArrayList(TaskObject(anyopaque)).init(allocator),
         .awaits = std.ArrayList(AwaitingObject(anyopaque)).init(allocator),
         .dynamic = dyn,
     };
 }
 
-fn ioQueue(uop: aio.Dynamic.Uop, id: aio.Id) void {
-    _ = uop;
+pub fn aio_queue(_: *Self, id: aio.Id, userdata: usize) void {
     _ = id;
+    _ = userdata;
     // place holder
 }
 
-fn ioCompletion(uop: aio.Dynamic.Uop, _: aio.Id, failed: bool) void {
-    switch (uop) {
-        inline else => |*op| {
-            std.debug.assert(op.userdata != 0);
-            const ctx: *AsyncIoThread = @ptrFromInt(op.userdata);
-            const state = stateFromPair(ctx.state);
-            const scheduler = getScheduler(state);
-            defer scheduler.allocator.destroy(ctx);
-            defer derefThread(ctx.state);
-            scheduler.async_tasks -= 1;
-            if (ctx.handlerFn) |handler|
-                handler(ctx.data, state, scheduler, failed);
-        },
-    }
+pub fn aio_complete(self: *Self, _: aio.Id, userdata: usize, failed: bool) void {
+    std.debug.assert(userdata != 0);
+    const ctx: *AsyncIoThread = @ptrFromInt(userdata);
+    const state = stateFromPair(ctx.state);
+    defer self.allocator.destroy(ctx);
+    defer derefThread(ctx.state);
+    self.async_tasks -= 1;
+    if (ctx.handlerFn) |handler|
+        handler(ctx.data, state, self, failed);
 }
 
 pub fn refThread(L: *VM.lua.State) LuauPair {
@@ -420,9 +398,9 @@ pub fn queueIoCallback(
 
     var queueItem = io;
 
-    queueItem.userdata = @intFromPtr(async_ptr);
+    queueItem.op.userdata = @intFromPtr(async_ptr);
 
-    try self.dynamic.queue(queueItem);
+    try self.dynamic.queue(queueItem, self);
     self.async_tasks += 1;
 }
 
@@ -454,9 +432,9 @@ pub fn queueIoCallbackCtx(
 
     var queueItem = io;
 
-    queueItem.userdata = @intFromPtr(async_ptr);
+    queueItem.op.userdata = @intFromPtr(async_ptr);
 
-    try self.dynamic.queue(queueItem);
+    try self.dynamic.queue(queueItem, self);
     self.async_tasks += 1;
 }
 
@@ -479,13 +457,16 @@ pub fn queueIo(
 
     var queueItem = io;
 
-    queueItem.userdata = @intFromPtr(async_ptr);
+    queueItem.op.userdata = @intFromPtr(async_ptr);
 
-    try self.dynamic.queue(queueItem);
+    try self.dynamic.queue(queueItem, self);
     self.async_tasks += 1;
 }
 
 pub fn resumeState(state: *VM.lua.State, from: ?*VM.lua.State, args: i32) !VM.lua.Status {
+    const status = state.status();
+    if (status != .Yield and status != .Ok)
+        return status.check();
     return state.resumethread(from, args).check() catch |err| {
         Engine.logError(state, err, false);
         if (Zune.Debugger.ACTIVE) {
@@ -500,6 +481,9 @@ pub fn resumeState(state: *VM.lua.State, from: ?*VM.lua.State, args: i32) !VM.lu
 }
 
 pub fn resumeStateError(state: *VM.lua.State, from: ?*VM.lua.State) !VM.lua.Status {
+    const status = state.status();
+    if (status != .Yield and status != .Ok)
+        return status.check();
     return state.resumeerror(from).check() catch |err| {
         Engine.logError(state, err, false);
         if (Zune.Debugger.ACTIVE) {
@@ -604,16 +588,14 @@ pub fn run(self: *Self, comptime mode: Zune.RunMode) void {
         }
         jmp: {
             self.frame = .AsyncIO;
-            const res = self.dynamic.complete(.nonblocking) catch |err| {
-                std.debug.print("AsyncIO Error: {}\n", .{err});
-                break :jmp;
-            };
-            if (res.num_completed > 0) {
-                std.debug.print("completed async task: {}\n", .{res.num_completed});
-                active += res.num_completed;
-            }
-            if (res.num_errors > 0) {
-                std.debug.print("errors: {}\n", .{res.num_errors});
+            if (self.async_tasks > 0) {
+                const res = self.dynamic.complete(.nonblocking, self) catch |err| {
+                    std.debug.print("AsyncIO Error: {}\n", .{err});
+                    break :jmp;
+                };
+                if (res.num_completed > 0) {
+                    active += res.num_completed;
+                }
             }
         }
         if (self.deferred.len > 0) {
@@ -657,8 +639,15 @@ pub fn deinit(self: *Self) void {
     self.dynamic.deinit(self.allocator);
 }
 
-pub fn getScheduler(L: *VM.lua.State) *Self {
-    const GL = L.mainthread();
-    const scheduler = GL.getthreaddata(*Self);
-    return scheduler;
+pub fn getScheduler(L: anytype) *Self {
+    if (@TypeOf(L) == *VM.lua.State) {
+        const GL = L.mainthread();
+        const scheduler = GL.getthreaddata(*Self);
+        return scheduler;
+    } else if (@TypeOf(L) == LuauPair) {
+        const state, _ = L;
+        const GL = state.mainthread();
+        const scheduler = GL.getthreaddata(*Self);
+        return scheduler;
+    } else @compileError("Invalid type for getScheduler");
 }

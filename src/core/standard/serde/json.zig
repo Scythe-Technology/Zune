@@ -315,7 +315,7 @@ pub fn lua_setprops(L: *VM.lua.State) void {
     { // JsonNull Metatable
         L.newtable();
 
-        L.Zsetfieldc(-1, luau.Metamethods.tostring, struct {
+        L.Zsetfieldfn(-1, luau.Metamethods.tostring, struct {
             fn inner(l: *VM.lua.State) i32 {
                 l.pushstring("JsonValue.Null");
                 return 1;
@@ -335,10 +335,10 @@ pub fn lua_setprops(L: *VM.lua.State) void {
     L.setfield(-2, "Values");
 
     L.newtable();
-    L.Zsetfieldc(-1, "None", 0);
-    L.Zsetfieldc(-1, "TwoSpaces", 1);
-    L.Zsetfieldc(-1, "FourSpaces", 2);
-    L.Zsetfieldc(-1, "Tabs", 3);
+    L.Zsetfield(-1, "None", 0);
+    L.Zsetfield(-1, "TwoSpaces", 1);
+    L.Zsetfield(-1, "FourSpaces", 2);
+    L.Zsetfield(-1, "Tabs", 3);
     L.setreadonly(-1, true);
     L.setfield(-2, "Indents");
 

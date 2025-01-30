@@ -158,15 +158,15 @@ pub fn loadLib(L: *VM.lua.State) void {
     {
         _ = L.Lnewmetatable(LuaRegex.META);
 
-        L.Zsetfieldc(-1, luau.Metamethods.namecall, LuaRegex.__namecall); // metatable.__namecall
+        L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaRegex.__namecall); // metatable.__namecall
 
-        L.Zsetfieldc(-1, luau.Metamethods.metatable, "Metatable is locked");
+        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.pop(1);
     }
 
     L.newtable();
 
-    L.Zsetfieldc(-1, "new", regex_new);
+    L.Zsetfieldfn(-1, "new", regex_new);
 
     L.setreadonly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);

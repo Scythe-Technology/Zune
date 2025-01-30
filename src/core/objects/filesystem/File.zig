@@ -39,10 +39,10 @@ pub const ReadAsyncContext = struct {
 
     fn end(ctx: *ReadAsyncContext, L: *VM.lua.State, scheduler: *Scheduler, err: ?anyerror) void {
         if (ctx.auto_close) {
-            scheduler.queueIoCallbackCtx(ReadAsyncContext, ctx, L, aio.CloseFile{
+            scheduler.queueIoCallbackCtx(ReadAsyncContext, ctx, L, aio.op(.close_file, .{
                 .file = ctx.file,
                 .out_error = &ctx.out_close_error,
-            }, finished) catch |e| {
+            }, .unlinked), finished) catch |e| {
                 std.debug.print("Failed to queue close: {}\n", .{e});
             };
         }
@@ -77,13 +77,13 @@ pub const ReadAsyncContext = struct {
             ctx.array.shrinkAndFree(ctx.limit);
         ctx.array.expandToCapacity();
 
-        scheduler.queueIoCallbackCtx(ReadAsyncContext, ctx, L, aio.Read{
+        scheduler.queueIoCallbackCtx(ReadAsyncContext, ctx, L, aio.op(.read, .{
             .file = ctx.file,
             .offset = ctx.offset,
             .buffer = ctx.array.items[ctx.offset..],
             .out_read = &ctx.out_read,
             .out_error = &ctx.out_error,
-        }, completion) catch |err| return ctx.end(L, scheduler, err);
+        }, .unlinked), completion) catch |err| return ctx.end(L, scheduler, err);
     }
 
     const Kind = enum {
@@ -150,12 +150,12 @@ pub const ReadAsyncContext = struct {
 
         ctx.array.expandToCapacity();
 
-        try scheduler.queueIoCallbackCtx(ReadAsyncContext, ctx, L, aio.Read{
+        try scheduler.queueIoCallbackCtx(ReadAsyncContext, ctx, L, aio.op(.read, .{
             .file = file,
             .buffer = ctx.array.items[ctx.offset..],
             .out_read = &ctx.out_read,
             .out_error = &ctx.out_error,
-        }, ReadAsyncContext.completion);
+        }, .unlinked), ReadAsyncContext.completion);
 
         return L.yield(0);
     }
@@ -176,10 +176,10 @@ pub const WriteAsyncContext = struct {
 
     fn end(ctx: *WriteAsyncContext, L: *VM.lua.State, scheduler: *Scheduler, err: ?anyerror) void {
         if (ctx.auto_close) {
-            scheduler.queueIoCallbackCtx(WriteAsyncContext, ctx, L, aio.CloseFile{
+            scheduler.queueIoCallbackCtx(WriteAsyncContext, ctx, L, aio.op(.close_file, .{
                 .file = ctx.file,
                 .out_error = &ctx.out_close_error,
-            }, finished) catch |e| {
+            }, .unlinked), finished) catch |e| {
                 std.debug.print("Failed to queue close: {}\n", .{e});
             };
         }
@@ -211,13 +211,13 @@ pub const WriteAsyncContext = struct {
 
         ctx.data = ctx.data[ctx.out_written..];
 
-        scheduler.queueIoCallbackCtx(WriteAsyncContext, ctx, L, aio.Write{
+        scheduler.queueIoCallbackCtx(WriteAsyncContext, ctx, L, aio.op(.write, .{
             .file = ctx.file,
             .offset = ctx.offset,
             .buffer = ctx.data,
             .out_written = &ctx.out_written,
             .out_error = &ctx.out_error,
-        }, completion) catch |err| return ctx.end(L, scheduler, err);
+        }, .unlinked), completion) catch |err| return ctx.end(L, scheduler, err);
     }
 
     const Kind = enum {
@@ -270,13 +270,13 @@ pub const WriteAsyncContext = struct {
             .auto_close = auto_close,
         };
 
-        try scheduler.queueIoCallbackCtx(File.WriteAsyncContext, ctx, L, aio.Write{
+        try scheduler.queueIoCallbackCtx(File.WriteAsyncContext, ctx, L, aio.op(.write, .{
             .file = file,
             .buffer = ctx.data,
             .offset = offset,
             .out_written = &ctx.out_written,
             .out_error = &ctx.out_error,
-        }, File.WriteAsyncContext.completion);
+        }, .unlinked), File.WriteAsyncContext.completion);
 
         return L.yield(0);
     }
@@ -291,8 +291,6 @@ pub fn __index(L: *VM.lua.State) i32 {
 }
 
 fn write(self: *File, L: *VM.lua.State) !i32 {
-    if (!self.open)
-        return L.Zerror("File is closed");
     const data = if (L.isbuffer(2)) L.Lcheckbuffer(2) else L.Lcheckstring(2);
 
     const pos = try self.handle.getPos();
@@ -419,9 +417,9 @@ fn unlock(self: *File, L: *VM.lua.State) !i32 {
 fn sync(self: *File, L: *VM.lua.State) !i32 {
     const scheduler = Scheduler.getScheduler(L);
 
-    try scheduler.queueIoCallback(L, aio.Fsync{
+    try scheduler.queueIoCallback(L, aio.op(.fsync, .{
         .file = self.handle,
-    }, Scheduler.asyncIoResumeState);
+    }, .unlinked), Scheduler.asyncIoResumeState);
 
     return L.yield(0);
 }
@@ -438,16 +436,24 @@ fn readonly(self: *File, L: *VM.lua.State) !i32 {
     return 0;
 }
 
-fn close(self: *File, L: *VM.lua.State) !i32 {
-    _ = L;
+fn closeAsync(self: *File, L: *VM.lua.State) !i32 {
     if (self.open) {
-        self.handle.close();
+        self.open = false;
+        const scheduler = Scheduler.getScheduler(L);
+        try scheduler.queueIoCallback(L, aio.op(.close_file, .{
+            .file = self.handle,
+        }, .unlinked), Scheduler.asyncIoResumeState);
+        return L.yield(0);
     }
-    self.open = false;
     return 0;
 }
 
-const __namecall = method_map.CreateNamecallMap(File, .{
+fn before_method(self: *File, L: *VM.lua.State) !void {
+    if (!self.open)
+        return L.Zerror("File is closed");
+}
+
+const __namecall = method_map.CreateNamecallMap(File, before_method, .{
     .{ "write", write },
     .{ "writeSync", writeSync },
     .{ "append", append },
@@ -462,29 +468,28 @@ const __namecall = method_map.CreateNamecallMap(File, .{
     .{ "unlock", unlock },
     .{ "sync", sync },
     .{ "readonly", readonly },
-    .{ "close", close },
+    .{ "close", closeAsync },
 });
 
 pub fn __dtor(L: *VM.lua.State, ptr: *File) void {
     _ = L;
     if (ptr.open)
         ptr.handle.close();
-    ptr.open = false;
 }
 
 pub inline fn load(L: *VM.lua.State) void {
     _ = L.Lnewmetatable(@typeName(@This()));
 
-    L.Zsetfieldc(-1, luau.Metamethods.index, __index); // metatable.__index
-    L.Zsetfieldc(-1, luau.Metamethods.namecall, __namecall); // metatable.__namecall
+    L.Zsetfieldfn(-1, luau.Metamethods.index, __index); // metatable.__index
+    L.Zsetfieldfn(-1, luau.Metamethods.namecall, __namecall); // metatable.__namecall
 
-    L.Zsetfieldc(-1, luau.Metamethods.metatable, "Metatable is locked");
+    L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
 
     L.setuserdatametatable(tagged.FS_FILE, -1);
     L.setuserdatadtor(File, tagged.FS_FILE, __dtor);
 }
 
-pub fn pushFile(L: *VM.lua.State, file: std.fs.File, kind: FileKind) void {
+pub fn push(L: *VM.lua.State, file: std.fs.File, kind: FileKind) void {
     const ptr = L.newuserdatataggedwithmetatable(File, tagged.FS_FILE);
     ptr.* = .{
         .handle = file,

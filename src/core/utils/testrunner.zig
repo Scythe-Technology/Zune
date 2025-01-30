@@ -28,7 +28,7 @@ pub fn runTest(allocator: std.mem.Allocator, comptime testFile: zune_test_files.
     defer L.deinit();
 
     if (!stdOutEnabled)
-        L.Zsetfieldc(VM.lua.GLOBALSINDEX, "_testing_stdOut", false);
+        L.Zsetfield(VM.lua.GLOBALSINDEX, "_testing_stdOut", false);
 
     var scheduler = Scheduler.init(allocator, L);
     defer scheduler.deinit();
@@ -84,11 +84,5 @@ pub fn runTest(allocator: std.mem.Allocator, comptime testFile: zune_test_files.
         else => return err,
     };
 
-    return Zune.corelib.testing.runTestAsync(ML, &scheduler) catch |err| switch (err) {
-        error.MsgHandler, error.Runtime => {
-            Engine.logError(L, err, true);
-            return err;
-        },
-        else => return err,
-    };
+    return Zune.corelib.testing.runTestAsync(ML, &scheduler) catch |err| return err;
 }

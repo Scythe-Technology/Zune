@@ -1489,8 +1489,8 @@ fn ffi_dlopen(L: *VM.lua.State) !i32 {
     }
     L.setfield(-2, luau.Metamethods.index);
 
-    L.Zsetfieldc(-1, luau.Metamethods.namecall, LuaHandle.__namecall);
-    L.Zsetfieldc(-1, luau.Metamethods.metatable, "Metatable is locked");
+    L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaHandle.__namecall);
+    L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
 
     _ = L.setmetatable(-2);
 
@@ -2119,18 +2119,18 @@ pub fn loadLib(L: *VM.lua.State) void {
     {
         _ = L.Lnewmetatable(LuaStructType.META);
 
-        L.Zsetfieldc(-1, luau.Metamethods.namecall, LuaStructType.__namecall); // metatable.__namecall
+        L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaStructType.__namecall); // metatable.__namecall
 
-        L.Zsetfieldc(-1, luau.Metamethods.metatable, "Metatable is locked");
+        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.setuserdatadtor(LuaStructType, tagged.FFI_STRUCT, LuaStructType.__dtor);
         L.setuserdatametatable(tagged.FFI_STRUCT, -1);
     }
     {
         _ = L.Lnewmetatable(LuaPointer.META);
 
-        L.Zsetfieldc(-1, luau.Metamethods.eq, LuaPointer.__eq); // metatable.__eq
-        L.Zsetfieldc(-1, luau.Metamethods.namecall, LuaPointer.__namecall); // metatable.__namecall
-        L.Zsetfieldc(-1, luau.Metamethods.tostring, LuaPointer.__tostring); // metatable.__tostring
+        L.Zsetfieldfn(-1, luau.Metamethods.eq, LuaPointer.__eq); // metatable.__eq
+        L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaPointer.__namecall); // metatable.__namecall
+        L.Zsetfieldfn(-1, luau.Metamethods.tostring, LuaPointer.__tostring); // metatable.__tostring
 
         L.setuserdatadtor(LuaPointer, tagged.FFI_POINTER, LuaPointer.__dtor);
         L.setuserdatametatable(tagged.FFI_POINTER, -1);
@@ -2138,23 +2138,23 @@ pub fn loadLib(L: *VM.lua.State) void {
 
     L.newtable();
 
-    L.Zsetfieldc(-1, "dlopen", ffi_dlopen);
-    L.Zsetfieldc(-1, "struct", ffi_struct);
-    L.Zsetfieldc(-1, "closure", ffi_closure);
-    L.Zsetfieldc(-1, "fn", ffi_fn);
-    L.Zsetfieldc(-1, "supported", true);
+    L.Zsetfieldfn(-1, "dlopen", ffi_dlopen);
+    L.Zsetfieldfn(-1, "struct", ffi_struct);
+    L.Zsetfieldfn(-1, "closure", ffi_closure);
+    L.Zsetfieldfn(-1, "fn", ffi_fn);
+    L.Zsetfield(-1, "supported", true);
 
-    L.Zsetfieldc(-1, "sizeOf", ffi_sizeOf);
-    L.Zsetfieldc(-1, "alignOf", ffi_alignOf);
+    L.Zsetfieldfn(-1, "sizeOf", ffi_sizeOf);
+    L.Zsetfieldfn(-1, "alignOf", ffi_alignOf);
 
-    L.Zsetfieldc(-1, "alloc", ffi_alloc);
-    L.Zsetfieldc(-1, "free", ffi_free);
-    L.Zsetfieldc(-1, "copy", ffi_copy);
-    L.Zsetfieldc(-1, "len", ffi_len);
-    L.Zsetfieldc(-1, "dupe", ffi_dupe);
+    L.Zsetfieldfn(-1, "alloc", ffi_alloc);
+    L.Zsetfieldfn(-1, "free", ffi_free);
+    L.Zsetfieldfn(-1, "copy", ffi_copy);
+    L.Zsetfieldfn(-1, "len", ffi_len);
+    L.Zsetfieldfn(-1, "dupe", ffi_dupe);
 
-    L.Zsetfieldc(-1, "getRef", LuaPointer.getRef);
-    L.Zsetfieldc(-1, "createPtr", LuaPointer.ptrFromBuffer);
+    L.Zsetfieldfn(-1, "getRef", LuaPointer.getRef);
+    L.Zsetfieldfn(-1, "createPtr", LuaPointer.ptrFromBuffer);
 
     L.newtable();
     inline for (@typeInfo(DataTypes.Types).@"struct".decls, 0..) |decl, i| {

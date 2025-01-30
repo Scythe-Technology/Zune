@@ -131,6 +131,7 @@ fn task_count(L: *VM.lua.State) !i32 {
                 total += 1;
         }
         total += scheduler.tasks.items.len;
+        total += scheduler.async_tasks;
         L.pushnumber(@floatFromInt(total));
         return 1;
     };
@@ -160,7 +161,7 @@ fn task_count(L: *VM.lua.State) !i32 {
             },
             't' => {
                 out += 1;
-                L.pushnumber(@floatFromInt(scheduler.tasks.items.len));
+                L.pushnumber(@floatFromInt(scheduler.tasks.items.len + scheduler.async_tasks));
             },
             else => return L.Zerror("Invalid kind"),
         }
@@ -172,12 +173,12 @@ fn task_count(L: *VM.lua.State) !i32 {
 pub fn loadLib(L: *VM.lua.State) void {
     L.newtable();
 
-    L.Zsetfieldc(-1, "wait", task_wait);
-    L.Zsetfieldc(-1, "spawn", task_spawn);
-    L.Zsetfieldc(-1, "defer", task_defer);
-    L.Zsetfieldc(-1, "delay", task_delay);
-    L.Zsetfieldc(-1, "cancel", task_cancel);
-    L.Zsetfieldc(-1, "count", task_count);
+    L.Zsetfieldfn(-1, "wait", task_wait);
+    L.Zsetfieldfn(-1, "spawn", task_spawn);
+    L.Zsetfieldfn(-1, "defer", task_defer);
+    L.Zsetfieldfn(-1, "delay", task_delay);
+    L.Zsetfieldfn(-1, "cancel", task_cancel);
+    L.Zsetfieldfn(-1, "count", task_count);
 
     L.setreadonly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);

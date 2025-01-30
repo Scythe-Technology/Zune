@@ -386,34 +386,34 @@ pub fn loadLib(L: *VM.lua.State) void {
     {
         _ = L.Lnewmetatable(LuaTerminal.META);
 
-        L.Zsetfieldc(-1, luau.Metamethods.index, LuaTerminal.__index); // metatable.__index
-        L.Zsetfieldc(-1, luau.Metamethods.namecall, LuaTerminal.__namecall); // metatable.__namecall
+        L.Zsetfieldfn(-1, luau.Metamethods.index, LuaTerminal.__index); // metatable.__index
+        L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaTerminal.__namecall); // metatable.__namecall
 
-        L.Zsetfieldc(-1, luau.Metamethods.metatable, "Metatable is locked");
+        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.pop(1);
     }
     {
         _ = L.Lnewmetatable(LuaStdIn.META);
 
-        L.Zsetfieldc(-1, luau.Metamethods.index, LuaStdIn.__index); // metatable.__index
-        L.Zsetfieldc(-1, luau.Metamethods.namecall, LuaStdIn.__namecall); // metatable.__namecall
+        L.Zsetfieldfn(-1, luau.Metamethods.index, LuaStdIn.__index); // metatable.__index
+        L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaStdIn.__namecall); // metatable.__namecall
 
-        L.Zsetfieldc(-1, luau.Metamethods.metatable, "Metatable is locked");
+        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.pop(1);
     }
     {
         _ = L.Lnewmetatable(LuaStdOut.META);
 
-        L.Zsetfieldc(-1, luau.Metamethods.index, LuaStdOut.__index); // metatable.__index
-        L.Zsetfieldc(-1, luau.Metamethods.namecall, LuaStdOut.__namecall); // metatable.__namecall
+        L.Zsetfieldfn(-1, luau.Metamethods.index, LuaStdOut.__index); // metatable.__index
+        L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaStdOut.__namecall); // metatable.__namecall
 
-        L.Zsetfieldc(-1, luau.Metamethods.metatable, "Metatable is locked");
+        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.pop(1);
     }
 
     L.newtable();
 
-    L.Zsetfieldc(-1, "MAX_READ", MAX_LUAU_SIZE);
+    L.Zsetfield(-1, "MAX_READ", MAX_LUAU_SIZE);
 
     const stdIn = std.io.getStdIn();
     const stdOut = std.io.getStdOut();
@@ -457,18 +457,18 @@ pub fn loadLib(L: *VM.lua.State) void {
 
     TERMINAL.?.setOutputMode() catch std.debug.print("[Win32] Failed to set output codepoint\n", .{});
 
-    L.Zsetfieldc(-1, "color", stdio_color);
-    L.Zsetfieldc(-1, "style", stdio_style);
-    L.Zsetfieldc(-1, "reset", stdio_reset);
-    L.Zsetfieldc(-1, "erase", stdio_erase);
-    L.Zsetfieldc(-1, "bgcolor", stdio_bgColor);
-    L.Zsetfieldc(-1, "color256", stdio_color256);
-    L.Zsetfieldc(-1, "bgcolor256", stdio_bgColor256);
-    L.Zsetfieldc(-1, "trueColor", stdio_trueColor);
-    L.Zsetfieldc(-1, "bgtrueColor", stdio_bgTrueColor);
+    L.Zsetfieldfn(-1, "color", stdio_color);
+    L.Zsetfieldfn(-1, "style", stdio_style);
+    L.Zsetfieldfn(-1, "reset", stdio_reset);
+    L.Zsetfieldfn(-1, "erase", stdio_erase);
+    L.Zsetfieldfn(-1, "bgcolor", stdio_bgColor);
+    L.Zsetfieldfn(-1, "color256", stdio_color256);
+    L.Zsetfieldfn(-1, "bgcolor256", stdio_bgColor256);
+    L.Zsetfieldfn(-1, "trueColor", stdio_trueColor);
+    L.Zsetfieldfn(-1, "bgtrueColor", stdio_bgTrueColor);
 
-    L.Zsetfieldc(-1, "cursorMove", stdio_cursorMove);
-    L.Zsetfieldc(-1, "format", Formatter.fmt_args);
+    L.Zsetfieldfn(-1, "cursorMove", stdio_cursorMove);
+    L.Zsetfieldfn(-1, "format", Formatter.fmt_args);
 
     L.setreadonly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);

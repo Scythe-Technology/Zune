@@ -252,22 +252,22 @@ pub fn loadLib(L: *VM.lua.State) void {
     {
         _ = L.Lnewmetatable(LuaDatetime.META);
 
-        L.Zsetfieldc(-1, luau.Metamethods.index, LuaDatetime.__index); // metatable.__index
-        L.Zsetfieldc(-1, luau.Metamethods.namecall, LuaDatetime.__namecall); // metatable.__namecall
+        L.Zsetfieldfn(-1, luau.Metamethods.index, LuaDatetime.__index); // metatable.__index
+        L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaDatetime.__namecall); // metatable.__namecall
 
-        L.Zsetfieldc(-1, luau.Metamethods.metatable, "Metatable is locked");
+        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.pop(1);
     }
 
     L.newtable();
 
-    L.Zsetfieldc(-1, "now", datetime_now);
-    L.Zsetfieldc(-1, "parse", datetime_parse);
-    L.Zsetfieldc(-1, "fromIsoDate", datetime_fromIsoDate);
-    L.Zsetfieldc(-1, "fromUniversalTime", datetime_fromUniversalTime);
-    L.Zsetfieldc(-1, "fromLocalTime", datetime_fromUniversalTime);
-    L.Zsetfieldc(-1, "fromUnixTimestamp", datetime_fromUnixTimestamp);
-    L.Zsetfieldc(-1, "fromUnixTimestampMillis", datetime_fromUnixTimestampMillis);
+    L.Zsetfieldfn(-1, "now", datetime_now);
+    L.Zsetfieldfn(-1, "parse", datetime_parse);
+    L.Zsetfieldfn(-1, "fromIsoDate", datetime_fromIsoDate);
+    L.Zsetfieldfn(-1, "fromUniversalTime", datetime_fromUniversalTime);
+    L.Zsetfieldfn(-1, "fromLocalTime", datetime_fromUniversalTime);
+    L.Zsetfieldfn(-1, "fromUnixTimestamp", datetime_fromUnixTimestamp);
+    L.Zsetfieldfn(-1, "fromUnixTimestampMillis", datetime_fromUnixTimestampMillis);
 
     L.setreadonly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);

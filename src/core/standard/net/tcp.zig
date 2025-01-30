@@ -266,7 +266,7 @@ const TCPServer = struct {
                         return err;
                     };
                     return 0;
-                } else if (std.mem.eql(u8, namecall, "close")) {
+                } else if (std.mem.eql(u8, namecall, "stop")) {
                     self.server.closeConnection(L, self.id);
                     return 0;
                 } else return L.Zerrorf("Unknown method: {s}", .{namecall});
@@ -589,27 +589,27 @@ pub fn lua_load(L: *VM.lua.State) void {
     {
         _ = L.Lnewmetatable(TCPClient.LuaMeta.META);
 
-        L.Zsetfieldc(-1, luau.Metamethods.index, TCPClient.LuaMeta.__index); // metatable.__index
-        L.Zsetfieldc(-1, luau.Metamethods.namecall, TCPClient.LuaMeta.__namecall); // metatable.__namecall
+        L.Zsetfieldfn(-1, luau.Metamethods.index, TCPClient.LuaMeta.__index); // metatable.__index
+        L.Zsetfieldfn(-1, luau.Metamethods.namecall, TCPClient.LuaMeta.__namecall); // metatable.__namecall
 
-        L.Zsetfieldc(-1, luau.Metamethods.metatable, "Metatable is locked");
+        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.pop(1);
     }
     {
         _ = L.Lnewmetatable(TCPServer.LuaMeta.META);
 
-        L.Zsetfieldc(-1, luau.Metamethods.index, TCPServer.LuaMeta.__index); // metatable.__index
-        L.Zsetfieldc(-1, luau.Metamethods.namecall, TCPServer.LuaMeta.__namecall); // metatable.__namecall
+        L.Zsetfieldfn(-1, luau.Metamethods.index, TCPServer.LuaMeta.__index); // metatable.__index
+        L.Zsetfieldfn(-1, luau.Metamethods.namecall, TCPServer.LuaMeta.__namecall); // metatable.__namecall
 
-        L.Zsetfieldc(-1, luau.Metamethods.metatable, "Metatable is locked");
+        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.pop(1);
     }
     {
         _ = L.Lnewmetatable(TCPServer.Connection.LuaMeta.META);
 
-        L.Zsetfieldc(-1, luau.Metamethods.namecall, TCPServer.Connection.LuaMeta.__namecall); // metatable.__namecall
+        L.Zsetfieldfn(-1, luau.Metamethods.namecall, TCPServer.Connection.LuaMeta.__namecall); // metatable.__namecall
 
-        L.Zsetfieldc(-1, luau.Metamethods.metatable, "Metatable is locked");
+        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.pop(1);
     }
 }

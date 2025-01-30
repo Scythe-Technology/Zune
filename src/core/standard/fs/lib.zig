@@ -156,17 +156,17 @@ fn internal_metadata_table(L: *VM.lua.State, metadata: fs.File.Metadata, isSymli
     L.Zsetfield(-1, "symlink", isSymlink);
     L.Zsetfield(-1, "size", metadata.size());
     switch (metadata.kind()) {
-        .file => L.Zsetfieldc(-1, "kind", "file"),
-        .directory => L.Zsetfieldc(-1, "kind", "dir"),
-        .sym_link => L.Zsetfieldc(-1, "kind", "symlink"),
-        .door => L.Zsetfieldc(-1, "kind", "door"),
-        .character_device => L.Zsetfieldc(-1, "kind", "character_device"),
-        .unix_domain_socket => L.Zsetfieldc(-1, "kind", "unix_domain_socket"),
-        .block_device => L.Zsetfieldc(-1, "kind", "block_device"),
-        .event_port => L.Zsetfieldc(-1, "kind", "event_port"),
-        .named_pipe => L.Zsetfieldc(-1, "kind", "named_pipe"),
-        .whiteout => L.Zsetfieldc(-1, "kind", "whiteout"),
-        .unknown => L.Zsetfieldc(-1, "kind", "unknown"),
+        .file => L.Zsetfield(-1, "kind", "file"),
+        .directory => L.Zsetfield(-1, "kind", "dir"),
+        .sym_link => L.Zsetfield(-1, "kind", "symlink"),
+        .door => L.Zsetfield(-1, "kind", "door"),
+        .character_device => L.Zsetfield(-1, "kind", "character_device"),
+        .unix_domain_socket => L.Zsetfield(-1, "kind", "unix_domain_socket"),
+        .block_device => L.Zsetfield(-1, "kind", "block_device"),
+        .event_port => L.Zsetfield(-1, "kind", "event_port"),
+        .named_pipe => L.Zsetfield(-1, "kind", "named_pipe"),
+        .whiteout => L.Zsetfield(-1, "kind", "whiteout"),
+        .unknown => L.Zsetfield(-1, "kind", "unknown"),
     }
 
     L.newtable();
@@ -445,7 +445,7 @@ fn fs_openFile(L: *VM.lua.State) !i32 {
         .mode = mode,
     });
 
-    File.pushFile(L, file, .File);
+    File.push(L, file, .File);
 
     return 1;
 }
@@ -472,7 +472,7 @@ fn fs_createFile(L: *VM.lua.State) !i32 {
         .exclusive = exclusive,
     });
 
-    File.pushFile(L, file, .File);
+    File.push(L, file, .File);
 
     return 1;
 }
@@ -523,40 +523,40 @@ pub fn loadLib(L: *VM.lua.State) void {
     {
         _ = L.Lnewmetatable(LuaWatch.META);
 
-        L.Zsetfieldc(-1, luau.Metamethods.index, LuaWatch.__index); // metatable.__index
-        L.Zsetfieldc(-1, luau.Metamethods.namecall, LuaWatch.__namecall); // metatable.__namecall
+        L.Zsetfieldfn(-1, luau.Metamethods.index, LuaWatch.__index); // metatable.__index
+        L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaWatch.__namecall); // metatable.__namecall
 
-        L.Zsetfieldc(-1, luau.Metamethods.metatable, "Metatable is locked");
+        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.pop(1);
     }
     L.newtable();
 
-    L.Zsetfieldc(-1, "createFile", fs_createFile);
-    L.Zsetfieldc(-1, "openFile", fs_openFile);
+    L.Zsetfieldfn(-1, "createFile", fs_createFile);
+    L.Zsetfieldfn(-1, "openFile", fs_openFile);
 
-    L.Zsetfieldc(-1, "readFile", fs_readFileAsync);
-    L.Zsetfieldc(-1, "readFileSync", fs_readFileSync);
-    L.Zsetfieldc(-1, "readDir", fs_readDir);
+    L.Zsetfieldfn(-1, "readFile", fs_readFileAsync);
+    L.Zsetfieldfn(-1, "readFileSync", fs_readFileSync);
+    L.Zsetfieldfn(-1, "readDir", fs_readDir);
 
-    L.Zsetfieldc(-1, "writeFile", fs_writeFileAsync);
-    L.Zsetfieldc(-1, "writeFileSync", fs_writeFileSync);
-    L.Zsetfieldc(-1, "writeDir", fs_writeDir);
+    L.Zsetfieldfn(-1, "writeFile", fs_writeFileAsync);
+    L.Zsetfieldfn(-1, "writeFileSync", fs_writeFileSync);
+    L.Zsetfieldfn(-1, "writeDir", fs_writeDir);
 
-    L.Zsetfieldc(-1, "removeFile", fs_removeFile);
-    L.Zsetfieldc(-1, "removeDir", fs_removeDir);
+    L.Zsetfieldfn(-1, "removeFile", fs_removeFile);
+    L.Zsetfieldfn(-1, "removeDir", fs_removeDir);
 
-    L.Zsetfieldc(-1, "isFile", fs_isFile);
-    L.Zsetfieldc(-1, "isDir", fs_isDir);
+    L.Zsetfieldfn(-1, "isFile", fs_isFile);
+    L.Zsetfieldfn(-1, "isDir", fs_isDir);
 
-    L.Zsetfieldc(-1, "metadata", fs_metadata);
+    L.Zsetfieldfn(-1, "metadata", fs_metadata);
 
-    L.Zsetfieldc(-1, "move", fs_move);
+    L.Zsetfieldfn(-1, "move", fs_move);
 
-    L.Zsetfieldc(-1, "copy", fs_copy);
+    L.Zsetfieldfn(-1, "copy", fs_copy);
 
-    L.Zsetfieldc(-1, "symlink", fs_symlink);
+    L.Zsetfieldfn(-1, "symlink", fs_symlink);
 
-    L.Zsetfieldc(-1, "watch", fs_watch);
+    L.Zsetfieldfn(-1, "watch", fs_watch);
 
     L.setreadonly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);

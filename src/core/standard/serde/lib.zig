@@ -27,8 +27,8 @@ pub fn loadLib(L: *VM.lua.State) void {
     { // Json
         L.newtable();
 
-        L.Zsetfieldc(-1, "encode", json.LuaEncoder(.JSON));
-        L.Zsetfieldc(-1, "decode", json.LuaDecoder(.JSON));
+        L.Zsetfieldfn(-1, "encode", json.LuaEncoder(.JSON));
+        L.Zsetfieldfn(-1, "decode", json.LuaDecoder(.JSON));
 
         json.lua_setprops(L);
 
@@ -39,8 +39,8 @@ pub fn loadLib(L: *VM.lua.State) void {
     { // Json5
         L.newtable();
 
-        L.Zsetfieldc(-1, "encode", json.LuaEncoder(.JSON5));
-        L.Zsetfieldc(-1, "decode", json.LuaDecoder(.JSON5));
+        L.Zsetfieldfn(-1, "encode", json.LuaEncoder(.JSON5));
+        L.Zsetfieldfn(-1, "decode", json.LuaDecoder(.JSON5));
 
         _ = L.getfield(-2, "json");
 
@@ -59,8 +59,8 @@ pub fn loadLib(L: *VM.lua.State) void {
     { // Toml
         L.newtable();
 
-        L.Zsetfieldc(-1, "encode", toml.lua_encode);
-        L.Zsetfieldc(-1, "decode", toml.lua_decode);
+        L.Zsetfieldfn(-1, "encode", toml.lua_encode);
+        L.Zsetfieldfn(-1, "decode", toml.lua_decode);
 
         L.setreadonly(-1, true);
         L.setfield(-2, "toml");
@@ -69,8 +69,8 @@ pub fn loadLib(L: *VM.lua.State) void {
     { // Yaml
         L.newtable();
 
-        L.Zsetfieldc(-1, "encode", yaml.lua_encode);
-        L.Zsetfieldc(-1, "decode", yaml.lua_decode);
+        L.Zsetfieldfn(-1, "encode", yaml.lua_encode);
+        L.Zsetfieldfn(-1, "decode", yaml.lua_decode);
 
         L.setreadonly(-1, true);
         L.setfield(-2, "yaml");
@@ -79,8 +79,8 @@ pub fn loadLib(L: *VM.lua.State) void {
     { // Base64
         L.newtable();
 
-        L.Zsetfieldc(-1, "encode", base64.lua_encode);
-        L.Zsetfieldc(-1, "decode", base64.lua_decode);
+        L.Zsetfieldfn(-1, "encode", base64.lua_encode);
+        L.Zsetfieldfn(-1, "decode", base64.lua_decode);
 
         L.setreadonly(-1, true);
         L.setfield(-2, "base64");
@@ -89,8 +89,8 @@ pub fn loadLib(L: *VM.lua.State) void {
     { // Gzip
         L.newtable();
 
-        L.Zsetfieldc(-1, "compress", gzip.lua_compress);
-        L.Zsetfieldc(-1, "decompress", gzip.lua_decompress);
+        L.Zsetfieldfn(-1, "compress", gzip.lua_compress);
+        L.Zsetfieldfn(-1, "decompress", gzip.lua_decompress);
 
         L.setreadonly(-1, true);
         L.setfield(-2, "gzip");
@@ -99,8 +99,8 @@ pub fn loadLib(L: *VM.lua.State) void {
     { // Zlib
         L.newtable();
 
-        L.Zsetfieldc(-1, "compress", zlib.lua_compress);
-        L.Zsetfieldc(-1, "decompress", zlib.lua_decompress);
+        L.Zsetfieldfn(-1, "compress", zlib.lua_compress);
+        L.Zsetfieldfn(-1, "decompress", zlib.lua_decompress);
 
         L.setreadonly(-1, true);
         L.setfield(-2, "zlib");
@@ -109,8 +109,8 @@ pub fn loadLib(L: *VM.lua.State) void {
     { // Flate
         L.newtable();
 
-        L.Zsetfieldc(-1, "compress", flate.lua_compress);
-        L.Zsetfieldc(-1, "decompress", flate.lua_decompress);
+        L.Zsetfieldfn(-1, "compress", flate.lua_compress);
+        L.Zsetfieldfn(-1, "decompress", flate.lua_decompress);
 
         L.setreadonly(-1, true);
         L.setfield(-2, "flate");
@@ -119,10 +119,10 @@ pub fn loadLib(L: *VM.lua.State) void {
     { // Lz4
         L.newtable();
 
-        L.Zsetfieldc(-1, "compress", lz4.lua_compress);
-        L.Zsetfieldc(-1, "compressFrame", lz4.lua_frame_compress);
-        L.Zsetfieldc(-1, "decompress", lz4.lua_decompress);
-        L.Zsetfieldc(-1, "decompressFrame", lz4.lua_frame_decompress);
+        L.Zsetfieldfn(-1, "compress", lz4.lua_compress);
+        L.Zsetfieldfn(-1, "compressFrame", lz4.lua_frame_compress);
+        L.Zsetfieldfn(-1, "decompress", lz4.lua_decompress);
+        L.Zsetfieldfn(-1, "decompressFrame", lz4.lua_frame_decompress);
 
         L.setreadonly(-1, true);
         L.setfield(-2, "lz4");
@@ -131,8 +131,8 @@ pub fn loadLib(L: *VM.lua.State) void {
     { // Zstd
         L.newtable();
 
-        L.Zsetfieldc(-1, "compress", zstd.lua_compress);
-        L.Zsetfieldc(-1, "decompress", zstd.lua_decompress);
+        L.Zsetfieldfn(-1, "compress", zstd.lua_compress);
+        L.Zsetfieldfn(-1, "decompress", zstd.lua_decompress);
 
         L.setreadonly(-1, true);
         L.setfield(-2, "zstd");

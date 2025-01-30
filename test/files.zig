@@ -26,3 +26,5 @@ pub const @"serde.test" = newFile("standard/serde/init.test.luau");
 pub const @"datetime.test" = newFile("standard/datetime.test.luau");
 pub const @"crypto.test" = newFile("standard/crypto/init.test.luau");
 pub const @"ffi.test" = newFile("standard/ffi/init.test.luau");
+
+pub const @"lib.std.test" = newFile("lib/std.test.luau");

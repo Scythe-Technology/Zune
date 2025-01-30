@@ -115,7 +115,7 @@ pub fn build(b: *std.Build) !void {
         else => {},
     }
 
-    const dep_aio = b.dependency("aio", .{ .target = target, .optimize = optimize });
+    const dep_aio = b.dependency("aio", .{ .target = target, .optimize = optimize, .@"aio:posix" = .force, .@"aio:debug" = false });
     const dep_json = b.dependency("json", .{ .target = target, .optimize = optimize });
     const dep_yaml = b.dependency("yaml", .{ .target = target, .optimize = optimize });
     const dep_toml = b.dependency("toml", .{ .target = target, .optimize = optimize });
@@ -140,6 +140,11 @@ pub fn build(b: *std.Build) !void {
     const prebuild_step = b.step("prebuild", "Setup project for build");
 
     try prebuild(b, prebuild_step);
+    const lib = b.addInstallDirectory(.{
+        .source_dir = b.path("lib"),
+        .install_dir = .bin,
+        .install_subdir = "lib",
+    });
 
     var version = try getPackageVersion(b);
     if (std.mem.indexOf(u8, version, "-dev")) |_| {
@@ -158,6 +163,7 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
 
+    exe.step.dependOn(&lib.step);
     exe.step.dependOn(prebuild_step);
 
     exe.root_module.addOptions("zune-info", zune_info);

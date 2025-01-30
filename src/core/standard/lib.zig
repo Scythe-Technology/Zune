@@ -15,3 +15,12 @@ pub const datetime = @import("datetime/lib.zig");
 test {
     @import("std").testing.refAllDecls(@This());
 }
+
+test "Std" {
+    const ztesting = @import("std").testing;
+    const TestRunner = @import("../utils/testrunner.zig");
+
+    const testResult = try TestRunner.runTest(ztesting.allocator, @import("zune-test-files").@"lib.std.test", &.{}, true);
+
+    try ztesting.expect(testResult.failed == 0);
+}

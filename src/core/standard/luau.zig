@@ -122,8 +122,8 @@ fn luau_load(L: *VM.lua.State) !i32 {
 pub fn loadLib(L: *VM.lua.State) void {
     L.newtable();
 
-    L.Zsetfieldc(-1, "compile", luau_compile);
-    L.Zsetfieldc(-1, "load", luau_load);
+    L.Zsetfieldfn(-1, "compile", luau_compile);
+    L.Zsetfieldfn(-1, "load", luau_load);
 
     L.setreadonly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);

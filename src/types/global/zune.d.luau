@@ -929,6 +929,25 @@ declare class NetTCPConnection
     --[[
         Stops the socket.
     ]]
+    function stop(self): ()
+end
+
+declare class NetworkSocket
+    --[[
+        Whether the socket is active
+    ]]
+    open: boolean
+
+    function sendAsync(self, data: string | buffer, offset: number?): number
+    function sendMsgAsync(self, port: number, address: string, data: string | buffer, offset: number?): number
+    function recvAsync(self, max_size: number?): buffer
+    function recvMsgAsync(self, max_size: number?): (NetworkAddress, buffer)
+    function acceptAsync(self): NetworkSocket
+    function connectAsync(self, address: string, port: number): ()
+    function listen(self, backlog: number?): ()
+    function bindIp(self, address: string, port: number): ()
+    function getName(self): NetworkAddress
+    function setOption(self, level: number, optname: number, value: boolean | buffer | string): ()
     function close(self): ()
 end
 
@@ -954,6 +973,12 @@ declare class NetServerHandle
     ]]
     function stop(self): ()
 end
+
+export type NetworkAddress = {
+    family: number,
+    port: number,
+    address: string,
+}
 
 export type ServerRequest = {
     method: string,
@@ -1047,16 +1072,16 @@ type BareRequestOptions = {
     headers: {[string]: string}?,
 
     --[[
-            Whether to follow redirects.
-            - Default: `true`
-        ]]
-        allowRedirects: boolean?,
+        Whether to follow redirects.
+        - Default: `true`
+    ]]
+    allowRedirects: boolean?,
 
-        --[[
-            The maximum body size to accept.
-            - Default: `2097152`
-        ]]
-        maxBodySize: number?,
+    --[[
+        The maximum body size to accept.
+        - Default: `2097152`
+    ]]
+    maxBodySize: number?,
 }
 
 type BodyRequestOptions = {
@@ -1176,7 +1201,218 @@ export type TCPServerOptions = {
     close: ((socket: NetTCPConnection) -> ())?,
 }
 
+type NetworkAddressFamily = {
+    RDS: number,
+    ROSE: number,
+    BRIDGE: number,
+    PHONET: number,
+    SNA: number,
+    FILE: number,
+    MPLS: number,
+    ROUTE: number,
+    WANPIPE: number,
+    UNSPEC: number,
+    CAIF: number,
+    NETROM: number,
+    UNIX: number,
+    INET: number,
+    ATMSVC: number,
+    MAX: number,
+    NETLINK: number,
+    IUCV: number,
+    SMC: number,
+    INET6: number,
+    TIPC: number,
+    KEY: number,
+    QIPCRTR: number,
+    VSOCK: number,
+    IPX: number,
+    ASH: number,
+    IB: number,
+    PACKET: number,
+    KCM: number,
+    DECnet: number,
+    RXRPC: number,
+    NETBEUI: number,
+    NFC: number,
+    ALG: number,
+    IEEE802154: number,
+    ISDN: number,
+    XDP: number,
+    LOCAL: number,
+    BLUETOOTH: number,
+    CAN: number,
+    LLC: number,
+    APPLETALK: number,
+    PPPOX: number,
+    ATMPVC: number,
+    AX25: number,
+    ECONET: number,
+    IRDA: number,
+    SECURITY: number,
+    X25: number,
+}
+
+type NetworkSocketFlags = {
+    DCCP: number,
+    RAW: number,
+    RDM: number,
+    DGRAM: number,
+    PACKET: number,
+    STREAM: number,
+    SEQPACKET: number,
+    CLOEXEC: number,
+    NONBLOCK: number,
+}
+
+type NetworkIPProtocols = {
+    COMP: number,
+    ICMP: number,
+    ESP: number,
+    IGMP: number,
+    TCP: number,
+    ICMPV6: number,
+    MTP: number,
+    GRE: number,
+    SCTP: number,
+    MAX: number,
+    NONE: number,
+    FRAGMENT: number,
+    IDP: number,
+    UDPLITE: number,
+    HOPOPTS: number,
+    MH: number,
+    BEETPH: number,
+    AH: number,
+    IPIP: number,
+    IPV6: number,
+    PIM: number,
+    DSTOPTS: number,
+    UDP: number,
+    DCCP: number,
+    RAW: number,
+    PUP: number,
+    MPLS: number,
+    ENCAP: number,
+    RSVP: number,
+    ROUTING: number,
+    EGP: number,
+    TP: number,
+    IP: number,
+}
+
+type NetworkSocketOptionLevel = {
+    PPPOL2TP: number,
+    RDS: number,
+    TIPC: number,
+    ALG: number,
+    PNPIPE: number,
+    BLUETOOTH: number,
+    PACKET: number,
+    IPV6: number,
+    KCM: number,
+    RXRPC: number,
+    NETBEUI: number,
+    DECNET: number,
+    TLS: number,
+    ICMPV6: number,
+    RAW: number,
+    XDP: number,
+    SOCKET: number,
+    LLC: number,
+    NFC: number,
+    CAIF: number,
+    IUCV: number,
+    X25: number,
+    AAL: number,
+    NETLINK: number,
+    DCCP: number,
+    IRDA: number,
+    ATM: number,
+    IP: number,
+}
+
+type NetworkSocketOption = {
+    ATTACH_FILTER: number,
+    CNX_ADVICE: number,
+    PEERCRED: number,
+    LINGER: number,
+    DEBUG: number,
+    RXQ_OVFL: number,
+    SNDBUF: number,
+    DONTROUTE: number,
+    ZEROCOPY: number,
+    PASSCRED: number,
+    DETACH_REUSEPORT_BPF: number,
+    ATTACH_REUSEPORT_EBPF: number,
+    MEMINFO: number,
+    COOKIE: number,
+    SNDBUFFORCE: number,
+    PRIORITY: number,
+    BSDCOMPAT: number,
+    SNDTIMEO: number,
+    BINDTODEVICE: number,
+    OOBINLINE: number,
+    BPF_EXTENSIONS: number,
+    TIMESTAMP_NEW: number,
+    NO_CHECK: number,
+    WIFI_STATUS: number,
+    PEERGROUPS: number,
+    TYPE: number,
+    NOFCS: number,
+    DOMAIN: number,
+    TIMESTAMPNS_NEW: number,
+    SNDLOWAT: number,
+    KEEPALIVE: number,
+    PEEK_OFF: number,
+    PEERSEC: number,
+    PEERNAME: number,
+    RCVBUF: number,
+    REUSEPORT: number?,
+    INCOMING_NAPI_ID: number,
+    TIMESTAMPING_OLD: number,
+    RCVBUFFORCE: number,
+    REUSEADDR: number,
+    MAX_PACING_RATE: number,
+    MARK: number,
+    RCVTIMEO_NEW: number,
+    BUSY_POLL: number,
+    TIMESTAMPING_NEW: number,
+    BINDTOIFINDEX: number,
+    TXTIME: number,
+    SECURITY_ENCRYPTION_NETWORK: number,
+    LOCK_FILTER: number,
+    RCVLOWAT: number,
+    SECURITY_ENCRYPTION_TRANSPORT: number,
+    ATTACH_BPF: number,
+    INCOMING_CPU: number,
+    ERROR: number,
+    SELECT_ERR_QUEUE: number,
+    DETACH_BPF: number,
+    SNDTIMEO_NEW: number,
+    TIMESTAMPNS_OLD: number,
+    PASSSEC: number,
+    TIMESTAMP_OLD: number,
+    GET_FILTER: number,
+    DETACH_FILTER: number,
+    ATTACH_REUSEPORT_CBPF: number,
+    BROADCAST: number,
+    SECURITY_AUTHENTICATION: number,
+    PROTOCOL: number,
+    ACCEPTCONN: number,
+    RCVTIMEO: number,
+}
+
 type NetworkLib = {
+    ADDRF: NetworkAddressFamily,
+    SOCKF: NetworkSocketFlags,
+    SOCKOPT: NetworkSocketOption,
+    SOCKOPTLV: NetworkSocketOptionLevel,
+    IPPROTO: NetworkIPProtocols,
+
+    createSocketAsync: (address_family: number, flags: number, protocol: number) -> NetworkSocket,
+    getAddressList: (name: string, port: number) -> {NetworkAddress},
+
     --[[
         Creates a UDP Socket.
 
