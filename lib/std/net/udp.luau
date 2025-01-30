@@ -81,7 +81,7 @@ function udp.createAsync(opts: UDPSocketOptions): UDPSocket
                 return;
             end)
             if (not ok) then
-                if (err == "Unexpected" or err == "SocketNotConnected") then
+                if (err == "SocketClosed" or err == "Unexpected" or err == "SocketNotConnected") then
                     self:stop();
                     return;
                 end
