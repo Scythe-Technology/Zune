@@ -5,6 +5,8 @@
 local net = zune.net;
 local task = zune.task;
 
+local SocketUtils = require("./sock_utils");
+
 export type UDPSocket = {
     socket: NetworkSocket,
     --- The address binded to
@@ -81,7 +83,7 @@ function udp.createAsync(opts: UDPSocketOptions): UDPSocket
                 return;
             end)
             if (not ok) then
-                if (err == "SocketClosed" or err == "Unexpected" or err == "SocketNotConnected") then
+                if (SocketUtils.isClosedError(err)) then
                     self:stop();
                     return;
                 end
@@ -98,7 +100,7 @@ function udp.createAsync(opts: UDPSocketOptions): UDPSocket
             end)
             if (not ok) then
                 local err = address::any;
-                if (err == "SocketClosed" or err == "Unexpected" or err == "SocketNotConnected") then
+                if (SocketUtils.isClosedError(err)) then
                     self:stop();
                     break; -- closed
                 end

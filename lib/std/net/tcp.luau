@@ -6,6 +6,8 @@ local net = zune.net;
 local task = zune.task;
 local process = zune.process;
 
+local SocketUtils = require("./sock_utils");
+
 local LinkedList = require("../linkedlist");
 type LinkedList<T = any> = LinkedList.LinkedList<T>;
 
@@ -95,7 +97,7 @@ local function sendConnectionAsync(connection: TCPConnection, message: string | 
         if (not ok) then
             local err = amount::any;
             closeConnection(connection);
-            if (err == "SocketClosed" or err == "Unexpected" or err == "BrokenPipe") then
+            if (SocketUtils.isClosedError(err) or err == "BrokenPipe") then
                 break; -- closed/disconnected
             end
             print("Error(Unhandled): ", err);
@@ -201,7 +203,7 @@ function tcp.hostAsync(opts: TCPServerOptions): TCPServer
             if (not ok) then
                 local err = client_socket::any;
                 self:stop();
-                if (err == "SocketClosed" or err == "Unexpected" or err == "SocketNotConnected") then
+                if (SocketUtils.isClosedError(err)) then
                     break; -- closed/disconnected
                 end
                 print("Error(Unhandled): ", err);
@@ -222,7 +224,7 @@ function tcp.hostAsync(opts: TCPServerOptions): TCPServer
                     end)
                     if (not ok) then
                         local err = data::any;
-                        if (err == "SocketClosed" or err == "Unexpected" or err == "SocketNotConnected") then
+                        if (SocketUtils.isClosedError(err)) then
                             break; -- closed/disconnected
                         end
                         print("Error(Unhandled): ", err);
@@ -313,7 +315,7 @@ function tcp.connectAsync(opts: TCPClientOptions): TCPConnection
             end)
             if (not ok) then
                 local err = data::any;
-                if (err == "SocketClosed" or err == "Unexpected" or err == "SocketNotConnected") then
+                if (SocketUtils.isClosedError(err)) then
                     break; -- closed/disconnected
                 end
                 print("Error(Unhandled): ", err);
