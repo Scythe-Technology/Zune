@@ -131,9 +131,10 @@ pub fn lua_encode(L: *VM.lua.State) !i32 {
 }
 
 fn decodeList(L: *VM.lua.State, list: yaml.List) void {
-    L.newtable();
+    L.createtable(@intCast(list.len), 0);
 
-    if (list.len == 0) return;
+    if (list.len == 0)
+        return;
 
     for (list, 1..) |val, key| {
         switch (val) {
@@ -149,9 +150,10 @@ fn decodeList(L: *VM.lua.State, list: yaml.List) void {
 }
 
 fn decodeMap(L: *VM.lua.State, map: yaml.Map) void {
-    L.newtable();
     const count = map.count();
-    if (count == 0) return;
+    L.createtable(0, @intCast(count));
+    if (count == 0)
+        return;
 
     var iter = map.iterator();
     while (iter.next()) |k| {
@@ -182,7 +184,7 @@ pub fn lua_decode(L: *VM.lua.State) !i32 {
     defer raw.deinit();
 
     if (raw.docs.items.len == 0) {
-        L.newtable();
+        L.createtable(0, 0);
         return 1;
     }
 

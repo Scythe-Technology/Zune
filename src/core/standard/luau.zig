@@ -120,7 +120,7 @@ fn luau_load(L: *VM.lua.State) !i32 {
 }
 
 pub fn loadLib(L: *VM.lua.State) void {
-    L.newtable();
+    L.createtable(0, 2);
 
     L.Zsetfieldfn(-1, "compile", luau_compile);
     L.Zsetfieldfn(-1, "load", luau_load);

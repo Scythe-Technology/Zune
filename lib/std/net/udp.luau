@@ -43,9 +43,7 @@ local function stopSocket(self: UDPSocket): ()
         return;
     end
     self.stopped = true;
-    task.spawn(function(socket)
-        socket:closeAsync();
-    end, self.socket);
+    SocketUtils.close(self.socket);
 end
 
 function udp.createAsync(opts: UDPSocketOptions): UDPSocket

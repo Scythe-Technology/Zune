@@ -201,8 +201,8 @@ pub fn openZune(L: *VM.lua.State, args: []const []const u8, flags: Flags) !void 
 
     objects.load(L);
 
-    L.newtable();
-    L.newtable();
+    L.createtable(0, 0);
+    L.createtable(0, 2);
     L.Zsetfieldfn(-1, luau.Metamethods.index, struct {
         fn inner(l: *VM.lua.State) !i32 {
             _ = l.Lfindtable(VM.lua.REGISTRYINDEX, "_LIBS", 1);

@@ -76,13 +76,15 @@ const StackInfo = struct {
 };
 
 pub fn setLuaFileContext(L: *VM.lua.State, ctx: FileContext) void {
-    L.newtable();
-    L.Zsetfield(-1, "name", ctx.name);
-    L.Zsetfield(-1, "path", ctx.path);
+    L.Zpushvalue(.{
+        .name = ctx.name,
+        .path = ctx.path,
+        .source = ctx.source,
+    });
 
     // TODO: Only include source when USE_DETAILED_ERROR is true or testing.
     // if (USE_DETAILED_ERROR)
-    L.Zsetfield(-1, "source", ctx.source);
+    // L.Zsetfield(-1, "source", ctx.source);
 
     L.setfield(VM.lua.GLOBALSINDEX, "_FILE");
 }

@@ -549,13 +549,7 @@ pub fn handleRequest(ctx: *Self, L: *VM.lua.State, scheduler: *Scheduler, i: usi
                     L.xpush(thread, -2);
                     L.pop(2); // drop thread & function
 
-                    req.pushToStack(thread) catch |err| {
-                        std.debug.print("Error pushing request to stack: {}\n", .{err});
-                        writeAllToStream(connection.stream, HTTP_500) catch |werr| {
-                            std.debug.print("Error writing response: {}\n", .{werr});
-                        };
-                        return;
-                    };
+                    req.pushToStack(thread);
 
                     const awaitRes = scheduler.awaitCall(NetStreamData, .{
                         .server = ctx,
@@ -592,10 +586,7 @@ pub fn handleRequest(ctx: *Self, L: *VM.lua.State, scheduler: *Scheduler, i: usi
     L.xpush(thread, -2); // push: function
     L.pop(2); // drop thread & function
 
-    req.pushToStack(thread) catch |err| {
-        std.debug.print("Error pushing request to stack: {}\n", .{err});
-        return;
-    };
+    req.pushToStack(thread);
 
     const awaitRes = scheduler.awaitCall(NetStreamData, .{
         .server = ctx,

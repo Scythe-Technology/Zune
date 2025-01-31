@@ -149,31 +149,17 @@ fn internal_lossyfloat_time(n: i128) f64 {
 }
 
 fn internal_metadata_table(L: *VM.lua.State, metadata: fs.File.Metadata, isSymlink: bool) void {
-    L.newtable();
-    L.Zsetfield(-1, "createdAt", internal_lossyfloat_time(metadata.created() orelse 0));
-    L.Zsetfield(-1, "modifiedAt", internal_lossyfloat_time(metadata.modified()));
-    L.Zsetfield(-1, "accessedAt", internal_lossyfloat_time(metadata.accessed()));
-    L.Zsetfield(-1, "symlink", isSymlink);
-    L.Zsetfield(-1, "size", metadata.size());
-    switch (metadata.kind()) {
-        .file => L.Zsetfield(-1, "kind", "file"),
-        .directory => L.Zsetfield(-1, "kind", "dir"),
-        .sym_link => L.Zsetfield(-1, "kind", "symlink"),
-        .door => L.Zsetfield(-1, "kind", "door"),
-        .character_device => L.Zsetfield(-1, "kind", "character_device"),
-        .unix_domain_socket => L.Zsetfield(-1, "kind", "unix_domain_socket"),
-        .block_device => L.Zsetfield(-1, "kind", "block_device"),
-        .event_port => L.Zsetfield(-1, "kind", "event_port"),
-        .named_pipe => L.Zsetfield(-1, "kind", "named_pipe"),
-        .whiteout => L.Zsetfield(-1, "kind", "whiteout"),
-        .unknown => L.Zsetfield(-1, "kind", "unknown"),
-    }
-
-    L.newtable();
-    const perms = metadata.permissions();
-    L.Zsetfield(-1, "readOnly", perms.readOnly());
-
-    L.setfield(-2, "permissions");
+    L.Zpushvalue(.{
+        .createdAt = internal_lossyfloat_time(metadata.created() orelse 0),
+        .modifiedAt = internal_lossyfloat_time(metadata.modified()),
+        .accessedAt = internal_lossyfloat_time(metadata.accessed()),
+        .symlink = isSymlink,
+        .size = metadata.size(),
+        .kind = @tagName(metadata.kind()),
+        .permissions = .{
+            .readOnly = metadata.permissions().readOnly(),
+        },
+    });
 }
 
 fn fs_metadata(L: *VM.lua.State) !i32 {
@@ -361,37 +347,36 @@ const LuaWatch = struct {
                     const thread = L.newthread();
                     L.xpush(thread, -2); // push: function
                     thread.pushlstring(item.name);
-                    thread.newtable();
-                    var i: i32 = 1;
+                    var count: u32 = 0;
+                    var values: [6][]const u8 = undefined;
                     if (item.event.created) {
-                        thread.pushstring("created");
-                        thread.rawseti(-2, i);
-                        i += 1;
+                        values[count] = "created";
+                        count += 1;
                     }
                     if (item.event.modify) {
-                        thread.pushstring("modified");
-                        thread.rawseti(-2, i);
-                        i += 1;
+                        values[count] = "modified";
+                        count += 1;
                     }
                     if (item.event.delete) {
-                        thread.pushstring("deleted");
-                        thread.rawseti(-2, i);
-                        i += 1;
+                        values[count] = "deleted";
+                        count += 1;
                     }
                     if (item.event.rename) {
-                        thread.pushstring("renamed");
-                        thread.rawseti(-2, i);
-                        i += 1;
+                        values[count] = "renamed";
+                        count += 1;
                     }
                     if (item.event.metadata) {
-                        thread.pushstring("metadata");
-                        thread.rawseti(-2, i);
-                        i += 1;
+                        values[count] = "metadata";
+                        count += 1;
                     }
                     if (item.event.move_from or item.event.move_to) {
-                        thread.pushstring("moved");
-                        thread.rawseti(-2, i);
-                        i += 1;
+                        values[count] = "moved";
+                        count += 1;
+                    }
+                    thread.createtable(@intCast(count), 0);
+                    for (values[0..count], 1..) |value, i| {
+                        thread.pushlstring(value);
+                        thread.rawseti(-2, @intCast(i));
                     }
                     L.pop(2); // drop thread, function
 
@@ -529,7 +514,7 @@ pub fn loadLib(L: *VM.lua.State) void {
         L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.pop(1);
     }
-    L.newtable();
+    L.createtable(0, 17);
 
     L.Zsetfieldfn(-1, "createFile", fs_createFile);
     L.Zsetfieldfn(-1, "openFile", fs_openFile);

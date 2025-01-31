@@ -16,15 +16,16 @@ fn lua_regexCaptureSearch(L: *VM.lua.State, re: *Regex, input: []const u8, index
         if (relative_index >= input.len)
             break;
         if (try re.search(input[relative_index..])) |match| {
-            L.newtable();
             defer match.deinit();
             const groups = match.groups;
+            L.createtable(@intCast(groups.len), 0);
             if (groups.len == 0) break;
             var i: i32 = 1;
             for (groups) |str| {
-                L.newtable();
-                L.Zsetfield(-1, "index", 1 + index.* + relative_index + str.index);
-                L.Zsetfield(-1, "string", str.slice);
+                L.Zpushvalue(.{
+                    .index = 1 + index.* + relative_index + str.index,
+                    .string = str.slice,
+                });
                 L.rawseti(-2, i);
                 i += 1;
             }
@@ -51,13 +52,14 @@ const LuaRegex = struct {
             const input = L.Lcheckstring(2);
             var i: i32 = 1;
             if (try r_ptr.match(input)) |match| {
-                L.newtable();
                 defer match.deinit();
                 const groups = match.groups;
+                L.createtable(@intCast(groups.len), 0);
                 for (groups) |str| {
-                    L.newtable();
-                    L.Zsetfield(-1, "index", 1 + str.index);
-                    L.Zsetfield(-1, "string", str.slice);
+                    L.Zpushvalue(.{
+                        .index = 1 + str.index,
+                        .string = str.slice,
+                    });
                     L.rawseti(-2, i);
                     i += 1;
                 }
@@ -67,13 +69,14 @@ const LuaRegex = struct {
             const input = L.Lcheckstring(2);
             var i: i32 = 1;
             if (try r_ptr.search(input)) |match| {
-                L.newtable();
                 defer match.deinit();
                 const groups = match.groups;
+                L.createtable(@intCast(groups.len), 0);
                 for (groups) |str| {
-                    L.newtable();
-                    L.Zsetfield(-1, "index", 1 + str.index);
-                    L.Zsetfield(-1, "string", str.slice);
+                    L.Zpushvalue(.{
+                        .index = 1 + str.index,
+                        .string = str.slice,
+                    });
                     L.rawseti(-2, i);
                     i += 1;
                 }
@@ -164,7 +167,7 @@ pub fn loadLib(L: *VM.lua.State) void {
         L.pop(1);
     }
 
-    L.newtable();
+    L.createtable(0, 1);
 
     L.Zsetfieldfn(-1, "new", regex_new);
 

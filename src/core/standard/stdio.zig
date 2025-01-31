@@ -411,7 +411,7 @@ pub fn loadLib(L: *VM.lua.State) void {
         L.pop(1);
     }
 
-    L.newtable();
+    L.createtable(0, 16);
 
     L.Zsetfield(-1, "MAX_READ", MAX_LUAU_SIZE);
 

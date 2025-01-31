@@ -19,10 +19,10 @@ const password = @import("password.zig");
 pub const LIB_NAME = "crypto";
 
 pub fn loadLib(L: *VM.lua.State) void {
-    L.newtable();
+    L.createtable(0, 5);
 
     { // hash
-        L.newtable();
+        L.createtable(0, 6);
 
         // Md5
         L.Zsetfieldfn(-1, "md5", comptime common.lua_genHashFn(hash.Md5));
@@ -32,7 +32,7 @@ pub fn loadLib(L: *VM.lua.State) void {
         L.Zsetfieldfn(-1, "blake3", common.lua_genHashFn(hash.Blake3));
 
         { // Sha2
-            L.newtable();
+            L.createtable(0, 4);
 
             L.Zsetfieldfn(-1, "sha224", common.lua_genHashFn(hash.sha2.Sha224));
             L.Zsetfieldfn(-1, "sha256", common.lua_genHashFn(hash.sha2.Sha256));
@@ -44,7 +44,7 @@ pub fn loadLib(L: *VM.lua.State) void {
         }
 
         { // Sha3
-            L.newtable();
+            L.createtable(0, 4);
 
             L.Zsetfieldfn(-1, "sha3_224", common.lua_genHashFn(hash.sha3.Sha3_224));
             L.Zsetfieldfn(-1, "sha3_256", common.lua_genHashFn(hash.sha3.Sha3_256));
@@ -56,7 +56,7 @@ pub fn loadLib(L: *VM.lua.State) void {
         }
 
         { // Blake2
-            L.newtable();
+            L.createtable(0, 9);
 
             L.Zsetfieldfn(-1, "b128", common.lua_genHashFn(hash.blake2.Blake2b128));
             L.Zsetfieldfn(-1, "b160", common.lua_genHashFn(hash.blake2.Blake2b160));
@@ -78,7 +78,7 @@ pub fn loadLib(L: *VM.lua.State) void {
     }
 
     { // hmac
-        L.newtable();
+        L.createtable(0, 6);
 
         // Md5
         L.Zsetfieldfn(-1, "md5", common.lua_genHmacFn(hash.Md5));
@@ -88,7 +88,7 @@ pub fn loadLib(L: *VM.lua.State) void {
         L.Zsetfieldfn(-1, "blake3", common.lua_genHmacFn(hash.Blake3));
 
         { // Sha2
-            L.newtable();
+            L.createtable(0, 4);
 
             L.Zsetfieldfn(-1, "sha224", common.lua_genHmacFn(hash.sha2.Sha224));
             L.Zsetfieldfn(-1, "sha256", common.lua_genHmacFn(hash.sha2.Sha256));
@@ -100,7 +100,7 @@ pub fn loadLib(L: *VM.lua.State) void {
         }
 
         { // Sha3
-            L.newtable();
+            L.createtable(0, 4);
 
             L.Zsetfieldfn(-1, "sha3_224", common.lua_genHmacFn(hash.sha3.Sha3_224));
             L.Zsetfieldfn(-1, "sha3_256", common.lua_genHmacFn(hash.sha3.Sha3_256));
@@ -112,7 +112,7 @@ pub fn loadLib(L: *VM.lua.State) void {
         }
 
         { // Blake2
-            L.newtable();
+            L.createtable(0, 9);
 
             L.Zsetfieldfn(-1, "b128", common.lua_genHmacFn(hash.blake2.Blake2b128));
             L.Zsetfieldfn(-1, "b160", common.lua_genHmacFn(hash.blake2.Blake2b160));
@@ -134,7 +134,7 @@ pub fn loadLib(L: *VM.lua.State) void {
     }
 
     { // password
-        L.newtable();
+        L.createtable(0, 2);
 
         L.Zsetfieldfn(-1, "hash", password.lua_hash);
         L.Zsetfieldfn(-1, "verify", password.lua_verify);
@@ -144,7 +144,7 @@ pub fn loadLib(L: *VM.lua.State) void {
     }
 
     { // random
-        L.newtable();
+        L.createtable(0, 4);
 
         L.Zsetfieldfn(-1, "nextNumber", random.lua_nextnumber);
         L.Zsetfieldfn(-1, "nextInteger", random.lua_nextinteger);
@@ -156,10 +156,10 @@ pub fn loadLib(L: *VM.lua.State) void {
     }
 
     { // AES
-        L.newtable();
+        L.createtable(0, 2);
 
         { // aes128
-            L.newtable();
+            L.createtable(0, 2);
 
             L.Zsetfieldfn(-1, "encrypt", aes.lua_aes128_encrypt);
             L.Zsetfieldfn(-1, "decrypt", aes.lua_aes128_decrypt);
@@ -169,7 +169,7 @@ pub fn loadLib(L: *VM.lua.State) void {
         }
 
         { // aes256
-            L.newtable();
+            L.createtable(0, 2);
 
             L.Zsetfieldfn(-1, "encrypt", aes.lua_aes256_encrypt);
             L.Zsetfieldfn(-1, "decrypt", aes.lua_aes256_decrypt);

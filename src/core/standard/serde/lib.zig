@@ -22,10 +22,10 @@ const VM = luau.VM;
 pub const LIB_NAME = "serde";
 
 pub fn loadLib(L: *VM.lua.State) void {
-    L.newtable();
+    L.createtable(0, 10);
 
     { // Json
-        L.newtable();
+        L.createtable(0, 4);
 
         L.Zsetfieldfn(-1, "encode", json.LuaEncoder(.JSON));
         L.Zsetfieldfn(-1, "decode", json.LuaDecoder(.JSON));
@@ -37,7 +37,7 @@ pub fn loadLib(L: *VM.lua.State) void {
     }
 
     { // Json5
-        L.newtable();
+        L.createtable(0, 4);
 
         L.Zsetfieldfn(-1, "encode", json.LuaEncoder(.JSON5));
         L.Zsetfieldfn(-1, "decode", json.LuaDecoder(.JSON5));
@@ -57,7 +57,7 @@ pub fn loadLib(L: *VM.lua.State) void {
     }
 
     { // Toml
-        L.newtable();
+        L.createtable(0, 2);
 
         L.Zsetfieldfn(-1, "encode", toml.lua_encode);
         L.Zsetfieldfn(-1, "decode", toml.lua_decode);
@@ -67,7 +67,7 @@ pub fn loadLib(L: *VM.lua.State) void {
     }
 
     { // Yaml
-        L.newtable();
+        L.createtable(0, 2);
 
         L.Zsetfieldfn(-1, "encode", yaml.lua_encode);
         L.Zsetfieldfn(-1, "decode", yaml.lua_decode);
@@ -77,7 +77,7 @@ pub fn loadLib(L: *VM.lua.State) void {
     }
 
     { // Base64
-        L.newtable();
+        L.createtable(0, 2);
 
         L.Zsetfieldfn(-1, "encode", base64.lua_encode);
         L.Zsetfieldfn(-1, "decode", base64.lua_decode);
@@ -87,7 +87,7 @@ pub fn loadLib(L: *VM.lua.State) void {
     }
 
     { // Gzip
-        L.newtable();
+        L.createtable(0, 2);
 
         L.Zsetfieldfn(-1, "compress", gzip.lua_compress);
         L.Zsetfieldfn(-1, "decompress", gzip.lua_decompress);
@@ -97,7 +97,7 @@ pub fn loadLib(L: *VM.lua.State) void {
     }
 
     { // Zlib
-        L.newtable();
+        L.createtable(0, 2);
 
         L.Zsetfieldfn(-1, "compress", zlib.lua_compress);
         L.Zsetfieldfn(-1, "decompress", zlib.lua_decompress);
@@ -107,7 +107,7 @@ pub fn loadLib(L: *VM.lua.State) void {
     }
 
     { // Flate
-        L.newtable();
+        L.createtable(0, 2);
 
         L.Zsetfieldfn(-1, "compress", flate.lua_compress);
         L.Zsetfieldfn(-1, "decompress", flate.lua_decompress);
@@ -117,7 +117,7 @@ pub fn loadLib(L: *VM.lua.State) void {
     }
 
     { // Lz4
-        L.newtable();
+        L.createtable(0, 2);
 
         L.Zsetfieldfn(-1, "compress", lz4.lua_compress);
         L.Zsetfieldfn(-1, "compressFrame", lz4.lua_frame_compress);
@@ -129,7 +129,7 @@ pub fn loadLib(L: *VM.lua.State) void {
     }
 
     { // Zstd
-        L.newtable();
+        L.createtable(0, 2);
 
         L.Zsetfieldfn(-1, "compress", zstd.lua_compress);
         L.Zsetfieldfn(-1, "decompress", zstd.lua_decompress);

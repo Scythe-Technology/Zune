@@ -274,12 +274,7 @@ pub fn dtor(ctx: *Self, L: *VM.lua.State, scheduler: *Scheduler) void {
         };
         defer response.deinit();
 
-        response.pushToStack(L, responseBody.items) catch |err| {
-            std.debug.print("Error reading response: {}\n", .{err});
-            L.pushstring(@errorName(err));
-            _ = Scheduler.resumeStateError(L, null) catch {};
-            return;
-        };
+        response.pushToStack(L, responseBody.items);
 
         _ = Scheduler.resumeState(L, null, 1) catch {};
     } else {

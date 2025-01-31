@@ -171,7 +171,7 @@ fn task_count(L: *VM.lua.State) !i32 {
 }
 
 pub fn loadLib(L: *VM.lua.State) void {
-    L.newtable();
+    L.createtable(0, 6);
 
     L.Zsetfieldfn(-1, "wait", task_wait);
     L.Zsetfieldfn(-1, "spawn", task_spawn);

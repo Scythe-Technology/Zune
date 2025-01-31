@@ -45,7 +45,7 @@ const LuaStatement = struct {
     }
 
     fn resultToTable(L: *VM.lua.State, statement: sqlite.Statement, res: []const ?sqlite.Value) !void {
-        L.newtable();
+        L.createtable(0, @intCast(res.len));
         for (res, 0..) |value, idx| {
             const name = statement.column_list.items[idx].name;
             if (value) |v| {
@@ -136,10 +136,10 @@ const LuaStatement = struct {
             }) |res|
                 allocator.free(res);
 
-            L.newtable();
-
-            L.Zsetfield(-1, "lastInsertRowId", @as(i32, @truncate(ptr.db.db.getLastInsertRowId())));
-            L.Zsetfield(-1, "changes", @as(i32, @truncate(ptr.db.db.countChanges())));
+            L.Zpushvalue(.{
+                .lastInsertRowId = @as(i32, @truncate(ptr.db.db.getLastInsertRowId())),
+                .changes = @as(i32, @truncate(ptr.db.db.countChanges())),
+            });
 
             return 1;
         } else if (std.mem.eql(u8, namecall, "finalize")) {
@@ -433,7 +433,7 @@ pub fn loadLib(L: *VM.lua.State) void {
         L.setuserdatametatable(tagged.SQLITE_STATEMENT, -1);
     }
 
-    L.newtable();
+    L.createtable(0, 1);
 
     L.Zsetfieldfn(-1, "open", sqlite_open);
 

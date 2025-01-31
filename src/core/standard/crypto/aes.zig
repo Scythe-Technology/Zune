@@ -33,11 +33,10 @@ pub fn lua_aes128_encrypt(L: *VM.lua.State) !i32 {
 
     Aes128Gcm.encrypt(c, &tag, msg, "", snonce, skey);
 
-    L.newtable();
-
-    L.Zsetfield(-1, "cipher", c);
-    L.pushlstring(&tag);
-    L.setfield(-2, "tag");
+    L.Zpushvalue(.{
+        .cipher = c,
+        .tag = &tag,
+    });
 
     return 1;
 }
@@ -103,11 +102,10 @@ pub fn lua_aes256_encrypt(L: *VM.lua.State) !i32 {
 
     Aes256Gcm.encrypt(c, &tag, msg, "", snonce, skey);
 
-    L.newtable();
-
-    L.Zsetfield(-1, "cipher", c);
-    L.pushlstring(&tag);
-    L.setfield(-2, "tag");
+    L.Zpushvalue(.{
+        .cipher = c,
+        .tag = &tag,
+    });
 
     return 1;
 }

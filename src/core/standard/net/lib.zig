@@ -69,12 +69,12 @@ fn net_getAddressList(L: *VM.lua.State) !i32 {
         return L.Zerror("AddressListTooLarge");
     L.createtable(@intCast(list.addrs.len), 0);
     for (list.addrs, 1..) |address, i| {
-        L.createtable(0, 3);
-        L.Zsetfield(-1, "family", address.any.family);
-        L.Zsetfield(-1, "port", address.getPort());
         var buf: [Socket.LONGEST_ADDRESS]u8 = undefined;
-        L.pushlstring(Socket.AddressToString(&buf, address));
-        L.setfield(-2, "address");
+        L.Zpushvalue(.{
+            .family = address.any.family,
+            .port = address.getPort(),
+            .address = Socket.AddressToString(&buf, address),
+        });
         L.rawseti(-2, @intCast(i));
     }
     return 1;
@@ -96,14 +96,14 @@ pub fn loadLib(L: *VM.lua.State) void {
     UDP.lua_load(L);
     TCP.lua_load(L);
 
-    L.newtable();
+    L.createtable(0, 11);
 
     L.Zsetfieldfn(-1, "udpSocket", UDP.lua_udpsocket);
     L.Zsetfieldfn(-1, "tcpConnect", TCP.lua_tcp_client);
     L.Zsetfieldfn(-1, "tcpHost", TCP.lua_tcp_server);
 
     {
-        L.newtable();
+        L.createtable(0, 3);
 
         L.Zsetfieldfn(-1, "serve", HttpServer.lua_serve);
         L.Zsetfieldfn(-1, "request", HttpClient.lua_request);

@@ -8,7 +8,7 @@ local process = zune.process;
 
 local SocketUtils = require("./sock_utils");
 
-local LinkedList = require("../linkedlist");
+local LinkedList = require("../linked_list");
 type LinkedList<T = any> = LinkedList.LinkedList<T>;
 
 export type TCPServer = {
@@ -81,9 +81,7 @@ local function closeConnection(connection: TCPConnection): ()
         return;
     end
     connection.stopped = true;
-    task.spawn(function(socket: NetworkSocket)
-        socket:closeAsync();
-    end, connection.socket);
+    SocketUtils.close(connection.socket);
 end
 
 local function sendConnectionAsync(connection: TCPConnection, message: string | buffer): ()
@@ -127,9 +125,7 @@ local function stopServer(server: TCPServer): ()
     for _, connection in server.connections:iterate() do
         connection:stop();
     end
-    task.spawn(function(socket: NetworkSocket)
-        socket:closeAsync();
-    end, server.socket);
+    SocketUtils.close(server.socket);
 end
 
 local tcp = {};
@@ -167,21 +163,21 @@ function tcp.hostAsync(opts: TCPServerOptions): TCPServer
     assert(type(callback_data) == "function" or callback_data == nil, "Expected data to be a function");
     assert(type(callback_close) == "function" or callback_close == nil, "Expected close to be a function");
 
-    local socket = net.createSocketAsync(
-        net.ADDRF.INET,
-        bit32.bor(net.SOCKF.STREAM, net.SOCKF.CLOEXEC, net.SOCKF.NONBLOCK),
-        net.IPPROTO.TCP
-    );
-
-    if (reuseAddress) then
-        socket:setOption(net.SOCKOPTLV.SOCKET, net.SOCKOPT.REUSEADDR, true);
-        if (net.SOCKOPT.REUSEPORT) then
-            socket:setOption(net.SOCKOPTLV.SOCKET, net.SOCKOPT.REUSEPORT, true);
+        local socket = net.createSocketAsync(
+            net.ADDRF.INET,
+            bit32.bor(net.SOCKF.STREAM, net.SOCKF.CLOEXEC, net.SOCKF.NONBLOCK),
+            net.IPPROTO.TCP
+        );
+    
+        if (reuseAddress) then
+            socket:setOption(net.SOCKOPTLV.SOCKET, net.SOCKOPT.REUSEADDR, true);
+            if (net.SOCKOPT.REUSEPORT) then
+                socket:setOption(net.SOCKOPTLV.SOCKET, net.SOCKOPT.REUSEPORT, true);
+            end
         end
-    end
-
-    socket:bindIp(address, port);
-    socket:listen();
+    
+        socket:bindIp(address, port);
+        socket:listen();
 
     local name = socket:getName();
 

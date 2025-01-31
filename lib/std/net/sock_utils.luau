@@ -2,6 +2,8 @@
 --!native
 --!optimize 2
 
+local task = zune.task;
+
 return {
     SocketClosedError = {
         ["SocketClosed"] = true,
@@ -12,4 +14,9 @@ return {
         ["OperationAborted"] = true,
         ["ConnectionAborted"] = true,
     };
+    close = function(socket: NetworkSocket)
+        task.spawn(function(inner_socket)
+            inner_socket:closeAsync()
+        end, socket);
+    end
 };

@@ -249,7 +249,7 @@ pub fn loadLib(L: *VM.lua.State, enabled: bool) void {
 
         L.remove(-2);
     } else {
-        L.newtable();
+        L.createtable(0, 4);
         L.Zsetfield(-1, "running", false);
         L.Zsetfieldfn(-1, "describe", empty);
         L.Zsetfieldfn(-1, "test", empty);

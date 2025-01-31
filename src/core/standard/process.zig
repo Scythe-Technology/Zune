@@ -113,7 +113,7 @@ const ProcessChildHandle = struct {
     fn method_kill(self: *ProcessChildHandle, L: *VM.lua.State) !i32 {
         const term = try self.child.kill();
         self.dead = true;
-        L.newtable();
+        L.createtable(0, 3);
         internal_process_term(L, term);
         return 1;
     }
@@ -121,7 +121,7 @@ const ProcessChildHandle = struct {
     fn method_wait(self: *ProcessChildHandle, L: *VM.lua.State) !i32 {
         const term = try self.child.wait();
         self.dead = true;
-        L.newtable();
+        L.createtable(0, 3);
         internal_process_term(L, term);
         return 1;
     }
@@ -464,7 +464,7 @@ const ProcessAsyncRun = struct {
 
         const term = try ctx.child.wait();
 
-        L.newtable();
+        L.createtable(0, 5);
 
         L.Zsetfield(-1, "stdout", stdout);
         L.Zsetfield(-1, "stderr", stderr);
@@ -766,19 +766,13 @@ pub fn loadLib(L: *VM.lua.State, args: []const []const u8) !void {
         L.pop(1);
     }
 
-    L.newtable();
+    L.createtable(0, 10);
 
     L.Zsetfield(-1, "arch", @tagName(builtin.cpu.arch));
     L.Zsetfield(-1, "os", @tagName(native_os));
 
     {
-        L.newtable();
-        for (args, 1..) |arg, i| {
-            const zarg = try allocator.dupeZ(u8, arg);
-            defer allocator.free(zarg);
-            L.pushstring(zarg);
-            L.rawseti(-2, @intCast(i));
-        }
+        L.Zpushvalue(args);
         L.setreadonly(-1, true);
         L.setfield(-2, "args");
     }
@@ -798,9 +792,9 @@ pub fn loadLib(L: *VM.lua.State, args: []const []const u8) !void {
     L.Zsetfieldfn(-1, "create", process_create);
     L.Zsetfieldfn(-1, "onSignal", process_onsignal);
 
-    L.newtable();
+    L.createtable(0, 0);
     {
-        L.newtable();
+        L.createtable(0, 3);
 
         L.pushvalue(-3);
         L.setfield(-2, luau.Metamethods.index); // metatable.__index

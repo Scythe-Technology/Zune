@@ -249,7 +249,7 @@ test("Metadata", function()
         accessedAt = expect.any("number"),
         size = expect.any("number"),
         symlink = false,
-        kind = "dir",
+        kind = "directory",
         permissions = {
             readOnly = false,
         },
@@ -368,7 +368,7 @@ test("Symlink", function()
             accessedAt = expect.any("number"),
             size = expect.any("number"),
             symlink = true,
-            kind = "dir",
+            kind = "directory",
             permissions = {
                 readOnly = false,
             },

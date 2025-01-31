@@ -462,9 +462,8 @@ pub fn canUpgradeWebSocket(self: *Self) !?UpgradeInfo {
     return null;
 }
 
-pub fn pushToStack(self: *Self, L: *VM.lua.State) !void {
-    L.newtable();
-    errdefer L.pop(1);
+pub fn pushToStack(self: *Self, L: *VM.lua.State) void {
+    L.createtable(0, 2);
 
     if (self.method) |method| {
         L.Zsetfield(-1, "method", method);
@@ -474,9 +473,8 @@ pub fn pushToStack(self: *Self, L: *VM.lua.State) !void {
         L.Zsetfield(-1, "path", url.path);
     }
 
-    L.newtable();
+    L.createtable(0, if (self.query) |queries| @intCast(queries.len) else 0);
     if (self.query) |queries| {
-        errdefer L.pop(1);
         var order: i32 = 1;
         for (queries) |query| {
             L.pushlstring(query.key);
@@ -491,9 +489,8 @@ pub fn pushToStack(self: *Self, L: *VM.lua.State) !void {
     }
     L.setfield(-2, "query");
 
-    L.newtable();
+    L.createtable(0, if (self.headers) |h| @intCast(h.len) else 0);
     if (self.headers) |headers| {
-        errdefer L.pop(1);
         for (headers) |header| {
             L.pushlstring(header.key);
             L.pushlstring(header.value);

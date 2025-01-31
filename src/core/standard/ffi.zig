@@ -1425,9 +1425,9 @@ fn ffi_dlopen(L: *VM.lua.State) !i32 {
     ptr.lib = lib;
     ptr.open = true;
 
-    L.newtable();
+    L.createtable(0, 2);
 
-    L.newtable();
+    L.createtable(0, @intCast(func_map.count()));
     while (func_map.popOrNull()) |entry| {
         const key = entry.key;
         const value = entry.value;
@@ -1729,9 +1729,9 @@ fn ffi_closure(L: *VM.lua.State) !i32 {
         },
     };
 
-    L.newtable();
+    L.createtable(0, 2);
 
-    L.newtable();
+    L.createtable(0, 1);
     {
         L.pushvalue(2);
         L.setfield(-2, "callback");
@@ -2136,7 +2136,7 @@ pub fn loadLib(L: *VM.lua.State) void {
         L.setuserdatametatable(tagged.FFI_POINTER, -1);
     }
 
-    L.newtable();
+    L.createtable(0, 17);
 
     L.Zsetfieldfn(-1, "dlopen", ffi_dlopen);
     L.Zsetfieldfn(-1, "struct", ffi_struct);
@@ -2156,7 +2156,7 @@ pub fn loadLib(L: *VM.lua.State) void {
     L.Zsetfieldfn(-1, "getRef", LuaPointer.getRef);
     L.Zsetfieldfn(-1, "createPtr", LuaPointer.ptrFromBuffer);
 
-    L.newtable();
+    L.createtable(0, @intCast(@typeInfo(DataTypes.Types).@"struct".decls.len));
     inline for (@typeInfo(DataTypes.Types).@"struct".decls, 0..) |decl, i| {
         L.pushstring(decl.name[5..]);
         L.pushlightuserdata(@constCast(@ptrCast(@alignCast(DataTypes.order[i]))));

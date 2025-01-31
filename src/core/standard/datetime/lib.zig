@@ -42,15 +42,16 @@ const LuaDatetime = struct {
             else
                 datetime.*;
             const local = try date.tzConvert(.{ .tz = &tz });
-            L.newtable();
 
-            L.Zsetfield(-1, "year", local.year);
-            L.Zsetfield(-1, "month", local.month);
-            L.Zsetfield(-1, "day", local.day);
-            L.Zsetfield(-1, "hour", local.hour);
-            L.Zsetfield(-1, "minute", local.minute);
-            L.Zsetfield(-1, "second", local.second);
-            L.Zsetfield(-1, "millisecond", @divFloor(local.nanosecond, std.time.ns_per_ms));
+            L.Zpushvalue(.{
+                .year = local.year,
+                .month = local.month,
+                .day = local.day,
+                .hour = local.hour,
+                .minute = local.minute,
+                .second = local.second,
+                .millisecond = @divFloor(local.nanosecond, std.time.ns_per_ms),
+            });
 
             return 1;
         } else if (std.mem.eql(u8, namecall, "toUniversalTime") or std.mem.eql(u8, namecall, "ToUniversalTime")) {
@@ -58,15 +59,16 @@ const LuaDatetime = struct {
                 try datetime.tzConvert(.{ .tz = &time.Timezone.UTC })
             else
                 try datetime.tzLocalize(.{ .tz = &time.Timezone.UTC });
-            L.newtable();
 
-            L.Zsetfield(-1, "year", utc.year);
-            L.Zsetfield(-1, "month", utc.month);
-            L.Zsetfield(-1, "day", utc.day);
-            L.Zsetfield(-1, "hour", utc.hour);
-            L.Zsetfield(-1, "minute", utc.minute);
-            L.Zsetfield(-1, "second", utc.second);
-            L.Zsetfield(-1, "millisecond", @divFloor(utc.nanosecond, std.time.ns_per_ms));
+            L.Zpushvalue(.{
+                .year = utc.year,
+                .month = utc.month,
+                .day = utc.day,
+                .hour = utc.hour,
+                .minute = utc.minute,
+                .second = utc.second,
+                .millisecond = @divFloor(utc.nanosecond, std.time.ns_per_ms),
+            });
 
             return 1;
         } else if (std.mem.eql(u8, namecall, "formatLocalTime") or std.mem.eql(u8, namecall, "FormatLocalTime")) {
@@ -259,7 +261,7 @@ pub fn loadLib(L: *VM.lua.State) void {
         L.pop(1);
     }
 
-    L.newtable();
+    L.createtable(0, 7);
 
     L.Zsetfieldfn(-1, "now", datetime_now);
     L.Zsetfieldfn(-1, "parse", datetime_parse);
