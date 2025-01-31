@@ -7,13 +7,14 @@ pub fn lua_genHashFn(comptime hash_algorithm: anytype) VM.zapi.LuaZigFn(i32) {
     return struct {
         fn hash(L: *VM.lua.State) i32 {
             const data = L.Ztolstringk(1);
-            defer L.pop(1);
 
             var buf: [hash_algorithm.digest_length]u8 = undefined;
 
             hash_algorithm.hash(data, &buf, .{});
 
             const hex = std.fmt.bytesToHex(&buf, .lower);
+
+            L.pop(2); // drop: data
 
             L.pushlstring(&hex);
 
@@ -27,15 +28,15 @@ pub fn lua_genHmacFn(comptime hash_algorithm: anytype) VM.zapi.LuaZigFn(i32) {
     return struct {
         fn hash(L: *VM.lua.State) i32 {
             const data = L.Ztolstringk(1);
-            defer L.pop(1);
             const key = L.Ztolstringk(2);
-            defer L.pop(1);
 
             var buf: [hmac_algorithm.key_length]u8 = undefined;
 
             hmac_algorithm.create(&buf, data, key);
 
             const hex = std.fmt.bytesToHex(&buf, .lower);
+
+            L.pop(2); // drop: data, key
 
             L.pushlstring(&hex);
 
