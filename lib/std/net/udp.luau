@@ -16,10 +16,13 @@ export type UDPSocket = {
     --- Whether the socket is active
     stopped: boolean,
     --- Send a UDP datagram message to remote host.
-    send: (self: UDPSocket, message: string | buffer, port: number, address: string) -> (),
+    --- @return `number` bytes sent
+    send: (self: UDPSocket, message: string | buffer, port: number, address: string) -> number,
     --- Stops the Socket.
     stop: (self: UDPSocket) -> (),
 }
+
+type UDPDataCallback = ((socket: UDPSocket, buffer: buffer, port: number, address: string) -> ());
 
 export type UDPSocketOptions = {
     --- The port to bind to.
@@ -33,10 +36,35 @@ export type UDPSocketOptions = {
     --- - Default: `65_507`
     maxBodySize: number?,
     --- Callback to handle UDP datagram
-    data: ((socket: UDPSocket, buffer: buffer, port: number, address: string) -> ())?,
+    data: UDPDataCallback?,
 }
 
 local udp = {};
+
+local function sendSocketAsync(
+    self: UDPSocket,
+    message: buffer | string,
+    port: number,
+    address: string
+): number
+    local ok, amount = pcall(function(
+        socket: NetworkSocket, 
+        port: number,
+        address: string,
+        message: buffer | string
+    )
+        return socket:sendMsgAsync(port, address, message);
+    end, self.socket, port, address, message);
+    if (not ok) then
+        local err = amount::any;
+        self:stop();
+        if (SocketUtils.SocketClosedError[err]) then
+            return 0;
+        end
+        print("Error(Unhandled): ", err);
+    end
+    return amount;
+end
 
 local function stopSocket(self: UDPSocket): ()
     if (self.stopped) then
@@ -44,6 +72,31 @@ local function stopSocket(self: UDPSocket): ()
     end
     self.stopped = true;
     SocketUtils.close(self.socket);
+end
+
+local function startSocket(
+    self: UDPSocket,
+    maxBodySize: number,
+    callback_data: UDPDataCallback?
+): ()
+    local socket = self.socket;
+    while not self.stopped do
+        local ok, address, msg = pcall(function(socket: NetworkSocket)
+            return socket:recvMsgAsync(maxBodySize);
+        end, socket);
+        if (not ok) then
+            local err = address::any;
+            if (SocketUtils.SocketClosedError[err]) then
+                break; -- closed
+            end
+            print("Error(Unhandled): ", address);
+            break;
+        end
+        if (callback_data) then
+            task.spawn(callback_data, self, msg, address.port, address.address);
+        end
+    end
+    stopSocket(self);
 end
 
 function udp.createAsync(opts: UDPSocketOptions): UDPSocket
@@ -77,42 +130,16 @@ function udp.createAsync(opts: UDPSocketOptions): UDPSocket
         address = name.address,
         port = name.port,
         stopped = false,
-        send = function(self, message, port, address)
-            local ok, err = pcall(function(): any?
-                local _ = socket:sendMsgAsync(port, address, message);
-                return;
-            end)
-            if (not ok) then
-                if (SocketUtils.SocketClosedError[err]) then
-                    self:stop();
-                    return;
-                end
-                print("Error(Unhandled): ", err);
-            end
-        end,
+        send = sendSocketAsync,
         stop = stopSocket,
     };
 
-    task.spawn(function()
-        while not self.stopped do
-            local ok, address, msg = pcall(function()
-                return socket:recvMsgAsync(maxBodySize);
-            end)
-            if (not ok) then
-                local err = address::any;
-                if (SocketUtils.SocketClosedError[err]) then
-                    self:stop();
-                    break; -- closed
-                end
-                print("Error(Unhandled): ", address);
-                break;
-            end
-            if (callback_data) then
-                task.spawn(callback_data, self, msg, address.port, address.address);
-            end
-        end
-        self:stop();
-    end);
+    task.spawn(
+        startSocket,
+        self,
+        maxBodySize,
+        callback_data
+    );
 
     return self;
 end

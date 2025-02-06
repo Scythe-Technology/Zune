@@ -11,4 +11,8 @@ describe("TCP", function()
     require("./net/tcp.test");
 end)
 
+describe("HTTP", function()
+    require("./net/http.test");
+end)
+
 return nil;

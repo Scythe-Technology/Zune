@@ -413,11 +413,6 @@ local function readable(value : any)
     end
 end
 
-local function safePattern(str: string): string
-    local res, _ = str:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1");
-    return res;
-end
-
 local conditionals = {
     toBe = function(self : ConditionState, expected : any)
         if (Conditional.is(expected)) then
@@ -470,12 +465,11 @@ local conditionals = {
     end,
     toThrow = function(self : ConditionState, expected : string?)
         assertExpect(false, type(self.received) == "function", "Expected %s to %sbe a function", readable(self.received), flipTag(self.flipped));
-        local src = debug.info(self.received, "s");
         local success, err = pcall(self.received);
         if (expected ~= nil) then
             assertExpect(false, type(err) == "string", "Expected error to be a string (got %s)", readable(err));
             assertExpect(false, not success, "Expected %s to %sthrow an error", readable(self.received), flipTag(self.flipped));
-            local stripped = err:match(`^{safePattern(src)}:%d+: (.+)$`);
+            local stripped = err:match(`^.+:%d+: (.+)$`);
             if (stripped) then
                 assertExpect(self.flipped, stripped == expected, "Got error %s expected to %sthrow %s", readable(stripped), flipTag(self.flipped), readable(expected));
             else

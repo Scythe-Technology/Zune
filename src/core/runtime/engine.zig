@@ -368,9 +368,9 @@ const LuaFileType = enum {
 };
 
 pub fn getLuaFileType(path: []const u8) ?LuaFileType {
-    if (path.len >= 4 and std.mem.eql(u8, path[path.len - 4 ..], ".lua"))
+    if (std.mem.endsWith(u8, path, ".lua"))
         return .Lua;
-    if (path.len >= 5 and std.mem.eql(u8, path[path.len - 5 ..], ".luau"))
+    if (std.mem.endsWith(u8, path, ".luau"))
         return .Luau;
     return null;
 }

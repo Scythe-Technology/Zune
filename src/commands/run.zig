@@ -42,13 +42,13 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
     };
     var PROFILER: ?u64 = null;
     if (flags) |f| for (f) |flag| {
-        if (flag.len >= 9 and std.mem.eql(u8, flag[0..9], "--profile")) {
+        if (std.mem.startsWith(u8, flag[0..9], "--profile")) {
             PROFILER = 10000;
             if (flag.len > 10 and flag[9] == '=') {
                 const level = try std.fmt.parseInt(u64, flag[10..], 10);
                 PROFILER = level;
             }
-        } else if (flag.len >= 2 and std.mem.eql(u8, flag[0..2], "-O")) {
+        } else if (std.mem.startsWith(u8, flag[0..2], "-O")) {
             if (flag.len == 3 and flag[2] >= '0' and flag[2] <= '2') {
                 const level: u2 = switch (flag[2]) {
                     '0' => 0,
@@ -61,7 +61,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
                 std.debug.print("Flag: -O, Invalid Optimization level, usage: -O<N>\n", .{});
                 return;
             }
-        } else if (flag.len >= 2 and std.mem.eql(u8, flag[0..2], "-g")) {
+        } else if (std.mem.startsWith(u8, flag[0..2], "-g")) {
             if (flag.len == 3 and flag[2] >= '0' and flag[2] <= '2') {
                 const level: u2 = switch (flag[2]) {
                     '0' => 0,

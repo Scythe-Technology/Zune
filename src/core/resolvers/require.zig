@@ -132,7 +132,7 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
 
         searchResult = try Engine.findLuauFileFromPathZ(allocator, absPath, resolvedPath orelse unreachable);
     } else {
-        if ((moduleName.len < 2 or !std.mem.eql(u8, moduleName[0..2], "./")) and (moduleName.len < 3 or !std.mem.eql(u8, moduleName[0..3], "../")))
+        if (!std.mem.startsWith(u8, moduleName[0..2], "./") and !std.mem.startsWith(u8, moduleName, "../"))
             return L.Zerror("must have either \"@\", \"./\", or \"../\" prefix");
         if (L.getfield(VM.lua.upvalueindex(1), "_FILE") != .Table)
             return L.Zerror("InternalError (_FILE is invalid)");

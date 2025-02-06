@@ -348,6 +348,9 @@ const LuaTerminal = struct {
         if (std.mem.eql(u8, arg, "isTTY")) {
             L.pushboolean(data.stdin_istty and data.stdout_istty);
             return 1;
+        } else if (std.mem.eql(u8, arg, "isRawMode")) {
+            L.pushboolean(data.mode == .Virtual);
+            return 1;
         }
 
         return 0;

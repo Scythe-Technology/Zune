@@ -1725,6 +1725,11 @@ export type Terminal = {
     isTTY: boolean,
 
     --[[
+        Whether the terminal is in raw mode.
+    ]]
+    isRawMode: boolean,
+
+    --[[
         Enable raw mode.
 
         On unix: Will attempt to change terminal mode.

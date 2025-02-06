@@ -63,7 +63,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var ALWAYS_DEBUG = true;
 
     if (flags) |f| for (f) |flag| {
-        if (flag.len >= 2 and std.mem.eql(u8, flag[0..2], "-O")) {
+        if (std.mem.startsWith(u8, flag, "-O")) {
             if (flag.len == 3 and flag[2] >= '0' and flag[2] <= '2') {
                 const level: u2 = switch (flag[2]) {
                     '0' => 0,
