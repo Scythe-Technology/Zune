@@ -2,7 +2,7 @@
 --!native
 --!optimize 2
 
-local mem = require("@std/mem");
+local mem = require("../../mem");
 
 type ParserState = {
     leftover: buffer?,
@@ -136,11 +136,7 @@ local function parseUri(self: Parser, buf: buffer): ()
 
     local front = buffer.readu8(buf, self.pos);
     if (front == 0x2F) then -- '/'
-        local end_index = self.pos; do
-            while (end_index < self.size - 1 and buffer.readu8(buf, end_index) ~= 0x20) do -- ' '
-                end_index += 1;
-            end
-        end
+        local end_index = mem.indexOfCharAt(buf, self.pos, 0x20) or self.size - 1;
         local uri = buffer.readstring(buf, self.pos, end_index - self.pos);
         if (not isValidUri(uri)) then
             error("InvalidUri");
@@ -216,7 +212,6 @@ local function parseHeaders(self: Parser, buf: buffer, maxHeaders: number): ()
         return;
     end
 
-    
     local headers: {[string]: string} = if (self.state.headers_incomplete) then self.headers::{[string]: string} else {};
     local headers_count = self.state.headers_count;
     local pos = self.pos;
@@ -348,13 +343,14 @@ local function newParser(): Parser
     }
 end
 
-local STATIC_JOIN_TABLE = table.create(2);
 local function withLeftover(self: Parser, target: buffer): buffer
     if (self.state.leftover) then
-        STATIC_JOIN_TABLE[1] = mem.sliceOwned(self.state.leftover, self.pos, self.size - self.pos);
-        STATIC_JOIN_TABLE[2] = target;
+        local joined = mem.joinOwned(nil, {
+            mem.sliceOwned(self.state.leftover, self.pos, self.size - self.pos),
+            target
+        });
         self.state.leftover = nil;
-        return mem.joinOwned(nil, STATIC_JOIN_TABLE);
+        return joined;
     end
     return target
 end
