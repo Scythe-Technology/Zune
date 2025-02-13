@@ -773,7 +773,6 @@ pub fn loadLib(L: *VM.lua.State, args: []const []const u8) !void {
 
     {
         L.Zpushvalue(args);
-        L.setreadonly(-1, true);
         L.setfield(-2, "args");
     }
 
