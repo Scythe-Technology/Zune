@@ -22,8 +22,8 @@ const TCPClient = struct {
 
     pub const LuaMeta = struct {
         pub const META = "net_tcp_client_instance";
-        pub fn __index(L: *VM.lua.State) i32 {
-            L.Lchecktype(1, .Userdata);
+        pub fn __index(L: *VM.lua.State) !i32 {
+            try L.Zchecktype(1, .Userdata);
             const self = L.touserdata(Self, 1) orelse unreachable;
 
             const arg = L.Lcheckstring(2);
@@ -37,7 +37,7 @@ const TCPClient = struct {
         }
 
         pub fn __namecall(L: *VM.lua.State) !i32 {
-            L.Lchecktype(1, .Userdata);
+            try L.Zchecktype(1, .Userdata);
             const self = L.touserdata(Self, 1) orelse unreachable;
 
             const namecall = L.namecallstr() orelse return 0;
@@ -51,7 +51,7 @@ const TCPClient = struct {
             } else if (std.mem.eql(u8, namecall, "send")) {
                 if (self.stopped)
                     return 0;
-                const data = if (L.typeOf(2) == .Buffer) L.Lcheckbuffer(2) else L.Lcheckstring(2);
+                const data = try L.Zcheckvalue([]const u8, 2, null);
                 self.stream.writeAll(data) catch |err| {
                     self.stopped = true;
                     return err;
@@ -151,7 +151,7 @@ pub fn lua_tcp_client(L: *VM.lua.State) !i32 {
     var close_ref: ?i32 = null;
     errdefer if (close_ref) |ref| L.unref(ref);
 
-    L.Lchecktype(1, .Table);
+    try L.Zchecktype(1, .Table);
 
     const addressType = L.getfield(1, "address");
     if (addressType != .String)
@@ -251,7 +251,7 @@ const TCPServer = struct {
         pub const LuaMeta = struct {
             pub const META = "net_tcp_server_connection_instance";
             pub fn __namecall(L: *VM.lua.State) !i32 {
-                L.Lchecktype(1, .Userdata);
+                try L.Zchecktype(1, .Userdata);
                 const self = L.touserdata(Connection, 1) orelse unreachable;
                 if (!self.connected)
                     return 0;
@@ -260,7 +260,7 @@ const TCPServer = struct {
 
                 // TODO: prob should switch to static string map
                 if (std.mem.eql(u8, namecall, "send")) {
-                    const data = if (L.typeOf(2) == .Buffer) L.Lcheckbuffer(2) else L.Lcheckstring(2);
+                    const data = try L.Zcheckvalue([]const u8, 2, null);
                     self.conn.stream.writeAll(data) catch |err| {
                         std.debug.print("Error sending data to client: {}\n", .{err});
                         return err;
@@ -283,8 +283,8 @@ const TCPServer = struct {
 
     pub const LuaMeta = struct {
         pub const META = "net_tcp_server_instance";
-        pub fn __index(L: *VM.lua.State) i32 {
-            L.Lchecktype(1, .Userdata);
+        pub fn __index(L: *VM.lua.State) !i32 {
+            try L.Zchecktype(1, .Userdata);
             const self = L.touserdata(Self, 1) orelse unreachable;
 
             const arg = L.Lcheckstring(2);
@@ -298,7 +298,7 @@ const TCPServer = struct {
         }
 
         pub fn __namecall(L: *VM.lua.State) !i32 {
-            L.Lchecktype(1, .Userdata);
+            try L.Zchecktype(1, .Userdata);
             const self = L.touserdata(Self, 1) orelse unreachable;
 
             const namecall = L.namecallstr() orelse return 0;
@@ -481,37 +481,14 @@ pub fn lua_tcp_server(L: *VM.lua.State) !i32 {
     var close_ref: ?i32 = null;
     errdefer if (close_ref) |ref| L.unref(ref);
 
-    var address_ip: []const u8 = "127.0.0.1";
-    var port: u16 = 0;
-    var reuseAddress = false;
+    try L.Zchecktype(1, .Table);
 
-    L.Lchecktype(1, .Table);
+    const address_ip = try L.Zcheckfield(?[]const u8, 1, "address") orelse "127.0.0.1";
 
-    const addressType = L.getfield(1, "address");
-    if (!addressType.isnoneornil()) {
-        if (addressType != .String)
-            return L.Zerror("Field 'address' must be a string");
-        address_ip = L.tostring(-1) orelse unreachable;
-    }
+    const port = try L.Zcheckfield(?u16, 1, "port") orelse 0;
     L.pop(1);
 
-    const portType = L.getfield(1, "port");
-    if (!portType.isnoneornil()) {
-        if (portType != .Number)
-            return L.Zerror("Field 'port' must be a number");
-        const lport = L.tointeger(-1) orelse unreachable;
-        if (lport < 0 and lport > 65535)
-            return L.Zerror("Field 'port' must be between 0 and 65535");
-        port = @truncate(@as(u32, @intCast(lport)));
-    }
-    L.pop(1);
-
-    const reuseAddressType = L.getfield(1, "reuseAddress");
-    if (!reuseAddressType.isnoneornil()) {
-        if (reuseAddressType != .Boolean)
-            return L.Zerror("Field 'reuseAddress' must be a boolean");
-        reuseAddress = L.toboolean(-1);
-    }
+    const reuseAddress = try L.Zcheckfield(?bool, 1, "reuseAddress") orelse false;
     L.pop(1);
 
     const openType = L.getfield(1, "open");

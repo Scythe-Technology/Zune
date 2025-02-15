@@ -36,8 +36,8 @@ pub const LuaWebSocket = struct {
 
 pub const LuaMeta = struct {
     pub const WEBSOCKET_META = "net_server_ws_instance";
-    pub fn websocket__index(L: *VM.lua.State) i32 {
-        L.Lchecktype(1, .Userdata);
+    pub fn websocket__index(L: *VM.lua.State) !i32 {
+        try L.Zchecktype(1, .Userdata);
         const data = L.touserdata(LuaWebSocket, 1) orelse unreachable;
 
         const arg = L.Lcheckstring(2);
@@ -51,7 +51,7 @@ pub const LuaMeta = struct {
         return 0;
     }
     pub fn websocket__namecall(L: *VM.lua.State) !i32 {
-        L.Lchecktype(1, .Userdata);
+        try L.Zchecktype(1, .Userdata);
         const data = L.touserdata(LuaWebSocket, 1) orelse unreachable;
 
         const namecall = L.namecallstr() orelse return 0;
@@ -71,7 +71,7 @@ pub const LuaMeta = struct {
             }
             ctx.closeConnection(L, id, true);
         } else if (std.mem.eql(u8, namecall, "send")) {
-            const message = if (L.typeOf(2) == .Buffer) L.Lcheckbuffer(2) else L.Lcheckstring(2);
+            const message = try L.Zcheckvalue([]const u8, 2, null);
             if (ctx.websockets[id] != null and ctx.connections[id] != null) {
                 const connection = ctx.connections[id] orelse unreachable;
                 var socket = WebSocket.init(luau.getallocator(L), connection.stream, false);
@@ -83,8 +83,8 @@ pub const LuaMeta = struct {
     }
 
     pub const SERVER_META = "net_server_instance";
-    pub fn server__index(L: *VM.lua.State) i32 {
-        L.Lchecktype(1, .Userdata);
+    pub fn server__index(L: *VM.lua.State) !i32 {
+        try L.Zchecktype(1, .Userdata);
         const self = L.touserdata(Self, 1) orelse unreachable;
 
         const arg = L.Lcheckstring(2);
@@ -98,7 +98,7 @@ pub const LuaMeta = struct {
     }
 
     pub fn server__namecall(L: *VM.lua.State) !i32 {
-        L.Lchecktype(1, .Userdata);
+        try L.Zchecktype(1, .Userdata);
         const self = L.touserdata(Self, 1) orelse unreachable;
 
         const namecall = L.namecallstr() orelse return 0;
@@ -772,45 +772,23 @@ pub fn prep(
 pub fn lua_serve(L: *VM.lua.State) !i32 {
     const scheduler = Scheduler.getScheduler(L);
 
-    L.Lchecktype(1, .Table);
+    try L.Zchecktype(1, .Table);
 
     var addressStr: []const u8 = "127.0.0.1";
     var reuseAddress: bool = false;
 
-    if (L.getfield(1, "port") != .Number)
-        return L.Zerror("Field 'port' must be a number");
-    const port = L.tointeger(-1) orelse unreachable;
-    if (port < 0 and port > 65535)
-        return L.Zerror("Field 'port' must be between 0 and 65535");
+    const port = try L.Zcheckfield(u16, 1, "port");
     L.pop(1);
 
-    const max_body_size_type = L.getfield(1, "maxBodySize");
-    if (!max_body_size_type.isnoneornil() and max_body_size_type != .Number)
-        return L.Zerror("Field 'maxBodySize' must be a number");
-    const body_size = L.Loptinteger(-1, 4096);
-    if (body_size < 0)
-        return L.Zerror("Field 'maxBodySize' cannot be less than 0");
-    const max_body_size: usize = @intCast(body_size);
+    const max_body_size: usize = @intCast(try L.Zcheckfield(?u32, 1, "maxBodySize") orelse 4096);
     L.pop(1);
 
-    const addressType = L.getfield(1, "address");
-    if (!addressType.isnoneornil()) {
-        if (addressType != .String)
-            return L.Zerror("Expected field 'address' to be a string");
-        addressStr = L.tostring(-1) orelse unreachable;
-    }
-    L.pop(1);
-
-    const reuseAddressType = L.getfield(1, "reuseAddress");
-    if (!reuseAddressType.isnoneornil()) {
-        if (reuseAddressType != .Boolean)
-            return L.Zerror("Expected field 'reuseAddress' to be a boolean");
-        reuseAddress = L.toboolean(-1);
-    }
+    addressStr = try L.Zcheckfield(?[]const u8, 1, "address") orelse addressStr;
+    reuseAddress = try L.Zcheckfield(?bool, 1, "reuseAddress") orelse reuseAddress;
     L.pop(1);
 
     if (L.getfield(1, "request") != .Function)
-        return L.Zerror("Expected field 'request' to be a function");
+        return L.Zerror("invalid field 'request' (expected function)");
     const request_fn_ref = L.ref(-1) orelse unreachable;
     errdefer L.unref(request_fn_ref);
     L.pop(1);
@@ -865,7 +843,7 @@ pub fn lua_serve(L: *VM.lua.State) !i32 {
         L,
         scheduler,
         addressStr,
-        @intCast(port),
+        port,
         reuseAddress,
         request_fn_ref,
         max_body_size,

@@ -282,8 +282,8 @@ pub const WriteAsyncContext = struct {
     }
 };
 
-pub fn __index(L: *VM.lua.State) i32 {
-    L.Lchecktype(1, .Userdata);
+pub fn __index(L: *VM.lua.State) !i32 {
+    try L.Zchecktype(1, .Userdata);
     // const index = L.Lcheckstring(2);
     // const ptr = L.touserdata(FileObject, 1) catch return 0;
 
@@ -291,7 +291,7 @@ pub fn __index(L: *VM.lua.State) i32 {
 }
 
 fn write(self: *File, L: *VM.lua.State) !i32 {
-    const data = if (L.isbuffer(2)) L.Lcheckbuffer(2) else L.Lcheckstring(2);
+    const data = try L.Zcheckvalue([]const u8, 2, null);
 
     const pos = try self.handle.getPos();
 
@@ -299,7 +299,7 @@ fn write(self: *File, L: *VM.lua.State) !i32 {
 }
 
 fn writeSync(self: *File, L: *VM.lua.State) !i32 {
-    const data = if (L.isbuffer(2)) L.Lcheckbuffer(2) else L.Lcheckstring(2);
+    const data = try L.Zcheckvalue([]const u8, 2, null);
 
     try self.handle.writeAll(data);
 
@@ -307,7 +307,7 @@ fn writeSync(self: *File, L: *VM.lua.State) !i32 {
 }
 
 fn append(self: *File, L: *VM.lua.State) !i32 {
-    const string = if (L.isbuffer(2)) L.Lcheckbuffer(2) else L.Lcheckstring(2);
+    const string = try L.Zcheckvalue([]const u8, 2, null);
 
     try self.handle.seekFromEnd(0);
     try self.handle.writeAll(string);

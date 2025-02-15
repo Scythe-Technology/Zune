@@ -41,8 +41,8 @@ const LuaWebSocketClient = struct {
 
 pub const LuaMeta = struct {
     pub const WEBSOCKET_META = "net_client_ws_instance";
-    pub fn __index(L: *VM.lua.State) i32 {
-        L.Lchecktype(1, .Userdata);
+    pub fn __index(L: *VM.lua.State) !i32 {
+        try L.Zchecktype(1, .Userdata);
         const data = L.touserdata(LuaWebSocketClient, 1) orelse unreachable;
 
         const arg = L.Lcheckstring(2);
@@ -56,7 +56,7 @@ pub const LuaMeta = struct {
     }
 
     pub fn __namecall(L: *VM.lua.State) !i32 {
-        L.Lchecktype(1, .Userdata);
+        try L.Zchecktype(1, .Userdata);
         const data = L.touserdata(LuaWebSocketClient, 1) orelse unreachable;
 
         const namecall = L.namecallstr() orelse return 0;
@@ -81,7 +81,7 @@ pub const LuaMeta = struct {
                 ctx.establishedLua = null;
             }
         } else if (std.mem.eql(u8, namecall, "send")) {
-            const message = if (L.typeOf(2) == .Buffer) L.Lcheckbuffer(2) else L.Lcheckstring(2);
+            const message = try L.Zcheckvalue([]const u8, 2, null);
             var socket = WebSocket.initV(luau.getallocator(L), stream, true);
             defer socket.deinit();
             _ = socket.writeText(message) catch |err| return L.Zerrorf("Failed to write to websocket ({s})", .{@errorName(err)});
@@ -476,7 +476,7 @@ pub fn lua_websocket(L: *VM.lua.State) !i32 {
     const scheduler = Scheduler.getScheduler(L);
     const allocator = luau.getallocator(L);
 
-    const uriString = L.Lcheckstring(1);
+    const uriString = try L.Zcheckvalue([:0]const u8, 1, null);
 
     var timeout: ?f64 = 30;
     var protocols = std.ArrayList([]const u8).init(allocator);
@@ -488,7 +488,7 @@ pub fn lua_websocket(L: *VM.lua.State) !i32 {
     var message_fn_ref: ?i32 = null;
     errdefer if (message_fn_ref) |ref| L.unref(ref);
 
-    L.Lchecktype(2, .Table);
+    try L.Zchecktype(2, .Table);
     const openType = L.getfield(2, "open");
     if (!openType.isnoneornil()) {
         if (openType != .Function)

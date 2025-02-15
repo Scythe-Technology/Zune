@@ -174,7 +174,7 @@ fn decodeMap(L: *VM.lua.State, map: yaml.Map) void {
 
 pub fn lua_decode(L: *VM.lua.State) !i32 {
     const allocator = luau.getallocator(L);
-    const string = L.Lcheckstring(1);
+    const string = try L.Zcheckvalue([]const u8, 1, null);
     if (string.len == 0) {
         L.pushnil();
         return 1;

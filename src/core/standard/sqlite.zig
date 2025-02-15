@@ -21,8 +21,8 @@ const LuaStatement = struct {
     pub const META = "sqlite_statement_instance";
 
     // Placeholder
-    pub fn __index(L: *VM.lua.State) i32 {
-        L.Lchecktype(1, .Userdata);
+    pub fn __index(L: *VM.lua.State) !i32 {
+        try L.Zchecktype(1, .Userdata);
         return 0;
     }
 
@@ -63,7 +63,7 @@ const LuaStatement = struct {
     }
 
     pub fn __namecall(L: *VM.lua.State) !i32 {
-        L.Lchecktype(1, .Userdata);
+        try L.Zchecktype(1, .Userdata);
         const ptr = L.touserdatatagged(LuaStatement, 1, tagged.SQLITE_STATEMENT) orelse unreachable;
         const namecall = L.namecallstr() orelse return 0;
         const allocator = luau.getallocator(L);
@@ -180,8 +180,8 @@ const LuaDatabase = struct {
     pub const META = "sqlite_database_instance";
 
     // Placeholder
-    pub fn __index(L: *VM.lua.State) i32 {
-        L.Lchecktype(1, .Userdata);
+    pub fn __index(L: *VM.lua.State) !i32 {
+        try L.Zchecktype(1, .Userdata);
         return 0;
     }
 
@@ -293,7 +293,7 @@ const LuaDatabase = struct {
     }
 
     pub fn __namecall(L: *VM.lua.State) !i32 {
-        L.Lchecktype(1, .Userdata);
+        try L.Zchecktype(1, .Userdata);
         const ptr = L.touserdata(LuaDatabase, 1) orelse unreachable;
         const namecall = L.namecallstr() orelse return 0;
 
@@ -303,7 +303,7 @@ const LuaDatabase = struct {
         if (std.mem.eql(u8, namecall, "query")) {
             if (ptr.closed)
                 return L.Zerror("Database is closed");
-            const query = L.Lcheckstring(2);
+            const query = try L.Zcheckvalue([]const u8, 2, null);
             try ptr.statements.ensureTotalCapacity(ptr.statements.items.len + 1);
             const statement = ptr.db.prepare(query) catch |err| switch (err) {
                 error.OutOfMemory => return err,
@@ -323,7 +323,7 @@ const LuaDatabase = struct {
         } else if (std.mem.eql(u8, namecall, "exec")) {
             if (ptr.closed)
                 return L.Zerror("Database is closed");
-            const query = L.Lcheckstring(2);
+            const query = try L.Zcheckvalue([]const u8, 2, null);
 
             const stmt = ptr.db.prepare(query) catch |err| switch (err) {
                 error.OutOfMemory => return err,
@@ -342,7 +342,7 @@ const LuaDatabase = struct {
                 else => return L.Zerrorf("SQLite Error ({}): {s}", .{ err, ptr.db.getErrorMessage() }),
             };
         } else if (std.mem.eql(u8, namecall, "transaction")) {
-            L.Lchecktype(2, .Function);
+            try L.Zchecktype(2, .Function);
             const kind_str = L.tostring(3);
             const kind: TransactionKind = if (kind_str) |str|
                 TransactionMap.get(str) orelse return L.Zerrorf("Unknown transaction kind: {s}.", .{str})

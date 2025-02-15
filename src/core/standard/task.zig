@@ -19,7 +19,7 @@ fn task_wait(L: *VM.lua.State) i32 {
 
 fn task_cancel(L: *VM.lua.State) !i32 {
     const scheduler = Scheduler.getScheduler(L);
-    L.Lchecktype(1, .Thread);
+    try L.Zchecktype(1, .Thread);
     const thread = L.tothread(1) orelse return L.Zerror("Expected thread");
     scheduler.cancelThread(thread);
     const status = L.costatus(thread);

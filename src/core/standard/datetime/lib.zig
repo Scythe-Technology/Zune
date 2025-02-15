@@ -16,7 +16,7 @@ const LuaDatetime = struct {
     pub const META = "datetime_instance";
 
     pub fn __namecall(L: *VM.lua.State) !i32 {
-        L.Lchecktype(1, .Userdata);
+        try L.Zchecktype(1, .Userdata);
         const ptr = L.touserdata(Time, 1) orelse unreachable;
 
         const namecall = L.namecallstr() orelse return 0;
@@ -108,8 +108,8 @@ const LuaDatetime = struct {
         return 0;
     }
 
-    pub fn __index(L: *VM.lua.State) i32 {
-        L.Lchecktype(1, .Userdata);
+    pub fn __index(L: *VM.lua.State) !i32 {
+        try L.Zchecktype(1, .Userdata);
         const ptr = L.touserdata(Time, 1) orelse unreachable;
 
         const index = L.Lcheckstring(2);

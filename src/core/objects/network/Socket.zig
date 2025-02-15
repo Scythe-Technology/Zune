@@ -23,10 +23,10 @@ fn closesocket(socket: std.posix.socket_t) void {
     }
 }
 
-pub fn __index(L: *VM.lua.State) i32 {
-    L.Lchecktype(1, .Userdata);
+pub fn __index(L: *VM.lua.State) !i32 {
+    try L.Zchecktype(1, .Userdata);
     const ptr = L.touserdatatagged(Socket, 1, tagged.NET_SOCKET) orelse return 0;
-    const index = L.Lcheckstring(2);
+    const index = try L.Zcheckvalue([:0]const u8, 2, null);
 
     if (std.mem.eql(u8, index, "open")) {
         L.pushboolean(ptr.open);
@@ -226,7 +226,7 @@ const ConnectContext = struct {
 fn sendAsync(self: *Socket, L: *VM.lua.State) !i32 {
     const allocator = luau.getallocator(L);
     const scheduler = Scheduler.getScheduler(L);
-    const buf = if (L.typeOf(2) == .Buffer) L.Lcheckbuffer(2) else L.Lcheckstring(2);
+    const buf = try L.Zcheckvalue([]const u8, 2, null);
     const offset = L.Loptunsigned(3, 0);
 
     if (offset >= buf.len)
@@ -261,8 +261,8 @@ fn sendMsgAsync(self: *Socket, L: *VM.lua.State) !i32 {
     const port = L.Lcheckunsigned(2);
     if (port > std.math.maxInt(u16))
         return L.Zerror("PortOutOfRange");
-    const address_str = L.Lcheckstring(3);
-    const data = if (L.typeOf(4) == .Buffer) L.Lcheckbuffer(4) else L.Lcheckstring(4);
+    const address_str = try L.Zcheckvalue([:0]const u8, 3, null);
+    const data = try L.Zcheckvalue([]const u8, 4, null);
     const offset = L.Loptunsigned(5, 0);
     if (offset >= data.len)
         return L.Zerror("Offset is out of bounds");
@@ -429,7 +429,7 @@ fn connectAsync(self: *Socket, L: *VM.lua.State) !i32 {
     const allocator = luau.getallocator(L);
     const scheduler = Scheduler.getScheduler(L);
 
-    const address_str = L.Lcheckstring(2);
+    const address_str = try L.Zcheckvalue([:0]const u8, 2, null);
     const port = L.Lcheckunsigned(3);
     if (port > std.math.maxInt(u16))
         return L.Zerror("PortOutOfRange");
@@ -467,7 +467,7 @@ fn listen(self: *Socket, L: *VM.lua.State) !i32 {
 }
 
 fn bindIp(self: *Socket, L: *VM.lua.State) !i32 {
-    const address_ip = L.Lcheckstring(2);
+    const address_ip = try L.Zcheckvalue([:0]const u8, 2, null);
     const port = L.Lcheckunsigned(3);
     if (port > std.math.maxInt(u16))
         return L.Zerror("PortOutOfRange");
@@ -493,12 +493,11 @@ fn getName(self: *Socket, L: *VM.lua.State) !i32 {
 }
 
 fn setOption(self: *Socket, L: *VM.lua.State) !i32 {
-    const level = L.Lcheckinteger(2);
-    const optname = L.Lcheckunsigned(3);
+    const level = try L.Zcheckvalue(i32, 2, null);
+    const optname = try L.Zcheckvalue(u32, 3, null);
     const value = switch (L.typeOf(4)) {
         .Boolean => &std.mem.toBytes(@as(c_int, 1)),
-        .Buffer => L.Lcheckbuffer(4),
-        .String => L.Lcheckstring(4),
+        .Buffer, .String => try L.Zcheckvalue([]const u8, 4, null),
         else => return L.Zerror("Invalid value type"),
     };
     try std.posix.setsockopt(

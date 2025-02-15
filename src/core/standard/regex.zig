@@ -43,13 +43,13 @@ const LuaRegex = struct {
     pub const META = "regex_instance";
 
     pub fn __namecall(L: *VM.lua.State) !i32 {
-        L.Lchecktype(1, .Userdata);
+        try L.Zchecktype(1, .Userdata);
         var r_ptr = L.touserdata(Regex, 1) orelse unreachable;
 
         const namecall = L.namecallstr() orelse return 0;
 
         if (std.mem.eql(u8, namecall, "match")) {
-            const input = L.Lcheckstring(2);
+            const input = try L.Zcheckvalue([]const u8, 2, null);
             var i: i32 = 1;
             if (try r_ptr.match(input)) |match| {
                 defer match.deinit();
@@ -66,7 +66,7 @@ const LuaRegex = struct {
                 return 1;
             }
         } else if (std.mem.eql(u8, namecall, "search")) {
-            const input = L.Lcheckstring(2);
+            const input = try L.Zcheckvalue([]const u8, 2, null);
             var i: i32 = 1;
             if (try r_ptr.search(input)) |match| {
                 defer match.deinit();
@@ -83,7 +83,7 @@ const LuaRegex = struct {
                 return 1;
             }
         } else if (std.mem.eql(u8, namecall, "captures")) {
-            const input = L.Lcheckstring(2);
+            const input = try L.Zcheckvalue([]const u8, 2, null);
             const global = L.Loptboolean(3, false);
 
             var index: usize = 0;
@@ -94,29 +94,29 @@ const LuaRegex = struct {
 
             return 1;
         } else if (std.mem.eql(u8, namecall, "isMatch")) {
-            const input = L.Lcheckstring(2);
+            const input = try L.Zcheckvalue([]const u8, 2, null);
             L.pushboolean(r_ptr.isMatch(input));
             return 1;
         } else if (std.mem.eql(u8, namecall, "format")) {
             const allocator = luau.getallocator(L);
-            const input = L.Lcheckstring(2);
-            const fmt = L.Lcheckstring(3);
+            const input = try L.Zcheckvalue([:0]const u8, 2, null);
+            const fmt = try L.Zcheckvalue([:0]const u8, 3, null);
             const formatted = try r_ptr.allocFormat(allocator, input, fmt);
             defer allocator.free(formatted);
             L.pushlstring(formatted);
             return 1;
         } else if (std.mem.eql(u8, namecall, "replace")) {
             const allocator = luau.getallocator(L);
-            const input = L.Lcheckstring(2);
-            const fmt = L.Lcheckstring(3);
+            const input = try L.Zcheckvalue([:0]const u8, 2, null);
+            const fmt = try L.Zcheckvalue([:0]const u8, 3, null);
             const formatted = try r_ptr.allocReplace(allocator, input, fmt);
             defer allocator.free(formatted);
             L.pushlstring(formatted);
             return 1;
         } else if (std.mem.eql(u8, namecall, "replaceAll")) {
             const allocator = luau.getallocator(L);
-            const input = L.Lcheckstring(2);
-            const fmt = L.Lcheckstring(3);
+            const input = try L.Zcheckvalue([:0]const u8, 2, null);
+            const fmt = try L.Zcheckvalue([:0]const u8, 3, null);
             const formatted = try r_ptr.allocReplaceAll(allocator, input, fmt);
             defer allocator.free(formatted);
             L.pushlstring(formatted);
@@ -143,7 +143,7 @@ fn regex_new(L: *VM.lua.State) !i32 {
         else => return L.Zerrorf("Unknown flag: {c}", .{f}),
     };
 
-    const r = try Regex.compile(luau.getallocator(L), L.Lcheckstring(1), if (flag == 0) null else flag);
+    const r = try Regex.compile(luau.getallocator(L), try L.Zcheckvalue([]const u8, 1, null), if (flag == 0) null else flag);
 
     const r_ptr = L.newuserdatadtor(Regex, LuaRegex.__dtor);
 

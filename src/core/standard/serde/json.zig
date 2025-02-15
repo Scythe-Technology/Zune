@@ -200,10 +200,10 @@ pub fn LuaEncoder(comptime json_kind: JsonKind) fn (L: *VM.lua.State) anyerror!i
 
             const config_type = L.typeOf(2);
             if (!config_type.isnoneornil()) {
-                L.Lchecktype(2, .Table);
+                try L.Zchecktype(2, .Table);
                 const indent_type = L.getfield(2, "prettyIndent");
                 if (!indent_type.isnoneornil()) {
-                    L.Lchecktype(-1, .Number);
+                    try L.Zchecktype(-1, .Number);
                     kind = switch (L.tointeger(-1) orelse unreachable) {
                         0 => json.JsonIndent.NO_LINE,
                         1 => json.JsonIndent.SPACES_2,
@@ -283,10 +283,10 @@ pub fn LuaDecoder(comptime json_kind: JsonKind) fn (L: *VM.lua.State) anyerror!i
 
             const config_type = L.typeOf(2);
             if (!config_type.isnoneornil()) {
-                L.Lchecktype(2, .Table);
+                try L.Zchecktype(2, .Table);
                 const preserve_null_type = L.getfield(2, "preserveNull");
                 if (!preserve_null_type.isnoneornil()) {
-                    L.Lchecktype(-1, .Boolean);
+                    try L.Zchecktype(-1, .Boolean);
                     preserve_null = L.toboolean(-1);
                 }
                 L.pop(1);

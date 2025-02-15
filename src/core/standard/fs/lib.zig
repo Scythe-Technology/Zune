@@ -69,7 +69,7 @@ fn fs_readDir(L: *VM.lua.State) !i32 {
 
 fn fs_writeFileAsync(L: *VM.lua.State) !i32 {
     const path = L.Lcheckstring(1);
-    const data = if (L.isbuffer(2)) L.Lcheckbuffer(2) else L.Lcheckstring(2);
+    const data = try L.Zcheckvalue([]const u8, 2, null);
 
     const file = try fs.cwd().createFile(path, .{});
     errdefer file.close();
@@ -79,7 +79,7 @@ fn fs_writeFileAsync(L: *VM.lua.State) !i32 {
 
 fn fs_writeFileSync(L: *VM.lua.State) !i32 {
     const path = L.Lcheckstring(1);
-    const data = if (L.isbuffer(2)) L.Lcheckbuffer(2) else L.Lcheckstring(2);
+    const data = try L.Zcheckvalue([]const u8, 2, null);
     try fs.cwd().writeFile(fs.Dir.WriteFileOptions{
         .sub_path = path,
         .data = data,
@@ -311,13 +311,13 @@ const WatchObject = struct {
 const LuaWatch = struct {
     pub const META = "fs_watch_instance";
 
-    pub fn __index(L: *VM.lua.State) i32 {
-        L.Lchecktype(1, .Userdata);
+    pub fn __index(L: *VM.lua.State) !i32 {
+        try L.Zchecktype(1, .Userdata);
         return 0;
     }
 
     pub fn __namecall(L: *VM.lua.State) !i32 {
-        L.Lchecktype(1, .Userdata);
+        try L.Zchecktype(1, .Userdata);
         const obj = L.touserdata(WatchObject.Lua, 1) orelse unreachable;
 
         const namecall = L.namecallstr() orelse return 0;
@@ -406,7 +406,7 @@ fn fs_openFile(L: *VM.lua.State) !i32 {
 
     const optsType = L.typeOf(2);
     if (!optsType.isnoneornil()) {
-        L.Lchecktype(2, .Table);
+        try L.Zchecktype(2, .Table);
         const modeType = L.getfield(2, "mode");
         if (!modeType.isnoneornil()) {
             if (modeType != .String) return OpenError.InvalidMode;
@@ -442,7 +442,7 @@ fn fs_createFile(L: *VM.lua.State) !i32 {
 
     const optsType = L.typeOf(2);
     if (!optsType.isnoneornil()) {
-        L.Lchecktype(2, .Table);
+        try L.Zchecktype(2, .Table);
         const modeType = L.getfield(2, "exclusive");
         if (!modeType.isnoneornil()) {
             if (modeType != .Boolean)
@@ -465,7 +465,7 @@ fn fs_createFile(L: *VM.lua.State) !i32 {
 fn fs_watch(L: *VM.lua.State) !i32 {
     const scheduler = Scheduler.getScheduler(L);
     const path = L.Lcheckstring(1);
-    L.Lchecktype(2, .Function);
+    try L.Zchecktype(2, .Function);
 
     const allocator = luau.getallocator(L);
 

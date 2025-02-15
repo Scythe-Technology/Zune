@@ -382,7 +382,7 @@ const LuaPointer = struct {
     }
 
     pub fn method_offset(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
-        const offset: usize = @intCast(L.Lcheckinteger(2));
+        const offset: usize = @intCast(try L.Zcheckvalue(i32, 2, null));
         if (ptr.ptr == null) {
             _ = try LuaPointer.newStaticPtr(L, @ptrFromInt(offset), false);
             return 1;
@@ -423,7 +423,7 @@ const LuaPointer = struct {
                 else => return L.Zerror("Invalid type (expected buffer or userdata)"),
             }
         };
-        const len: usize = @intCast(L.Lcheckinteger(5));
+        const len: usize = @intCast(try L.Zcheckvalue(i32, 5, null));
 
         if (dest_bounds) |size| if (size < dest_offset + len)
             return L.Zerror("Target OutOfBounds");
@@ -443,8 +443,8 @@ const LuaPointer = struct {
         if (ptr.destroyed or ptr.ptr == null)
             return error.NoAddressAvailable;
 
-        const dest_offset: usize = @intCast(L.Lcheckinteger(2));
-        const src_offset: usize = @intFromFloat(L.Lchecknumber(4));
+        const dest_offset: usize = @intCast(try L.Zcheckvalue(i32, 2, null));
+        const src_offset: usize = @intFromFloat(try L.Zcheckvalue(f64, 4, null));
         var src_bounds: ?usize = null;
         const src: [*]u8 = blk: {
             switch (L.typeOf(3)) {
@@ -463,7 +463,7 @@ const LuaPointer = struct {
                 else => return L.Zerror("Invalid type (expected buffer or userdata)"),
             }
         };
-        const len: usize = @intCast(L.Lcheckinteger(5));
+        const len: usize = @intCast(try L.Zcheckvalue(i32, 5, null));
 
         if (ptr.size) |size| if (size < dest_offset + len)
             return L.Zerror("Target OutOfBounds");
@@ -622,7 +622,7 @@ const LuaPointer = struct {
     }
 
     pub fn __namecall(L: *VM.lua.State) !i32 {
-        L.Lchecktype(1, .Userdata);
+        try L.Zchecktype(1, .Userdata);
         const ptr = L.touserdata(LuaPointer, 1) orelse return L.Zerror("Invalid pointer");
 
         const namecall = L.namecallstr() orelse return 0;
@@ -663,7 +663,7 @@ const LuaPointer = struct {
     }
 
     pub fn __eq(L: *VM.lua.State) !i32 {
-        L.Lchecktype(1, .Userdata);
+        try L.Zchecktype(1, .Userdata);
         const ptr1 = L.touserdata(LuaPointer, 1) orelse return L.Zerror("Invalid pointer");
 
         switch (L.typeOf(2)) {
@@ -685,7 +685,7 @@ const LuaPointer = struct {
     }
 
     pub fn __tostring(L: *VM.lua.State) !i32 {
-        L.Lchecktype(1, .Userdata);
+        try L.Zchecktype(1, .Userdata);
         const ptr = value(L, 1) orelse return error.Failed;
 
         const allocator = luau.getallocator(L);
@@ -723,7 +723,7 @@ const LuaHandle = struct {
     open: bool,
 
     pub fn __namecall(L: *VM.lua.State) !i32 {
-        L.Lchecktype(1, .Userdata);
+        try L.Zchecktype(1, .Userdata);
         const ptr = L.touserdata(LuaHandle, 1) orelse return L.Zerror("Invalid handle");
 
         const namecall = L.namecallstr() orelse return 0;
@@ -735,7 +735,7 @@ const LuaHandle = struct {
         if (std.mem.eql(u8, namecall, "close")) {
             ptr.__dtor();
         } else if (std.mem.eql(u8, namecall, "getSymbol")) {
-            const symbol = L.Lcheckstring(2);
+            const symbol = try L.Zcheckvalue([:0]const u8, 2, null);
             const sym_ptr = ptr.lib.lookup(*anyopaque, symbol) orelse {
                 L.pushnil();
                 return 1;
@@ -802,14 +802,14 @@ const LuaStructType = struct {
     }
 
     pub fn method_offset(ptr: *LuaStructType, L: *VM.lua.State) !i32 {
-        const field = L.Lcheckstring(2);
+        const field = try L.Zcheckvalue([]const u8, 2, null);
         const order = ptr.fields.getIndex(field) orelse return L.Zerrorf("Unknown field: {s}", .{field});
         L.pushinteger(@intCast(ptr.type.offsets.?[order]));
         return 1;
     }
 
     pub fn method_new(ptr: *LuaStructType, L: *VM.lua.State) !i32 {
-        L.Lchecktype(2, .Table);
+        try L.Zchecktype(2, .Table);
         const allocator = luau.getallocator(L);
 
         const mem = try allocator.alloc(u8, ptr.type.size);
@@ -856,7 +856,7 @@ const LuaStructType = struct {
     }
 
     pub fn __namecall(L: *VM.lua.State) !i32 {
-        L.Lchecktype(1, .Userdata);
+        try L.Zchecktype(1, .Userdata);
         const ptr = L.touserdata(LuaStructType, 1) orelse return L.Zerror("Invalid struct");
 
         const namecall = L.namecallstr() orelse return 0;
@@ -1048,7 +1048,7 @@ fn lua_ffi_pushmem(L: *VM.lua.State, ptr: [*c]u8, size: usize) void {
 }
 
 fn ffi_struct(L: *VM.lua.State) !i32 {
-    L.Lchecktype(1, .Table);
+    try L.Zchecktype(1, .Table);
 
     const allocator = luau.getallocator(L);
 
@@ -1346,11 +1346,11 @@ fn dynamicLoadImport(source: *std.ArrayList(u8), state: *tinycc.TCCState, return
 }
 
 fn ffi_dlopen(L: *VM.lua.State) !i32 {
-    const path = L.Lcheckstring(1);
+    const path = try L.Zcheckvalue([]const u8, 1, null);
 
     const allocator = luau.getallocator(L);
 
-    L.Lchecktype(2, .Table);
+    try L.Zchecktype(2, .Table);
 
     var func_map = std.StringArrayHashMap(SymbolFunction).init(allocator);
     defer func_map.deinit();
@@ -1602,8 +1602,8 @@ fn ffi_closure_inner(cif: *LuaClosure.CallInfo, extern_args: [*]?*anyopaque, ret
 }
 
 fn ffi_closure(L: *VM.lua.State) !i32 {
-    L.Lchecktype(1, .Table);
-    L.Lchecktype(2, .Function);
+    try L.Zchecktype(1, .Table);
+    try L.Zchecktype(2, .Function);
 
     const allocator = luau.getallocator(L);
 
@@ -1859,7 +1859,7 @@ const FFIFunction = struct {
 };
 
 fn ffi_fn(L: *VM.lua.State) !i32 {
-    L.Lchecktype(1, .Table);
+    try L.Zchecktype(1, .Table);
     const src = LuaPointer.value(L, 2) orelse return error.Failed;
     switch (src.type) {
         .Allocated => return error.PointerNotCallable,
@@ -1993,7 +1993,7 @@ fn ffi_copy(L: *VM.lua.State) !i32 {
             else => return L.Zerror("Invalid type (expected buffer or userdata)"),
         }
     };
-    const len: usize = @intCast(L.Lcheckinteger(5));
+    const len: usize = @intCast(try L.Zcheckvalue(i32, 5, null));
 
     if (target_bounds) |bounds| if (target_offset + len > bounds)
         return L.Zerror("Target OutOfBounds");

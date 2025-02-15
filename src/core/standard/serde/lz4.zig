@@ -17,7 +17,7 @@ pub fn lua_frame_compress(L: *VM.lua.State) !i32 {
     var level: u32 = 4;
 
     if (!options.isnoneornil()) {
-        L.Lchecktype(2, .Table);
+        try L.Zchecktype(2, .Table);
         const levelType = L.getfield(2, "level");
         if (!levelType.isnoneornil()) {
             if (levelType != .Number)
@@ -82,8 +82,6 @@ pub fn lua_compress(L: *VM.lua.State) !i32 {
     const is_buffer = L.typeOf(1) == .Buffer;
     const string = if (is_buffer) L.Lcheckbuffer(1) else L.Lcheckstring(1);
 
-    // std.Thread.Pool.spawn()
-
     const compressed = try lz4.Standard.compress(allocator, string);
     defer allocator.free(compressed);
 
@@ -98,7 +96,7 @@ pub fn lua_decompress(L: *VM.lua.State) !i32 {
     const is_buffer = L.typeOf(1) == .Buffer;
 
     const string = if (is_buffer) L.Lcheckbuffer(1) else L.Lcheckstring(1);
-    const sizeHint = L.Lcheckinteger(2);
+    const sizeHint = try L.Zcheckvalue(i32, 2, null);
 
     const decompressed = try lz4.Standard.decompress(allocator, string, @intCast(sizeHint));
     defer allocator.free(decompressed);

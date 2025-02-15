@@ -19,8 +19,8 @@ stopped: bool,
 
 pub const LuaMeta = struct {
     pub const META = "net_udp_instance";
-    pub fn __index(L: *VM.lua.State) i32 {
-        L.Lchecktype(1, .Userdata);
+    pub fn __index(L: *VM.lua.State) !i32 {
+        try L.Zchecktype(1, .Userdata);
         const self = L.touserdata(Self, 1) orelse unreachable;
 
         const arg = L.Lcheckstring(2);
@@ -37,7 +37,7 @@ pub const LuaMeta = struct {
     }
 
     pub fn __namecall(L: *VM.lua.State) !i32 {
-        L.Lchecktype(1, .Userdata);
+        try L.Zchecktype(1, .Userdata);
         const self = L.touserdata(Self, 1) orelse unreachable;
 
         const namecall = L.namecallstr() orelse return 0;
@@ -54,11 +54,9 @@ pub const LuaMeta = struct {
         } else if (std.mem.eql(u8, namecall, "send")) {
             if (self.stopped)
                 return 0;
-            const data = if (L.typeOf(2) == .Buffer) L.Lcheckbuffer(2) else L.Lcheckstring(2);
-            const port = L.Lcheckinteger(3);
-            if (port < 0 and port > 65535)
-                return L.Zerror("'port' must be between 0 and 65535");
-            const address_name = L.Lcheckstring(4);
+            const data = try L.Zcheckvalue([]const u8, 2, null);
+            const port = try L.Zcheckvalue(u16, 3, null);
+            const address_name = try L.Zcheckvalue([]const u8, 4, null);
             const address = try std.net.Address.parseIp4(address_name, @intCast(port));
 
             _ = try std.posix.sendto(
@@ -135,29 +133,14 @@ pub fn dtor(ctx: *Self, L: *VM.lua.State, _: *Scheduler) void {
 
 pub fn lua_udpsocket(L: *VM.lua.State) !i32 {
     const scheduler = Scheduler.getScheduler(L);
-    var address_ip: []const u8 = "127.0.0.1";
-    var port: u16 = 0;
     var data_ref: ?i32 = null;
     errdefer if (data_ref) |ref| L.unref(ref);
 
-    L.Lchecktype(1, .Table);
-    const addressType = L.getfield(1, "address");
-    if (!addressType.isnoneornil()) {
-        if (addressType != .String)
-            return L.Zerror("Field 'address' must be a string");
-        address_ip = L.tostring(-1) orelse unreachable;
-    }
-    L.pop(1);
+    try L.Zchecktype(1, .Table);
 
-    const portType = L.getfield(1, "port");
-    if (!portType.isnoneornil()) {
-        if (portType != .Number)
-            return L.Zerror("Field 'port' must be a number");
-        const lport = L.tointeger(-1) orelse unreachable;
-        if (lport < 0 and lport > 65535)
-            return L.Zerror("Field 'port' must be between 0 and 65535");
-        port = @truncate(@as(u32, @intCast(lport)));
-    }
+    const address_ip = try L.Zcheckfield(?[]const u8, 1, "address") orelse "127.0.0.1";
+
+    const port = try L.Zcheckfield(?u16, 1, "port") orelse 0;
     L.pop(1);
 
     const dataType = L.getfield(1, "data");

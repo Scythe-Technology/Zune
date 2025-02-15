@@ -34,7 +34,7 @@ err: ?anyerror,
 pub fn update(ctx: *Self, L: *VM.lua.State, scheduler: *Scheduler) Scheduler.TaskResult {
     _ = scheduler;
     _ = L;
-    var req = ctx.req;
+    const req = ctx.req;
     const fds = ctx.fds;
     const connection = req.connection.?;
 
@@ -225,11 +225,11 @@ pub fn dtor(ctx: *Self, L: *VM.lua.State, scheduler: *Scheduler) void {
     _ = scheduler;
     const allocator = luau.getallocator(L);
 
-    var req = ctx.req.*;
+    const req = ctx.req;
     const options = ctx.options.*;
 
     defer {
-        ctx.req.deinit();
+        req.deinit();
         ctx.client.deinit();
         allocator.free(ctx.fds);
         allocator.destroy(ctx.req);
@@ -402,7 +402,7 @@ pub fn prep(allocator: std.mem.Allocator, L: *VM.lua.State, scheduler: *Schedule
 
 pub fn lua_request(L: *VM.lua.State) !i32 {
     const scheduler = Scheduler.getScheduler(L);
-    const uriString = L.Lcheckstring(1);
+    const uriString = try L.Zcheckvalue([]const u8, 1, null);
     const allocator = luau.getallocator(L);
 
     var method: std.http.Method = .GET;
@@ -415,47 +415,30 @@ pub fn lua_request(L: *VM.lua.State) !i32 {
 
     const optionsType = L.typeOf(2);
     if (!optionsType.isnoneornil()) {
-        L.Lchecktype(2, .Table);
-        if (L.getfield(2, "method") != .String)
-            return L.Zerror("Expected field 'method' to be a string");
-        const methodStr = L.Lcheckstring(-1);
-        L.pop(1);
+        try L.Zchecktype(2, .Table);
+        const methodStr = try L.Zcheckfield([]const u8, 2, "method");
         const headersType = L.getfield(2, "headers");
         if (!headersType.isnoneornil()) {
             if (headersType != .Table)
-                return L.Zerror("Expected field 'headers' to be a table");
+                return L.Zerror("invalid headers (expected table)");
             Common.read_headers(L, &headers, -1) catch |err| switch (err) {
-                error.InvalidKeyType => {
-                    L.pop(1);
-                    return L.Zerror("Header key must be a string");
-                },
-                error.InvalidValueType => {
-                    L.pop(1);
-                    return L.Zerror("Header value must be a string");
-                },
+                error.InvalidKeyType => return L.Zerror("Header key must be a string"),
+                error.InvalidValueType => return L.Zerror("Header value must be a string"),
                 else => return L.Zerror("UnknownError"),
             };
         }
-        const allowRedirectsType = L.getfield(2, "allowRedirects");
-        if (!allowRedirectsType.isnoneornil()) {
-            if (allowRedirectsType != .Boolean)
-                return L.Zerror("Expected field 'allowRedirects' to be a boolean");
-            if (!L.toboolean(-1))
+        if (try L.Zcheckfield(?bool, 2, "allowRedirects")) |option| {
+            if (!option)
                 redirectBehavior = .not_allowed;
         }
-        const maxBodySizeType = L.getfield(2, "maxBodySize");
-        if (!maxBodySizeType.isnoneornil()) {
-            if (maxBodySizeType != .Number)
-                return L.Zerror("Expected field 'maxBodySize' to be a number");
-            maxBodySize = @intCast(L.tointeger(-1) orelse unreachable);
+        if (try L.Zcheckfield(?f64, 2, "maxBodySize")) |option| {
+            if (option <= 0)
+                return L.Zerror("maxBodySize must be greater than 0");
+            maxBodySize = @intFromFloat(option);
         }
-        L.pop(1);
         if (std.mem.eql(u8, methodStr, "POST")) {
             method = .POST;
-            if (L.getfield(2, "body") != .String)
-                return L.Zerror("Expected field 'body' to be a string");
-            payload = L.Lcheckstring(-1);
-            L.pop(1);
+            payload = try L.Zcheckfield([]const u8, 2, "body");
         }
     }
 

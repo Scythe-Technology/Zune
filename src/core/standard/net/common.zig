@@ -24,7 +24,7 @@ pub const HeaderTypeError = error{
 };
 
 pub fn read_headers(L: *VM.lua.State, headers: *std.ArrayList(std.http.Header), idx: i32) !void {
-    L.Lchecktype(idx, .Table);
+    try L.Zchecktype(idx, .Table);
     L.pushvalue(idx);
     L.pushnil();
 

@@ -5,20 +5,25 @@ const luau = @import("luau");
 const VM = luau.VM;
 
 pub fn lua_encode(L: *VM.lua.State) !i32 {
-    const string = L.Lcheckstring(1);
+    const string = try L.Zcheckvalue([]const u8, 1, null);
 
     const allocator = luau.getallocator(L);
 
     const out = try allocator.alloc(u8, std.base64.standard.Encoder.calcSize(string.len));
     defer allocator.free(out);
 
-    L.pushlstring(std.base64.standard.Encoder.encode(out, string));
+    const encoded = std.base64.standard.Encoder.encode(out, string);
+
+    if (L.typeOf(1) == .Buffer)
+        L.Zpushbuffer(encoded)
+    else
+        L.pushlstring(encoded);
 
     return 1;
 }
 
 pub fn lua_decode(L: *VM.lua.State) !i32 {
-    const string = L.Lcheckstring(1);
+    const string = try L.Zcheckvalue([]const u8, 1, null);
 
     const allocator = luau.getallocator(L);
 
@@ -27,7 +32,10 @@ pub fn lua_decode(L: *VM.lua.State) !i32 {
 
     try std.base64.standard.Decoder.decode(out, string);
 
-    L.pushlstring(out);
+    if (L.typeOf(1) == .Buffer)
+        L.Zpushbuffer(out)
+    else
+        L.pushlstring(out);
 
     return 1;
 }

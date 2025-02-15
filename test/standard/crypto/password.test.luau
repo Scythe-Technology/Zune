@@ -40,21 +40,26 @@ describe("Password", function()
     test("Fail", function()
         expect(function()
             crypto.password.hash("blank", {
+                algorithm = 123,
+            })
+        end).toThrow("invalid field 'algorithm' (string expected, got number)");
+        expect(function()
+            crypto.password.hash("blank", {
                 algorithm = "argon2b",
             })
-        end).toThrow("Invalid Algorithm");
+        end).toThrow("invalid algorithm kind");
         expect(function()
             crypto.password.hash("blank", {
                 algorithm = "argon2d",
-                timeCost = "0",
+                timeCost = "abc",
             })
-        end).toThrow("Invalid 'timeCost' (Number expected)");
+        end).toThrow("invalid field 'timeCost' (number expected, got string)");
         expect(function()
             crypto.password.hash("blank", {
                 algorithm = "bcrypt",
-                cost = "0",
+                cost = "abc",
             })
-        end).toThrow("Invalid 'cost' (Number expected)");
+        end).toThrow("invalid field 'cost' (number expected, got string)");
     end)
 end)
 

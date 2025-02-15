@@ -37,7 +37,7 @@ const ProcessEnvError = error{
 };
 
 fn internal_process_getargs(L: *VM.lua.State, array: *std.ArrayList([]const u8), idx: i32) !void {
-    L.Lchecktype(idx, .Table);
+    try L.Zchecktype(idx, .Table);
     L.pushvalue(idx);
     L.pushnil();
 
@@ -64,7 +64,7 @@ fn internal_process_getargs(L: *VM.lua.State, array: *std.ArrayList([]const u8),
 }
 
 fn internal_process_envmap(L: *VM.lua.State, envMap: *std.process.EnvMap, idx: i32) !void {
-    L.Lchecktype(idx, .Table);
+    try L.Zchecktype(idx, .Table);
     L.pushvalue(idx);
     L.pushnil();
 
@@ -262,12 +262,11 @@ const ProcessChildHandle = struct {
     }
 
     fn method_writeIn(self: *ProcessChildHandle, L: *VM.lua.State) !i32 {
-        const buffer = L.Lcheckstring(2);
         if (self.child.stdin == null)
             return L.Zerror("InternalError (No stdin stream found)");
         if (self.child.stdin_behavior != .Pipe)
             return L.Zerror("InternalError (stdin stream is not a pipe)");
-
+        const buffer = try L.Zcheckvalue([]const u8, 2, null);
         try self.child.stdin.?.writeAll(buffer);
         return 1;
     }
@@ -293,7 +292,7 @@ const ProcessChildHandle = struct {
     pub fn __namecall(L: *VM.lua.State) !i32 {
         const scheduler = Scheduler.getScheduler(L);
 
-        L.Lchecktype(1, .Userdata);
+        try L.Zchecktype(1, .Userdata);
         const ptr = L.touserdata(ProcessChildHandle, 1) orelse unreachable;
         const namecall = L.namecallstr() orelse unreachable;
 
@@ -315,7 +314,7 @@ const ProcessChildHandle = struct {
     });
 
     pub fn __index(L: *VM.lua.State) !i32 {
-        L.Lchecktype(1, .Userdata);
+        try L.Zchecktype(1, .Userdata);
         const handlePtr = L.touserdata(ProcessChildHandle, 1) orelse unreachable;
         const index = L.Lcheckstring(2);
 
@@ -344,7 +343,7 @@ const ProcessChildOptions = struct {
     tagged: std.ArrayList([]const u8),
 
     pub fn init(L: *VM.lua.State) !ProcessChildOptions {
-        const cmd = L.Lcheckstring(1);
+        const cmd = try L.Zcheckvalue([:0]const u8, 1, null);
         const useArgs = L.typeOf(2) == .Table;
         const options = !L.typeOf(3).isnoneornil();
 
@@ -358,15 +357,9 @@ const ProcessChildOptions = struct {
         errdefer childOptions.argArray.deinit();
 
         if (options) {
-            L.Lchecktype(3, .Table);
+            try L.Zchecktype(3, .Table);
 
-            const cwdType = L.getfield(3, "cwd");
-            if (!cwdType.isnoneornil()) {
-                if (cwdType == .String) {
-                    childOptions.cwd = L.tostring(-1) orelse null;
-                } else return L.Zerrorf("invalid cwd (string expected, got {s})", .{VM.lapi.typename(cwdType)});
-            }
-            L.pop(1);
+            childOptions.cwd = try L.Zcheckfield(?[]const u8, 3, "cwd");
 
             const envType = L.getfield(3, "env");
             if (!envType.isnoneornil()) {
@@ -707,8 +700,8 @@ fn process_loadEnv(L: *VM.lua.State) !i32 {
 }
 
 fn process_onsignal(L: *VM.lua.State) !i32 {
-    const sig = L.Lcheckstring(1);
-    L.Lchecktype(2, .Function);
+    const sig = try L.Zcheckvalue([:0]const u8, 1, null);
+    try L.Zchecktype(2, .Function);
 
     if (std.mem.eql(u8, sig, "INT")) {
         const GL = L.mainthread();
@@ -732,14 +725,14 @@ fn process_onsignal(L: *VM.lua.State) !i32 {
 }
 
 fn lib__newindex(L: *VM.lua.State) !i32 {
-    L.Lchecktype(1, .Table);
+    try L.Zchecktype(1, .Table);
     const index = L.Lcheckstring(2);
     const process_lib = VM.lua.upvalueindex(1);
 
     if (std.mem.eql(u8, index, "cwd")) {
         const allocator = luau.getallocator(L);
 
-        const value = L.Lcheckstring(3);
+        const value = try L.Zcheckvalue([:0]const u8, 3, null);
         const dir = try std.fs.cwd().openDir(value, .{});
         const path = try dir.realpathAlloc(allocator, "./");
         defer allocator.free(path);

@@ -215,6 +215,8 @@ pub fn logDetailedError(L: *VM.lua.State) !void {
     for (list.items, 0..) |info, lvl| {
         if (info.current_line == null)
             continue;
+        if (info.what != .lua)
+            continue;
         if (info.source) |src| blk: {
             const current_line = info.current_line.?;
 

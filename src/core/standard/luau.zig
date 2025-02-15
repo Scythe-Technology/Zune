@@ -11,7 +11,7 @@ const VM = luau.VM;
 pub const LIB_NAME = "luau";
 
 fn luau_compile(L: *VM.lua.State) !i32 {
-    const source = L.Lcheckstring(1);
+    const source = try L.Zcheckvalue([]const u8, 1, null);
 
     var compileOpts = luau.CompileOptions{
         .debug_level = 2,
@@ -19,30 +19,25 @@ fn luau_compile(L: *VM.lua.State) !i32 {
     };
 
     if (!L.isnoneornil(2)) {
-        L.Lchecktype(2, .Table);
+        try L.Zchecktype(2, .Table);
 
-        if (L.getfield(2, "debug_level") == .Number) {
-            const value: i32 = @intCast(L.tointeger(-1) orelse unreachable);
-            if (value < 0 or value > 2)
-                return L.Zerror("Invalid debug level");
-            compileOpts.debug_level = value;
-        }
+        const debug_level = try L.Zcheckfield(?i32, 2, "debug_level") orelse compileOpts.debug_level;
+        if (debug_level < 0 or debug_level > 2)
+            return L.Zerror("Invalid debug level");
+        compileOpts.debug_level = debug_level;
         L.pop(1);
 
-        if (L.getfield(2, "optimization_level") == .Number) {
-            const value: i32 = @intCast(L.tointeger(-1) orelse unreachable);
-            if (value < 0 or value > 2)
-                return L.Zerror("Invalid debug level");
-            compileOpts.optimization_level = value;
-        }
+        const optimization_level = try L.Zcheckfield(?i32, 2, "optimization_level") orelse compileOpts.optimization_level;
+        if (optimization_level < 0 or optimization_level > 2)
+            return L.Zerror("Invalid optimization level");
+        compileOpts.optimization_level = optimization_level;
         L.pop(1);
 
-        if (L.getfield(2, "coverage_level") == .Number) {
-            const value: i32 = @intCast(L.tointeger(-1) orelse unreachable);
-            if (value < 0 or value > 2)
-                return L.Zerror("Invalid debug level");
-            compileOpts.coverage_level = value;
-        }
+        _ = L.getfield(2, "coverage_level");
+        const coverage_level = try L.Zcheckfield(?i32, 2, "coverage_level") orelse compileOpts.coverage_level;
+        if (coverage_level < 0 or coverage_level > 2)
+            return L.Zerror("Invalid coverage level");
+        compileOpts.coverage_level = coverage_level;
         L.pop(1);
 
         // TODO: Enable after tests are added
@@ -74,32 +69,28 @@ fn luau_compile(L: *VM.lua.State) !i32 {
 }
 
 fn luau_load(L: *VM.lua.State) !i32 {
-    const bytecode = L.Lcheckstring(1);
+    const bytecode = try L.Zcheckvalue([]const u8, 1, null);
 
     var useCodeGen = false;
     var chunkName: [:0]const u8 = "(load)";
 
-    const optsExists = L.isnoneornil(2);
-    if (!optsExists) {
-        L.Lchecktype(2, .Table);
+    const optsExists = !L.isnoneornil(2);
+    if (optsExists) {
+        try L.Zchecktype(2, .Table);
 
-        if (L.getfield(2, "nativeCodeGen") == .Boolean)
-            useCodeGen = L.toboolean(-1);
-        L.pop(1);
+        _ = L.getfield(2, "nativeCodeGen");
+        useCodeGen = try L.Zcheckfield(?bool, 2, "nativeCodeGen") orelse useCodeGen;
 
-        if (L.getfield(2, "chunkName") == .String)
-            chunkName = L.tostring(-1) orelse unreachable;
-        L.pop(1);
+        _ = L.getfield(2, "chunkName");
+        chunkName = try L.Zcheckfield(?[:0]const u8, 2, "chunkName") orelse chunkName;
     }
 
     try L.load(chunkName, bytecode, 0);
 
-    if (L.typeOf(-1) != .Function) {
-        L.pop(2);
+    if (L.typeOf(-1) != .Function)
         return L.Zerror("Luau Error (Bad Load)");
-    }
 
-    if (!optsExists) {
+    if (optsExists) {
         if (L.getfield(2, "env") == .Table) {
             // TODO: should allow env to have a metatable?
             if (L.getmetatable(-1)) {

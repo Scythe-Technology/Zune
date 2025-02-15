@@ -28,7 +28,7 @@ pub fn CreateNamecallMap(
 
     return struct {
         fn inner(L: *VM.lua.State) !i32 {
-            L.Lchecktype(1, .Userdata);
+            try L.Zchecktype(1, .Userdata);
             const ptr = L.touserdata(T, 1) orelse unreachable;
             const namecall = L.namecallstr() orelse return 0;
             const method = map.get(namecall) orelse return L.Zerrorf("Unknown method: {s}", .{namecall});
