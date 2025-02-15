@@ -1,5 +1,4 @@
 --!strict
-local task = zune.task;
 local testing = zune.testing;
 
 local describe = testing.describe;
@@ -84,15 +83,15 @@ describe("Parser", function()
             testParse("* A", 2);
         end)
         test("Fail", function()
-            expect(createTestParser("", Request.parseUri)).toThrow("TooSmall");
-            expect(createTestParser(" ", Request.parseUri)).toThrow("TooSmall");
-            expect(createTestParser("A", Request.parseUri)).toThrow("TooSmall");
-            expect(createTestParser("A B", Request.parseUri)).toThrow("InvalidUri");
-            expect(createTestParser("*", Request.parseUri)).toThrow("TooSmall");
-            expect(createTestParser("*/", Request.parseUri)).toThrow("InvalidUri");
-            expect(createTestParser("/", Request.parseUri)).toThrow("TooSmall");
-            expect(createTestParser("/path", Request.parseUri)).toThrow("TooSmall");
-            expect(createTestParser("/path\2 ", Request.parseUri)).toThrow("InvalidUri");
+            expect(createTestParser("", Request.parseUri, 256)).toThrow("TooSmall");
+            expect(createTestParser(" ", Request.parseUri, 256)).toThrow("TooSmall");
+            expect(createTestParser("A", Request.parseUri, 256)).toThrow("TooSmall");
+            expect(createTestParser("A B", Request.parseUri, 256)).toThrow("InvalidUri");
+            expect(createTestParser("*", Request.parseUri, 256)).toThrow("TooSmall");
+            expect(createTestParser("*/", Request.parseUri, 256)).toThrow("InvalidUri");
+            expect(createTestParser("/", Request.parseUri, 256)).toThrow("TooSmall");
+            expect(createTestParser("/path", Request.parseUri, 256)).toThrow("TooSmall");
+            expect(createTestParser("/path\2 ", Request.parseUri, 256)).toThrow("InvalidUri");
         end)
     end)
     describe("Protocol", function()
