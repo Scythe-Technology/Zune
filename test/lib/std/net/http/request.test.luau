@@ -70,7 +70,7 @@ describe("Parser", function()
         test("Parse", function()
             local function testParse(uri: string, pos: number)
                 local parser, buf = createMockParser(uri);
-                Request.parseUri(parser, buf);
+                Request.parseUri(parser, buf, 256);
                 expect(parser.uri).toBe(uri:match("^[^%s]*"));
                 expect(parser.pos).toBe(pos);
             end
@@ -253,7 +253,7 @@ describe("Parser", function()
             expect(parser.method).toBe("GET");
             expect(parser.pos).toBe(4);
 
-            Request.parseUri(parser, buf);
+            Request.parseUri(parser, buf, 256);
             expect(parser.uri).toBe("/");
             expect(parser.pos).toBe(6);
 
@@ -305,7 +305,7 @@ describe("Parser", function()
                     end
                 end
                 if (not parser.uri) then
-                    local ok, err: any = pcall(Request.parseUri, parser, buf);
+                    local ok, err: any = pcall(Request.parseUri, parser, buf, 256);
                     if (not ok) then
                         expect(err:find("TooSmall$")).never.toBeNil();
                         expect(parser.uri).toBe(nil);
@@ -379,7 +379,7 @@ describe("Parser", function()
                     end
                 end
                 if (not parser.uri) then
-                    local ok, err: any = pcall(Request.parseUri, parser, buf);
+                    local ok, err: any = pcall(Request.parseUri, parser, buf, 256);
                     if (not ok) then
                         expect(err:find("TooSmall$")).never.toBeNil();
                         expect(parser.uri).toBe(nil);

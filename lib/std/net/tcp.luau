@@ -191,6 +191,7 @@ local function startServer(
         if (maxConnections >= 0 and server.connections.size >= maxConnections) then
             server.waiting = true;
             coroutine.yield();
+            continue;
         end
         local ok, client_socket = pcall(function(socket: NetworkSocket)
             return socket:acceptAsync();

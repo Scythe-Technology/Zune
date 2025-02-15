@@ -59,10 +59,10 @@ local MethodParsers = {
     [POST] = function(self: Parser, buf: buffer): ()
         if (not canRead(self, 5)) then
             self.state.leftover = buf;
-            error("TooSmall");
+            error("TooSmall", 0);
         end
         if (buffer.readu8(buf, 4) ~= 0x20) then
-            error("InvalidMethod");
+            error("InvalidMethod", 0);
         end
         self.method = "POST";
         self.pos += 5;
@@ -70,10 +70,10 @@ local MethodParsers = {
     [HEAD] = function(self: Parser, buf: buffer): ()
         if (not canRead(self, 5)) then
             self.state.leftover = buf;
-            error("TooSmall");
+            error("TooSmall", 0);
         end
         if (buffer.readu8(buf, 4) ~= 0x20) then
-            error("InvalidMethod");
+            error("InvalidMethod", 0);
         end
         self.method = "HEAD";
         self.pos += 5;
@@ -81,10 +81,10 @@ local MethodParsers = {
     [PATC] = function(self: Parser, buf: buffer): ()
         if (not canRead(self, 6)) then
             self.state.leftover = buf;
-            error("TooSmall");
+            error("TooSmall", 0);
         end
         if (buffer.readu8(buf, 4) ~= 0x48 or buffer.readu8(buf, 5) ~= 0x20) then
-            error("InvalidMethod");
+            error("InvalidMethod", 0);
         end
         self.method = "PATCH";
         self.pos += 6;
@@ -92,10 +92,10 @@ local MethodParsers = {
     [DELE] = function(self: Parser, buf: buffer): ()
         if (not canRead(self, 7)) then
             self.state.leftover = buf;
-            error("TooSmall");
+            error("TooSmall", 0);
         end
         if (buffer.readu32(buf, 3) ~= ETE_) then
-            error("InvalidMethod");
+            error("InvalidMethod", 0);
         end
         self.method = "DELETE";
         self.pos += 7;
@@ -103,10 +103,10 @@ local MethodParsers = {
     [OPTI] = function(self: Parser, buf: buffer): ()
         if (not canRead(self, 8)) then
             self.state.leftover = buf;
-            error("TooSmall");
+            error("TooSmall", 0);
         end
         if (buffer.readu32(buf, self.pos + 4) ~= ONS_) then
-            error("InvalidMethod");
+            error("InvalidMethod", 0);
         end
         self.method = "OPTIONS";
         self.pos += 8;
@@ -116,11 +116,11 @@ local MethodParsers = {
 local function parseMethod(self: Parser, buf: buffer): ()
     if (not canRead(self, 4)) then
         self.state.leftover = buf;
-        error("TooSmall");
+        error("TooSmall", 0);
     end
     local parser = MethodParsers[buffer.readu32(buf, self.pos)];
     if (not parser) then
-        error("InvalidMethod");
+        error("InvalidMethod", 0);
     end
     parser(self, buf);
 end
@@ -128,49 +128,52 @@ end
 local function isValidUri(url: string): boolean
     return url:find("[^\32-\126]") == nil;
 end
-local function parseUri(self: Parser, buf: buffer): ()
+local function parseUri(self: Parser, buf: buffer, maxSize: number): ()
     if (not canRead(self, 2)) then
         self.state.leftover = buf;
-        error("TooSmall");
+        error("TooSmall", 0);
     end
 
     local front = buffer.readu8(buf, self.pos);
     if (front == 0x2F) then -- '/'
         local end_index = mem.indexOfCharAt(buf, self.pos, 0x20) or self.size - 1;
         local uri = buffer.readstring(buf, self.pos, end_index - self.pos);
+        if (#uri > maxSize) then
+            error("UriTooLarge", 0);
+        end
         if (not isValidUri(uri)) then
-            error("InvalidUri");
+            error("InvalidUri", 0);
         end
         if (buffer.readu8(buf, end_index) ~= 0x20) then -- ' '
             if (end_index == self.size - 1) then
                 self.state.leftover = buf;
-                error("TooSmall");
+                error("TooSmall", 0);
             end
-            error("InvalidUri");
+            error("InvalidUri", 0);
         end
         self.uri = uri;
         self.pos = end_index + 1;
         return;
     elseif (front == 0x2A) then -- '*'
         if (buffer.readu8(buf, self.pos + 1) ~= 0x20) then
-            error("InvalidUri");
+            error("InvalidUri", 0);
         end
         self.uri = "*";
         self.pos += 2;
         return;
     else
-        error("InvalidUri");
+        error("InvalidUri", 0);
     end
 end
 
 local function parseProtocol(self: Parser, buf: buffer): ()
     if (not canRead(self, 10)) then
         self.state.leftover = buf;
-        error("TooSmall");
+        error("TooSmall", 0);
     end
 
     if (buffer.readu32(buf, self.pos) ~= HTTP) then
-        error("InvalidProtocol");
+        error("InvalidProtocol", 0);
     end
     
     local version = buffer.readu32(buf, self.pos + 4);
@@ -179,12 +182,12 @@ local function parseProtocol(self: Parser, buf: buffer): ()
     elseif (version == V1P1) then
         self.protocol = "HTTP/1.1";
     else
-        error("InvalidProtocol");
+        error("InvalidProtocol", 0);
     end
     self.pos += 8;
     
     if (not isReturnLine(self, buf)) then
-        error("InvalidProtocol");
+        error("InvalidProtocol", 0);
     end
     self.pos += 2;
 end
@@ -203,7 +206,7 @@ end
 local function parseHeaders(self: Parser, buf: buffer, maxHeaders: number): ()
     if (not canRead(self, 2)) then
         self.state.leftover = buf;
-        error("TooSmall");
+        error("TooSmall", 0);
         return;
     end
     if (isReturnLine(self, buf)) then
@@ -241,16 +244,16 @@ local function parseHeaders(self: Parser, buf: buffer, maxHeaders: number): ()
                     end
                     if (b2 ~= 0x0d) then -- '\r'
                         self.state.headers_incomplete = false;
-                        error("InvalidHeader");
+                        error("InvalidHeader", 0);
                     end
                     if (size - 1 <= j + 1) then
                         self.pos = pos;
                         self.state.leftover = buf;
-                        error("TooSmall");
+                        error("TooSmall", 0);
                     end
                     if (buffer.readu8(buf, j + 1) ~= 0x0a) then -- '\n'
                         self.state.headers_incomplete = false;
-                        error("InvalidHeader");
+                        error("InvalidHeader", 0);
                     end
                     value_pos = j;
                     break;
@@ -258,15 +261,19 @@ local function parseHeaders(self: Parser, buf: buffer, maxHeaders: number): ()
                 if (value_pos == nil) then
                     self.pos = pos;
                     self.state.leftover = buf;
-                    error("TooSmall");
+                    error("TooSmall", 0);
                 end
                 local name = buffer.readstring(buf, pos, header_pos - pos):lower();
                 if (headers_count >= maxHeaders) then
                     self.state.headers_incomplete = false;
-                    error("TooManyHeaders");
+                    error("TooManyHeaders", 0);
                 end
                 headers_count += 1;
                 headers[name] = buffer.readstring(buf, trim_pos, value_pos - trim_pos);
+                -- TODO: make this customizable?
+                if (#name > 64 or #headers[name] >= 2048) then
+                    error("HeaderTooLarge", 0);
+                end
                 pos = value_pos + 2;
                 _jp = true;
                 break;
@@ -274,7 +281,7 @@ local function parseHeaders(self: Parser, buf: buffer, maxHeaders: number): ()
                 if (size - i <= 1) then
                     self.pos = pos;
                     self.state.leftover = buf;
-                    error("TooSmall");
+                    error("TooSmall", 0);
                 end
                 if (buffer.readu8(buf, i + 1) == 0x0a) then -- '\n'
                     self.pos = i + 2;
@@ -282,11 +289,11 @@ local function parseHeaders(self: Parser, buf: buffer, maxHeaders: number): ()
                     return;
                 else
                     self.state.headers_incomplete = false;
-                    error("InvalidHeader");
+                    error("InvalidHeader", 0);
                 end
             else
                 self.state.headers_incomplete = false;
-                error("InvalidHeader");
+                error("InvalidHeader", 0);
             end
         end
         if (not _jp) then
@@ -295,7 +302,7 @@ local function parseHeaders(self: Parser, buf: buffer, maxHeaders: number): ()
     end
     self.pos = pos;
     self.state.leftover = buf;
-    error("TooSmall");
+    error("TooSmall", 0);
 end
 
 local function parseBody(self: Parser, buf: buffer, maxBodySize: number): ()
@@ -306,20 +313,20 @@ local function parseBody(self: Parser, buf: buffer, maxBodySize: number): ()
     if (content_length) then
         local content_length_num = tonumber(content_length);
         if (not content_length_num) then
-            error("InvalidContentLength");
+            error("InvalidContentLength", 0);
         end
         if (content_length_num > maxBodySize) then
-            error("TooLarge");
+            error("TooLarge", 0);
         end
         if (self.pos + content_length_num > self.size) then
             self.state.leftover = buf;
-            error("TooSmall");
+            error("TooSmall", 0);
         end
         self.body = mem.sliceOwned(buf, self.pos, content_length_num);
         self.pos += content_length_num;
         return;
     elseif (self.headers["transfer-encoding"] == "chunked") then
-        error("NotImplemented");
+        error("NotImplemented", 0);
     else
         return;
     end
