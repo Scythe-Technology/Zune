@@ -1004,12 +1004,17 @@ fn FFIArgumentPush(comptime T: type) fn (L: *VM.lua.State, value: T) callconv(.C
     return struct {
         fn inner(L: *VM.lua.State, value: T) callconv(.C) void {
             switch (size) {
+                1...4 => {
+                    if (isFloat)
+                        L.pushnumber(@floatCast(value))
+                    else
+                        L.pushinteger(@intCast(value));
+                },
                 8 => {
-                    if (isFloat) {
-                        @compileError("Unsupported size");
-                    } else {
+                    if (isFloat)
+                        L.pushnumber(value)
+                    else
                         L.Zpushbuffer(&@as([8]u8, @bitCast(value)));
-                    }
                 },
                 else => @compileError("Unsupported size"),
             }
@@ -1028,22 +1033,22 @@ const lua_ffi_checku64 = FFIArgumentLoad(u64);
 const lua_ffi_checkf32 = FFIArgumentLoad(f32);
 const lua_ffi_checkf64 = FFIArgumentLoad(f64);
 
-const lua_ffi_pushi8 = VM.lapi.pushinteger;
-const lua_ffi_pushu8 = VM.lapi.pushinteger;
-const lua_ffi_pushi16 = VM.lapi.pushinteger;
-const lua_ffi_pushu16 = VM.lapi.pushinteger;
-const lua_ffi_pushi32 = VM.lapi.pushinteger;
-const lua_ffi_pushu32 = VM.lapi.pushinteger;
+const lua_ffi_pushi8 = FFIArgumentPush(i8);
+const lua_ffi_pushu8 = FFIArgumentPush(u8);
+const lua_ffi_pushi16 = FFIArgumentPush(i16);
+const lua_ffi_pushu16 = FFIArgumentPush(u16);
+const lua_ffi_pushi32 = FFIArgumentPush(i32);
+const lua_ffi_pushu32 = FFIArgumentPush(u32);
 const lua_ffi_pushi64 = FFIArgumentPush(i64);
 const lua_ffi_pushu64 = FFIArgumentPush(u64);
-const lua_ffi_pushf32 = VM.lapi.pushnumber;
-const lua_ffi_pushf64 = VM.lapi.pushnumber;
+const lua_ffi_pushf32 = FFIArgumentPush(f32);
+const lua_ffi_pushf64 = FFIArgumentPush(f64);
 
-fn lua_ffi_pushpointer(L: *VM.lua.State, ptr: ?*anyopaque) void {
+fn lua_ffi_pushpointer(L: *VM.lua.State, ptr: ?*anyopaque) callconv(.c) void {
     _ = LuaPointer.newStaticPtr(L, ptr, false) catch L.LerrorL("Failed to create pointer", .{});
 }
 
-fn lua_ffi_pushmem(L: *VM.lua.State, ptr: [*c]u8, size: usize) void {
+fn lua_ffi_pushmem(L: *VM.lua.State, ptr: [*c]u8, size: usize) callconv(.c) void {
     L.Zpushbuffer(ptr[0..size]);
 }
 
@@ -1428,7 +1433,7 @@ fn ffi_dlopen(L: *VM.lua.State) !i32 {
     L.createtable(0, 2);
 
     L.createtable(0, @intCast(func_map.count()));
-    while (func_map.popOrNull()) |entry| {
+    while (func_map.pop()) |entry| {
         const key = entry.key;
         const value = entry.value;
         defer allocator.free(key);

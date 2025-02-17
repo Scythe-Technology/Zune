@@ -9,7 +9,7 @@ pub const cli = @import("cli.zig");
 pub const corelib = @import("core/standard/lib.zig");
 pub const objects = @import("core/objects/lib.zig");
 
-pub const DEFAULT_ALLOCATOR = std.heap.c_allocator;
+pub const DEFAULT_ALLOCATOR = std.heap.smp_allocator;
 
 pub const runtime_engine = @import("core/runtime/engine.zig");
 pub const resolvers_require = @import("core/resolvers/require.zig");

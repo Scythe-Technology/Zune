@@ -212,7 +212,10 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
         .filters = b.args orelse &.{},
-        .test_runner = b.path("test/runner.zig"),
+        .test_runner = .{
+            .mode = .simple,
+            .path = b.path("test/runner.zig"),
+        },
     });
 
     exe_unit_tests.step.dependOn(prebuild_step);
