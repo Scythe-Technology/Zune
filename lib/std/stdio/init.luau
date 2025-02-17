@@ -83,6 +83,7 @@ local function prompt(
             end
         end
         internal.stderr:write(moveUp(#options - 1));
+        internal.stderr:write(moveToColumn(0));
         order = 1;
     elseif (kind == "confirm") then
         internal.stderr:write(` {style("dim", "(y/n)")} › `);
