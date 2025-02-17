@@ -2278,8 +2278,7 @@ declare class SQLite3Statement
 end
 
 declare class SQLite3Database
-    transaction: <T...>(self: SQLite3Database, callback: (T...) -> (), kind: ("deferred" | "immediate" | "exclusive")?) -> ((T...) -> ())
-
+    function transaction(self, callback: (...any) -> (), kind: ("deferred" | "immediate" | "exclusive")?): ((...any) -> ())
     function query(self, query: string): SQLite3Statement
     function exec(self, query: string, args: SQLite3Values?): ()
     function close(self): ()
