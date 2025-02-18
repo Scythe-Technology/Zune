@@ -509,7 +509,8 @@ fn process_create(L: *VM.lua.State) !i32 {
 
     childProcess.id = undefined;
     childProcess.thread_handle = undefined;
-    childProcess.err_pipe = null;
+    if (builtin.os.tag != .windows)
+        childProcess.err_pipe = null;
     childProcess.term = null;
     childProcess.uid = if (native_os == .windows or native_os == .wasi) {} else null;
     childProcess.gid = if (native_os == .windows or native_os == .wasi) {} else null;

@@ -106,10 +106,7 @@ fn IOContentMsgCompletion(error_type: type, comptime recieve: bool) type {
     return struct {
         buffer: []u8,
         msghdr: if (recieve) aio.posix.msghdr else aio.posix.msghdr_const,
-        iov: switch (builtin.os.tag) {
-            .windows => [1]std.os.windows.ws2_32.WSABUF,
-            else => if (recieve) [1]std.posix.iovec else [1]std.posix.iovec_const,
-        } = undefined,
+        iov: if (recieve) [1]aio.posix.iovec else [1]aio.posix.iovec_const = undefined,
         address: std.posix.sockaddr,
         used: usize = 0,
         out_err: error_type = error.Unexpected,
@@ -282,29 +279,16 @@ fn sendMsgAsync(self: *Socket, L: *VM.lua.State) !i32 {
     ptr.* = .{
         .buffer = buf,
         .address = address.any,
-        .msghdr = switch (builtin.os.tag) {
-            .windows => std.os.windows.ws2_32.WSAMSG_const{
-                .name = &ptr.address,
-                .namelen = @sizeOf(std.posix.sockaddr),
-                .lpBuffers = &ptr.iov,
-                .dwBufferCount = 1,
-                .Control = .{ .buf = undefined, .len = 0 },
-                .dwFlags = 0,
-            },
-            else => aio.posix.msghdr_const{
-                .name = &ptr.address,
-                .namelen = @sizeOf(std.posix.sockaddr),
-                .iov = &ptr.iov,
-                .iovlen = 1,
-                .flags = 0,
-                .control = null,
-                .controllen = 0,
-            },
+        .msghdr = aio.posix.msghdr_const{
+            .name = &ptr.address,
+            .namelen = @sizeOf(std.posix.sockaddr),
+            .iov = &ptr.iov,
+            .iovlen = 1,
+            .flags = 0,
+            .control = null,
+            .controllen = 0,
         },
-        .iov = switch (builtin.os.tag) {
-            .windows => [1]std.os.windows.ws2_32.WSABUF{.{ .buf = buf.ptr, .len = @intCast(data.len) }},
-            else => [1]std.posix.iovec_const{.{ .base = buf.ptr, .len = data.len }},
-        },
+        .iov = [1]aio.posix.iovec_const{.{ .base = buf.ptr, .len = @intCast(data.len) }},
         .lua_socket = self,
         .lua_ref = L.ref(1),
     };
@@ -366,29 +350,16 @@ fn recvMsgAsync(self: *Socket, L: *VM.lua.State) !i32 {
     ptr.* = .{
         .buffer = buf,
         .address = undefined,
-        .msghdr = switch (builtin.os.tag) {
-            .windows => std.os.windows.ws2_32.WSAMSG{
-                .name = &ptr.address,
-                .namelen = @sizeOf(std.posix.sockaddr),
-                .lpBuffers = &ptr.iov,
-                .dwBufferCount = 1,
-                .Control = .{ .buf = undefined, .len = 0 },
-                .dwFlags = 0,
-            },
-            else => aio.posix.msghdr{
-                .name = &ptr.address,
-                .namelen = @sizeOf(std.posix.sockaddr),
-                .iov = &ptr.iov,
-                .iovlen = 1,
-                .flags = 0,
-                .control = null,
-                .controllen = 0,
-            },
+        .msghdr = aio.posix.msghdr{
+            .name = &ptr.address,
+            .namelen = @sizeOf(std.posix.sockaddr),
+            .iov = &ptr.iov,
+            .iovlen = 1,
+            .flags = 0,
+            .control = null,
+            .controllen = 0,
         },
-        .iov = switch (builtin.os.tag) {
-            .windows => [1]std.os.windows.ws2_32.WSABUF{.{ .buf = buf.ptr, .len = @intCast(size) }},
-            else => [1]std.posix.iovec{.{ .base = buf.ptr, .len = @intCast(size) }},
-        },
+        .iov = [1]aio.posix.iovec{.{ .base = buf.ptr, .len = @intCast(size) }},
         .lua_socket = self,
         .lua_ref = L.ref(1),
     };

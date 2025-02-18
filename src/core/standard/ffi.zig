@@ -1190,7 +1190,7 @@ fn generateSourceFromSymbol(source: *std.ArrayList(u8), symbol_returns: DataType
                 try source.append(',');
             if (arg.kind) |kind| {
                 switch (kind) {
-                    .void => std.debug.panic("Void arg", .{}),
+                    .void => return error.VoidParameter,
                     inline .i8, .u8, .i16, .u16, .i32, .u32, .i64, .u64, .f32, .f64 => |T| try writer.print("\n    lua_ffi_check{s}(L, {d})", .{ @tagName(T), i + 1 }),
                     .pointer => {
                         defer order += 1;
@@ -1231,7 +1231,7 @@ fn dynamicLoadImport(source: *std.ArrayList(u8), state: *tinycc.TCCState, return
             continue;
         };
         switch (kind) {
-            .void => std.debug.panic("Void arg", .{}),
+            .void => return error.VoidParameter,
             .i8 => if (!loaded_fn[1]) {
                 loaded_fn[1] = true;
                 try generateExported(source, "lua_ffi_checki8", "signed char", &.{ "void*", "unsigned int" });
@@ -2025,17 +2025,6 @@ fn ffi_alignOf(L: *VM.lua.State) !i32 {
 
 fn ffi_unsupported(L: *VM.lua.State) !i32 {
     return L.Zerror("ffi is not supported on this platform");
-}
-
-fn is_ffi_struct(L: *VM.lua.State, idx: i32) bool {
-    if (L.typeOf(idx) != .Userdata)
-        return false;
-    if (!L.getmetatable(idx))
-        return false;
-    defer L.pop(2);
-    if (L.Lgetmetatable(LuaStructType.META) != .Table)
-        std.debug.panic("InternalError (FFI Metatable not initialized)", .{});
-    return L.equal(-2, -1);
 }
 
 fn ffi_alloc(L: *VM.lua.State) !i32 {
