@@ -1846,8 +1846,14 @@ const FFIFunction = struct {
             if (pointers) |ptrs| @ptrCast(@alignCast(ptrs.ptr)) else null,
         );
 
-        if (self.code.sym.type.returns.size > 0)
+        const returns = self.code.sym.type.returns;
+        if (returns.size > 0) {
+            if (returns.kind == .pointer and returns.kind.pointer.tag != 0) {
+                const ptr = LuaPointer.value(L, -1) orelse unreachable;
+                ptr.data = returns.kind.pointer;
+            }
             return 1;
+        }
         return 0;
     }
 
