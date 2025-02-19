@@ -49,14 +49,14 @@ export type FileHandle = {
 
         @param contents The contents to write to the file.
     ]]
-    write: (self: FileHandle, contents: buffer | string) -> (),
+    write: (self: FileHandle, contents: string | buffer) -> (),
 
     --[[
         Appends to a file.
 
         @param contents The contents to append to the file.
     ]]
-    append: (self: FileHandle, contents: buffer | string) -> (),
+    append: (self: FileHandle, contents: string | buffer) -> (),
 
     --[[
         Returns the size of the file. Based on current state of the file object.
@@ -216,7 +216,7 @@ type FileSystemLib = {
         @param contents The contents to write to the file.
         @return `FileWriteError` An error if the operation failed.
     ]]
-    writeFile: (path: string, contents: buffer | string) -> (),
+    writeFile: (path: string, contents: string | buffer) -> (),
 
     --[[
         Creates a directory.
@@ -947,7 +947,7 @@ declare class NetworkSocket
     function listen(self, backlog: number?): ()
     function bindIp(self, address: string, port: number): ()
     function getName(self): NetworkAddress
-    function setOption(self, level: number, optname: number, value: boolean | buffer | string): ()
+    function setOption(self, level: number, optname: number, value: boolean | string | buffer): ()
     function closeAsync(self): ()
 end
 
@@ -991,7 +991,7 @@ export type ServerRequest = {
 export type ServerResponse = {
     statusCode: number,
     headers: {[string]: string}?,
-    body: buffer | string,
+    body: string | buffer,
 }
 
 export type ServerWebSocketHandlers = {
@@ -1051,7 +1051,7 @@ export type ServeOptions = {
     --[[
         The function to handle requests.
     ]]
-    request: (request: ServerRequest) -> buffer | string | ServerResponse,
+    request: (request: ServerRequest) -> string | buffer | ServerResponse,
 
     --[[
         Functions to handle websockets.
@@ -2170,56 +2170,67 @@ type DatetimeLib = {
 --[======[ Datetime ]======]--
 
 --[======[ FFI ]======]--
-export type Library = {
-    close: (self: Library) -> (),
-    getSymbol: (self: Library, symbol: string) -> Pointer,
+export type FFILibrary = {
+    getSymbol: (self: FFILibrary, symbol: string) -> FFIPointer,
     [string]: (...any) -> any,
 }
 
-declare class Structure
-    function size(self): number
-    function alignment(self): number
+declare class FFIDataType
+    size: number
+    alignment: number
+end
+
+declare class FFIStructureType extends FFIDataType
     function offset(self, field: string): number
     function new(self, fields: {{ [string]: buffer | number }}): buffer
 end
 
-export type FunctionDefinition = {
-    returns: Structure | number,
-    args: { Structure | number }
+declare class FFIPointerType extends FFIDataType
+    tag: number
+    function newTag(self, tag: string | buffer): FFIPointerType
+end
+
+type AnyDataType = FFIDataType | FFIStructureType | FFIPointerType
+
+export type FFIFunctionDef = {
+    returns: AnyDataType,
+    args: { AnyDataType }
 }
 
-export type Pointer = {
-    release: (self: Pointer) -> Pointer,
-    retain: (self: Pointer) -> Pointer,
-    drop: (self: Pointer) -> Pointer,
-    offset: (self: Pointer, offset: number) -> Pointer,
-    read: (self: Pointer, srcOffset: number, dest: buffer | Pointer, destOffset: number, count: number) -> buffer,
-    write: (self: Pointer, destOffset: number, src: buffer | Pointer, srcOffset: number, count: number) -> (),
-    readi8: (self: Pointer, offset: number?) -> number,
-    readu8: (self: Pointer, offset: number?) -> number,
-    readi16: (self: Pointer, offset: number?) -> number,
-    readu16: (self: Pointer, offset: number?) -> number,
-    readi32: (self: Pointer, offset: number?) -> number,
-    readu32: (self: Pointer, offset: number?) -> number,
-    readi64: (self: Pointer, offset: number?) -> buffer,
-    readu64: (self: Pointer, offset: number?) -> buffer,
-    readf32: (self: Pointer, offset: number?) -> number,
-    readf64: (self: Pointer, offset: number?) -> number,
-    readPtr: (self: Pointer, offset: number?) -> Pointer,
-    writei8: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writeu8: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writei16: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writeu16: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writei32: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writeu32: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writei64: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writeu64: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writef32: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writef64: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writePtr: (self: Pointer, offset: number, value: Pointer) -> (),
-    isNull: (self: Pointer) -> boolean,
-    setSize: (self: Pointer, size: number) -> (),
-    span: (self: Pointer, offset: number?) -> buffer,
+export type FFIPointer = {
+    release: (self: FFIPointer) -> FFIPointer,
+    retain: (self: FFIPointer) -> FFIPointer,
+    setTag: (self: FFIPointer, tag: number) -> FFIPointer,
+    getTag: (self: FFIPointer) -> number,
+    drop: (self: FFIPointer) -> FFIPointer,
+    offset: (self: FFIPointer, offset: number) -> FFIPointer,
+    read: (self: FFIPointer, srcOffset: number, dest: buffer | FFIPointer, destOffset: number, count: number) -> buffer,
+    write: (self: FFIPointer, destOffset: number, src: buffer | FFIPointer, srcOffset: number, count: number) -> (),
+    readi8: (self: FFIPointer, offset: number?) -> number,
+    readu8: (self: FFIPointer, offset: number?) -> number,
+    readi16: (self: FFIPointer, offset: number?) -> number,
+    readu16: (self: FFIPointer, offset: number?) -> number,
+    readi32: (self: FFIPointer, offset: number?) -> number,
+    readu32: (self: FFIPointer, offset: number?) -> number,
+    readi64: (self: FFIPointer, offset: number?) -> buffer,
+    readu64: (self: FFIPointer, offset: number?) -> buffer,
+    readf32: (self: FFIPointer, offset: number?) -> number,
+    readf64: (self: FFIPointer, offset: number?) -> number,
+    readPtr: (self: FFIPointer, offset: number?) -> FFIPointer,
+    writei8: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writeu8: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writei16: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writeu16: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writei32: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writeu32: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writei64: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writeu64: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writef32: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writef64: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writePtr: (self: FFIPointer, offset: number, value: FFIPointer) -> (),
+    isNull: (self: FFIPointer) -> boolean,
+    setSize: (self: FFIPointer, size: number) -> (),
+    span: (self: FFIPointer, offset: number?) -> buffer,
 }
 
 type FFILib = {
@@ -2229,36 +2240,35 @@ type FFILib = {
     suffix: string,
 
     types: {
-        void: number,
-        i8: number,
-        u8: number,
-        i16: number,
-        u16: number,
-        i32: number,
-        u32: number,
-        i64: number,
-        u64: number,
-        float: number,
-        double: number,
-        pointer: number,
+        void: FFIDataType,
+        i8: FFIDataType,
+        u8: FFIDataType,
+        i16: FFIDataType,
+        u16: FFIDataType,
+        i32: FFIDataType,
+        u32: FFIDataType,
+        i64: FFIDataType,
+        u64: FFIDataType,
+        float: FFIDataType,
+        double: FFIDataType,
+        pointer: FFIPointerType,
     },
 
-    sizeOf: (type: Structure | number) -> number,
-    alignOf: (type: Structure | number) -> number,
+    createPtr: (src: buffer) -> FFIPointer,
+    getRef: (src: FFIPointer) -> FFIPointer,
 
-    createPtr: (src: buffer) -> Pointer,
-    getRef: (src: Pointer) -> Pointer,
+    alloc: (size: number) -> FFIPointer,
+    free: (src: FFIPointer) -> (),
+    dupe: (src: buffer | FFIPointer) -> FFIPointer,
+    len: (src: buffer | FFIPointer) -> number?,
+    copy: (dest: buffer | FFIPointer, destOffset: number, src: buffer | FFIPointer, srcOffset: number, count: number) -> (),
 
-    alloc: (size: number) -> Pointer,
-    free: (src: Pointer) -> (),
-    dupe: (src: buffer | Pointer) -> Pointer,
-    len: (src: buffer | Pointer) -> number?,
-    copy: (dest: buffer | Pointer, destOffset: number, src: buffer | Pointer, srcOffset: number, count: number) -> (),
+    tagName: (tag: number) -> string,
 
-    struct: (fields: {{ [string]: Structure | number }}) -> Structure,
-    fn: (definition: FunctionDefinition, srcPtr: Pointer) -> ((...any) -> any),
-    closure: (definition: FunctionDefinition, handler: (...any) -> any) -> Pointer,
-    dlopen: (path: string, { [string]: FunctionDefinition }) -> Library,
+    struct: (fields: {{ [string]: AnyDataType }}) -> FFIStructureType,
+    fn: (definition: FFIFunctionDef, srcPtr: FFIPointer) -> ((...any) -> any),
+    closure: (definition: FFIFunctionDef, handler: (...any) -> any) -> FFIPointer,
+    dlopen: (path: string, { [string]: FFIFunctionDef }) -> FFILibrary,
 }
 --[======[ FFI ]======]--
 

@@ -4,7 +4,7 @@ const luau = @import("luau");
 const builtin = @import("builtin");
 
 const tagged = @import("../../../tagged.zig");
-const method_map = @import("../../utils/method_map.zig");
+const MethodMap = @import("../../utils/method_map.zig");
 const luaHelper = @import("../../utils/luahelper.zig");
 
 const Scheduler = @import("../../runtime/scheduler.zig");
@@ -497,17 +497,17 @@ fn before_method(self: *Socket, L: *VM.lua.State) !void {
         return L.Zerror("SocketClosed");
 }
 
-const __namecall = method_map.CreateNamecallMap(Socket, .{
-    .{ "sendAsync", method_map.WithFn(Socket, sendAsync, before_method) },
-    .{ "sendMsgAsync", method_map.WithFn(Socket, sendMsgAsync, before_method) },
-    .{ "recvAsync", method_map.WithFn(Socket, recvAsync, before_method) },
-    .{ "recvMsgAsync", method_map.WithFn(Socket, recvMsgAsync, before_method) },
-    .{ "acceptAsync", method_map.WithFn(Socket, acceptAsync, before_method) },
-    .{ "connectAsync", method_map.WithFn(Socket, connectAsync, before_method) },
-    .{ "listen", method_map.WithFn(Socket, listen, before_method) },
-    .{ "bindIp", method_map.WithFn(Socket, bindIp, before_method) },
-    .{ "getName", method_map.WithFn(Socket, getName, before_method) },
-    .{ "setOption", method_map.WithFn(Socket, setOption, before_method) },
+const __namecall = MethodMap.CreateNamecallMap(Socket, .{
+    .{ "sendAsync", MethodMap.WithFn(Socket, sendAsync, before_method) },
+    .{ "sendMsgAsync", MethodMap.WithFn(Socket, sendMsgAsync, before_method) },
+    .{ "recvAsync", MethodMap.WithFn(Socket, recvAsync, before_method) },
+    .{ "recvMsgAsync", MethodMap.WithFn(Socket, recvMsgAsync, before_method) },
+    .{ "acceptAsync", MethodMap.WithFn(Socket, acceptAsync, before_method) },
+    .{ "connectAsync", MethodMap.WithFn(Socket, connectAsync, before_method) },
+    .{ "listen", MethodMap.WithFn(Socket, listen, before_method) },
+    .{ "bindIp", MethodMap.WithFn(Socket, bindIp, before_method) },
+    .{ "getName", MethodMap.WithFn(Socket, getName, before_method) },
+    .{ "setOption", MethodMap.WithFn(Socket, setOption, before_method) },
     .{ "closeAsync", closeAsync },
 });
 

@@ -4,7 +4,7 @@ const luau = @import("luau");
 const builtin = @import("builtin");
 
 const tagged = @import("../../../tagged.zig");
-const method_map = @import("../../utils/method_map.zig");
+const MethodMap = @import("../../utils/method_map.zig");
 const luaHelper = @import("../../utils/luahelper.zig");
 
 const Scheduler = @import("../../runtime/scheduler.zig");
@@ -453,21 +453,21 @@ fn before_method(self: *File, L: *VM.lua.State) !void {
         return L.Zerror("File is closed");
 }
 
-const __namecall = method_map.CreateNamecallMap(File, .{
-    .{ "write", method_map.WithFn(File, write, before_method) },
-    .{ "writeSync", method_map.WithFn(File, writeSync, before_method) },
-    .{ "append", method_map.WithFn(File, append, before_method) },
-    .{ "getSeekPosition", method_map.WithFn(File, getSeekPosition, before_method) },
-    .{ "getSize", method_map.WithFn(File, getSize, before_method) },
-    .{ "seekFromEnd", method_map.WithFn(File, seekFromEnd, before_method) },
-    .{ "seekTo", method_map.WithFn(File, seekTo, before_method) },
-    .{ "seekBy", method_map.WithFn(File, seekBy, before_method) },
-    .{ "read", method_map.WithFn(File, read, before_method) },
-    .{ "readSync", method_map.WithFn(File, readSync, before_method) },
-    .{ "lock", method_map.WithFn(File, lock, before_method) },
-    .{ "unlock", method_map.WithFn(File, unlock, before_method) },
-    .{ "sync", method_map.WithFn(File, sync, before_method) },
-    .{ "readonly", method_map.WithFn(File, readonly, before_method) },
+const __namecall = MethodMap.CreateNamecallMap(File, .{
+    .{ "write", MethodMap.WithFn(File, write, before_method) },
+    .{ "writeSync", MethodMap.WithFn(File, writeSync, before_method) },
+    .{ "append", MethodMap.WithFn(File, append, before_method) },
+    .{ "getSeekPosition", MethodMap.WithFn(File, getSeekPosition, before_method) },
+    .{ "getSize", MethodMap.WithFn(File, getSize, before_method) },
+    .{ "seekFromEnd", MethodMap.WithFn(File, seekFromEnd, before_method) },
+    .{ "seekTo", MethodMap.WithFn(File, seekTo, before_method) },
+    .{ "seekBy", MethodMap.WithFn(File, seekBy, before_method) },
+    .{ "read", MethodMap.WithFn(File, read, before_method) },
+    .{ "readSync", MethodMap.WithFn(File, readSync, before_method) },
+    .{ "lock", MethodMap.WithFn(File, lock, before_method) },
+    .{ "unlock", MethodMap.WithFn(File, unlock, before_method) },
+    .{ "sync", MethodMap.WithFn(File, sync, before_method) },
+    .{ "readonly", MethodMap.WithFn(File, readonly, before_method) },
     .{ "close", closeAsync },
 });
 

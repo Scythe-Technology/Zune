@@ -337,19 +337,21 @@ const LuaStdOut = struct {
 };
 
 const LuaTerminal = struct {
+    ptr: *Terminal,
     pub const META = "stdio_terminal_instance";
 
     pub fn __index(L: *VM.lua.State) !i32 {
-        try L.Zchecktype(1, .LightUserdata);
-        const data = L.touserdata(Terminal, 1) orelse unreachable;
+        try L.Zchecktype(1, .Userdata);
+        const data = L.touserdata(LuaTerminal, 1) orelse unreachable;
+        const term_ptr = data.ptr;
         const arg = L.Lcheckstring(2);
 
         // TODO: prob should switch to static string map
         if (std.mem.eql(u8, arg, "isTTY")) {
-            L.pushboolean(data.stdin_istty and data.stdout_istty);
+            L.pushboolean(term_ptr.stdin_istty and term_ptr.stdout_istty);
             return 1;
         } else if (std.mem.eql(u8, arg, "isRawMode")) {
-            L.pushboolean(data.mode == .Virtual);
+            L.pushboolean(term_ptr.mode == .Virtual);
             return 1;
         }
 
@@ -357,9 +359,10 @@ const LuaTerminal = struct {
     }
 
     pub fn __namecall(L: *VM.lua.State) !i32 {
-        try L.Zchecktype(1, .LightUserdata);
-        const ud_term = L.touserdata(?Terminal, 1) orelse unreachable;
-        const term_ptr = &(ud_term.* orelse return L.Zerror("Terminal not initialized"));
+        try L.Zchecktype(1, .Userdata);
+        const ud_term = L.touserdata(LuaTerminal, 1) orelse unreachable;
+
+        const term_ptr = ud_term.ptr;
 
         const namecall = L.namecallstr() orelse return 0;
 
@@ -451,7 +454,8 @@ pub fn loadLib(L: *VM.lua.State) void {
 
     // Terminal
     TERMINAL = Terminal.init(stdIn, stdOut);
-    L.pushlightuserdata(&TERMINAL);
+    const terminal_ptr = L.newuserdata(LuaTerminal);
+    terminal_ptr.* = .{ .ptr = &(TERMINAL.?) };
     if (L.Lgetmetatable(LuaTerminal.META) == .Table)
         _ = L.setmetatable(-2)
     else
