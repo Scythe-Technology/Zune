@@ -438,7 +438,16 @@ pub fn lua_request(L: *VM.lua.State) !i32 {
         }
         if (std.mem.eql(u8, methodStr, "POST")) {
             method = .POST;
-            payload = try L.Zcheckfield([]const u8, 2, "body");
+        }
+        inline for (@typeInfo(std.http.Method).@"enum".fields) |field| {
+            if (comptime std.mem.eql(u8, field.name, "POST")) // already handled
+                continue;
+            if (std.mem.eql(u8, methodStr, field.name)) {
+                method = @field(std.http.Method, field.name);
+            }
+        }
+        if (method != .GET) {
+            payload = try L.Zcheckfield(?[]const u8, 2, "body");
         }
     }
 

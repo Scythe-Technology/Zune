@@ -67,6 +67,53 @@ describe("Server", function()
         expect(requests).toHaveLength(1);
     end)
 
+    test("Other method", function()
+        local requests: {ServerRequest} = {};
+        local server = net.http.serve({
+            port = 8080,
+            reuseAddress = true,
+            request = function(req)
+                table.insert(requests, req);
+                return {
+                    statusCode = 200,
+                    body = "Hello",
+                }
+            end,
+        });
+        testing.defer(function()
+            server:stop();
+        end)
+        expect(server).toBe(expect.type("userdata"));
+
+        local rRes = net.http.request("http://localhost:8080", {
+            method = "PUT",
+            headers = {
+                ["Content-Type"] = "text/plain",
+            },
+            body = "test",
+        });
+        expect(rRes).toBe(expect.type("table"));
+        expect(rRes.ok).toBe(true);
+        expect(rRes.statusCode).toBe(200);
+        expect(rRes.body).toBe("Hello");
+        expect(rRes.headers).toBe(expect.type("table"));
+        expect(rRes.headers["content-length"]).toBe("5");
+        expect(rRes.statusReason).toBe("OK");
+
+        expect(requests).toHaveLength(1);
+
+        local request = requests[1];
+        expect(request).toBe(expect.type("table"));
+        expect(request.method).toBe("PUT");
+        expect(request.path).toBe("/");
+        expect(request.headers).toBe(expect.type("table"));
+        expect(request.headers["host"]).toBe("localhost:8080");
+        expect(request.headers["user-agent"]).toBe("Zune/" .. version);
+        expect(request.headers["content-type"]).toBe("text/plain");
+        expect(request.headers["content-length"]).toBe("4");
+        expect(request.body).toBe("test");
+    end)
+
     test("Basic Table Buffer", function()
         local requests = {};
         local server = net.http.serve({
