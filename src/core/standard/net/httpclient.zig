@@ -436,19 +436,12 @@ pub fn lua_request(L: *VM.lua.State) !i32 {
                 return L.Zerror("maxBodySize must be greater than 0");
             maxBodySize = @intFromFloat(option);
         }
-        if (std.mem.eql(u8, methodStr, "POST")) {
-            method = .POST;
-        }
         inline for (@typeInfo(std.http.Method).@"enum".fields) |field| {
-            if (comptime std.mem.eql(u8, field.name, "POST")) // already handled
-                continue;
-            if (std.mem.eql(u8, methodStr, field.name)) {
+            if (std.mem.eql(u8, methodStr, field.name))
                 method = @field(std.http.Method, field.name);
-            }
         }
-        if (method != .GET) {
+        if (method != .GET)
             payload = try L.Zcheckfield(?[]const u8, 2, "body");
-        }
     }
 
     const uri = std.Uri.parse(uriString) catch |err| {
