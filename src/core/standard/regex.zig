@@ -1,132 +1,157 @@
 const std = @import("std");
 const luau = @import("luau");
-const regex = @import("regex");
+const pcre2 = @import("regex");
 
 const luaHelper = @import("../utils/luahelper.zig");
-
-const Regex = regex.Regex;
+const MethodMap = @import("../utils/method_map.zig");
+const tagged = @import("../../tagged.zig");
 
 const VM = luau.VM;
 
+const TAG_REGEX_COMPILED = tagged.Tags.get("REGEX_COMPILED").?;
+
 pub const LIB_NAME = "regex";
 
-fn lua_regexCaptureSearch(L: *VM.lua.State, re: *Regex, input: []const u8, index: *usize, captures: *i32, global: bool) !void {
-    var relative_index: usize = 0;
-    while (true) {
-        if (relative_index >= input.len)
-            break;
-        if (try re.search(input[relative_index..])) |match| {
-            defer match.deinit();
-            const groups = match.groups;
-            L.createtable(@intCast(groups.len), 0);
-            if (groups.len == 0) break;
-            var i: i32 = 1;
-            for (groups) |str| {
-                L.Zpushvalue(.{
-                    .index = 1 + index.* + relative_index + str.index,
-                    .string = str.slice,
-                });
-                L.rawseti(-2, i);
-                i += 1;
-            }
-            relative_index += match.groups[0].index + match.groups[0].slice.len + 1;
-            L.rawseti(-2, captures.*);
-            captures.* += 1;
-        } else break;
-        if (!global)
-            break;
-    }
-    index.* += input.len;
-}
-
 const LuaRegex = struct {
+    code: *pcre2.Code,
+
     pub const META = "regex_instance";
 
-    pub fn __namecall(L: *VM.lua.State) !i32 {
-        try L.Zchecktype(1, .Userdata);
-        var r_ptr = L.touserdata(Regex, 1) orelse unreachable;
+    pub fn match(self: *LuaRegex, L: *VM.lua.State) !i32 {
+        const allocator = luau.getallocator(L);
 
-        const namecall = L.namecallstr() orelse return 0;
-
-        if (std.mem.eql(u8, namecall, "match")) {
-            const input = try L.Zcheckvalue([]const u8, 2, null);
-            var i: i32 = 1;
-            if (try r_ptr.match(input)) |match| {
-                defer match.deinit();
-                const groups = match.groups;
-                L.createtable(@intCast(groups.len), 0);
-                for (groups) |str| {
+        const input = try L.Zcheckvalue([]const u8, 2, null);
+        if (try self.code.match(allocator, input)) |m| {
+            defer m.free(allocator);
+            L.createtable(@intCast(m.captures.len), 0);
+            for (m.captures, 1..) |capture, i| {
+                if (capture) |c| {
                     L.Zpushvalue(.{
-                        .index = 1 + str.index,
-                        .string = str.slice,
+                        .index = 1 + c.index,
+                        .string = c.slice,
+                        .name = c.name,
                     });
-                    L.rawseti(-2, i);
-                    i += 1;
+                } else {
+                    L.pushnil();
                 }
-                return 1;
+                L.rawseti(-2, @intCast(i));
             }
-        } else if (std.mem.eql(u8, namecall, "search")) {
-            const input = try L.Zcheckvalue([]const u8, 2, null);
-            var i: i32 = 1;
-            if (try r_ptr.search(input)) |match| {
-                defer match.deinit();
-                const groups = match.groups;
-                L.createtable(@intCast(groups.len), 0);
-                for (groups) |str| {
-                    L.Zpushvalue(.{
-                        .index = 1 + str.index,
-                        .string = str.slice,
-                    });
-                    L.rawseti(-2, i);
-                    i += 1;
-                }
-                return 1;
-            }
-        } else if (std.mem.eql(u8, namecall, "captures")) {
-            const input = try L.Zcheckvalue([]const u8, 2, null);
-            const global = L.Loptboolean(3, false);
-
-            var index: usize = 0;
-            var captures: i32 = 1;
-            L.newtable();
-
-            try lua_regexCaptureSearch(L, r_ptr, input, &index, &captures, global);
-
             return 1;
-        } else if (std.mem.eql(u8, namecall, "isMatch")) {
-            const input = try L.Zcheckvalue([]const u8, 2, null);
-            L.pushboolean(r_ptr.isMatch(input));
-            return 1;
-        } else if (std.mem.eql(u8, namecall, "format")) {
-            const allocator = luau.getallocator(L);
-            const input = try L.Zcheckvalue([:0]const u8, 2, null);
-            const fmt = try L.Zcheckvalue([:0]const u8, 3, null);
-            const formatted = try r_ptr.allocFormat(allocator, input, fmt);
-            defer allocator.free(formatted);
-            L.pushlstring(formatted);
-            return 1;
-        } else if (std.mem.eql(u8, namecall, "replace")) {
-            const allocator = luau.getallocator(L);
-            const input = try L.Zcheckvalue([:0]const u8, 2, null);
-            const fmt = try L.Zcheckvalue([:0]const u8, 3, null);
-            const formatted = try r_ptr.allocReplace(allocator, input, fmt);
-            defer allocator.free(formatted);
-            L.pushlstring(formatted);
-            return 1;
-        } else if (std.mem.eql(u8, namecall, "replaceAll")) {
-            const allocator = luau.getallocator(L);
-            const input = try L.Zcheckvalue([:0]const u8, 2, null);
-            const fmt = try L.Zcheckvalue([:0]const u8, 3, null);
-            const formatted = try r_ptr.allocReplaceAll(allocator, input, fmt);
-            defer allocator.free(formatted);
-            L.pushlstring(formatted);
-            return 1;
-        } else return L.Zerrorf("Unknown method: {s}\n", .{namecall});
+        }
         return 0;
     }
 
-    pub fn __dtor(reg: *Regex) void {
-        reg.deinit();
+    pub fn search(self: *LuaRegex, L: *VM.lua.State) !i32 {
+        const allocator = luau.getallocator(L);
+
+        const input = try L.Zcheckvalue([]const u8, 2, null);
+        if (try self.code.search(allocator, input)) |m| {
+            defer m.free(allocator);
+            L.createtable(@intCast(m.captures.len), 0);
+            for (m.captures, 1..) |capture, i| {
+                if (capture) |c| {
+                    L.Zpushvalue(.{
+                        .index = 1 + c.index,
+                        .string = c.slice,
+                        .name = c.name,
+                    });
+                } else {
+                    L.pushnil();
+                }
+                L.rawseti(-2, @intCast(i));
+            }
+            return 1;
+        }
+        return 0;
+    }
+
+    pub fn captures(self: *LuaRegex, L: *VM.lua.State) !i32 {
+        const allocator = luau.getallocator(L);
+
+        const input = try L.Zcheckvalue([]const u8, 2, null);
+        const global = L.Loptboolean(3, false);
+
+        L.newtable();
+
+        var iter = try self.code.searchIterator(input);
+        defer iter.free();
+        var captures_count: i32 = 1;
+        while (try iter.next(allocator)) |m| {
+            defer m.free(allocator);
+            L.createtable(@intCast(m.captures.len), 0);
+            for (m.captures, 1..) |capture, i| {
+                if (capture) |c| {
+                    L.Zpushvalue(.{
+                        .index = 1 + c.index,
+                        .string = c.slice,
+                        .name = c.name,
+                    });
+                } else {
+                    L.pushnil();
+                }
+                L.rawseti(-2, @intCast(i));
+            }
+            L.rawseti(-2, captures_count);
+            captures_count += 1;
+            if (!global)
+                break;
+        }
+
+        return 1;
+    }
+
+    pub fn isMatch(self: *LuaRegex, L: *VM.lua.State) !i32 {
+        const input = try L.Zcheckvalue([]const u8, 2, null);
+        L.pushboolean(try self.code.isMatch(input));
+        return 1;
+    }
+
+    pub fn format(self: *LuaRegex, L: *VM.lua.State) !i32 {
+        const allocator = luau.getallocator(L);
+
+        const input = try L.Zcheckvalue([:0]const u8, 2, null);
+        const fmt = try L.Zcheckvalue([:0]const u8, 3, null);
+        const formatted = try self.code.allocFormat(allocator, input, fmt);
+        defer allocator.free(formatted);
+        L.pushlstring(formatted);
+        return 1;
+    }
+
+    pub fn replace(self: *LuaRegex, L: *VM.lua.State) !i32 {
+        const allocator = luau.getallocator(L);
+
+        const input = try L.Zcheckvalue([:0]const u8, 2, null);
+        const fmt = try L.Zcheckvalue([:0]const u8, 3, null);
+        const formatted = try self.code.allocReplace(allocator, input, fmt);
+        defer allocator.free(formatted);
+        L.pushlstring(formatted);
+        return 1;
+    }
+
+    pub fn replaceAll(self: *LuaRegex, L: *VM.lua.State) !i32 {
+        const allocator = luau.getallocator(L);
+
+        const input = try L.Zcheckvalue([:0]const u8, 2, null);
+        const fmt = try L.Zcheckvalue([:0]const u8, 3, null);
+        const formatted = try self.code.allocReplaceAll(allocator, input, fmt);
+        defer allocator.free(formatted);
+        L.pushlstring(formatted);
+        return 1;
+    }
+
+    pub const __namecall = MethodMap.CreateNamecallMap(LuaRegex, TAG_REGEX_COMPILED, .{
+        .{ "match", match },
+        .{ "search", search },
+        .{ "captures", captures },
+        .{ "isMatch", isMatch },
+        .{ "format", format },
+        .{ "replace", replace },
+        .{ "replaceAll", replaceAll },
+    });
+
+    pub fn __dtor(L: *VM.lua.State, reg: **pcre2.Code) void {
+        _ = L;
+        reg.*.deinit();
     }
 };
 
@@ -136,24 +161,18 @@ fn regex_new(L: *VM.lua.State) !i32 {
     if (flags.len > 2)
         return L.Zerror("Too many flags provided");
 
-    var flag: c_int = 0;
+    var flag: u32 = 0;
     for (flags) |f| switch (f) {
-        'i' => flag |= regex.FLAG_IGNORECASE,
-        'm' => flag |= regex.FLAG_MULTILINE,
+        'i' => flag |= pcre2.Options.CASELESS,
+        'm' => flag |= pcre2.Options.MULTILINE,
+        'u' => flag |= pcre2.Options.UTF,
         else => return L.Zerrorf("Unknown flag: {c}", .{f}),
     };
 
-    const r = try Regex.compile(luau.getallocator(L), try L.Zcheckvalue([]const u8, 1, null), if (flag == 0) null else flag);
-
-    const r_ptr = L.newuserdatadtor(Regex, LuaRegex.__dtor);
-
-    r_ptr.* = r;
-
-    if (L.Lgetmetatable(LuaRegex.META) == .Table)
-        _ = L.setmetatable(-2)
-    else
-        std.debug.panic("InternalError (Regex Metatable not initialized)", .{});
-
+    var pos: usize = 0;
+    const r = try pcre2.compile(try L.Zcheckvalue([]const u8, 1, null), flag, &pos);
+    const ptr = L.newuserdatataggedwithmetatable(*pcre2.Code, TAG_REGEX_COMPILED);
+    ptr.* = r;
     return 1;
 }
 
@@ -164,7 +183,8 @@ pub fn loadLib(L: *VM.lua.State) void {
         L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaRegex.__namecall); // metatable.__namecall
 
         L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
-        L.pop(1);
+        L.setuserdatametatable(TAG_REGEX_COMPILED, -1);
+        L.setuserdatadtor(*pcre2.Code, TAG_REGEX_COMPILED, LuaRegex.__dtor);
     }
 
     L.createtable(0, 1);

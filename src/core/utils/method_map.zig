@@ -22,6 +22,7 @@ pub fn WithFn(
 
 pub fn CreateNamecallMap(
     comptime T: type,
+    comptime tag: ?i32,
     comptime method_map: anytype,
 ) fn (L: *VM.lua.State) anyerror!i32 {
     const map = std.StaticStringMap(*const fn (ptr: *T, L: *VM.lua.State) anyerror!i32).initComptime(method_map);
@@ -29,7 +30,11 @@ pub fn CreateNamecallMap(
     return struct {
         fn inner(L: *VM.lua.State) !i32 {
             try L.Zchecktype(1, .Userdata);
-            const ptr = L.touserdata(T, 1) orelse unreachable;
+            const ptr = if (comptime tag) |t|
+                L.touserdatatagged(T, 1, t) orelse return L.Zerrorf("Bad userdata", .{})
+            else
+                L.touserdata(T, 1) orelse unreachable;
+
             const namecall = L.namecallstr() orelse return 0;
             const method = map.get(namecall) orelse return L.Zerrorf("Unknown method: {s}", .{namecall});
             return @call(.auto, method, .{ ptr, L });

@@ -13,6 +13,9 @@ const tagged = @import("../../tagged.zig");
 
 const VM = luau.VM;
 
+const TAG_FFI_POINTER = tagged.Tags.get("FFI_POINTER").?;
+const TAG_FFI_DATATYPE = tagged.Tags.get("FFI_DATATYPE").?;
+
 pub const LIB_NAME = "ffi";
 
 const cpu_endian = builtin.cpu.arch.endian();
@@ -200,7 +203,7 @@ const LuaPointer = struct {
         if (buf.len < @sizeOf(usize))
             return error.SmallBuffer;
 
-        const ptr = L.newuserdatataggedwithmetatable(LuaPointer, tagged.FFI_POINTER);
+        const ptr = L.newuserdatataggedwithmetatable(LuaPointer, TAG_FFI_POINTER);
 
         ptr.* = .{
             .ptr = @ptrFromInt(std.mem.readVarInt(usize, buf[0..@sizeOf(usize)], cpu_endian)),
@@ -219,7 +222,7 @@ const LuaPointer = struct {
         const mem = try allocator.alloc(u8, size);
         @memset(mem, 0);
 
-        const ptr = L.newuserdatataggedwithmetatable(LuaPointer, tagged.FFI_POINTER);
+        const ptr = L.newuserdatataggedwithmetatable(LuaPointer, TAG_FFI_POINTER);
 
         ptr.* = .{
             .ptr = @ptrCast(@alignCast(mem.ptr)),
@@ -236,7 +239,7 @@ const LuaPointer = struct {
     }
 
     pub fn newStaticPtr(L: *VM.lua.State, staticPtr: ?*anyopaque, default_retain: bool) !*LuaPointer {
-        const ptr = L.newuserdatataggedwithmetatable(LuaPointer, tagged.FFI_POINTER);
+        const ptr = L.newuserdatataggedwithmetatable(LuaPointer, TAG_FFI_POINTER);
 
         ptr.* = .{
             .ptr = staticPtr,
@@ -266,7 +269,7 @@ const LuaPointer = struct {
         const ref_ptr = value(L, 1) orelse return error.Failed;
         const allocator = luau.getallocator(L);
 
-        const ptr = L.newuserdatataggedwithmetatable(LuaPointer, tagged.FFI_POINTER);
+        const ptr = L.newuserdatataggedwithmetatable(LuaPointer, TAG_FFI_POINTER);
 
         const mem = try allocator.create(*anyopaque);
         mem.* = @ptrCast(@alignCast(ref_ptr.ptr));
@@ -295,11 +298,11 @@ const LuaPointer = struct {
     }
 
     pub inline fn is(L: *VM.lua.State, idx: i32) bool {
-        return L.getUserdataTag(idx) == tagged.FFI_POINTER;
+        return L.getUserdataTag(idx) == TAG_FFI_POINTER;
     }
 
     pub inline fn value(L: *VM.lua.State, idx: i32) ?*LuaPointer {
-        return L.touserdatatagged(LuaPointer, idx, tagged.FFI_POINTER);
+        return L.touserdatatagged(LuaPointer, idx, TAG_FFI_POINTER);
     }
 
     pub fn retain(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
@@ -563,7 +566,7 @@ const LuaPointer = struct {
         return 1;
     }
 
-    pub const __namecall = MethodMap.CreateNamecallMap(LuaPointer, .{
+    pub const __namecall = MethodMap.CreateNamecallMap(LuaPointer, TAG_FFI_POINTER, .{
         .{ "retain", retain },
         .{ "release", release },
         .{ "setTag", setTag },
@@ -669,7 +672,7 @@ const LuaHandle = struct {
         return 1;
     }
 
-    pub const __namecall = MethodMap.CreateNamecallMap(LuaHandle, .{
+    pub const __namecall = MethodMap.CreateNamecallMap(LuaHandle, null, .{
         .{ "getSymbol", getSymbol },
     });
 
@@ -882,7 +885,7 @@ const LuaDataType = struct {
         if (result.index + 1 > std.math.maxInt(u32))
             return error.MaximumTagExceeded;
 
-        const datatype = L.newuserdatataggedwithmetatable(LuaDataType, tagged.FFI_DATATYPE);
+        const datatype = L.newuserdatataggedwithmetatable(LuaDataType, TAG_FFI_DATATYPE);
 
         datatype.* = .{
             .type = .{
@@ -956,7 +959,7 @@ const LuaDataType = struct {
         return 1;
     }
 
-    pub const __namecall = MethodMap.CreateNamecallMap(LuaDataType, .{
+    pub const __namecall = MethodMap.CreateNamecallMap(LuaDataType, TAG_FFI_DATATYPE, .{
         .{ "offset", offset },
         .{ "new", new },
         .{ "newTag", newTag },
@@ -965,7 +968,7 @@ const LuaDataType = struct {
     pub fn __index(L: *VM.lua.State) !i32 {
         try L.Zchecktype(1, .Userdata);
 
-        const ptr = L.touserdatatagged(LuaDataType, 1, tagged.FFI_DATATYPE) orelse return L.Zerror("Invalid userdata");
+        const ptr = L.touserdatatagged(LuaDataType, 1, TAG_FFI_DATATYPE) orelse return L.Zerror("Invalid userdata");
 
         const index = try L.Zcheckvalue([]const u8, 2, null);
 
@@ -1005,7 +1008,7 @@ fn convertToFFIType(number: i32) !DataType {
 fn isFFIType(L: *VM.lua.State, idx: i32) bool {
     switch (L.typeOf(idx)) {
         .Userdata => {
-            _ = L.touserdatatagged(LuaDataType, idx, tagged.FFI_DATATYPE) orelse return false;
+            _ = L.touserdatatagged(LuaDataType, idx, TAG_FFI_DATATYPE) orelse return false;
             return true;
         },
         else => return false,
@@ -1015,7 +1018,7 @@ fn isFFIType(L: *VM.lua.State, idx: i32) bool {
 fn toFFIType(L: *VM.lua.State, idx: i32) !DataType {
     switch (L.typeOf(idx)) {
         .Userdata => {
-            const lua_struct = L.touserdatatagged(LuaDataType, idx, tagged.FFI_DATATYPE) orelse return error.InvalidFFIType;
+            const lua_struct = L.touserdatatagged(LuaDataType, idx, TAG_FFI_DATATYPE) orelse return error.InvalidFFIType;
             return lua_struct.*.type;
         },
         else => return error.InvalidType,
@@ -1205,7 +1208,7 @@ fn ffi_struct(L: *VM.lua.State) !i32 {
         L.pop(1);
     }
 
-    const data = L.newuserdatataggedwithmetatable(LuaDataType, tagged.FFI_DATATYPE);
+    const data = L.newuserdatataggedwithmetatable(LuaDataType, TAG_FFI_DATATYPE);
 
     const datatype, const offsets = try makeStruct(allocator, struct_map.values());
 
@@ -2100,8 +2103,8 @@ pub fn loadLib(L: *VM.lua.State) void {
         L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaDataType.__namecall); // metatable.__namecall
 
         L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
-        L.setuserdatadtor(LuaDataType, tagged.FFI_DATATYPE, LuaDataType.__dtor);
-        L.setuserdatametatable(tagged.FFI_DATATYPE, -1);
+        L.setuserdatadtor(LuaDataType, TAG_FFI_DATATYPE, LuaDataType.__dtor);
+        L.setuserdatametatable(TAG_FFI_DATATYPE, -1);
     }
     {
         _ = L.Lnewmetatable(LuaPointer.META);
@@ -2111,8 +2114,8 @@ pub fn loadLib(L: *VM.lua.State) void {
         L.Zsetfieldfn(-1, luau.Metamethods.tostring, LuaPointer.__tostring); // metatable.__tostring
 
         L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
-        L.setuserdatadtor(LuaPointer, tagged.FFI_POINTER, LuaPointer.__dtor);
-        L.setuserdatametatable(tagged.FFI_POINTER, -1);
+        L.setuserdatadtor(LuaPointer, TAG_FFI_POINTER, LuaPointer.__dtor);
+        L.setuserdatametatable(TAG_FFI_POINTER, -1);
     }
 
     L.createtable(0, 17);
@@ -2137,7 +2140,7 @@ pub fn loadLib(L: *VM.lua.State) void {
     L.createtable(0, @intCast(@typeInfo(DataTypes.Types).@"struct".decls.len));
     inline for (@typeInfo(DataTypes.Types).@"struct".decls, 0..) |decl, i| {
         L.pushstring(decl.name[5..]);
-        const ptr = L.newuserdatataggedwithmetatable(LuaDataType, tagged.FFI_DATATYPE);
+        const ptr = L.newuserdatataggedwithmetatable(LuaDataType, TAG_FFI_DATATYPE);
         ptr.* = .{
             .type = DataTypes.order[i].*,
         };

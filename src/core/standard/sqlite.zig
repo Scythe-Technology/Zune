@@ -10,6 +10,9 @@ const tagged = @import("../../tagged.zig");
 
 const VM = luau.VM;
 
+const TAG_SQLITE_DATABASE = tagged.Tags.get("SQLITE_DATABASE").?;
+const TAG_SQLITE_STATEMENT = tagged.Tags.get("SQLITE_STATEMENT").?;
+
 pub const LIB_NAME = "sqlite";
 
 const LuaStatement = struct {
@@ -64,7 +67,7 @@ const LuaStatement = struct {
 
     pub fn __namecall(L: *VM.lua.State) !i32 {
         try L.Zchecktype(1, .Userdata);
-        const ptr = L.touserdatatagged(LuaStatement, 1, tagged.SQLITE_STATEMENT) orelse unreachable;
+        const ptr = L.touserdatatagged(LuaStatement, 1, TAG_SQLITE_STATEMENT) orelse unreachable;
         const namecall = L.namecallstr() orelse return 0;
         const allocator = luau.getallocator(L);
         // TODO: prob should switch to static string map
@@ -236,7 +239,7 @@ const LuaDatabase = struct {
     pub fn transaction(L: *VM.lua.State) !i32 {
         const scheduler = Scheduler.getScheduler(L);
 
-        const ptr = L.touserdatatagged(LuaDatabase, VM.lua.upvalueindex(1), tagged.SQLITE_DATABASE) orelse unreachable;
+        const ptr = L.touserdatatagged(LuaDatabase, VM.lua.upvalueindex(1), TAG_SQLITE_DATABASE) orelse unreachable;
         const kind: TransactionKind = @enumFromInt(L.tointeger(VM.lua.upvalueindex(3)) orelse unreachable);
         const activator = switch (kind) {
             .None => "BEGIN",
@@ -310,7 +313,7 @@ const LuaDatabase = struct {
                 error.InvalidParameter => return L.Zerrorf("SQLite Query Error ({}): must have '$', ':', '?', or '@'", .{err}),
                 else => return L.Zerrorf("SQLite Error ({}): {s}", .{ err, ptr.db.getErrorMessage() }),
             };
-            const stmt_ptr = L.newuserdatataggedwithmetatable(LuaStatement, tagged.SQLITE_STATEMENT);
+            const stmt_ptr = L.newuserdatataggedwithmetatable(LuaStatement, TAG_SQLITE_STATEMENT);
             const ref = L.ref(-1) orelse unreachable;
             ptr.statements.append(ref) catch unreachable; // should have enough capacity
             stmt_ptr.* = .{
@@ -382,7 +385,7 @@ const LuaDatabase = struct {
                 defer L.pop(1);
                 if (L.rawgeti(VM.lua.REGISTRYINDEX, ref) != .Userdata)
                     continue;
-                const stmt_ptr = L.touserdatatagged(LuaStatement, -1, tagged.SQLITE_STATEMENT) orelse continue;
+                const stmt_ptr = L.touserdatatagged(LuaStatement, -1, TAG_SQLITE_STATEMENT) orelse continue;
                 stmt_ptr.close(L);
             }
         }
@@ -405,7 +408,7 @@ fn sqlite_open(L: *VM.lua.State) !i32 {
     } else {
         db = try sqlite.Database.open(allocator, .{});
     }
-    const ptr = L.newuserdatataggedwithmetatable(LuaDatabase, tagged.SQLITE_DATABASE);
+    const ptr = L.newuserdatataggedwithmetatable(LuaDatabase, TAG_SQLITE_DATABASE);
     ptr.* = .{
         .db = db,
         .statements = std.ArrayList(i32).init(allocator),
@@ -420,8 +423,8 @@ pub fn loadLib(L: *VM.lua.State) void {
         L.Zsetfieldfn(-1, luau.Metamethods.index, LuaDatabase.__index); // metatable.__index
         L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaDatabase.__namecall); // metatable.__namecall
 
-        L.setuserdatadtor(LuaDatabase, tagged.SQLITE_DATABASE, LuaDatabase.__dtor);
-        L.setuserdatametatable(tagged.SQLITE_DATABASE, -1);
+        L.setuserdatadtor(LuaDatabase, TAG_SQLITE_DATABASE, LuaDatabase.__dtor);
+        L.setuserdatametatable(TAG_SQLITE_DATABASE, -1);
     }
     {
         _ = L.Lnewmetatable(LuaStatement.META);
@@ -429,8 +432,8 @@ pub fn loadLib(L: *VM.lua.State) void {
         L.Zsetfieldfn(-1, luau.Metamethods.index, LuaStatement.__index); // metatable.__index
         L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaStatement.__namecall); // metatable.__namecall
 
-        L.setuserdatadtor(LuaStatement, tagged.SQLITE_STATEMENT, LuaStatement.__dtor);
-        L.setuserdatametatable(tagged.SQLITE_STATEMENT, -1);
+        L.setuserdatadtor(LuaStatement, TAG_SQLITE_STATEMENT, LuaStatement.__dtor);
+        L.setuserdatametatable(TAG_SQLITE_STATEMENT, -1);
     }
 
     L.createtable(0, 1);

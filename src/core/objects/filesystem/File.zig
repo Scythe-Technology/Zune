@@ -13,6 +13,8 @@ const VM = luau.VM;
 
 const File = @This();
 
+const TAG_FS_FILE = tagged.Tags.get("FS_FILE").?;
+
 pub const FileKind = enum {
     File,
     Tty,
@@ -453,7 +455,7 @@ fn before_method(self: *File, L: *VM.lua.State) !void {
         return L.Zerror("File is closed");
 }
 
-const __namecall = MethodMap.CreateNamecallMap(File, .{
+const __namecall = MethodMap.CreateNamecallMap(File, TAG_FS_FILE, .{
     .{ "write", MethodMap.WithFn(File, write, before_method) },
     .{ "writeSync", MethodMap.WithFn(File, writeSync, before_method) },
     .{ "append", MethodMap.WithFn(File, append, before_method) },
@@ -485,12 +487,12 @@ pub inline fn load(L: *VM.lua.State) void {
 
     L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
 
-    L.setuserdatametatable(tagged.FS_FILE, -1);
-    L.setuserdatadtor(File, tagged.FS_FILE, __dtor);
+    L.setuserdatametatable(TAG_FS_FILE, -1);
+    L.setuserdatadtor(File, TAG_FS_FILE, __dtor);
 }
 
 pub fn push(L: *VM.lua.State, file: std.fs.File, kind: FileKind) void {
-    const ptr = L.newuserdatataggedwithmetatable(File, tagged.FS_FILE);
+    const ptr = L.newuserdatataggedwithmetatable(File, TAG_FS_FILE);
     ptr.* = .{
         .handle = file,
         .kind = kind,

@@ -123,7 +123,7 @@ pub fn build(b: *std.Build) !void {
     const dep_luau = b.dependency("luau", .{ .target = target, .optimize = packed_optimize });
     const dep_lz4 = b.dependency("lz4", .{ .target = target, .optimize = packed_optimize });
     const dep_zstd = b.dependency("zstd", .{ .target = target, .optimize = packed_optimize });
-    const dep_czrex = b.dependency("czrex", .{ .target = target, .optimize = packed_optimize });
+    const dep_pcre2 = b.dependency("pcre2", .{ .target = target, .optimize = packed_optimize });
     const dep_tinycc = b.dependency("tinycc", .{ .target = target, .optimize = packed_optimize, .CONFIG_TCC_BACKTRACE = false });
     const dep_sqlite = b.dependency("sqlite", .{
         .target = target,
@@ -174,7 +174,7 @@ pub fn build(b: *std.Build) !void {
     exe.root_module.addImport("zstd", dep_zstd.module("zig-zstd"));
     exe.root_module.addImport("json", dep_json.module("zig-json"));
     exe.root_module.addImport("luau", dep_luau.module("luau"));
-    exe.root_module.addImport("regex", dep_czrex.module("czrex"));
+    exe.root_module.addImport("regex", dep_pcre2.module("zpcre2"));
     exe.root_module.addImport("datetime", dep_datetime.module("zdt"));
     exe.root_module.addImport("toml", dep_toml.module("tomlz"));
     exe.root_module.addImport("tinycc", dep_tinycc.module("tinycc"));
@@ -232,7 +232,7 @@ pub fn build(b: *std.Build) !void {
     exe_unit_tests.root_module.addImport("zstd", dep_zstd.module("zig-zstd"));
     exe_unit_tests.root_module.addImport("json", dep_json.module("zig-json"));
     exe_unit_tests.root_module.addImport("luau", dep_luau.module("luau"));
-    exe_unit_tests.root_module.addImport("regex", dep_czrex.module("czrex"));
+    exe_unit_tests.root_module.addImport("regex", dep_pcre2.module("zpcre2"));
     exe_unit_tests.root_module.addImport("datetime", dep_datetime.module("zdt"));
     exe_unit_tests.root_module.addImport("toml", dep_toml.module("tomlz"));
     exe_unit_tests.root_module.addImport("tinycc", dep_tinycc.module("tinycc"));

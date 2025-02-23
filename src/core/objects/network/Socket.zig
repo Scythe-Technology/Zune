@@ -13,6 +13,8 @@ const VM = luau.VM;
 
 const Socket = @This();
 
+const TAG_NET_SOCKET = tagged.Tags.get("NET_SOCKET").?;
+
 socket: std.posix.socket_t,
 open: bool = true,
 
@@ -25,7 +27,7 @@ fn closesocket(socket: std.posix.socket_t) void {
 
 pub fn __index(L: *VM.lua.State) !i32 {
     try L.Zchecktype(1, .Userdata);
-    const ptr = L.touserdatatagged(Socket, 1, tagged.NET_SOCKET) orelse return 0;
+    const ptr = L.touserdatatagged(Socket, 1, TAG_NET_SOCKET) orelse return 0;
     const index = try L.Zcheckvalue([:0]const u8, 2, null);
 
     if (std.mem.eql(u8, index, "open")) {
@@ -497,7 +499,7 @@ fn before_method(self: *Socket, L: *VM.lua.State) !void {
         return L.Zerror("SocketClosed");
 }
 
-const __namecall = MethodMap.CreateNamecallMap(Socket, .{
+const __namecall = MethodMap.CreateNamecallMap(Socket, TAG_NET_SOCKET, .{
     .{ "sendAsync", MethodMap.WithFn(Socket, sendAsync, before_method) },
     .{ "sendMsgAsync", MethodMap.WithFn(Socket, sendMsgAsync, before_method) },
     .{ "recvAsync", MethodMap.WithFn(Socket, recvAsync, before_method) },
@@ -525,12 +527,12 @@ pub inline fn load(L: *VM.lua.State) void {
 
     L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
 
-    L.setuserdatametatable(tagged.NET_SOCKET, -1);
-    L.setuserdatadtor(Socket, tagged.NET_SOCKET, __dtor);
+    L.setuserdatametatable(TAG_NET_SOCKET, -1);
+    L.setuserdatadtor(Socket, TAG_NET_SOCKET, __dtor);
 }
 
 pub fn push(L: *VM.lua.State, value: std.posix.socket_t) void {
-    const ptr = L.newuserdatataggedwithmetatable(Socket, tagged.NET_SOCKET);
+    const ptr = L.newuserdatataggedwithmetatable(Socket, TAG_NET_SOCKET);
     ptr.* = .{
         .socket = value,
     };
