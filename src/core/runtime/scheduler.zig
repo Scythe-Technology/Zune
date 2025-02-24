@@ -133,6 +133,7 @@ tasks: std.ArrayList(TaskObject(anyopaque)),
 awaits: std.ArrayList(AwaitingObject(anyopaque)),
 dynamic: aio.Dynamic,
 async_tasks: usize = 0,
+active_incr: u32 = 0,
 
 frame: FrameKind = .None,
 
@@ -402,6 +403,7 @@ pub fn queueIoCallback(
 
     try self.dynamic.queue(queueItem, self);
     self.async_tasks += 1;
+    self.active_incr += 1;
 }
 
 pub fn queueIoCallbackCtx(
@@ -436,6 +438,7 @@ pub fn queueIoCallbackCtx(
 
     try self.dynamic.queue(queueItem, self);
     self.async_tasks += 1;
+    self.active_incr += 1;
 }
 
 pub fn queueIo(
@@ -461,6 +464,7 @@ pub fn queueIo(
 
     try self.dynamic.queue(queueItem, self);
     self.async_tasks += 1;
+    self.active_incr += 1;
 }
 
 pub fn resumeState(state: *VM.lua.State, from: ?*VM.lua.State, args: i32) !VM.lua.Status {
@@ -597,6 +601,8 @@ pub fn run(self: *Self, comptime mode: Zune.RunMode) void {
                     active += res.num_completed;
                 }
             }
+            active = self.active_incr;
+            self.active_incr = 0;
         }
         if (self.deferred.len > 0) {
             self.frame = .Deferred;
