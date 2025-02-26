@@ -5,6 +5,8 @@ const TagNames: []const []const u8 = &.{
     "NET_SOCKET",
     // PROCESS
     "PROCESS_CHILD",
+    // CRYPTO
+    "CRYPTO_HASHER",
     // REGEX
     "REGEX_COMPILED",
     // FFI

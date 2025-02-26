@@ -7,10 +7,12 @@ local expect = testing.expect;
 local test = testing.test;
 
 local function testPassword(password: string, options: any?)
-    local hash = crypto.password.hash(password, options);
-    local hash2 = crypto.password.hash(password, options);
+    local hash;
+    local hash2;
     test("Hash", function()
         -- Hashes should be different
+        hash = crypto.password.hash(password, options);
+        hash2 = crypto.password.hash(password, options);
         expect(hash).never.toBe(hash2);
         if (options) then
             expect(hash:sub(1, #options.algorithm + 2)).toBe(`${options.algorithm}$`);

@@ -1917,37 +1917,36 @@ type StdioLib = {
 --[======[ Stdio ]======]--
 
 --[======[ Crypto ]======]--
-type HashFn = (str: string) -> string
-type HmacFn = (str: string, key: string) -> string
+declare class CryptoHash
+    digest:
+        & ((self: CryptoHash) -> buffer)
+        & ((self: CryptoHash, encoding: "binary") -> buffer)
+        & ((self: CryptoHash, encoding: "hex" | "base64") -> string)
+    function update(self, value: string | buffer): ()
+    function copy(self): CryptoHash
+end
 
-type HashAlgorithms<F> = {
-    sha1: F,
-    md5: F,
-    blake3: F,
-    sha2: {
-        sha224: F,
-        sha256: F,
-        sha384: F,
-        sha512: F,
-    },
-    sha3: {
-        sha3_224: F,
-        sha3_256: F,
-        sha3_384: F,
-        sha3_512: F,
-    },
-    blake2: {
-        b128: F,
-        b160: F,
-        b256: F,
-        b384: F,
-        b512: F,
-        s128: F,
-        s160: F,
-        s224: F,
-        s256: F,
-    },
-}
+type HashAlgorithms =
+    | "sha1"
+    | "md5"
+    | "blake3"
+    | "sha224"
+    | "sha256"
+    | "sha384"
+    | "sha512"
+    | "sha3_224"
+    | "sha3_256"
+    | "sha3_384"
+    | "sha3_512"
+    | "blake2b128"
+    | "blake2b160"
+    | "blake2b256"
+    | "blake2b384"
+    | "blake2b512"
+    | "blake2s128"
+    | "blake2s160"
+    | "blake2s224"
+    | "blake2s256"
 
 type BcryptPasswordOptions = {
     --- Default: "argon2d"
@@ -1973,21 +1972,18 @@ type Argon2PasswordOptions = {
 
 type PasswordOptions = BcryptPasswordOptions | Argon2PasswordOptions
 
-type EncryptedAes = {
-    cipher: string,
-    tag: string,
+type EncryptedData = {
+    cipher: buffer,
+    tag: buffer,
+}
+
+type Aead = {
+    encrypt: (data: string | buffer, key: string | buffer, nonce: string | buffer, ad: (string | buffer)?) -> EncryptedData,
+    decrypt: (cipher: string | buffer, tag: string | buffer, key: string | buffer, nonce: string | buffer, ad: (string | buffer)?) -> string,
 }
 
 type CryptoLib = {
-    --[[
-        Hash functions
-    ]]
-    hash: HashAlgorithms<HashFn>,
-
-    --[[
-        HMAC functions
-    ]]
-    hmac: HashAlgorithms<HmacFn>,
+    createHash: (algorithm: HashAlgorithms, secret: string?) -> CryptoHash,
 
     --[[
         Password hashing function
@@ -2027,18 +2023,13 @@ type CryptoLib = {
         fill: (buffer: buffer, offset: number, length: number) -> (),
     },
 
-    --[[
-        AES encryption and decryption.
-    ]]
-    aes: {
-        aes128: {
-            encrypt: (data: string | buffer, key: string | buffer, nonce: string | buffer) -> EncryptedAes,
-            decrypt: (cipher: string | buffer, tag: string | buffer, key: string | buffer, nonce: string | buffer) -> string,
-        },
-        aes256: {
-            encrypt: (data: string | buffer, key: string | buffer, nonce: string | buffer) -> EncryptedAes,
-            decrypt: (cipher: string | buffer, tag: string | buffer, key: string | buffer, nonce: string | buffer) -> string,
-        },
+    aes_gcm: {
+        aes128: Aead,
+        aes256: Aead,
+    },
+    aes_ocb: {
+        aes128: Aead,
+        aes256: Aead,
     },
 }
 --[======[ Crypto ]======]--
