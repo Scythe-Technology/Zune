@@ -584,6 +584,7 @@ pub fn deinit(self: *Self) void {
     self.timer.deinit();
     self.loop.deinit();
     self.@"async".deinit();
+    self.thread_pool.shutdown();
     self.thread_pool.deinit();
     self.allocator.destroy(self.thread_pool);
 }
