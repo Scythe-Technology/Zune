@@ -1410,7 +1410,7 @@ type NetworkLib = {
     SOCKOPTLV: NetworkSocketOptionLevel,
     IPPROTO: NetworkIPProtocols,
 
-    createSocketAsync: (address_family: number, flags: number, protocol: number) -> NetworkSocket,
+    createSocket: (address_family: number, flags: number, protocol: number) -> NetworkSocket,
     getAddressList: (name: string, port: number) -> {NetworkAddress},
 
     --[[

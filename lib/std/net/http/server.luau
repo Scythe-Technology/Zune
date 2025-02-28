@@ -53,6 +53,8 @@ export type ServeOptions = {
     }?,
     --- The function to handle requests.
     request: (request: Request) ->  string | Response,
+    --- Functions to handle websockets.
+    -- websocket: ServerWebSocketHandlers?,
 }
 
 type Server = {
@@ -173,9 +175,6 @@ local function listenHttpClient(
         if (not stream_ok) then
             local err = data::any;
             if (SocketUtils.SocketClosedError[err]) then
-                break; -- closed/disconnected
-            end
-            if (err == "ConnectionResetByPeer") then
                 break; -- closed/disconnected
             end
             print("Error(Unhandled): ", err);
@@ -386,7 +385,7 @@ function server.serve(opts: ServeOptions): Server
     local reuseAddress = opts.reuseAddress or false;
     local clientTimeout = opts.clientTimeout or 60;
     local maxConnections = opts.maxConnections or 1024;
-    local websocket_handlers = opts.websocket or {};
+    -- local websocket_handlers = opts.websocket or {};
     local keepAlive = opts.keepAlive;
     local keepAliveTimeout = if (keepAlive) then keepAlive.timeout else 0;
     local keepAliveMaxRequests = if (keepAlive) then keepAlive.maxRequests else 0;
@@ -400,14 +399,14 @@ function server.serve(opts: ServeOptions): Server
     assert(type(reuseAddress) == "boolean", "Expected reuseAddress to be a boolean");
     assert(type(clientTimeout) == "number", "Expected clientTimeout to be a number");
     assert(type(maxConnections) == "number", "Expected maxConnections to be a number");
-    assert(type(websocket_handlers) == "table", "Expected websocket to be a table");
+    -- assert(type(websocket_handlers) == "table", "Expected websocket to be a table");
     assert(type(keepAlive) == "table" or keepAlive == nil, "Expected keepAlive to be a table");
     assert(type(keepAliveTimeout) == "number", "Expected keepAlive.timeout to be a number");
     assert(type(keepAliveMaxRequests) == "number", "Expected keepAlive.maxRequests to be a number");
 
     assert(type(callback_request) == "function", "Expected request to be a function");
 
-    local socket = net.createSocketAsync(
+    local socket = net.createSocket(
         net.ADDRF.INET,
         bit32.bor(net.SOCKF.STREAM, net.SOCKF.CLOEXEC, net.SOCKF.NONBLOCK),
         net.IPPROTO.TCP

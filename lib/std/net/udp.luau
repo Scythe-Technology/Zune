@@ -115,9 +115,9 @@ function udp.createAsync(opts: UDPSocketOptions): UDPSocket
     
     assert(type(callback_data) == "function" or callback_data == nil, "Expected data to be a function");
 
-    local socket = net.createSocketAsync(
+    local socket = net.createSocket(
         net.ADDRF.INET,
-        bit32.bor(net.SOCKF.DGRAM, net.SOCKF.NONBLOCK),
+        bit32.bor(net.SOCKF.DGRAM, net.SOCKF.NONBLOCK, net.SOCKF.CLOEXEC),
         net.IPPROTO.UDP
     );
 

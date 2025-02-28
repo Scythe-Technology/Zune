@@ -36,4 +36,4 @@ This project includes third-party components with the following licenses:
 | [`tomlz`](https://github.com/mattyhall/tomlz) | [MIT](https://github.com/mattyhall/tomlz/blob/main/LICENCE) |
 | [`z-sqlite`](https://github.com/Scythe-Technology/z-sqlite) | [MIT](https://github.com/Scythe-Technology/z-sqlite/blob/master/LICENSE), [SQLite](https://sqlite.org/copyright.html) |
 | [`zig-zstd`](https://github.com/Scythe-Technology/zig-zstd) | [MIT](https://github.com/Scythe-Technology/zig-zstd/blob/master/LICENSE), [BSD 3-Clause](https://github.com/facebook/zstd/blob/dev/LICENSE) |
-| [`zig-aio`](https://github.com/Scythe-Technology/zig-aio) | [MIT](https://github.com/Scythe-Technology/zig-aio/blob/master/LICENSE) |
+| [`libxev`](https://github.com/Scythe-Technology/libxev) | [MIT](https://github.com/Scythe-Technology/libxev/blob/main/LICENSE) |

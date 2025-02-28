@@ -1,5 +1,5 @@
 const std = @import("std");
-const aio = @import("aio");
+const xev = @import("xev");
 const luau = @import("luau");
 const builtin = @import("builtin");
 
@@ -31,7 +31,7 @@ fn fs_readFileAsync(L: *VM.lua.State) !i32 {
     });
     errdefer file.close();
 
-    return File.ReadAsyncContext.queue(L, file, useBuffer, 1024, luaHelper.MAX_LUAU_SIZE, true);
+    return File.AsyncReadContext.queue(L, file, useBuffer, 1024, luaHelper.MAX_LUAU_SIZE, true);
 }
 
 fn fs_readFileSync(L: *VM.lua.State) !i32 {
@@ -74,7 +74,7 @@ fn fs_writeFileAsync(L: *VM.lua.State) !i32 {
     const file = try fs.cwd().createFile(path, .{});
     errdefer file.close();
 
-    return File.WriteAsyncContext.queue(L, file, data, true, 0);
+    return File.AsyncWriteContext.queue(L, file, data, true);
 }
 
 fn fs_writeFileSync(L: *VM.lua.State) !i32 {
@@ -172,12 +172,13 @@ fn fs_metadata(L: *VM.lua.State) !i32 {
         var dir = try cwd.openDir(path, fs.Dir.OpenDirOptions{});
         defer dir.close();
         const metadata = try dir.metadata();
-        var isLink = true;
-        _ = cwd.readLink(path, buf) catch |err| switch (err) {
-            else => {
-                isLink = false;
-            },
-        };
+        var isLink = builtin.os.tag != .windows;
+        if (builtin.os.tag != .windows)
+            _ = cwd.readLink(path, buf) catch |err| switch (err) {
+                else => {
+                    isLink = false;
+                },
+            };
         internal_metadata_table(L, metadata, isLink);
     } else if (internal_isFile(cwd, path)) {
         var file = try cwd.openFile(path, fs.File.OpenFlags{
@@ -185,12 +186,13 @@ fn fs_metadata(L: *VM.lua.State) !i32 {
         });
         defer file.close();
         const metadata = try file.metadata();
-        var isLink = true;
-        _ = cwd.readLink(path, buf) catch |err| switch (err) {
-            else => {
-                isLink = false;
-            },
-        };
+        var isLink = builtin.os.tag != .windows;
+        if (builtin.os.tag != .windows)
+            _ = cwd.readLink(path, buf) catch |err| switch (err) {
+                else => {
+                    isLink = false;
+                },
+            };
         internal_metadata_table(L, metadata, isLink);
     } else return std.fs.File.OpenError.FileNotFound;
     return 1;

@@ -248,7 +248,7 @@ function tcp.hostAsync(opts: TCPServerOptions): TCPServer
     assert(type(callback_data) == "function" or callback_data == nil, "Expected data to be a function");
     assert(type(callback_close) == "function" or callback_close == nil, "Expected close to be a function");
 
-    local socket = net.createSocketAsync(
+    local socket = net.createSocket(
         net.ADDRF.INET,
         bit32.bor(net.SOCKF.STREAM, net.SOCKF.CLOEXEC, net.SOCKF.NONBLOCK),
         net.IPPROTO.TCP
@@ -295,7 +295,7 @@ local function connectToHostAsync(name: string, port: number): NetworkSocket
         error("UnknownHostName");
     end
     for _, address in list do
-        local socket = net.createSocketAsync(
+        local socket = net.createSocket(
             address.family,
             bit32.bor(
                 net.SOCKF.STREAM,

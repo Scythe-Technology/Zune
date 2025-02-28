@@ -73,7 +73,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     var L = try luau.init(&gpa_allocator);
     defer L.deinit();
-    var scheduler = Scheduler.init(gpa_allocator, L);
+    var scheduler = try Scheduler.init(gpa_allocator, L);
     defer scheduler.deinit();
 
     try Scheduler.SCHEDULERS.append(&scheduler);

@@ -7,12 +7,10 @@ local task = zune.task;
 return {
     SocketClosedError = {
         ["SocketClosed"] = true,
-        ["Unexpected"] = true,
-        ["SocketNotConnected"] = true,
-        --- ideally from Windows
-        --- similar to "Unexpected", closed socket
-        ["OperationAborted"] = true,
-        ["ConnectionAborted"] = true,
+        ["Canceled"] = true,
+        --- usually from recv operations
+        --- client closed connection
+        ["EOF"] = true,
     };
     close = function(socket: NetworkSocket)
         task.spawn(function(inner_socket)

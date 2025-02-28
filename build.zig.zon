@@ -16,8 +16,8 @@
             .hash = "1220d6bbca59a59f16bda33b69e140d90bad313d11c07c0e2ab16076c59355845112",
         },
         .luau = .{
-            .url = "https://codeload.github.com/Scythe-Technology/zig-luau/tar.gz/8f78dd7d3ef9ba0b021c24ea3170df0fa623f4dd",
-            .hash = "12200b8c38715cb0c11cc089b57afa5c8b765b6b942cb67dc29894de2b325b1b80d1",
+            .url = "https://codeload.github.com/Scythe-Technology/zig-luau/tar.gz/b29ee9d3f6ca6254654da0a34113bd3fafb03cd9",
+            .hash = "12206ab1cf407839e5e63ca53a4ed67958fe05f3367036669270167c2c80904dc007",
         },
         .pcre2 = .{
             .url = "https://codeload.github.com/Scythe-Technology/zpcre2/tar.gz/42138941852bdd12cbd4fd09132e928f45a58ee5",
@@ -43,9 +43,9 @@
             .url = "https://codeload.github.com/Scythe-Technology/zig-tinycc/tar.gz/b781a6b96ba5df8d161fc53ea512b26d99842954",
             .hash = "1220b54282b7aeb3d23a93a76fb99927d8c2d6da966c67b8f8e2645840fed212d5fd",
         },
-        .aio = .{
-            .url = "https://codeload.github.com/Scythe-Technology/zig-aio/tar.gz/fefc408fc98b9140b6bcb9f561cf3b88e61d2e43",
-            .hash = "12205d45aa1393afdaacf766c50862387be24afedb0fd6b91103e636b41dfd28317d",
+        .libxev = .{
+            .url = "https://codeload.github.com/Scythe-Technology/libxev/tar.gz/f80a6ea5440e480f6bdfe98e63dd413ccd41f12e",
+            .hash = "12207d1dfbc306324e6feb2b1c67a8aad53ac6dca8e3f564a55a4a6dc9becf228442",
         },
     },
     .paths = .{
