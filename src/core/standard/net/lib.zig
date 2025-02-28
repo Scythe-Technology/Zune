@@ -26,7 +26,7 @@ fn net_createSocket(L: *VM.lua.State) !i32 {
 
     const socket = try std.posix.socket(domain, flags, protocol);
 
-    Socket.push(L, socket);
+    try Socket.push(L, socket);
 
     return 1;
 }
