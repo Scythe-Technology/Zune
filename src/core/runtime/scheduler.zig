@@ -159,18 +159,23 @@ awaits: std.ArrayList(AwaitingObject(anyopaque)),
 timer: xev.Timer,
 loop: xev.Loop,
 @"async": xev.Async,
+thread_pool: *xev.ThreadPool,
 async_tasks: usize = 0,
 active_incr: u32 = 0,
 
 frame: FrameKind = .None,
 
 pub fn init(allocator: std.mem.Allocator, state: *VM.lua.State) !Self {
+    const thread_pool = try allocator.create(xev.ThreadPool);
+    thread_pool.* = xev.ThreadPool.init(.{});
     return Self{
         .loop = try xev.Loop.init(.{
             .entries = 4096,
+            .thread_pool = thread_pool,
         }),
         .timer = try xev.Timer.init(),
         .@"async" = try xev.Async.init(),
+        .thread_pool = thread_pool,
         .state = state,
         .allocator = allocator,
         .sleeping = SleepingQueue.init(allocator, {}),
@@ -579,6 +584,8 @@ pub fn deinit(self: *Self) void {
     self.timer.deinit();
     self.loop.deinit();
     self.@"async".deinit();
+    self.thread_pool.deinit();
+    self.allocator.destroy(self.thread_pool);
 }
 
 pub fn getScheduler(L: anytype) *Self {
