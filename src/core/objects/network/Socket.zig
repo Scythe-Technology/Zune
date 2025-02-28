@@ -1,5 +1,5 @@
 const std = @import("std");
-const xev = @import("xev");
+const xev = @import("xev").Dynamic;
 const luau = @import("luau");
 const builtin = @import("builtin");
 
@@ -24,7 +24,7 @@ open: bool = true,
 list: CompletionLinkedList = .{},
 
 fn closesocket(socket: std.posix.socket_t) void {
-    switch (builtin.os.tag) {
+    switch (comptime builtin.os.tag) {
         .windows => std.os.windows.closesocket(socket) catch unreachable,
         else => std.posix.close(socket),
     }
@@ -294,7 +294,15 @@ const AsyncAcceptContext = struct {
             return .disarm;
         };
 
-        push(L, socket.fd);
+        push(
+            L,
+            switch (comptime builtin.os.tag) {
+                .windows => @ptrCast(@alignCast(socket.fd)),
+                .ios, .macos, .wasi => socket.fd,
+                .linux => socket.fd(),
+                else => @compileError("Unsupported OS"),
+            },
+        );
         _ = Scheduler.resumeState(L, null, 1) catch {};
 
         return .disarm;
@@ -363,9 +371,7 @@ fn sendAsync(self: *Socket, L: *VM.lua.State) !i32 {
         .lua_socket = SocketRef.init(L, 1, self),
     };
 
-    const socket: xev.TCP = .{
-        .fd = self.socket,
-    };
+    const socket = xev.TCP.initFd(self.socket);
 
     socket.write(
         &scheduler.loop,
@@ -409,9 +415,7 @@ fn sendMsgAsync(self: *Socket, L: *VM.lua.State) !i32 {
         .state = undefined,
     };
 
-    const socket: xev.UDP = .{
-        .fd = self.socket,
-    };
+    const socket = xev.UDP.initFd(self.socket);
 
     socket.write(
         &scheduler.loop,
@@ -446,9 +450,7 @@ fn recvAsync(self: *Socket, L: *VM.lua.State) !i32 {
         .lua_socket = SocketRef.init(L, 1, self),
     };
 
-    const socket: xev.TCP = .{
-        .fd = self.socket,
-    };
+    const socket = xev.TCP.initFd(self.socket);
 
     socket.read(
         &scheduler.loop,
@@ -482,9 +484,7 @@ fn recvMsgAsync(self: *Socket, L: *VM.lua.State) !i32 {
         .state = undefined,
     };
 
-    const socket: xev.UDP = .{
-        .fd = self.socket,
-    };
+    const socket = xev.UDP.initFd(self.socket);
 
     socket.read(
         &scheduler.loop,
@@ -510,9 +510,7 @@ fn acceptAsync(self: *Socket, L: *VM.lua.State) !i32 {
         .lua_socket = SocketRef.init(L, 1, self),
     };
 
-    const socket: xev.TCP = .{
-        .fd = self.socket,
-    };
+    const socket = xev.TCP.initFd(self.socket);
 
     socket.accept(
         &scheduler.loop,
@@ -541,9 +539,7 @@ fn connectAsync(self: *Socket, L: *VM.lua.State) !i32 {
 
     const ptr = try scheduler.createAsyncCtx(AsyncConnectContext);
 
-    const socket: xev.TCP = .{
-        .fd = self.socket,
-    };
+    const socket = xev.TCP.initFd(self.socket);
 
     ptr.* = .{
         .ref = Scheduler.ThreadRef.init(L),
@@ -654,9 +650,7 @@ fn closeAsync(self: *Socket, L: *VM.lua.State) !i32 {
     if (self.open) {
         self.open = false;
         const scheduler = Scheduler.getScheduler(L);
-        const socket: xev.TCP = .{
-            .fd = self.socket,
-        };
+        const socket = xev.TCP.initFd(self.socket);
 
         const ptr = try scheduler.createAsyncCtx(AsyncCloseContext);
         ptr.* = .{

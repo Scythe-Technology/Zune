@@ -1,5 +1,5 @@
 const std = @import("std");
-const xev = @import("xev");
+const xev = @import("xev").Dynamic;
 const luau = @import("luau");
 const builtin = @import("builtin");
 

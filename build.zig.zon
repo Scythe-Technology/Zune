@@ -44,8 +44,8 @@
             .hash = "1220b54282b7aeb3d23a93a76fb99927d8c2d6da966c67b8f8e2645840fed212d5fd",
         },
         .libxev = .{
-            .url = "https://codeload.github.com/Scythe-Technology/libxev/tar.gz/f80a6ea5440e480f6bdfe98e63dd413ccd41f12e",
-            .hash = "12207d1dfbc306324e6feb2b1c67a8aad53ac6dca8e3f564a55a4a6dc9becf228442",
+            .url = "https://codeload.github.com/Scythe-Technology/libxev/tar.gz/b755e449bce42e0706a0c30f153299d4e58cd7a2",
+            .hash = "12206ffca37937a325e38bc12291e08773b4b5cad4d1efb833545e84316b1dc7b460",
         },
     },
     .paths = .{

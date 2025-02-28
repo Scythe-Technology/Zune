@@ -1,5 +1,5 @@
 const std = @import("std");
-const xev = @import("xev");
+const xev = @import("xev").Dynamic;
 const luau = @import("luau");
 const builtin = @import("builtin");
 
@@ -124,7 +124,6 @@ pub const AsyncReadContext = struct {
         if (L.status() != .Yield)
             return self.end(L, scheduler, file, null);
 
-        defer scheduler.addAsyncTick();
         const read_len = r catch |err| switch (err) {
             xev.ReadError.EOF => 0,
             else => return self.end(L, scheduler, file, err),
@@ -141,6 +140,7 @@ pub const AsyncReadContext = struct {
             self.array.shrinkAndFree(self.limit);
         self.array.expandToCapacity();
 
+        defer scheduler.addAsyncTick();
         file.read(
             &scheduler.loop,
             completion,
@@ -244,7 +244,6 @@ pub const AsyncWriteContext = struct {
         const L = self.ref.value;
         const scheduler = Scheduler.getScheduler(L);
         defer self.cleanup(L, scheduler);
-        defer scheduler.addAsyncTick();
 
         c catch |err| {
             L.pushstring(@errorName(err));
@@ -268,7 +267,6 @@ pub const AsyncWriteContext = struct {
 
         const L = self.ref.value;
         const scheduler = Scheduler.getScheduler(L);
-        defer scheduler.addAsyncTick();
 
         if (L.status() != .Yield)
             return self.end(L, scheduler, file, null);
@@ -279,6 +277,7 @@ pub const AsyncWriteContext = struct {
             return self.end(L, scheduler, file, null);
         }
 
+        defer scheduler.addAsyncTick();
         file.write(
             &scheduler.loop,
             &self.completion,

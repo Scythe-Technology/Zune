@@ -1,6 +1,7 @@
 const std = @import("std");
 const xev = @import("xev");
 const luau = @import("luau");
+const builtin = @import("builtin");
 
 const Engine = @import("engine.zig");
 const Zune = @import("../../zune.zig");
@@ -156,9 +157,9 @@ sleeping: SleepingQueue,
 deferred: DeferredLinkedList = .{},
 tasks: std.ArrayList(TaskObject(anyopaque)),
 awaits: std.ArrayList(AwaitingObject(anyopaque)),
-timer: xev.Timer,
-loop: xev.Loop,
-@"async": xev.Async,
+timer: xev.Dynamic.Timer,
+loop: xev.Dynamic.Loop,
+@"async": xev.Dynamic.Async,
 thread_pool: *xev.ThreadPool,
 async_tasks: usize = 0,
 active_incr: u32 = 0,
@@ -167,14 +168,16 @@ frame: FrameKind = .None,
 
 pub fn init(allocator: std.mem.Allocator, state: *VM.lua.State) !Self {
     const thread_pool = try allocator.create(xev.ThreadPool);
+    errdefer allocator.destroy(thread_pool);
     thread_pool.* = xev.ThreadPool.init(.{});
+
     return Self{
-        .loop = try xev.Loop.init(.{
+        .loop = try xev.Dynamic.Loop.init(.{
             .entries = 4096,
             .thread_pool = thread_pool,
         }),
-        .timer = try xev.Timer.init(),
-        .@"async" = try xev.Async.init(),
+        .timer = try xev.Dynamic.Timer.init(),
+        .@"async" = try xev.Dynamic.Async.init(),
         .thread_pool = thread_pool,
         .state = state,
         .allocator = allocator,
@@ -357,31 +360,85 @@ pub fn awaitCall(
     return awaitResult(self, T, data, L, handlerFn, dtorFn, .User);
 }
 
+fn cancelCallback(
+    self: *Self,
+    c: *xev.Dynamic.Completion,
+    r: xev.Dynamic.CancelError!void,
+) xev.CallbackAction {
+    defer self.allocator.destroy(c);
+    r catch |err| {
+        std.debug.print("Cancel Error: {}\n", .{err});
+        return .disarm;
+    };
+    return .disarm;
+}
+
 pub fn cancelAsync(
     self: *Self,
-    completion: *xev.Completion,
+    completion: *xev.Dynamic.Completion,
 ) void {
-    const cancel_completion = self.allocator.create(xev.Completion) catch |err| std.debug.panic("{}\n", .{err});
-    cancel_completion.* = .{
-        .op = .{
-            .cancel = .{
-                .c = completion,
-            },
+    const cancel_completion = self.allocator.create(xev.Dynamic.Completion) catch |err| std.debug.panic("{}\n", .{err});
+    switch (comptime builtin.os.tag) {
+        .windows, .ios, .macos, .wasi => {
+            cancel_completion.* = .{
+                .op = .{
+                    .cancel = .{
+                        .c = completion,
+                    },
+                },
+                .userdata = @ptrCast(@alignCast(self)),
+                .callback = (struct {
+                    fn callback(ud: ?*anyopaque, _: *xev.Loop, c: *xev.Dynamic.Completion, r: xev.Result) xev.CallbackAction {
+                        const ptr = @as(*Self, @ptrCast(@alignCast(ud.?)));
+                        return @call(.always_inline, cancelCallback, .{ ptr, c, r.cancel });
+                    }
+                }).callback,
+            };
+
+            self.loop.add(cancel_completion);
         },
-        .userdata = @ptrCast(@alignCast(self)),
-        .callback = (struct {
-            fn callback(ud: ?*anyopaque, _: *xev.Loop, c: *xev.Completion, r: xev.Result) xev.CallbackAction {
-                const ptr = @as(*Self, @ptrCast(@alignCast(ud.?)));
-                defer ptr.allocator.destroy(c);
-                r.cancel catch |err| {
-                    std.debug.print("Cancel Error: {}\n", .{err});
-                    return .disarm;
-                };
-                return .disarm;
+        .linux => {
+            switch (xev.Dynamic.backend) {
+                inline else => |tag| {
+                    completion.ensureTag(tag);
+
+                    const loop = &self.loop;
+
+                    const api = (comptime xev.Dynamic.superset(tag)).Api();
+                    cancel_completion.* = .{
+                        .value = @unionInit(
+                            xev.Dynamic.Completion.Union,
+                            @tagName(tag),
+                            .{
+                                .op = .{
+                                    .cancel = .{
+                                        .c = &@field(completion.value, @tagName(tag)),
+                                    },
+                                },
+                                .userdata = self,
+                                .callback = (struct {
+                                    fn callback(ud: ?*anyopaque, _: *api.Loop, c_inner: *api.Completion, r: api.Result) xev.CallbackAction {
+                                        const c: *xev.Dynamic.Completion = @fieldParentPtr("value", @as(
+                                            *xev.Dynamic.Completion.Union,
+                                            @fieldParentPtr(@tagName(tag), c_inner),
+                                        ));
+                                        const ptr = @as(*Self, @ptrCast(@alignCast(ud.?)));
+                                        return @call(.always_inline, cancelCallback, .{ ptr, c, r.cancel });
+                                    }
+                                }).callback,
+                            },
+                        ),
+                    };
+
+                    @field(
+                        loop.backend,
+                        @tagName(tag),
+                    ).add(&@field(cancel_completion.value, @tagName(tag)));
+                },
             }
-        }).callback,
-    };
-    self.loop.add(cancel_completion);
+        },
+        else => @compileError("Unsupported OS"),
+    }
 }
 
 pub fn completeAsync(
