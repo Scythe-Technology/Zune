@@ -1,5 +1,6 @@
 const std = @import("std");
 const luau = @import("luau");
+const builtin = @import("builtin");
 
 const VM = luau.VM;
 
@@ -24,7 +25,38 @@ fn net_createSocket(L: *VM.lua.State) !i32 {
     const flags = L.Lcheckunsigned(2);
     const protocol = L.Lcheckunsigned(3);
 
-    const socket = try std.posix.socket(domain, flags, protocol);
+    const socket = switch (builtin.os.tag) {
+        .windows => socket: {
+            const windows = std.os.windows;
+            // NOTE: windows translates the SOCK.NONBLOCK/SOCK.CLOEXEC flags into
+            // windows-analogous operations
+            const filtered_sock_type = flags & ~@as(u32, std.posix.SOCK.NONBLOCK | std.posix.SOCK.CLOEXEC);
+            const dwflags: u32 = if ((flags & std.posix.SOCK.CLOEXEC) != 0)
+                windows.ws2_32.WSA_FLAG_NO_HANDLE_INHERIT
+            else
+                0;
+            const rc = try windows.WSASocketW(
+                @bitCast(domain),
+                @bitCast(filtered_sock_type),
+                @bitCast(protocol),
+                null,
+                0,
+                dwflags | windows.ws2_32.WSA_FLAG_OVERLAPPED,
+            );
+            errdefer windows.closesocket(rc) catch unreachable;
+            if ((flags & std.posix.SOCK.NONBLOCK) != 0) {
+                var mode: c_ulong = 1; // nonblocking
+                if (windows.ws2_32.SOCKET_ERROR == windows.ws2_32.ioctlsocket(rc, windows.ws2_32.FIONBIO, &mode)) {
+                    switch (windows.ws2_32.WSAGetLastError()) {
+                        // have not identified any error codes that should be handled yet
+                        else => unreachable,
+                    }
+                }
+            }
+            break :socket rc;
+        },
+        else => try std.posix.socket(domain, flags, protocol),
+    };
 
     try Socket.push(L, socket);
 
