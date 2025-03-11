@@ -605,7 +605,6 @@ fn setOption(self: *Socket, L: *VM.lua.State) !i32 {
 pub const AsyncCloseContext = struct {
     completion: xev.Completion = .{},
     ref: Scheduler.ThreadRef,
-    list: *CompletionLinkedList,
 
     const This = @This();
 
@@ -622,12 +621,6 @@ pub const AsyncCloseContext = struct {
 
         defer scheduler.completeAsync(self);
         defer self.ref.deref();
-
-        var node = self.list.first;
-        while (node) |n| {
-            scheduler.cancelAsync(&n.data);
-            node = n.next;
-        }
 
         if (L.status() != .Yield)
             return .disarm;
@@ -646,8 +639,40 @@ fn closeAsync(self: *Socket, L: *VM.lua.State) !i32 {
         const ptr = try scheduler.createAsyncCtx(AsyncCloseContext);
         ptr.* = .{
             .ref = Scheduler.ThreadRef.init(L),
-            .list = self.list,
         };
+
+        switch (comptime builtin.os.tag) {
+            .windows => _ = std.os.windows.kernel32.CancelIoEx(self.socket, null),
+            else => {
+                var node = self.list.first;
+                while (node) |n| {
+                    const cancel_completion = scheduler.allocator.create(xev.Completion) catch |err| std.debug.panic("{}\n", .{err});
+                    scheduler.loop.cancel(
+                        &n.data,
+                        cancel_completion,
+                        Scheduler,
+                        scheduler,
+                        (struct {
+                            fn callback(
+                                ud: ?*Scheduler,
+                                _: *xev.Loop,
+                                c: *xev.Completion,
+                                r: xev.CancelError!void,
+                            ) xev.CallbackAction {
+                                const sch = ud.?;
+                                defer sch.allocator.destroy(c);
+                                r catch |err| switch (err) {
+                                    inline error.Inactive => {},
+                                    inline else => std.debug.print("Cancel Error: {}\n", .{err}),
+                                };
+                                return .disarm;
+                            }
+                        }.callback),
+                    );
+                    node = n.next;
+                }
+            },
+        }
 
         socket.close(
             &scheduler.loop,
