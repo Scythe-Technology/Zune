@@ -170,9 +170,9 @@ pub fn build(b: *std.Build) !void {
 
     exe.root_module.addImport("xev", dep_xev.module("xev"));
     exe.root_module.addImport("yaml", dep_yaml.module("yaml"));
-    exe.root_module.addImport("lz4", dep_lz4.module("zig-lz4"));
+    exe.root_module.addImport("lz4", dep_lz4.module("lz4"));
     exe.root_module.addImport("zstd", dep_zstd.module("zig-zstd"));
-    exe.root_module.addImport("json", dep_json.module("zig-json"));
+    exe.root_module.addImport("json", dep_json.module("json"));
     exe.root_module.addImport("luau", dep_luau.module("luau"));
     exe.root_module.addImport("regex", dep_pcre2.module("zpcre2"));
     exe.root_module.addImport("datetime", dep_datetime.module("zdt"));
@@ -228,9 +228,9 @@ pub fn build(b: *std.Build) !void {
 
     exe_unit_tests.root_module.addImport("xev", dep_xev.module("xev"));
     exe_unit_tests.root_module.addImport("yaml", dep_yaml.module("yaml"));
-    exe_unit_tests.root_module.addImport("lz4", dep_lz4.module("zig-lz4"));
+    exe_unit_tests.root_module.addImport("lz4", dep_lz4.module("lz4"));
     exe_unit_tests.root_module.addImport("zstd", dep_zstd.module("zig-zstd"));
-    exe_unit_tests.root_module.addImport("json", dep_json.module("zig-json"));
+    exe_unit_tests.root_module.addImport("json", dep_json.module("json"));
     exe_unit_tests.root_module.addImport("luau", dep_luau.module("luau"));
     exe_unit_tests.root_module.addImport("regex", dep_pcre2.module("zpcre2"));
     exe_unit_tests.root_module.addImport("datetime", dep_datetime.module("zdt"));

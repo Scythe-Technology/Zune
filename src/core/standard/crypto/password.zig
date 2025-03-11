@@ -69,7 +69,7 @@ pub fn lua_hash(L: *VM.lua.State) !i32 {
         .bcrypt => {
             const hash = try bcrypt.strHash(password, .{
                 .allocator = allocator,
-                .params = .{ .rounds_log = @intCast(cost) },
+                .params = .{ .rounds_log = @intCast(cost), .silently_truncate_password = false },
                 .encoding = .phc,
             }, &buf);
             L.pushlstring(hash);
@@ -92,7 +92,10 @@ pub fn lua_verify(L: *VM.lua.State) !i32 {
         L.pushboolean(if (bcrypt.strVerify(
             hash,
             password,
-            .{ .allocator = allocator },
+            .{
+                .allocator = allocator,
+                .silently_truncate_password = false,
+            },
         )) true else |_| false)
     else
         L.pushboolean(if (argon2.strVerify(
