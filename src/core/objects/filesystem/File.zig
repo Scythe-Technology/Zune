@@ -141,10 +141,11 @@ pub const AsyncReadContext = struct {
         self.array.expandToCapacity();
 
         defer scheduler.addAsyncTick();
-        file.read(
+        file.pread(
             &scheduler.loop,
             completion,
             .{ .slice = self.array.items[self.buffer_len..] },
+            self.buffer_len,
             This,
             self,
             This.complete,
@@ -182,10 +183,11 @@ pub const AsyncReadContext = struct {
 
         ctx.array.expandToCapacity();
 
-        file.read(
+        file.pread(
             &scheduler.loop,
             &ctx.completion,
             .{ .slice = ctx.array.items },
+            0,
             AsyncReadContext,
             ctx,
             AsyncReadContext.complete,
@@ -378,9 +380,6 @@ fn seekBy(self: *File, L: *VM.lua.State) !i32 {
 
 fn read(self: *File, L: *VM.lua.State) !i32 {
     const size = L.Loptinteger(2, luaHelper.MAX_LUAU_SIZE);
-    const data = try self.handle.readToEndAlloc(luau.getallocator(L), @intCast(size));
-    defer luau.getallocator(L).free(data);
-
     return AsyncReadContext.queue(L, self.handle, L.Loptboolean(3, false), 1024, @intCast(size), false);
 }
 
@@ -388,6 +387,7 @@ fn readSync(self: *File, L: *VM.lua.State) !i32 {
     const allocator = luau.getallocator(L);
     const size = L.Loptinteger(2, luaHelper.MAX_LUAU_SIZE);
     const useBuffer = L.Loptboolean(3, false);
+
     const data = try self.handle.readToEndAlloc(allocator, @intCast(size));
     defer allocator.free(data);
 

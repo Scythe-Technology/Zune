@@ -46,10 +46,12 @@ const windowsSupport = struct {
             const err = windows.kernel32.GetLastError();
             return switch (err) {
                 .FILE_NOT_FOUND => error.FileNotFound,
+                .PATH_NOT_FOUND => error.FileNotFound,
                 .INVALID_PARAMETER => unreachable,
                 .SHARING_VIOLATION => return error.AccessDenied,
                 .ACCESS_DENIED => return error.AccessDenied,
                 .PIPE_BUSY => return error.PipeBusy,
+                .FILE_EXISTS => return error.PathAlreadyExists,
                 .USER_MAPPED_FILE => return error.AccessDenied,
                 .INVALID_HANDLE => unreachable,
                 .VIRUS_INFECTED, .VIRUS_DELETED => return error.AntivirusInterference,
@@ -485,7 +487,7 @@ fn fs_openFile(L: *VM.lua.State) !i32 {
                 .read_write => std.os.windows.GENERIC_READ | std.os.windows.GENERIC_WRITE,
                 .write_only => std.os.windows.GENERIC_WRITE,
             },
-            .creationDisposition = std.os.windows.OPEN_ALWAYS,
+            .creationDisposition = std.os.windows.OPEN_EXISTING,
         }),
         else => try fs.cwd().openFile(path, .{
             .mode = mode,
