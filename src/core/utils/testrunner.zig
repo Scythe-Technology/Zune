@@ -1,5 +1,7 @@
 const std = @import("std");
+const xev = @import("xev");
 const luau = @import("luau");
+const builtin = @import("builtin");
 
 const Zune = @import("../../zune.zig");
 const Engine = @import("../runtime/engine.zig");
@@ -10,6 +12,11 @@ const VM = luau.VM;
 const zune_test_files = @import("zune-test-files");
 
 pub fn runTest(allocator: std.mem.Allocator, comptime testFile: zune_test_files.File, args: []const []const u8, comptime stdOutEnabled: bool) !Zune.corelib.testing.TestResult {
+    switch (comptime builtin.os.tag) {
+        .linux => try xev.Dynamic.detect(), // multiple backends
+        else => {},
+    }
+
     const cwd_path = try std.fs.cwd().realpathAlloc(allocator, ".");
     defer allocator.free(cwd_path);
 
@@ -32,7 +39,7 @@ pub fn runTest(allocator: std.mem.Allocator, comptime testFile: zune_test_files.
     if (!stdOutEnabled)
         L.Zsetfield(VM.lua.GLOBALSINDEX, "_testing_stdOut", false);
 
-    var scheduler = Scheduler.init(allocator, L);
+    var scheduler = try Scheduler.init(allocator, L);
     defer scheduler.deinit();
 
     var temporaryDir = std.testing.tmpDir(std.fs.Dir.OpenDirOptions{

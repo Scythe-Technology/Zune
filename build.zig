@@ -115,7 +115,7 @@ pub fn build(b: *std.Build) !void {
         else => {},
     }
 
-    const dep_aio = b.dependency("aio", .{ .target = target, .optimize = optimize, .@"aio:posix" = .force, .@"aio:debug" = false });
+    const dep_xev = b.dependency("libxev", .{ .target = target, .optimize = optimize });
     const dep_json = b.dependency("json", .{ .target = target, .optimize = optimize });
     const dep_yaml = b.dependency("yaml", .{ .target = target, .optimize = optimize });
     const dep_toml = b.dependency("toml", .{ .target = target, .optimize = optimize });
@@ -168,11 +168,11 @@ pub fn build(b: *std.Build) !void {
 
     exe.root_module.addOptions("zune-info", zune_info);
 
-    exe.root_module.addImport("aio", dep_aio.module("aio"));
+    exe.root_module.addImport("xev", dep_xev.module("xev"));
     exe.root_module.addImport("yaml", dep_yaml.module("yaml"));
-    exe.root_module.addImport("lz4", dep_lz4.module("zig-lz4"));
+    exe.root_module.addImport("lz4", dep_lz4.module("lz4"));
     exe.root_module.addImport("zstd", dep_zstd.module("zig-zstd"));
-    exe.root_module.addImport("json", dep_json.module("zig-json"));
+    exe.root_module.addImport("json", dep_json.module("json"));
     exe.root_module.addImport("luau", dep_luau.module("luau"));
     exe.root_module.addImport("regex", dep_pcre2.module("zpcre2"));
     exe.root_module.addImport("datetime", dep_datetime.module("zdt"));
@@ -226,11 +226,11 @@ pub fn build(b: *std.Build) !void {
         .root_source_file = b.path("test/files.zig"),
     }));
 
-    exe_unit_tests.root_module.addImport("aio", dep_aio.module("aio"));
+    exe_unit_tests.root_module.addImport("xev", dep_xev.module("xev"));
     exe_unit_tests.root_module.addImport("yaml", dep_yaml.module("yaml"));
-    exe_unit_tests.root_module.addImport("lz4", dep_lz4.module("zig-lz4"));
+    exe_unit_tests.root_module.addImport("lz4", dep_lz4.module("lz4"));
     exe_unit_tests.root_module.addImport("zstd", dep_zstd.module("zig-zstd"));
-    exe_unit_tests.root_module.addImport("json", dep_json.module("zig-json"));
+    exe_unit_tests.root_module.addImport("json", dep_json.module("json"));
     exe_unit_tests.root_module.addImport("luau", dep_luau.module("luau"));
     exe_unit_tests.root_module.addImport("regex", dep_pcre2.module("zpcre2"));
     exe_unit_tests.root_module.addImport("datetime", dep_datetime.module("zdt"));

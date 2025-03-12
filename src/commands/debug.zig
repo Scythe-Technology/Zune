@@ -133,7 +133,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
         L.singlestep(true);
 
-        var scheduler = Scheduler.init(allocator, L);
+        var scheduler = try Scheduler.init(allocator, L);
         defer scheduler.deinit();
 
         try Scheduler.SCHEDULERS.append(&scheduler);

@@ -1,3 +1,4 @@
+const std = @import("std");
 const luau = @import("luau");
 
 const VM = luau.VM;
@@ -21,6 +22,36 @@ pub fn pushCloneTable(L: *VM.lua.State, idx: i32, deep: bool) !void {
         L.pop(1);
     }
     L.pop(1);
+}
+
+pub fn Ref(comptime T: type) type {
+    return struct {
+        value: T,
+        ref: ?i32,
+        global: *VM.lua.State,
+
+        const This = @This();
+
+        pub fn init(L: *VM.lua.State, idx: i32, value: T) This {
+            const GL = L.mainthread();
+            L.xpush(GL, idx);
+            const ref = GL.ref(-1) orelse std.debug.panic("Tash Scheduler failed to create thread ref\n", .{});
+            GL.pop(1);
+            return .{
+                .value = value,
+                .ref = ref,
+                .global = GL,
+            };
+        }
+
+        pub fn deref(self: This) void {
+            if (self.ref) |r| {
+                if (r <= 0)
+                    return;
+                self.global.unref(r);
+            }
+        }
+    };
 }
 
 /// Register a table in the registry.

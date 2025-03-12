@@ -1,5 +1,5 @@
 const std = @import("std");
-const aio = @import("aio");
+const xev = @import("xev").Dynamic;
 const luau = @import("luau");
 const builtin = @import("builtin");
 
@@ -15,11 +15,16 @@ const Socket = @This();
 
 const TAG_NET_SOCKET = tagged.Tags.get("NET_SOCKET").?;
 
+const CompletionLinkedList = std.DoublyLinkedList(xev.Completion);
+
+const SocketRef = luaHelper.Ref(*Socket);
+
 socket: std.posix.socket_t,
 open: bool = true,
+list: *CompletionLinkedList,
 
 fn closesocket(socket: std.posix.socket_t) void {
-    switch (builtin.os.tag) {
+    switch (comptime builtin.os.tag) {
         .windows => std.os.windows.closesocket(socket) catch unreachable,
         else => std.posix.close(socket),
     }
@@ -53,172 +58,288 @@ pub fn AddressToString(buf: []u8, address: std.net.Address) []const u8 {
     }
 }
 
-pub fn HandleSocketError(err: anyerror, socket: *Socket) void {
-    switch (err) {
-        // usually unexpected errors caused by closing socket while async task is active
-        // all: error.Unexpected
-        // windows: error.OperationAborted
-        error.Unexpected, error.OperationAborted => socket.open = false,
-        else => {},
-    }
-}
+const AsyncSendContext = struct {
+    completion: CompletionLinkedList.Node = .{
+        .data = .{},
+    },
+    ref: Scheduler.ThreadRef,
+    buffer: []u8,
+    list: *CompletionLinkedList,
 
-fn IOContentCompletion(error_type: type, comptime buffer: bool) type {
-    return struct {
-        buffer: []u8,
-        used: usize = 0,
-        out_err: error_type = error.Unexpected,
-        // lua data
-        lua_socket: *Socket,
-        lua_ref: ?i32,
+    const This = @This();
 
-        const Self = @This();
+    pub fn complete(
+        ud: ?*This,
+        _: *xev.Loop,
+        _: *xev.Completion,
+        _: xev.TCP,
+        _: xev.WriteBuffer,
+        w: xev.WriteError!usize,
+    ) xev.CallbackAction {
+        const self = ud orelse unreachable;
+        const L = self.ref.value;
 
-        pub fn completion(self: *Self, L: *VM.lua.State, _: *Scheduler, failed: bool) void {
-            defer self.free(L);
-            switch (L.status()) {
-                .Ok, .Yield => {},
-                else => return,
-            }
-            if (failed) {
-                HandleSocketError(self.out_err, self.lua_socket);
-                L.pushlstring(@errorName(self.out_err));
-                _ = Scheduler.resumeStateError(L, null) catch {};
-                return;
-            }
-
-            if (buffer)
-                L.Zpushbuffer(self.buffer[0..self.used])
-            else
-                L.pushunsigned(@intCast(self.used));
-            _ = Scheduler.resumeState(L, null, 1) catch {};
-        }
-
-        pub fn free(self: *Self, L: *VM.lua.State) void {
-            const allocator = luau.getallocator(L);
-            defer allocator.destroy(self);
-            allocator.free(self.buffer);
-            if (self.lua_ref) |ref|
-                L.unref(ref);
-        }
-    };
-}
-
-fn IOContentMsgCompletion(error_type: type, comptime recieve: bool) type {
-    return struct {
-        buffer: []u8,
-        msghdr: if (recieve) aio.posix.msghdr else aio.posix.msghdr_const,
-        iov: if (recieve) [1]aio.posix.iovec else [1]aio.posix.iovec_const = undefined,
-        address: std.posix.sockaddr,
-        used: usize = 0,
-        out_err: error_type = error.Unexpected,
-        // lua data
-        lua_socket: *Socket,
-        lua_ref: ?i32,
-
-        const Self = @This();
-
-        pub fn completion(self: *Self, L: *VM.lua.State, _: *Scheduler, failed: bool) void {
-            defer self.free(L);
-            switch (L.status()) {
-                .Ok, .Yield => {},
-                else => return,
-            }
-            if (failed) {
-                HandleSocketError(self.out_err, self.lua_socket);
-                L.pushlstring(@errorName(self.out_err));
-                _ = Scheduler.resumeStateError(L, null) catch {};
-                return;
-            }
-
-            const address = std.net.Address{
-                .any = self.address,
-            };
-
-            if (recieve) {
-                L.createtable(0, 3);
-                L.Zsetfield(-1, "family", address.any.family);
-                L.Zsetfield(-1, "port", address.getPort());
-                var buf: [LONGEST_ADDRESS]u8 = undefined;
-                L.pushlstring(AddressToString(&buf, address));
-                L.setfield(-2, "address");
-                L.Zpushbuffer(self.buffer[0..self.used]);
-            } else L.pushunsigned(@intCast(self.used));
-            _ = Scheduler.resumeState(L, null, if (recieve) 2 else 1) catch {};
-        }
-
-        pub fn free(self: *Self, L: *VM.lua.State) void {
-            const allocator = luau.getallocator(L);
-            defer allocator.destroy(self);
-            allocator.free(self.buffer);
-            if (self.lua_ref) |ref|
-                L.unref(ref);
-        }
-    };
-}
-
-const AcceptContext = struct {
-    socket: std.posix.socket_t,
-    out_err: aio.Accept.Error = error.Unexpected,
-    // lua data
-    lua_socket: *Socket,
-    lua_ref: ?i32,
-
-    const Self = @This();
-
-    pub fn completion(self: *Self, L: *VM.lua.State, _: *Scheduler, failed: bool) void {
-        defer self.free(L);
-        switch (L.status()) {
-            .Ok, .Yield => {},
-            else => return,
-        }
-        if (failed) {
-            HandleSocketError(self.out_err, self.lua_socket);
-            L.pushlstring(@errorName(self.out_err));
-            _ = Scheduler.resumeStateError(L, null) catch {};
-            return;
-        }
-
-        push(L, self.socket);
-        _ = Scheduler.resumeState(L, null, 1) catch {};
-    }
-    pub fn free(self: *Self, L: *VM.lua.State) void {
         const allocator = luau.getallocator(L);
-        defer allocator.destroy(self);
-        if (self.lua_ref) |ref|
-            L.unref(ref);
+        const scheduler = Scheduler.getScheduler(L);
+
+        defer scheduler.completeAsync(self);
+        defer allocator.free(self.buffer);
+        defer self.ref.deref();
+        defer self.list.remove(&self.completion);
+
+        if (L.status() != .Yield)
+            return .disarm;
+
+        const len = w catch |err| {
+            L.pushlstring(@errorName(err));
+            _ = Scheduler.resumeStateError(L, null) catch {};
+            return .disarm;
+        };
+
+        L.pushunsigned(@intCast(len));
+        _ = Scheduler.resumeState(L, null, 1) catch {};
+
+        return .disarm;
     }
 };
 
-const ConnectContext = struct {
-    address: std.posix.sockaddr,
-    out_err: aio.Connect.Error = error.Unexpected,
-    // lua data
-    lua_socket: *Socket,
-    lua_ref: ?i32,
+const AsyncSendMsgContext = struct {
+    completion: CompletionLinkedList.Node = .{
+        .data = .{},
+    },
+    state: xev.UDP.State,
+    ref: Scheduler.ThreadRef,
+    buffer: []u8,
+    list: *CompletionLinkedList,
 
-    const Self = @This();
+    const This = @This();
 
-    pub fn completion(self: *Self, L: *VM.lua.State, _: *Scheduler, failed: bool) void {
-        defer self.free(L);
-        switch (L.status()) {
-            .Ok, .Yield => {},
-            else => return,
-        }
-        if (failed) {
-            HandleSocketError(self.out_err, self.lua_socket);
-            L.pushlstring(@errorName(self.out_err));
+    pub fn complete(
+        ud: ?*This,
+        _: *xev.Loop,
+        _: *xev.Completion,
+        _: *xev.UDP.State,
+        _: xev.UDP,
+        _: xev.WriteBuffer,
+        w: xev.WriteError!usize,
+    ) xev.CallbackAction {
+        const self = ud orelse unreachable;
+        const L = self.ref.value;
+
+        const allocator = luau.getallocator(L);
+        const scheduler = Scheduler.getScheduler(L);
+
+        defer scheduler.completeAsync(self);
+        defer allocator.free(self.buffer);
+        defer self.ref.deref();
+        defer self.list.remove(&self.completion);
+
+        if (L.status() != .Yield)
+            return .disarm;
+
+        const len = w catch |err| {
+            L.pushlstring(@errorName(err));
             _ = Scheduler.resumeStateError(L, null) catch {};
-            return;
-        }
+            return .disarm;
+        };
+
+        L.pushunsigned(@intCast(len));
+        _ = Scheduler.resumeState(L, null, 1) catch {};
+
+        return .disarm;
+    }
+};
+
+const AsyncRecvContext = struct {
+    completion: CompletionLinkedList.Node = .{
+        .data = .{},
+    },
+    ref: Scheduler.ThreadRef,
+    buffer: []u8,
+    list: *CompletionLinkedList,
+
+    const This = @This();
+
+    pub fn complete(
+        ud: ?*This,
+        _: *xev.Loop,
+        _: *xev.Completion,
+        _: xev.TCP,
+        _: xev.ReadBuffer,
+        r: xev.ReadError!usize,
+    ) xev.CallbackAction {
+        const self = ud orelse unreachable;
+        const L = self.ref.value;
+
+        const allocator = luau.getallocator(L);
+        const scheduler = Scheduler.getScheduler(L);
+
+        defer scheduler.completeAsync(self);
+        defer allocator.free(self.buffer);
+        defer self.ref.deref();
+        defer self.list.remove(&self.completion);
+
+        if (L.status() != .Yield)
+            return .disarm;
+
+        const len = r catch |err| {
+            L.pushlstring(@errorName(err));
+            _ = Scheduler.resumeStateError(L, null) catch {};
+            return .disarm;
+        };
+
+        L.Zpushbuffer(self.buffer[0..len]);
+
+        _ = Scheduler.resumeState(L, null, 1) catch {};
+
+        return .disarm;
+    }
+};
+
+const AsyncRecvMsgContext = struct {
+    completion: CompletionLinkedList.Node = .{
+        .data = .{},
+    },
+    state: xev.UDP.State,
+    ref: Scheduler.ThreadRef,
+    buffer: []u8,
+    list: *CompletionLinkedList,
+
+    const This = @This();
+
+    pub fn complete(
+        ud: ?*This,
+        _: *xev.Loop,
+        _: *xev.Completion,
+        _: *xev.UDP.State,
+        address: std.net.Address,
+        _: xev.UDP,
+        _: xev.ReadBuffer,
+        r: xev.ReadError!usize,
+    ) xev.CallbackAction {
+        const self = ud orelse unreachable;
+        const L = self.ref.value;
+
+        const allocator = luau.getallocator(L);
+        const scheduler = Scheduler.getScheduler(L);
+
+        defer scheduler.completeAsync(self);
+        defer allocator.free(self.buffer);
+        defer self.ref.deref();
+        defer self.list.remove(&self.completion);
+
+        if (L.status() != .Yield)
+            return .disarm;
+
+        const len = r catch |err| {
+            L.pushlstring(@errorName(err));
+            _ = Scheduler.resumeStateError(L, null) catch {};
+            return .disarm;
+        };
+
+        L.createtable(0, 3);
+        L.Zsetfield(-1, "family", address.any.family);
+        L.Zsetfield(-1, "port", address.getPort());
+        var buf: [LONGEST_ADDRESS]u8 = undefined;
+        L.pushlstring(AddressToString(&buf, address));
+        L.setfield(-2, "address");
+        L.Zpushbuffer(self.buffer[0..len]);
+
+        _ = Scheduler.resumeState(L, null, 2) catch {};
+
+        return .disarm;
+    }
+};
+
+const AsyncAcceptContext = struct {
+    completion: CompletionLinkedList.Node = .{
+        .data = .{},
+    },
+    ref: Scheduler.ThreadRef,
+    list: *CompletionLinkedList,
+
+    const This = @This();
+
+    pub fn complete(
+        ud: ?*This,
+        _: *xev.Loop,
+        _: *xev.Completion,
+        s: xev.AcceptError!xev.TCP,
+    ) xev.CallbackAction {
+        const self = ud orelse unreachable;
+        const L = self.ref.value;
+
+        const scheduler = Scheduler.getScheduler(L);
+
+        defer scheduler.completeAsync(self);
+        defer self.ref.deref();
+        defer self.list.remove(&self.completion);
+
+        if (L.status() != .Yield)
+            return .disarm;
+
+        const socket = s catch |err| {
+            L.pushlstring(@errorName(err));
+            _ = Scheduler.resumeStateError(L, null) catch {};
+            return .disarm;
+        };
+
+        push(
+            L,
+            switch (comptime builtin.os.tag) {
+                .windows => @ptrCast(@alignCast(socket.fd)),
+                .ios, .macos, .wasi => socket.fd,
+                .linux => socket.fd(),
+                else => @compileError("Unsupported OS"),
+            },
+        ) catch |err| {
+            L.pushlstring(@errorName(err));
+            _ = Scheduler.resumeStateError(L, null) catch {};
+            return .disarm;
+        };
+        _ = Scheduler.resumeState(L, null, 1) catch {};
+
+        return .disarm;
+    }
+};
+
+const AsyncConnectContext = struct {
+    completion: CompletionLinkedList.Node = .{
+        .data = .{},
+    },
+    ref: Scheduler.ThreadRef,
+    list: *CompletionLinkedList,
+
+    const This = @This();
+
+    pub fn complete(
+        ud: ?*This,
+        _: *xev.Loop,
+        _: *xev.Completion,
+        _: xev.TCP,
+        c: xev.ConnectError!void,
+    ) xev.CallbackAction {
+        const self = ud orelse unreachable;
+        const L = self.ref.value;
+
+        const scheduler = Scheduler.getScheduler(L);
+
+        defer scheduler.completeAsync(self);
+        defer self.ref.deref();
+        defer self.list.remove(&self.completion);
+
+        if (L.status() != .Yield)
+            return .disarm;
+
+        c catch |err| {
+            L.pushlstring(@errorName(err));
+            _ = Scheduler.resumeStateError(L, null) catch {};
+            return .disarm;
+        };
 
         _ = Scheduler.resumeState(L, null, 0) catch {};
-    }
-    pub fn free(self: *Self, L: *VM.lua.State) void {
-        const allocator = luau.getallocator(L);
-        defer allocator.destroy(self);
-        if (self.lua_ref) |ref|
-            L.unref(ref);
+
+        return .disarm;
     }
 };
 
@@ -234,22 +355,25 @@ fn sendAsync(self: *Socket, L: *VM.lua.State) !i32 {
     const input = try allocator.dupe(u8, buf[offset..]);
     errdefer allocator.free(input);
 
-    const SendIO = IOContentCompletion(aio.Send.Error, false);
-    const ptr = try allocator.create(SendIO);
-    errdefer allocator.destroy(ptr);
+    const ptr = try scheduler.createAsyncCtx(AsyncSendContext);
 
     ptr.* = .{
         .buffer = input,
-        .lua_socket = self,
-        .lua_ref = L.ref(1),
+        .ref = Scheduler.ThreadRef.init(L),
+        .list = self.list,
     };
 
-    try scheduler.queueIoCallbackCtx(SendIO, ptr, L, aio.op(.send, .{
-        .buffer = buf,
-        .socket = self.socket,
-        .out_written = &ptr.used,
-        .out_error = &ptr.out_err,
-    }, .unlinked), SendIO.completion);
+    const socket = xev.TCP.initFd(self.socket);
+
+    socket.write(
+        &scheduler.loop,
+        &ptr.completion.data,
+        .{ .slice = buf },
+        AsyncSendContext,
+        ptr,
+        AsyncSendContext.complete,
+    );
+    self.list.append(&ptr.completion);
 
     return L.yield(0);
 }
@@ -269,38 +393,33 @@ fn sendMsgAsync(self: *Socket, L: *VM.lua.State) !i32 {
     const buf = try allocator.dupe(u8, data[offset..]);
     errdefer allocator.free(buf);
 
-    const SendMsgIO = IOContentMsgCompletion(aio.SendMsg.Error, false);
-    const ptr = try allocator.create(SendMsgIO);
-    errdefer allocator.destroy(ptr);
-
     const address = if (address_str.len <= 15)
         try std.net.Address.parseIp4(address_str, @intCast(port))
     else
         try std.net.Address.parseIp6(address_str, @intCast(port));
 
+    const ptr = try scheduler.createAsyncCtx(AsyncSendMsgContext);
+
     ptr.* = .{
         .buffer = buf,
-        .address = address.any,
-        .msghdr = aio.posix.msghdr_const{
-            .name = &ptr.address,
-            .namelen = @sizeOf(std.posix.sockaddr),
-            .iov = &ptr.iov,
-            .iovlen = 1,
-            .flags = 0,
-            .control = null,
-            .controllen = 0,
-        },
-        .iov = [1]aio.posix.iovec_const{.{ .base = buf.ptr, .len = @intCast(data.len) }},
-        .lua_socket = self,
-        .lua_ref = L.ref(1),
+        .ref = Scheduler.ThreadRef.init(L),
+        .list = self.list,
+        .state = undefined,
     };
 
-    try scheduler.queueIoCallbackCtx(SendMsgIO, ptr, L, aio.op(.send_msg, .{
-        .socket = self.socket,
-        .msg = &ptr.msghdr,
-        .out_written = &ptr.used,
-        .out_error = &ptr.out_err,
-    }, .unlinked), SendMsgIO.completion);
+    const socket = xev.UDP.initFd(self.socket);
+
+    socket.write(
+        &scheduler.loop,
+        &ptr.completion.data,
+        &ptr.state,
+        address,
+        .{ .slice = buf },
+        AsyncSendMsgContext,
+        ptr,
+        AsyncSendMsgContext.complete,
+    );
+    self.list.append(&ptr.completion);
 
     return L.yield(0);
 }
@@ -315,22 +434,25 @@ fn recvAsync(self: *Socket, L: *VM.lua.State) !i32 {
     const buf = try allocator.alloc(u8, @intCast(size));
     errdefer allocator.free(buf);
 
-    const ReceiveIO = IOContentCompletion(aio.Recv.Error, true);
-    const ptr = try allocator.create(ReceiveIO);
-    errdefer allocator.destroy(ptr);
+    const ptr = try scheduler.createAsyncCtx(AsyncRecvContext);
 
     ptr.* = .{
         .buffer = buf,
-        .lua_socket = self,
-        .lua_ref = L.ref(1),
+        .ref = Scheduler.ThreadRef.init(L),
+        .list = self.list,
     };
 
-    try scheduler.queueIoCallbackCtx(ReceiveIO, ptr, L, aio.op(.recv, .{
-        .buffer = buf,
-        .socket = self.socket,
-        .out_read = &ptr.used,
-        .out_error = &ptr.out_err,
-    }, .unlinked), ReceiveIO.completion);
+    const socket = xev.TCP.initFd(self.socket);
+
+    socket.read(
+        &scheduler.loop,
+        &ptr.completion.data,
+        .{ .slice = buf },
+        AsyncRecvContext,
+        ptr,
+        AsyncRecvContext.complete,
+    );
+    self.list.append(&ptr.completion);
 
     return L.yield(0);
 }
@@ -345,61 +467,56 @@ fn recvMsgAsync(self: *Socket, L: *VM.lua.State) !i32 {
     const buf = try allocator.alloc(u8, @intCast(size));
     errdefer allocator.free(buf);
 
-    const ReceiveMsgIO = IOContentMsgCompletion(aio.RecvMsg.Error, true);
-    const ptr = try allocator.create(ReceiveMsgIO);
-    errdefer allocator.destroy(ptr);
+    const ptr = try scheduler.createAsyncCtx(AsyncRecvMsgContext);
 
     ptr.* = .{
         .buffer = buf,
-        .address = undefined,
-        .msghdr = aio.posix.msghdr{
-            .name = &ptr.address,
-            .namelen = @sizeOf(std.posix.sockaddr),
-            .iov = &ptr.iov,
-            .iovlen = 1,
-            .flags = 0,
-            .control = null,
-            .controllen = 0,
-        },
-        .iov = [1]aio.posix.iovec{.{ .base = buf.ptr, .len = @intCast(size) }},
-        .lua_socket = self,
-        .lua_ref = L.ref(1),
+        .ref = Scheduler.ThreadRef.init(L),
+        .list = self.list,
+        .state = undefined,
     };
 
-    try scheduler.queueIoCallbackCtx(ReceiveMsgIO, ptr, L, aio.op(.recv_msg, .{
-        .socket = self.socket,
-        .out_msg = &ptr.msghdr,
-        .out_read = &ptr.used,
-        .out_error = &ptr.out_err,
-    }, .unlinked), ReceiveMsgIO.completion);
+    const socket = xev.UDP.initFd(self.socket);
+
+    socket.read(
+        &scheduler.loop,
+        &ptr.completion.data,
+        &ptr.state,
+        .{ .slice = buf },
+        AsyncRecvMsgContext,
+        ptr,
+        AsyncRecvMsgContext.complete,
+    );
+    self.list.append(&ptr.completion);
 
     return L.yield(0);
 }
 
 fn acceptAsync(self: *Socket, L: *VM.lua.State) !i32 {
-    const allocator = luau.getallocator(L);
     const scheduler = Scheduler.getScheduler(L);
 
-    const ptr = try allocator.create(AcceptContext);
-    errdefer allocator.destroy(ptr);
+    const ptr = try scheduler.createAsyncCtx(AsyncAcceptContext);
 
     ptr.* = .{
-        .socket = undefined,
-        .lua_socket = self,
-        .lua_ref = L.ref(1),
+        .ref = Scheduler.ThreadRef.init(L),
+        .list = self.list,
     };
 
-    try scheduler.queueIoCallbackCtx(AcceptContext, ptr, L, aio.op(.accept, .{
-        .socket = self.socket,
-        .out_socket = &ptr.socket,
-        .out_error = &ptr.out_err,
-    }, .unlinked), AcceptContext.completion);
+    const socket = xev.TCP.initFd(self.socket);
+
+    socket.accept(
+        &scheduler.loop,
+        &ptr.completion.data,
+        AsyncAcceptContext,
+        ptr,
+        AsyncAcceptContext.complete,
+    );
+    self.list.append(&ptr.completion);
 
     return L.yield(0);
 }
 
 fn connectAsync(self: *Socket, L: *VM.lua.State) !i32 {
-    const allocator = luau.getallocator(L);
     const scheduler = Scheduler.getScheduler(L);
 
     const address_str = try L.Zcheckvalue([:0]const u8, 2, null);
@@ -412,21 +529,24 @@ fn connectAsync(self: *Socket, L: *VM.lua.State) !i32 {
     else
         try std.net.Address.parseIp6(address_str, @intCast(port));
 
-    const ptr = try allocator.create(ConnectContext);
-    errdefer allocator.destroy(ptr);
+    const ptr = try scheduler.createAsyncCtx(AsyncConnectContext);
+
+    const socket = xev.TCP.initFd(self.socket);
 
     ptr.* = .{
-        .address = address.any,
-        .lua_socket = self,
-        .lua_ref = L.ref(1),
+        .ref = Scheduler.ThreadRef.init(L),
+        .list = self.list,
     };
 
-    try scheduler.queueIoCallbackCtx(ConnectContext, ptr, L, aio.op(.connect, .{
-        .socket = self.socket,
-        .addr = &ptr.address,
-        .addrlen = @sizeOf(std.posix.sockaddr),
-        .out_error = &ptr.out_err,
-    }, .unlinked), ConnectContext.completion);
+    socket.connect(
+        &scheduler.loop,
+        &ptr.completion.data,
+        address,
+        AsyncConnectContext,
+        ptr,
+        AsyncConnectContext.complete,
+    );
+    self.list.append(&ptr.completion);
 
     return L.yield(0);
 }
@@ -482,13 +602,86 @@ fn setOption(self: *Socket, L: *VM.lua.State) !i32 {
     return 0;
 }
 
+pub const AsyncCloseContext = struct {
+    completion: xev.Completion = .{},
+    ref: Scheduler.ThreadRef,
+
+    const This = @This();
+
+    pub fn complete(
+        ud: ?*This,
+        _: *xev.Loop,
+        _: *xev.Completion,
+        _: xev.TCP,
+        _: xev.CloseError!void,
+    ) xev.CallbackAction {
+        const self = ud orelse unreachable;
+        const L = self.ref.value;
+        const scheduler = Scheduler.getScheduler(L);
+
+        defer scheduler.completeAsync(self);
+        defer self.ref.deref();
+
+        if (L.status() != .Yield)
+            return .disarm;
+
+        _ = Scheduler.resumeState(L, null, 0) catch {};
+        return .disarm;
+    }
+};
+
 fn closeAsync(self: *Socket, L: *VM.lua.State) !i32 {
     if (self.open) {
         self.open = false;
         const scheduler = Scheduler.getScheduler(L);
-        try scheduler.queueIoCallback(L, aio.op(.close_socket, .{
-            .socket = self.socket,
-        }, .unlinked), Scheduler.asyncIoResumeState);
+        const socket = xev.TCP.initFd(self.socket);
+
+        const ptr = try scheduler.createAsyncCtx(AsyncCloseContext);
+        ptr.* = .{
+            .ref = Scheduler.ThreadRef.init(L),
+        };
+
+        switch (comptime builtin.os.tag) {
+            .windows => _ = std.os.windows.kernel32.CancelIoEx(self.socket, null),
+            else => {
+                var node = self.list.first;
+                while (node) |n| {
+                    const cancel_completion = scheduler.allocator.create(xev.Completion) catch |err| std.debug.panic("{}\n", .{err});
+                    scheduler.loop.cancel(
+                        &n.data,
+                        cancel_completion,
+                        Scheduler,
+                        scheduler,
+                        (struct {
+                            fn callback(
+                                ud: ?*Scheduler,
+                                _: *xev.Loop,
+                                c: *xev.Completion,
+                                r: xev.CancelError!void,
+                            ) xev.CallbackAction {
+                                const sch = ud.?;
+                                defer sch.allocator.destroy(c);
+                                r catch |err| switch (err) {
+                                    inline error.Inactive => {},
+                                    inline else => std.debug.print("Cancel Error: {}\n", .{err}),
+                                };
+                                return .disarm;
+                            }
+                        }.callback),
+                    );
+                    node = n.next;
+                }
+            },
+        }
+
+        socket.close(
+            &scheduler.loop,
+            &ptr.completion,
+            AsyncCloseContext,
+            ptr,
+            AsyncCloseContext.complete,
+        );
+
         return L.yield(0);
     }
     return 0;
@@ -514,9 +707,10 @@ const __namecall = MethodMap.CreateNamecallMap(Socket, TAG_NET_SOCKET, .{
 });
 
 pub fn __dtor(L: *VM.lua.State, ptr: *Socket) void {
-    _ = L;
+    const allocator = luau.getallocator(L);
     if (ptr.open)
         closesocket(ptr.socket);
+    allocator.destroy(ptr.list);
 }
 
 pub inline fn load(L: *VM.lua.State) void {
@@ -531,9 +725,13 @@ pub inline fn load(L: *VM.lua.State) void {
     L.setuserdatadtor(Socket, TAG_NET_SOCKET, __dtor);
 }
 
-pub fn push(L: *VM.lua.State, value: std.posix.socket_t) void {
+pub fn push(L: *VM.lua.State, value: std.posix.socket_t) !void {
+    const allocator = luau.getallocator(L);
     const ptr = L.newuserdatataggedwithmetatable(Socket, TAG_NET_SOCKET);
+    const list = try allocator.create(CompletionLinkedList);
+    list.* = .{};
     ptr.* = .{
         .socket = value,
+        .list = list,
     };
 }

@@ -1,5 +1,5 @@
 const std = @import("std");
-const aio = @import("aio");
+const xev = @import("xev").Dynamic;
 const luau = @import("luau");
 const builtin = @import("builtin");
 
@@ -22,16 +22,62 @@ const OpenError = error{ InvalidMode, BadExclusive };
 
 pub const LIB_NAME = "fs";
 
+const windowsSupport = struct {
+    const windows = std.os.windows;
+
+    const Options = struct {
+        accessMode: windows.DWORD,
+        shareMode: windows.DWORD = windows.FILE_SHARE_WRITE | windows.FILE_SHARE_READ | windows.FILE_SHARE_DELETE,
+        creationDisposition: windows.DWORD,
+    };
+
+    fn OpenFile(self: fs.Dir, path: []const u8, opts: Options) fs.File.OpenError!fs.File {
+        const path_w = try windows.sliceToPrefixedFileW(self.fd, path);
+        const handle = windows.kernel32.CreateFileW(
+            path_w.span(),
+            opts.accessMode,
+            opts.shareMode,
+            null,
+            opts.creationDisposition,
+            windows.FILE_FLAG_OVERLAPPED,
+            null,
+        );
+        if (handle == windows.INVALID_HANDLE_VALUE) {
+            const err = windows.kernel32.GetLastError();
+            return switch (err) {
+                .FILE_NOT_FOUND => error.FileNotFound,
+                .PATH_NOT_FOUND => error.FileNotFound,
+                .INVALID_PARAMETER => unreachable,
+                .SHARING_VIOLATION => return error.AccessDenied,
+                .ACCESS_DENIED => return error.AccessDenied,
+                .PIPE_BUSY => return error.PipeBusy,
+                .FILE_EXISTS => return error.PathAlreadyExists,
+                .USER_MAPPED_FILE => return error.AccessDenied,
+                .INVALID_HANDLE => unreachable,
+                .VIRUS_INFECTED, .VIRUS_DELETED => return error.AntivirusInterference,
+                else => windows.unexpectedError(err),
+            };
+        }
+        return .{ .handle = handle };
+    }
+};
+
 fn fs_readFileAsync(L: *VM.lua.State) !i32 {
     const path = L.Lcheckstring(1);
     const useBuffer = L.Loptboolean(2, false);
 
-    const file = try fs.cwd().openFile(path, .{
-        .mode = .read_only,
-    });
+    const file: fs.File = switch (comptime builtin.os.tag) {
+        .windows => try windowsSupport.OpenFile(fs.cwd(), path, .{
+            .accessMode = std.os.windows.GENERIC_READ,
+            .creationDisposition = std.os.windows.OPEN_EXISTING,
+        }),
+        else => try fs.cwd().openFile(path, .{
+            .mode = .read_only,
+        }),
+    };
     errdefer file.close();
 
-    return File.ReadAsyncContext.queue(L, file, useBuffer, 1024, luaHelper.MAX_LUAU_SIZE, true);
+    return File.AsyncReadContext.queue(L, file, useBuffer, 1024, luaHelper.MAX_LUAU_SIZE, true);
 }
 
 fn fs_readFileSync(L: *VM.lua.State) !i32 {
@@ -71,10 +117,16 @@ fn fs_writeFileAsync(L: *VM.lua.State) !i32 {
     const path = L.Lcheckstring(1);
     const data = try L.Zcheckvalue([]const u8, 2, null);
 
-    const file = try fs.cwd().createFile(path, .{});
+    const file: fs.File = switch (comptime builtin.os.tag) {
+        .windows => try windowsSupport.OpenFile(fs.cwd(), path, .{
+            .accessMode = std.os.windows.GENERIC_READ | std.os.windows.GENERIC_WRITE,
+            .creationDisposition = std.os.windows.OPEN_ALWAYS,
+        }),
+        else => try fs.cwd().createFile(path, .{}),
+    };
     errdefer file.close();
 
-    return File.WriteAsyncContext.queue(L, file, data, true, 0);
+    return File.AsyncWriteContext.queue(L, file, data, true);
 }
 
 fn fs_writeFileSync(L: *VM.lua.State) !i32 {
@@ -172,12 +224,13 @@ fn fs_metadata(L: *VM.lua.State) !i32 {
         var dir = try cwd.openDir(path, fs.Dir.OpenDirOptions{});
         defer dir.close();
         const metadata = try dir.metadata();
-        var isLink = true;
-        _ = cwd.readLink(path, buf) catch |err| switch (err) {
-            else => {
-                isLink = false;
-            },
-        };
+        var isLink = builtin.os.tag != .windows;
+        if (builtin.os.tag != .windows)
+            _ = cwd.readLink(path, buf) catch |err| switch (err) {
+                else => {
+                    isLink = false;
+                },
+            };
         internal_metadata_table(L, metadata, isLink);
     } else if (internal_isFile(cwd, path)) {
         var file = try cwd.openFile(path, fs.File.OpenFlags{
@@ -185,12 +238,13 @@ fn fs_metadata(L: *VM.lua.State) !i32 {
         });
         defer file.close();
         const metadata = try file.metadata();
-        var isLink = true;
-        _ = cwd.readLink(path, buf) catch |err| switch (err) {
-            else => {
-                isLink = false;
-            },
-        };
+        var isLink = builtin.os.tag != .windows;
+        if (builtin.os.tag != .windows)
+            _ = cwd.readLink(path, buf) catch |err| switch (err) {
+                else => {
+                    isLink = false;
+                },
+            };
         internal_metadata_table(L, metadata, isLink);
     } else return std.fs.File.OpenError.FileNotFound;
     return 1;
@@ -426,9 +480,19 @@ fn fs_openFile(L: *VM.lua.State) !i32 {
         L.pop(1);
     }
 
-    const file = try fs.cwd().openFile(path, .{
-        .mode = mode,
-    });
+    const file: fs.File = switch (comptime builtin.os.tag) {
+        .windows => try windowsSupport.OpenFile(fs.cwd(), path, .{
+            .accessMode = switch (mode) {
+                .read_only => std.os.windows.GENERIC_READ,
+                .read_write => std.os.windows.GENERIC_READ | std.os.windows.GENERIC_WRITE,
+                .write_only => std.os.windows.GENERIC_WRITE,
+            },
+            .creationDisposition = std.os.windows.OPEN_EXISTING,
+        }),
+        else => try fs.cwd().openFile(path, .{
+            .mode = mode,
+        }),
+    };
 
     File.push(L, file, .File);
 
@@ -452,10 +516,16 @@ fn fs_createFile(L: *VM.lua.State) !i32 {
         L.pop(1);
     }
 
-    const file = try fs.cwd().createFile(path, .{
-        .read = true,
-        .exclusive = exclusive,
-    });
+    const file: fs.File = switch (comptime builtin.os.tag) {
+        .windows => try windowsSupport.OpenFile(fs.cwd(), path, .{
+            .accessMode = std.os.windows.GENERIC_READ | std.os.windows.GENERIC_WRITE,
+            .creationDisposition = if (exclusive) std.os.windows.CREATE_NEW else std.os.windows.CREATE_ALWAYS,
+        }),
+        else => try fs.cwd().createFile(path, .{
+            .read = true,
+            .exclusive = exclusive,
+        }),
+    };
 
     File.push(L, file, .File);
 

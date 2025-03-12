@@ -1,6 +1,6 @@
 const std = @import("std");
-const aio = @import("aio");
 const luau = @import("luau");
+const builtin = @import("builtin");
 
 const VM = luau.VM;
 
@@ -18,43 +18,49 @@ const WebSocketClient = @import("websocket.zig");
 
 pub const LIB_NAME = "net";
 
-pub const SocketContext = struct {
-    socket: std.posix.socket_t,
-    out_error: aio.Socket.Error = error.Unexpected,
-    fn completion(ctx: *SocketContext, L: *VM.lua.State, _: *Scheduler, failed: bool) void {
-        const allocator = luau.getallocator(L);
-        defer allocator.destroy(ctx);
-        if (failed) {
-            L.pushfstring("{s}", .{@errorName(ctx.out_error)});
-            _ = Scheduler.resumeStateError(L, null) catch {};
-            return;
-        }
-        Socket.push(L, ctx.socket);
-        _ = Scheduler.resumeState(L, null, 1) catch {};
-    }
-};
-
-fn net_createSocketAsync(L: *VM.lua.State) !i32 {
+fn net_createSocket(L: *VM.lua.State) !i32 {
     if (!L.isyieldable())
-        return error.RaiseLuauYieldError;
+        return L.Zyielderror();
     const domain = L.Lcheckunsigned(1);
     const flags = L.Lcheckunsigned(2);
     const protocol = L.Lcheckunsigned(3);
-    const allocator = luau.getallocator(L);
-    const scheduler = Scheduler.getScheduler(L);
 
-    const ctx = try allocator.create(SocketContext);
-    errdefer allocator.destroy(ctx);
+    const socket = switch (builtin.os.tag) {
+        .windows => socket: {
+            const windows = std.os.windows;
+            // NOTE: windows translates the SOCK.NONBLOCK/SOCK.CLOEXEC flags into
+            // windows-analogous operations
+            const filtered_sock_type = flags & ~@as(u32, std.posix.SOCK.NONBLOCK | std.posix.SOCK.CLOEXEC);
+            const dwflags: u32 = if ((flags & std.posix.SOCK.CLOEXEC) != 0)
+                windows.ws2_32.WSA_FLAG_NO_HANDLE_INHERIT
+            else
+                0;
+            const rc = try windows.WSASocketW(
+                @bitCast(domain),
+                @bitCast(filtered_sock_type),
+                @bitCast(protocol),
+                null,
+                0,
+                dwflags | windows.ws2_32.WSA_FLAG_OVERLAPPED,
+            );
+            errdefer windows.closesocket(rc) catch unreachable;
+            if ((flags & std.posix.SOCK.NONBLOCK) != 0) {
+                var mode: c_ulong = 1; // nonblocking
+                if (windows.ws2_32.SOCKET_ERROR == windows.ws2_32.ioctlsocket(rc, windows.ws2_32.FIONBIO, &mode)) {
+                    switch (windows.ws2_32.WSAGetLastError()) {
+                        // have not identified any error codes that should be handled yet
+                        else => unreachable,
+                    }
+                }
+            }
+            break :socket rc;
+        },
+        else => try std.posix.socket(domain, flags, protocol),
+    };
 
-    try scheduler.queueIoCallbackCtx(SocketContext, ctx, L, aio.op(.socket, .{
-        .domain = domain,
-        .flags = flags,
-        .protocol = protocol,
-        .out_error = &ctx.out_error,
-        .out_socket = &ctx.socket,
-    }, .unlinked), SocketContext.completion);
+    try Socket.push(L, socket);
 
-    return L.yield(0);
+    return 1;
 }
 
 fn net_getAddressList(L: *VM.lua.State) !i32 {
@@ -113,7 +119,7 @@ pub fn loadLib(L: *VM.lua.State) void {
         L.setfield(-2, "http");
     }
 
-    L.Zsetfieldfn(-1, "createSocketAsync", net_createSocketAsync);
+    L.Zsetfieldfn(-1, "createSocket", net_createSocket);
     L.Zsetfieldfn(-1, "getAddressList", net_getAddressList);
 
     ImportConstants(L, std.posix.AF, "ADDRF");
