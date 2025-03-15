@@ -143,6 +143,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         .path = filePath,
         .name = std.fs.path.basename(filePath),
         .source = fileContent,
+        .main = true,
     });
 
     ML.setsafeenv(VM.lua.GLOBALSINDEX, true);

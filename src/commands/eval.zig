@@ -59,6 +59,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         .path = virtual_path,
         .name = "EVAL",
         .source = fileContent,
+        .main = true,
     });
 
     ML.setsafeenv(VM.lua.GLOBALSINDEX, true);

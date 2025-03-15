@@ -185,6 +185,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
             .path = fileName,
             .name = moduleRelativeName,
             .source = fileContent,
+            .main = true,
         });
 
         ML.setsafeenv(VM.lua.GLOBALSINDEX, true);

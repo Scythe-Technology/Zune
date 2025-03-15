@@ -65,6 +65,7 @@ const FileContext = struct {
     path: []const u8,
     name: []const u8,
     source: []const u8,
+    main: bool = false,
 };
 
 const StackInfo = struct {
@@ -80,6 +81,7 @@ pub fn setLuaFileContext(L: *VM.lua.State, ctx: FileContext) void {
         .name = ctx.name,
         .path = ctx.path,
         .source = ctx.source,
+        .main = ctx.main,
     });
 
     // TODO: Only include source when USE_DETAILED_ERROR is true or testing.

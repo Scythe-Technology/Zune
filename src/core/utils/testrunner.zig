@@ -91,6 +91,7 @@ pub fn runTest(comptime testFile: TestFile, args: []const []const u8, comptime s
         .path = testFileAbsolute,
         .name = testFile.path,
         .source = content,
+        .main = true,
     });
 
     ML.setsafeenv(VM.lua.GLOBALSINDEX, true);

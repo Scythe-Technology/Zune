@@ -247,6 +247,7 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
             .path = moduleAbsolutePath,
             .name = moduleRelativeName,
             .source = fileContent,
+            .main = true,
         });
 
         const sourceNameZ = try std.mem.joinZ(allocator, "", &.{ "@", moduleAbsolutePath });

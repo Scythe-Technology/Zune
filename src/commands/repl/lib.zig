@@ -64,6 +64,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         .path = virtual_path,
         .name = "REPL",
         .source = "",
+        .main = true,
     });
 
     Zune.resolvers_require.load_require(L);
