@@ -44,7 +44,7 @@ pub fn compileModule(allocator: std.mem.Allocator, content: []const u8, cOpts: ?
 pub fn loadModule(L: *VM.lua.State, name: [:0]const u8, content: []const u8, cOpts: ?luau.CompileOptions) !void {
     const allocator = luau.getallocator(L);
     var script = content;
-    if (content.len >= 2 and content[0] == '#' and content[1] == '!') {
+    if (std.mem.startsWith(u8, content, "#!")) {
         const pos = std.mem.indexOf(u8, content, "\n") orelse content.len;
         script = content[pos..];
     }
@@ -65,6 +65,7 @@ const FileContext = struct {
     path: []const u8,
     name: []const u8,
     source: []const u8,
+    main: bool = false,
 };
 
 const StackInfo = struct {
@@ -76,13 +77,16 @@ const StackInfo = struct {
 };
 
 pub fn setLuaFileContext(L: *VM.lua.State, ctx: FileContext) void {
-    L.newtable();
-    L.Zsetfield(-1, "name", ctx.name);
-    L.Zsetfield(-1, "path", ctx.path);
+    L.Zpushvalue(.{
+        .name = ctx.name,
+        .path = ctx.path,
+        .source = ctx.source,
+        .main = ctx.main,
+    });
 
     // TODO: Only include source when USE_DETAILED_ERROR is true or testing.
     // if (USE_DETAILED_ERROR)
-    L.Zsetfield(-1, "source", ctx.source);
+    // L.Zsetfield(-1, "source", ctx.source);
 
     L.setfield(VM.lua.GLOBALSINDEX, "_FILE");
 }
@@ -134,18 +138,19 @@ pub fn logDetailedError(L: *VM.lua.State) !void {
     defer if (dynamic) allocator.free(err_msg);
     switch (L.typeOf(-1)) {
         .String, .Number => err_msg = L.tostring(-1).?,
-        else => {
-            const GL = L.mainthread();
-            if (!GL.checkstack(1))
-                @panic("Main StackOverflow");
-            const TL = GL.newthread();
-            defer GL.pop(1); // drop: thread
+        else => jmp: {
+            if (!L.checkstack(2)) {
+                err_msg = "StackOverflow";
+                break :jmp;
+            }
+            const TL = L.newthread();
+            defer L.pop(1); // drop: thread
             defer TL.resetthread();
-            L.xpush(TL, -1);
-            err_msg = try allocator.dupe(u8, TL.Ltolstring(1) catch |e| {
+            L.xpush(TL, -2);
+            err_msg = try allocator.dupe(u8, TL.Ztolstring(1) catch |e| str: {
                 switch (e) {
-                    error.BadReturnType => std.debug.print("\x1b[32merror\x1b[0m: __tostring: Expected 'string' got {s}\n", .{VM.lapi.typename(TL.typeOf(-1))}),
-                    error.Runtime => logError(TL, e, false),
+                    error.BadReturnType => break :str TL.Ztolstringk(1),
+                    error.Runtime => break :str TL.Ztolstringk(1),
                     else => std.debug.panic("{}\n", .{e}),
                 }
                 return;
@@ -212,10 +217,15 @@ pub fn logDetailedError(L: *VM.lua.State) !void {
     for (list.items, 0..) |info, lvl| {
         if (info.current_line == null)
             continue;
+        if (info.what != .lua)
+            continue;
         if (info.source) |src| blk: {
             const current_line = info.current_line.?;
 
-            std.debug.print("\x1b[1;4m{s}:{d}\x1b[0m\n", .{ if (src.len > 1) src[1..] else src, current_line });
+            std.debug.print("\x1b[1;4m{s}:{d}\x1b[0m\n", .{
+                if (src.len > 1 and src[0] == '@') src[1..] else src,
+                current_line,
+            });
 
             if (!L.getinfo(@intCast(lvl), "f", &ar)) {
                 printPreviewError(padded_string, current_line, "Failed to get function info", .{});
@@ -298,27 +308,23 @@ pub fn logError(L: *VM.lua.State, err: anyerror, forceDetailed: bool) void {
             } else {
                 switch (L.typeOf(-1)) {
                     .String, .Number => std.debug.print("{s}\n", .{L.tostring(-1).?}),
-                    else => {
-                        if (!L.checkstack(3)) // string + __tostring + call stack
-                            std.debug.print("BadErrorInfo/StackOverflow\n", .{})
-                        else jmp: {
-                            const GL = L.mainthread();
-                            if (!GL.checkstack(1))
-                                @panic("Main StackOverflow");
-                            const TL = GL.newthread();
-                            defer GL.pop(1); // drop: thread
-                            defer TL.resetthread();
-                            L.xpush(TL, -1);
-                            const str = TL.Ltolstring(1) catch |e| {
-                                switch (e) {
-                                    error.BadReturnType => std.debug.print("__tostring: Expected 'string' got {s}\n", .{VM.lapi.typename(TL.typeOf(-1))}),
-                                    error.Runtime => logError(TL, e, false),
-                                    else => std.debug.panic("{}\n", .{e}),
-                                }
-                                break :jmp;
-                            };
-                            std.debug.print("{s}\n", .{str});
+                    else => jmp: {
+                        if (!L.checkstack(2)) {
+                            std.debug.print("StackOverflow\n", .{});
                         }
+                        const TL = L.newthread();
+                        defer L.pop(1); // drop: thread
+                        defer TL.resetthread();
+                        L.xpush(TL, -2);
+                        const str = TL.Ztolstring(1) catch |e| str: {
+                            switch (e) {
+                                error.BadReturnType => break :str TL.Ztolstringk(1),
+                                error.Runtime => break :str TL.Ztolstringk(1),
+                                else => std.debug.panic("{}\n", .{e}),
+                            }
+                            break :jmp;
+                        };
+                        std.debug.print("{s}\n", .{str});
                     },
                 }
                 std.debug.print("{s}\n", .{L.debugtrace()});
@@ -366,9 +372,9 @@ const LuaFileType = enum {
 };
 
 pub fn getLuaFileType(path: []const u8) ?LuaFileType {
-    if (path.len >= 4 and std.mem.eql(u8, path[path.len - 4 ..], ".lua"))
+    if (std.mem.endsWith(u8, path, ".lua"))
         return .Lua;
-    if (path.len >= 5 and std.mem.eql(u8, path[path.len - 5 ..], ".luau"))
+    if (std.mem.endsWith(u8, path, ".luau"))
         return .Luau;
     return null;
 }

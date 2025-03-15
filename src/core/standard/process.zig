@@ -2,6 +2,8 @@ const std = @import("std");
 const builtin = @import("builtin");
 const luau = @import("luau");
 
+const Zune = @import("../../zune.zig");
+
 const Engine = @import("../runtime/engine.zig");
 const Scheduler = @import("../runtime/scheduler.zig");
 const Parser = @import("../utils/parser.zig");
@@ -16,6 +18,12 @@ const process = std.process;
 const native_os = builtin.os.tag;
 
 pub const LIB_NAME = "process";
+pub fn PlatformSupported() bool {
+    return switch (comptime builtin.os.tag) {
+        .linux, .macos, .windows => true,
+        else => false,
+    };
+}
 
 pub var SIGINT_LUA: ?LuaSigHandler = null;
 
@@ -35,7 +43,7 @@ const ProcessEnvError = error{
 };
 
 fn internal_process_getargs(L: *VM.lua.State, array: *std.ArrayList([]const u8), idx: i32) !void {
-    L.Lchecktype(idx, .Table);
+    try L.Zchecktype(idx, .Table);
     L.pushvalue(idx);
     L.pushnil();
 
@@ -62,7 +70,7 @@ fn internal_process_getargs(L: *VM.lua.State, array: *std.ArrayList([]const u8),
 }
 
 fn internal_process_envmap(L: *VM.lua.State, envMap: *std.process.EnvMap, idx: i32) !void {
-    L.Lchecktype(idx, .Table);
+    try L.Zchecktype(idx, .Table);
     L.pushvalue(idx);
     L.pushnil();
 
@@ -82,26 +90,15 @@ fn internal_process_envmap(L: *VM.lua.State, envMap: *std.process.EnvMap, idx: i
 }
 
 fn internal_process_term(L: *VM.lua.State, term: process.Child.Term) void {
+    L.Zsetfield(-1, "status", @tagName(term));
     switch (term) {
         .Exited => |code| {
-            L.Zsetfieldc(-1, "status", "Exited");
             L.Zsetfield(-1, "code", code);
             L.Zsetfield(-1, "ok", code == 0);
         },
-        .Stopped => |code| {
-            L.Zsetfieldc(-1, "status", "Stopped");
+        .Stopped, .Signal, .Unknown => |code| {
             L.Zsetfield(-1, "code", code);
-            L.Zsetfieldc(-1, "ok", false);
-        },
-        .Signal => |code| {
-            L.Zsetfieldc(-1, "status", "Signal");
-            L.Zsetfield(-1, "code", code);
-            L.Zsetfieldc(-1, "ok", false);
-        },
-        .Unknown => |code| {
-            L.Zsetfieldc(-1, "status", "Unknown");
-            L.Zsetfield(-1, "code", code);
-            L.Zsetfieldc(-1, "ok", false);
+            L.Zsetfield(-1, "ok", false);
         },
     }
 }
@@ -122,7 +119,7 @@ const ProcessChildHandle = struct {
     fn method_kill(self: *ProcessChildHandle, L: *VM.lua.State) !i32 {
         const term = try self.child.kill();
         self.dead = true;
-        L.newtable();
+        L.createtable(0, 3);
         internal_process_term(L, term);
         return 1;
     }
@@ -130,7 +127,7 @@ const ProcessChildHandle = struct {
     fn method_wait(self: *ProcessChildHandle, L: *VM.lua.State) !i32 {
         const term = try self.child.wait();
         self.dead = true;
-        L.newtable();
+        L.createtable(0, 3);
         internal_process_term(L, term);
         return 1;
     }
@@ -271,12 +268,11 @@ const ProcessChildHandle = struct {
     }
 
     fn method_writeIn(self: *ProcessChildHandle, L: *VM.lua.State) !i32 {
-        const buffer = L.Lcheckstring(2);
         if (self.child.stdin == null)
             return L.Zerror("InternalError (No stdin stream found)");
         if (self.child.stdin_behavior != .Pipe)
             return L.Zerror("InternalError (stdin stream is not a pipe)");
-
+        const buffer = try L.Zcheckvalue([]const u8, 2, null);
         try self.child.stdin.?.writeAll(buffer);
         return 1;
     }
@@ -302,7 +298,7 @@ const ProcessChildHandle = struct {
     pub fn __namecall(L: *VM.lua.State) !i32 {
         const scheduler = Scheduler.getScheduler(L);
 
-        L.Lchecktype(1, .Userdata);
+        try L.Zchecktype(1, .Userdata);
         const ptr = L.touserdata(ProcessChildHandle, 1) orelse unreachable;
         const namecall = L.namecallstr() orelse unreachable;
 
@@ -324,7 +320,7 @@ const ProcessChildHandle = struct {
     });
 
     pub fn __index(L: *VM.lua.State) !i32 {
-        L.Lchecktype(1, .Userdata);
+        try L.Zchecktype(1, .Userdata);
         const handlePtr = L.touserdata(ProcessChildHandle, 1) orelse unreachable;
         const index = L.Lcheckstring(2);
 
@@ -353,7 +349,7 @@ const ProcessChildOptions = struct {
     tagged: std.ArrayList([]const u8),
 
     pub fn init(L: *VM.lua.State) !ProcessChildOptions {
-        const cmd = L.Lcheckstring(1);
+        const cmd = try L.Zcheckvalue([:0]const u8, 1, null);
         const useArgs = L.typeOf(2) == .Table;
         const options = !L.typeOf(3).isnoneornil();
 
@@ -367,15 +363,9 @@ const ProcessChildOptions = struct {
         errdefer childOptions.argArray.deinit();
 
         if (options) {
-            L.Lchecktype(3, .Table);
+            try L.Zchecktype(3, .Table);
 
-            const cwdType = L.getfield(3, "cwd");
-            if (!cwdType.isnoneornil()) {
-                if (cwdType == .String) {
-                    childOptions.cwd = L.tostring(-1) orelse null;
-                } else return L.Zerrorf("invalid cwd (string expected, got {s})", .{VM.lapi.typename(cwdType)});
-            }
-            L.pop(1);
+            childOptions.cwd = try L.Zcheckfield(?[]const u8, 3, "cwd");
 
             const envType = L.getfield(3, "env");
             if (!envType.isnoneornil()) {
@@ -473,7 +463,7 @@ const ProcessAsyncRun = struct {
 
         const term = try ctx.child.wait();
 
-        L.newtable();
+        L.createtable(0, 5);
 
         L.Zsetfield(-1, "stdout", stdout);
         L.Zsetfield(-1, "stderr", stderr);
@@ -525,7 +515,8 @@ fn process_create(L: *VM.lua.State) !i32 {
 
     childProcess.id = undefined;
     childProcess.thread_handle = undefined;
-    childProcess.err_pipe = null;
+    if (builtin.os.tag != .windows)
+        childProcess.err_pipe = null;
     childProcess.term = null;
     childProcess.uid = if (native_os == .windows or native_os == .wasi) {} else null;
     childProcess.gid = if (native_os == .windows or native_os == .wasi) {} else null;
@@ -693,14 +684,7 @@ fn process_loadEnv(L: *VM.lua.State) !i32 {
     const allocator = luau.getallocator(L);
     L.newtable();
 
-    const env_map = try allocator.create(std.process.EnvMap);
-    env_map.* = std.process.getEnvMap(allocator) catch return L.Zerror("OutOfMemory");
-    defer {
-        env_map.deinit();
-        allocator.destroy(env_map);
-    }
-
-    var iterator = env_map.iterator();
+    var iterator = Zune.EnvironmentMap.iterator();
     while (iterator.next()) |entry| {
         const zkey = try allocator.dupeZ(u8, entry.key_ptr.*);
         defer allocator.free(zkey);
@@ -708,7 +692,7 @@ fn process_loadEnv(L: *VM.lua.State) !i32 {
     }
 
     try loadEnvironment(L, allocator, ".env");
-    if (env_map.get("LUAU_ENV")) |value| {
+    if (Zune.EnvironmentMap.get("LUAU_ENV")) |value| {
         if (std.mem.eql(u8, value, "PRODUCTION")) {
             try loadEnvironment(L, allocator, ".env.production");
         } else if (std.mem.eql(u8, value, "DEVELOPMENT")) {
@@ -723,8 +707,8 @@ fn process_loadEnv(L: *VM.lua.State) !i32 {
 }
 
 fn process_onsignal(L: *VM.lua.State) !i32 {
-    const sig = L.Lcheckstring(1);
-    L.Lchecktype(2, .Function);
+    const sig = try L.Zcheckvalue([:0]const u8, 1, null);
+    try L.Zchecktype(2, .Function);
 
     if (std.mem.eql(u8, sig, "INT")) {
         const GL = L.mainthread();
@@ -748,16 +732,16 @@ fn process_onsignal(L: *VM.lua.State) !i32 {
 }
 
 fn lib__newindex(L: *VM.lua.State) !i32 {
-    L.Lchecktype(1, .Table);
+    try L.Zchecktype(1, .Table);
     const index = L.Lcheckstring(2);
     const process_lib = VM.lua.upvalueindex(1);
 
     if (std.mem.eql(u8, index, "cwd")) {
         const allocator = luau.getallocator(L);
 
-        const value = L.Lcheckstring(3);
+        const value = try L.Zcheckvalue([:0]const u8, 3, null);
         const dir = try std.fs.cwd().openDir(value, .{});
-        const path = try dir.realpathAlloc(allocator, "./");
+        const path = try dir.realpathAlloc(allocator, ".");
         defer allocator.free(path);
 
         try dir.setAsCwd();
@@ -775,33 +759,26 @@ pub fn loadLib(L: *VM.lua.State, args: []const []const u8) !void {
     {
         _ = L.Lnewmetatable(ProcessChildHandle.META);
 
-        L.Zsetfieldc(-1, luau.Metamethods.index, ProcessChildHandle.__index); // metatable.__index
-        L.Zsetfieldc(-1, luau.Metamethods.namecall, ProcessChildHandle.__namecall); // metatable.__namecall
+        L.Zsetfieldfn(-1, luau.Metamethods.index, ProcessChildHandle.__index); // metatable.__index
+        L.Zsetfieldfn(-1, luau.Metamethods.namecall, ProcessChildHandle.__namecall); // metatable.__namecall
 
-        L.Zsetfieldc(-1, luau.Metamethods.metatable, "Metatable is locked");
+        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.pop(1);
     }
 
-    L.newtable();
+    L.createtable(0, 10);
 
-    L.Zsetfieldc(-1, "arch", @tagName(builtin.cpu.arch));
-    L.Zsetfieldc(-1, "os", @tagName(native_os));
+    L.Zsetfield(-1, "arch", @tagName(builtin.cpu.arch));
+    L.Zsetfield(-1, "os", @tagName(native_os));
 
     {
-        L.newtable();
-        for (args, 1..) |arg, i| {
-            const zarg = try allocator.dupeZ(u8, arg);
-            defer allocator.free(zarg);
-            L.pushstring(zarg);
-            L.rawseti(-2, @intCast(i));
-        }
-        L.setreadonly(-1, true);
+        L.Zpushvalue(args);
         L.setfield(-2, "args");
     }
 
     _ = try process_loadEnv(L);
     L.setfield(-2, "env");
-    L.Zsetfieldc(-1, "loadEnv", process_loadEnv);
+    L.Zsetfieldfn(-1, "loadEnv", process_loadEnv);
 
     {
         const path = try std.fs.cwd().realpathAlloc(allocator, "./");
@@ -809,14 +786,14 @@ pub fn loadLib(L: *VM.lua.State, args: []const []const u8) !void {
         L.Zsetfield(-1, "cwd", path);
     }
 
-    L.Zsetfieldc(-1, "exit", process_exit);
-    L.Zsetfieldc(-1, "run", process_run);
-    L.Zsetfieldc(-1, "create", process_create);
-    L.Zsetfieldc(-1, "onSignal", process_onsignal);
+    L.Zsetfieldfn(-1, "exit", process_exit);
+    L.Zsetfieldfn(-1, "run", process_run);
+    L.Zsetfieldfn(-1, "create", process_create);
+    L.Zsetfieldfn(-1, "onSignal", process_onsignal);
 
-    L.newtable();
+    L.createtable(0, 0);
     {
-        L.newtable();
+        L.createtable(0, 3);
 
         L.pushvalue(-3);
         L.setfield(-2, luau.Metamethods.index); // metatable.__index
@@ -825,7 +802,7 @@ pub fn loadLib(L: *VM.lua.State, args: []const []const u8) !void {
         L.pushcclosure(VM.zapi.toCFn(lib__newindex), luau.Metamethods.newindex, 1);
         L.setfield(-2, luau.Metamethods.newindex); // metatable.__newindex
 
-        L.Zsetfieldc(-1, luau.Metamethods.metatable, "Metatable is locked");
+        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
 
         _ = L.setmetatable(-2);
     }
@@ -839,7 +816,11 @@ pub fn loadLib(L: *VM.lua.State, args: []const []const u8) !void {
 test "Process" {
     const TestRunner = @import("../utils/testrunner.zig");
 
-    const testResult = try TestRunner.runTest(std.testing.allocator, @import("zune-test-files").@"process.test", &.{ "Test", "someValue" }, true);
+    const testResult = try TestRunner.runTest(
+        TestRunner.newTestFile("standard/process.test.luau"),
+        &.{ "Test", "someValue" },
+        true,
+    );
 
     try std.testing.expect(testResult.failed == 0);
     try std.testing.expect(testResult.total > 0);

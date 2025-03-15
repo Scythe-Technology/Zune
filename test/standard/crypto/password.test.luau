@@ -7,10 +7,12 @@ local expect = testing.expect;
 local test = testing.test;
 
 local function testPassword(password: string, options: any?)
-    local hash = crypto.password.hash(password, options);
-    local hash2 = crypto.password.hash(password, options);
+    local hash;
+    local hash2;
     test("Hash", function()
         -- Hashes should be different
+        hash = crypto.password.hash(password, options);
+        hash2 = crypto.password.hash(password, options);
         expect(hash).never.toBe(hash2);
         if (options) then
             expect(hash:sub(1, #options.algorithm + 2)).toBe(`${options.algorithm}$`);
@@ -40,21 +42,26 @@ describe("Password", function()
     test("Fail", function()
         expect(function()
             crypto.password.hash("blank", {
+                algorithm = 123,
+            })
+        end).toThrow("invalid field 'algorithm' (string expected, got number)");
+        expect(function()
+            crypto.password.hash("blank", {
                 algorithm = "argon2b",
             })
-        end).toThrow("Invalid Algorithm");
+        end).toThrow("invalid algorithm kind");
         expect(function()
             crypto.password.hash("blank", {
                 algorithm = "argon2d",
-                timeCost = "0",
+                timeCost = "abc",
             })
-        end).toThrow("Invalid 'timeCost' (Number expected)");
+        end).toThrow("invalid field 'timeCost' (number expected, got string)");
         expect(function()
             crypto.password.hash("blank", {
                 algorithm = "bcrypt",
-                cost = "0",
+                cost = "abc",
             })
-        end).toThrow("Invalid 'cost' (Number expected)");
+        end).toThrow("invalid field 'cost' (number expected, got string)");
     end)
 end)
 

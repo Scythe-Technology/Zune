@@ -763,7 +763,7 @@ fn decode(L: *VM.lua.State, string: []const u8, info: *DecodeInfo) !void {
 }
 
 pub fn lua_encode(L: *VM.lua.State) !i32 {
-    L.Lchecktype(1, .Table);
+    try L.Zchecktype(1, .Table);
     const allocator = luau.getallocator(L);
 
     var buf = std.ArrayList(u8).init(allocator);
@@ -789,7 +789,7 @@ pub fn lua_encode(L: *VM.lua.State) !i32 {
 }
 
 pub fn lua_decode(L: *VM.lua.State) !i32 {
-    const string = L.Lcheckstring(1);
+    const string = try L.Zcheckvalue([]const u8, 1, null);
     if (string.len == 0) {
         L.pushnil();
         return 1;

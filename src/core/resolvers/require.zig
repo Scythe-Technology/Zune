@@ -44,7 +44,7 @@ var WaitingState = States.Waiting;
 var PreloadedState = States.Preloaded;
 
 const QueueItem = struct {
-    state: Scheduler.LuauPair,
+    state: Scheduler.ThreadRef,
 };
 
 var REQUIRE_QUEUE_MAP = std.StringArrayHashMap(std.ArrayList(QueueItem)).init(Zune.DEFAULT_ALLOCATOR);
@@ -77,7 +77,7 @@ fn require_finished(ctx: *RequireContext, ML: *VM.lua.State, _: *Scheduler) void
     ctx.caller.pop(1); // drop: _MODULES
 
     for (queue.value_ptr.*.items) |item| {
-        const L, _ = item.state;
+        const L = item.state.value;
         if (outErr) |msg| {
             L.pushlstring(msg);
             _ = Scheduler.resumeStateError(L, null) catch {};
@@ -97,7 +97,7 @@ fn require_dtor(ctx: *RequireContext, _: *VM.lua.State, _: *Scheduler) void {
     const queue = REQUIRE_QUEUE_MAP.getEntry(ctx.path) orelse return;
 
     for (queue.value_ptr.items) |item|
-        Scheduler.derefThread(item.state);
+        item.state.deref();
     queue.value_ptr.deinit();
     allocator.free(queue.key_ptr.*);
 }
@@ -118,19 +118,21 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
     const absPath = try std.fs.cwd().realpathAlloc(allocator, ".");
     defer allocator.free(absPath);
 
+    var resolvedPath: ?[]const u8 = null;
+    defer if (resolvedPath) |path| allocator.free(path);
+
     if (moduleName.len > 2 and moduleName[0] == '@') {
         const delimiter = std.mem.indexOfScalar(u8, moduleName, '/') orelse moduleName.len;
         const alias = moduleName[1..delimiter];
         const path = ALIASES.get(alias) orelse return RequireError.NoAlias;
-        const modulePath = if (moduleName.len - delimiter > 1)
+        resolvedPath = if (moduleName.len - delimiter > 1)
             try std.fs.path.join(allocator, &.{ path, moduleName[delimiter + 1 ..] })
         else
             try allocator.dupe(u8, path);
-        defer allocator.free(modulePath);
 
-        searchResult = try Engine.findLuauFileFromPathZ(allocator, absPath, modulePath);
+        searchResult = try Engine.findLuauFileFromPathZ(allocator, absPath, resolvedPath orelse unreachable);
     } else {
-        if ((moduleName.len < 2 or !std.mem.eql(u8, moduleName[0..2], "./")) and (moduleName.len < 3 or !std.mem.eql(u8, moduleName[0..3], "../")))
+        if (!std.mem.startsWith(u8, moduleName[0..2], "./") and !std.mem.startsWith(u8, moduleName, "../"))
             return L.Zerror("must have either \"@\", \"./\", or \"../\" prefix");
         if (L.getfield(VM.lua.upvalueindex(1), "_FILE") != .Table)
             return L.Zerror("InternalError (_FILE is invalid)");
@@ -169,7 +171,11 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
             }
             moduleAbsolutePath = results[0];
         },
-        .none => return error.FileNotFound,
+        .none => {
+            const resolved = try std.fs.path.resolve(allocator, &.{ absPath, resolvedPath orelse moduleName });
+            defer allocator.free(resolved);
+            return L.Zerrorf("FileNotFound ({s})", .{resolved});
+        },
     }
 
     jmp: {
@@ -185,7 +191,7 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
                     L.pop(1);
                     const res = REQUIRE_QUEUE_MAP.getEntry(moduleAbsolutePath) orelse std.debug.panic("zune_require: queue not found", .{});
                     try res.value_ptr.append(.{
-                        .state = Scheduler.refThread(L),
+                        .state = Scheduler.ThreadRef.init(L),
                     });
                     return L.yield(0);
                 } else if (ptr == @as(*const anyopaque, @ptrCast(&PreloadedState))) {
@@ -241,6 +247,7 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
             .path = moduleAbsolutePath,
             .name = moduleRelativeName,
             .source = fileContent,
+            .main = true,
         });
 
         const sourceNameZ = try std.mem.joinZ(allocator, "", &.{ "@", moduleAbsolutePath });
@@ -296,7 +303,7 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
 
                 var list = std.ArrayList(QueueItem).init(allocator);
                 try list.append(.{
-                    .state = Scheduler.refThread(L),
+                    .state = Scheduler.ThreadRef.init(L),
                 });
 
                 try REQUIRE_QUEUE_MAP.put(try allocator.dupe(u8, moduleAbsolutePath), list);
@@ -332,7 +339,11 @@ pub fn load_require(L: *VM.lua.State) void {
 test "Require" {
     const TestRunner = @import("../utils/testrunner.zig");
 
-    const testResult = try TestRunner.runTest(std.testing.allocator, @import("zune-test-files").@"require.test", &.{}, true);
+    const testResult = try TestRunner.runTest(
+        TestRunner.newTestFile("engine/require.test.luau"),
+        &.{},
+        true,
+    );
 
     try std.testing.expect(testResult.failed == 0);
     try std.testing.expect(testResult.total > 0);

@@ -103,7 +103,7 @@ const EraseActionMap = std.StaticStringMap(EraseKind).initComptime(.{
 });
 
 fn stdio_color(L: *VM.lua.State) !i32 {
-    const color = L.Lcheckstring(1);
+    const color = try L.Zcheckvalue([:0]const u8, 1, null);
 
     const code = ColorMap.get(color) orelse return L.Zerror("UnknownColor");
 
@@ -112,7 +112,7 @@ fn stdio_color(L: *VM.lua.State) !i32 {
     return 1;
 }
 fn stdio_bgColor(L: *VM.lua.State) !i32 {
-    const color = L.Lcheckstring(1);
+    const color = try L.Zcheckvalue([:0]const u8, 1, null);
 
     const code = ColorMap.get(color) orelse return L.Zerror("UnknownColor");
 
@@ -122,7 +122,7 @@ fn stdio_bgColor(L: *VM.lua.State) !i32 {
 }
 
 fn stdio_color256(L: *VM.lua.State) !i32 {
-    const code = L.Lcheckinteger(1);
+    const code = try L.Zcheckvalue(i32, 1, null);
 
     if (code < 0 or code > 255)
         return L.Zerror("Code must be between 0 to 255");
@@ -132,7 +132,7 @@ fn stdio_color256(L: *VM.lua.State) !i32 {
     return 1;
 }
 fn stdio_bgColor256(L: *VM.lua.State) !i32 {
-    const code = L.Lcheckinteger(1);
+    const code = try L.Zcheckvalue(i32, 1, null);
 
     if (code < 0 or code > 255)
         return L.Zerror("Code must be between 0 to 255");
@@ -143,9 +143,9 @@ fn stdio_bgColor256(L: *VM.lua.State) !i32 {
 }
 
 fn stdio_trueColor(L: *VM.lua.State) !i32 {
-    const r = L.Lcheckinteger(1);
-    const g = L.Lcheckinteger(2);
-    const b = L.Lcheckinteger(3);
+    const r = try L.Zcheckvalue(i32, 1, null);
+    const g = try L.Zcheckvalue(i32, 2, null);
+    const b = try L.Zcheckvalue(i32, 3, null);
 
     if (r < 0 or r > 255)
         return L.Zerror("R must be between 0 to 255");
@@ -159,9 +159,9 @@ fn stdio_trueColor(L: *VM.lua.State) !i32 {
     return 1;
 }
 fn stdio_bgTrueColor(L: *VM.lua.State) !i32 {
-    const r = L.Lcheckinteger(1);
-    const g = L.Lcheckinteger(2);
-    const b = L.Lcheckinteger(3);
+    const r = try L.Zcheckvalue(i32, 1, null);
+    const g = try L.Zcheckvalue(i32, 2, null);
+    const b = try L.Zcheckvalue(i32, 3, null);
 
     if (r < 0 or r > 255)
         return L.Zerror("R must be between 0 to 255");
@@ -176,7 +176,7 @@ fn stdio_bgTrueColor(L: *VM.lua.State) !i32 {
 }
 
 fn stdio_style(L: *VM.lua.State) !i32 {
-    const color = L.Lcheckstring(1);
+    const color = try L.Zcheckvalue([:0]const u8, 1, null);
 
     const code = StyleMap.get(color) orelse return L.Zerror("UnknownStyle");
 
@@ -201,7 +201,7 @@ fn stdio_reset(L: *VM.lua.State) !i32 {
 }
 
 fn stdio_cursorMove(L: *VM.lua.State) !i32 {
-    const action = L.Lcheckstring(1);
+    const action = try L.Zcheckvalue([:0]const u8, 1, null);
 
     const kind = CursorActionMap.get(action) orelse return L.Zerror("UnknownKind");
 
@@ -221,7 +221,7 @@ fn stdio_cursorMove(L: *VM.lua.State) !i32 {
 }
 
 fn stdio_erase(L: *VM.lua.State) !i32 {
-    const action = L.Lcheckstring(1);
+    const action = try L.Zcheckvalue([:0]const u8, 1, null);
 
     const kind = EraseActionMap.get(action) orelse return L.Zerror("UnknownKind");
 
@@ -244,15 +244,15 @@ const LuaStdIn = struct {
     pub const META = "stdio_stdout_instance";
 
     // Placeholder
-    pub fn __index(L: *VM.lua.State) i32 {
-        L.Lchecktype(1, .Userdata);
+    pub fn __index(L: *VM.lua.State) !i32 {
+        try L.Zchecktype(1, .Userdata);
         return 0;
     }
 
     pub fn __namecall(L: *VM.lua.State) !i32 {
         const scheduler = Scheduler.getScheduler(L);
 
-        L.Lchecktype(1, .Userdata);
+        try L.Zchecktype(1, .Userdata);
         var file_ptr = L.touserdata(std.fs.File, 1) orelse unreachable;
         const namecall = L.namecallstr() orelse return 0;
         // TODO: prob should switch to static string map
@@ -315,20 +315,20 @@ const LuaStdOut = struct {
     pub const META = "stdio_stdin_instance";
 
     // Placeholder
-    pub fn __index(L: *VM.lua.State) i32 {
-        L.Lchecktype(1, .Userdata);
+    pub fn __index(L: *VM.lua.State) !i32 {
+        try L.Zchecktype(1, .Userdata);
         return 0;
     }
 
     pub fn __namecall(L: *VM.lua.State) !i32 {
-        L.Lchecktype(1, .Userdata);
+        try L.Zchecktype(1, .Userdata);
         var file_ptr = L.touserdata(std.fs.File, 1) orelse unreachable;
 
         const namecall = L.namecallstr() orelse return 0;
 
         // TODO: prob should switch to static string map
         if (std.mem.eql(u8, namecall, "write")) {
-            const string = if (L.typeOf(2) == .Buffer) L.Lcheckbuffer(2) else L.Lcheckstring(2);
+            const string = try L.Zcheckvalue([]const u8, 2, null);
 
             try file_ptr.writeAll(string);
         } else return L.Zerrorf("Unknown method: {s}", .{namecall});
@@ -337,16 +337,21 @@ const LuaStdOut = struct {
 };
 
 const LuaTerminal = struct {
+    ptr: *Terminal,
     pub const META = "stdio_terminal_instance";
 
-    pub fn __index(L: *VM.lua.State) i32 {
-        L.Lchecktype(1, .LightUserdata);
-        const data = L.touserdata(Terminal, 1) orelse unreachable;
+    pub fn __index(L: *VM.lua.State) !i32 {
+        try L.Zchecktype(1, .Userdata);
+        const data = L.touserdata(LuaTerminal, 1) orelse unreachable;
+        const term_ptr = data.ptr;
         const arg = L.Lcheckstring(2);
 
         // TODO: prob should switch to static string map
         if (std.mem.eql(u8, arg, "isTTY")) {
-            L.pushboolean(data.stdin_istty and data.stdout_istty);
+            L.pushboolean(term_ptr.stdin_istty and term_ptr.stdout_istty);
+            return 1;
+        } else if (std.mem.eql(u8, arg, "isRawMode")) {
+            L.pushboolean(term_ptr.mode == .Virtual);
             return 1;
         }
 
@@ -354,9 +359,10 @@ const LuaTerminal = struct {
     }
 
     pub fn __namecall(L: *VM.lua.State) !i32 {
-        L.Lchecktype(1, .LightUserdata);
-        const ud_term = L.touserdata(?Terminal, 1) orelse unreachable;
-        const term_ptr = &(ud_term.* orelse return L.Zerror("Terminal not initialized"));
+        try L.Zchecktype(1, .Userdata);
+        const ud_term = L.touserdata(LuaTerminal, 1) orelse unreachable;
+
+        const term_ptr = ud_term.ptr;
 
         const namecall = L.namecallstr() orelse return 0;
 
@@ -386,34 +392,34 @@ pub fn loadLib(L: *VM.lua.State) void {
     {
         _ = L.Lnewmetatable(LuaTerminal.META);
 
-        L.Zsetfieldc(-1, luau.Metamethods.index, LuaTerminal.__index); // metatable.__index
-        L.Zsetfieldc(-1, luau.Metamethods.namecall, LuaTerminal.__namecall); // metatable.__namecall
+        L.Zsetfieldfn(-1, luau.Metamethods.index, LuaTerminal.__index); // metatable.__index
+        L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaTerminal.__namecall); // metatable.__namecall
 
-        L.Zsetfieldc(-1, luau.Metamethods.metatable, "Metatable is locked");
+        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.pop(1);
     }
     {
         _ = L.Lnewmetatable(LuaStdIn.META);
 
-        L.Zsetfieldc(-1, luau.Metamethods.index, LuaStdIn.__index); // metatable.__index
-        L.Zsetfieldc(-1, luau.Metamethods.namecall, LuaStdIn.__namecall); // metatable.__namecall
+        L.Zsetfieldfn(-1, luau.Metamethods.index, LuaStdIn.__index); // metatable.__index
+        L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaStdIn.__namecall); // metatable.__namecall
 
-        L.Zsetfieldc(-1, luau.Metamethods.metatable, "Metatable is locked");
+        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.pop(1);
     }
     {
         _ = L.Lnewmetatable(LuaStdOut.META);
 
-        L.Zsetfieldc(-1, luau.Metamethods.index, LuaStdOut.__index); // metatable.__index
-        L.Zsetfieldc(-1, luau.Metamethods.namecall, LuaStdOut.__namecall); // metatable.__namecall
+        L.Zsetfieldfn(-1, luau.Metamethods.index, LuaStdOut.__index); // metatable.__index
+        L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaStdOut.__namecall); // metatable.__namecall
 
-        L.Zsetfieldc(-1, luau.Metamethods.metatable, "Metatable is locked");
+        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.pop(1);
     }
 
-    L.newtable();
+    L.createtable(0, 16);
 
-    L.Zsetfieldc(-1, "MAX_READ", MAX_LUAU_SIZE);
+    L.Zsetfield(-1, "MAX_READ", MAX_LUAU_SIZE);
 
     const stdIn = std.io.getStdIn();
     const stdOut = std.io.getStdOut();
@@ -448,7 +454,8 @@ pub fn loadLib(L: *VM.lua.State) void {
 
     // Terminal
     TERMINAL = Terminal.init(stdIn, stdOut);
-    L.pushlightuserdata(&TERMINAL);
+    const terminal_ptr = L.newuserdata(LuaTerminal);
+    terminal_ptr.* = .{ .ptr = &(TERMINAL.?) };
     if (L.Lgetmetatable(LuaTerminal.META) == .Table)
         _ = L.setmetatable(-2)
     else
@@ -457,18 +464,18 @@ pub fn loadLib(L: *VM.lua.State) void {
 
     TERMINAL.?.setOutputMode() catch std.debug.print("[Win32] Failed to set output codepoint\n", .{});
 
-    L.Zsetfieldc(-1, "color", stdio_color);
-    L.Zsetfieldc(-1, "style", stdio_style);
-    L.Zsetfieldc(-1, "reset", stdio_reset);
-    L.Zsetfieldc(-1, "erase", stdio_erase);
-    L.Zsetfieldc(-1, "bgcolor", stdio_bgColor);
-    L.Zsetfieldc(-1, "color256", stdio_color256);
-    L.Zsetfieldc(-1, "bgcolor256", stdio_bgColor256);
-    L.Zsetfieldc(-1, "trueColor", stdio_trueColor);
-    L.Zsetfieldc(-1, "bgtrueColor", stdio_bgTrueColor);
+    L.Zsetfieldfn(-1, "color", stdio_color);
+    L.Zsetfieldfn(-1, "style", stdio_style);
+    L.Zsetfieldfn(-1, "reset", stdio_reset);
+    L.Zsetfieldfn(-1, "erase", stdio_erase);
+    L.Zsetfieldfn(-1, "bgcolor", stdio_bgColor);
+    L.Zsetfieldfn(-1, "color256", stdio_color256);
+    L.Zsetfieldfn(-1, "bgcolor256", stdio_bgColor256);
+    L.Zsetfieldfn(-1, "trueColor", stdio_trueColor);
+    L.Zsetfieldfn(-1, "bgtrueColor", stdio_bgTrueColor);
 
-    L.Zsetfieldc(-1, "cursorMove", stdio_cursorMove);
-    L.Zsetfieldc(-1, "format", Formatter.fmt_args);
+    L.Zsetfieldfn(-1, "cursorMove", stdio_cursorMove);
+    L.Zsetfieldfn(-1, "format", Formatter.fmt_args);
 
     L.setreadonly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);
@@ -477,7 +484,11 @@ pub fn loadLib(L: *VM.lua.State) void {
 test "Stdio" {
     const TestRunner = @import("../utils/testrunner.zig");
 
-    const testResult = try TestRunner.runTest(std.testing.allocator, @import("zune-test-files").@"stdio.test", &.{}, true);
+    const testResult = try TestRunner.runTest(
+        TestRunner.newTestFile("standard/stdio.test.luau"),
+        &.{},
+        true,
+    );
 
     try std.testing.expect(testResult.failed == 0);
     try std.testing.expect(testResult.total > 0);

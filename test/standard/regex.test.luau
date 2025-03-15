@@ -105,6 +105,23 @@ describe("Regex", function()
                 }
             }));
         end)
+        test("Unicode Flag", function()
+            local re = regex.new("a(🍕+)c", 'u');
+
+            expect(re:captures("a🍕🍕c")).toBe(expect.similar({
+                {
+                    { string = "a🍕🍕c", index = 1 },
+                    { string = "🍕🍕", index = 2 },
+                }
+            }));
+
+            expect(re:captures("a🍕🍕c a🍕🍕🍕c\na🍕🍕c a🍕🍕🍕c\n")).toBe(expect.similar({
+                {
+                    { string = "a🍕🍕c", index = 1 },
+                    { string = "🍕🍕", index = 2 },
+                }
+            }));
+        end)
         test("Global/CaseInsensitive Flag", function()
             local re = regex.new("a(b+)c", 'i');
 
@@ -228,6 +245,12 @@ describe("Regex", function()
         local re = regex.new("(b+)");
 
         expect(re:format("abbc", "1=$1")).toBe("1=bb");
+    end)
+
+    test("Format Extended", function()
+        local re = regex.new("(B+)");
+
+        expect(re:format("aBBc", "1=\\L$1")).toBe("1=bb");
     end)
 
     test("Replace", function()

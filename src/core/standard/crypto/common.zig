@@ -3,77 +3,86 @@ const luau = @import("luau");
 
 const VM = luau.VM;
 
-pub fn lua_genHashFn(comptime hash_algorithm: anytype) VM.zapi.ZigFnErrorSet {
+pub fn lua_genEncryptFn(comptime algorithm: anytype) VM.zapi.LuaZigFn(anyerror!i32) {
     return struct {
-        fn hash(L: *VM.lua.State) !i32 {
+        fn encrypt(L: *VM.lua.State) !i32 {
             const allocator = luau.getallocator(L);
 
-            var owned = false;
-            const data = blk: {
-                const args = L.gettop();
-                if (args < 2) {
-                    break :blk L.Lcheckstring(1);
-                } else {
-                    var buf = std.ArrayList(u8).init(allocator);
-                    defer buf.deinit();
-                    const writer = buf.writer();
-                    owned = true;
+            const msg = try L.Zcheckvalue([]const u8, 1, null);
+            const key = try L.Zcheckvalue([]const u8, 2, null);
 
-                    for (1..@intCast(args)) |i| {
-                        if (i > 1)
-                            try buf.append('/');
-                        const index: i32 = @intCast(i);
-                        switch (L.typeOf(index)) {
-                            .String => {
-                                const str = L.Lcheckstring(index);
-                                try writer.print("\"{s}\"", .{str});
-                            },
-                            .Number => {
-                                const num = L.Lchecknumber(index);
-                                try writer.print("{d}", .{num});
-                            },
-                            .Buffer, .Table, .Userdata, .LightUserdata => {
-                                const ptr = L.topointer(index) orelse unreachable;
-                                try writer.print("*{d}", .{@intFromPtr(ptr)});
-                            },
-                            else => return L.Zerror("InvalidArgumentType"),
-                        }
-                    }
+            if (key.len != algorithm.key_length)
+                return L.Zerror("InvalidKeyLength (key length != 16)");
 
-                    break :blk try buf.toOwnedSlice();
-                }
-            };
-            defer if (owned) allocator.free(data);
+            const nonce = try L.Zcheckvalue([]const u8, 3, null);
 
-            var buf: [hash_algorithm.digest_length]u8 = undefined;
+            if (nonce.len != algorithm.nonce_length)
+                return L.Zerror("InvalidNonceLength (nonce length != 12)");
 
-            hash_algorithm.hash(data, &buf, .{});
+            const ad = try L.Zcheckvalue(?[]const u8, 4, null) orelse "";
 
-            const hex = std.fmt.bytesToHex(&buf, .lower);
+            var tag: [algorithm.tag_length]u8 = undefined;
+            const c = try allocator.alloc(u8, msg.len);
+            defer allocator.free(c);
 
-            L.pushlstring(&hex);
+            var snonce: [algorithm.nonce_length]u8 = undefined;
+            @memcpy(snonce[0..], nonce[0..algorithm.nonce_length]);
+            var skey: [algorithm.key_length]u8 = undefined;
+            @memcpy(skey[0..], key[0..algorithm.key_length]);
+
+            algorithm.encrypt(c, &tag, msg, ad, snonce, skey);
+
+            L.createtable(0, 2);
+
+            L.Zpushbuffer(c);
+            L.setfield(-2, "cipher");
+
+            L.Zpushbuffer(&tag);
+            L.setfield(-2, "tag");
 
             return 1;
         }
-    }.hash;
+    }.encrypt;
 }
 
-pub fn lua_genHmacFn(comptime hash_algorithm: anytype) VM.zapi.ZigFnInt {
-    const hmac_algorithm = std.crypto.auth.hmac.Hmac(hash_algorithm);
+pub fn lua_genDecryptFn(comptime algorithm: anytype) VM.zapi.LuaZigFn(anyerror!i32) {
     return struct {
-        fn hash(L: *VM.lua.State) i32 {
-            const data = L.Lcheckstring(1);
-            const key = L.Lcheckstring(2);
+        fn decrypt(L: *VM.lua.State) !i32 {
+            const allocator = luau.getallocator(L);
 
-            var buf: [hmac_algorithm.key_length]u8 = undefined;
+            const cipher = try L.Zcheckvalue([]const u8, 1, null);
+            const tag = try L.Zcheckvalue([]const u8, 2, null);
 
-            hmac_algorithm.create(&buf, data, key);
+            if (tag.len != algorithm.tag_length)
+                return L.Zerrorf("InvalidTagLength (tag length != {})", .{algorithm.tag_length});
 
-            const hex = std.fmt.bytesToHex(&buf, .lower);
+            const key = try L.Zcheckvalue([]const u8, 3, null);
 
-            L.pushlstring(&hex);
+            if (key.len != algorithm.key_length)
+                return L.Zerrorf("InvalidKeyLength (key length != {})", .{algorithm.key_length});
+
+            const nonce = try L.Zcheckvalue([]const u8, 4, null);
+
+            if (nonce.len != algorithm.nonce_length)
+                return L.Zerrorf("InvalidNonceLength (nonce length != {})", .{algorithm.nonce_length});
+
+            const ad = try L.Zcheckvalue(?[]const u8, 5, null) orelse "";
+
+            const msg = try allocator.alloc(u8, cipher.len);
+            defer allocator.free(msg);
+
+            var stag: [algorithm.tag_length]u8 = undefined;
+            @memcpy(stag[0..], tag[0..algorithm.tag_length]);
+            var snonce: [algorithm.nonce_length]u8 = undefined;
+            @memcpy(snonce[0..], nonce[0..algorithm.nonce_length]);
+            var skey: [algorithm.key_length]u8 = undefined;
+            @memcpy(skey[0..], key[0..algorithm.key_length]);
+
+            try algorithm.decrypt(msg, cipher, stag, ad, snonce, skey);
+
+            L.pushlstring(msg);
 
             return 1;
         }
-    }.hash;
+    }.decrypt;
 }

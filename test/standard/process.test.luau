@@ -218,12 +218,10 @@ test("Arguments", function()
 	expect(result).toBe("Test");
 	expect(result2).toBe("someValue");
 
-	local successBad, resultBad = pcall(function()
+	local successGood = pcall(function()
 		process.args[1] = "Test!";
 	end)
-	expect(successBad).toBeFalsy();
-	expect(resultBad).toBe(expect.any("string"));
-	expect(resultBad:find("readonly")).toBeTruthy();
+	expect(successGood).toBeTruthy();
 end)
 
 describe("ChildProcess", function()

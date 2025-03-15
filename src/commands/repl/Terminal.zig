@@ -37,6 +37,13 @@ pub const MoveCursorAction = enum {
     Right,
 };
 
+fn AssertPlatform() !void {
+    switch (comptime builtin.os.tag) {
+        .linux, .windows, .macos => {},
+        else => return error.UnsupportedPlatform,
+    }
+}
+
 pub fn init(stdin_file: std.fs.File, stdout_file: std.fs.File) Terminal {
     return .{
         .stdin_istty = std.posix.isatty(stdin_file.handle),
@@ -49,6 +56,7 @@ pub fn init(stdin_file: std.fs.File, stdout_file: std.fs.File) Terminal {
 }
 
 pub fn validateInteractive(self: *Terminal) !void {
+    comptime try AssertPlatform();
     if (!self.stdin_istty)
         return std.posix.TIOCError.NotATerminal;
     if (!self.stdout_istty)
@@ -56,6 +64,7 @@ pub fn validateInteractive(self: *Terminal) !void {
 }
 
 pub fn getSize(self: *Terminal) !struct { u16, u16 } {
+    comptime try AssertPlatform();
     if (!self.stdout_istty) return std.posix.TIOCError.NotATerminal;
     if (builtin.os.tag == .windows) {
         var buf: std.os.windows.CONSOLE_SCREEN_BUFFER_INFO = undefined;
@@ -73,6 +82,11 @@ pub fn getSize(self: *Terminal) !struct { u16, u16 } {
 }
 
 pub fn saveSettings(self: *Terminal) !void {
+    comptime try AssertPlatform();
+    switch (comptime builtin.os.tag) {
+        .linux, .windows, .macos => {},
+        else => return error.UnsupportedPlatform,
+    }
     if (!self.stdin_istty or !self.stdout_istty)
         return;
     if (self.settings != null)
@@ -144,6 +158,7 @@ pub fn restoreOutputMode(self: *Terminal) !void {
 }
 
 pub fn setRawMode(self: *Terminal) !void {
+    comptime try AssertPlatform();
     if (!self.stdin_istty or !self.stdout_istty)
         return;
     try self.saveSettings();
@@ -189,6 +204,7 @@ pub fn setRawMode(self: *Terminal) !void {
 }
 
 pub fn setNormalMode(self: *Terminal) !void {
+    comptime try AssertPlatform();
     if (!self.stdin_istty or !self.stdout_istty)
         return;
     try self.saveSettings();
@@ -234,6 +250,7 @@ pub fn setNormalMode(self: *Terminal) !void {
 }
 
 pub fn restoreSettings(self: *Terminal) !void {
+    comptime try AssertPlatform();
     if (!self.stdin_istty or !self.stdout_istty)
         return;
     const settings = self.settings orelse return;

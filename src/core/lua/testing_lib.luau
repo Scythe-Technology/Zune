@@ -176,7 +176,21 @@ local function runTest(fn: () -> (), info: TestInfo)
     end
     table.clear(DEFER_QUEUE);
 
-    task.wait();
+    if (task.count() > 0 and ok) then
+        local rest = os.clock() + (timout - timeLength);
+        while true do
+            if (timout >= 0) then
+                if (os.clock() > rest) then
+                    break;
+                end
+            end
+            if (task.count() > 0) then
+                task.wait()
+            else
+                break;
+            end
+        end
+    end
 
     STEPCHECK_REFERENCES(` -- {scope}`);
 
@@ -220,14 +234,14 @@ local function runTest(fn: () -> (), info: TestInfo)
                 print(` {DIM}|    "Awaiting" - (Zune Backend > Zig),{RESET}`);
                 print(` {DIM}|      Active zune awaiting task, usually means there is a running task created by the zune backend.{RESET}`);
                 print(` {DIM}|      Caused by a the zune backend waiting for a response from luau{RESET}`);
-                print(` {DIM}|      For example, a active task waiting for a response from a zune server "@zcore/net" called in 'request'{RESET}`);
+                print(` {DIM}|      For example, an active task waiting for a response from a zune server "@zcore/net" called in 'request'{RESET}`);
                 table.insert(show, `Awaiting Tasks: {YELLOW}{w}{RESET}`);
             end
             if (t > 0) then
                 print(` {DIM}|    "Internal" - (Zune Backend > Zig){RESET}`);
                 print(` {DIM}|      Active zune core task, usually means there is a running task created by the zune backend.{RESET}`);
                 print(` {DIM}|      Caused by undisposed backend tasks.{RESET}`);
-                print(` {DIM}|      For example, a open zune server from "@zcore/net"{RESET}`);
+                print(` {DIM}|      For example, an open zune server from zune.net{RESET}`);
                 table.insert(show, `Internal Tasks: {YELLOW}{t}{RESET}`);
             end
             print(` {DIM}|`);
@@ -399,11 +413,6 @@ local function readable(value : any)
     end
 end
 
-local function safePattern(str: string): string
-    local res, _ = str:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1");
-    return res;
-end
-
 local conditionals = {
     toBe = function(self : ConditionState, expected : any)
         if (Conditional.is(expected)) then
@@ -456,12 +465,11 @@ local conditionals = {
     end,
     toThrow = function(self : ConditionState, expected : string?)
         assertExpect(false, type(self.received) == "function", "Expected %s to %sbe a function", readable(self.received), flipTag(self.flipped));
-        local src = debug.info(self.received, "s");
         local success, err = pcall(self.received);
         if (expected ~= nil) then
             assertExpect(false, type(err) == "string", "Expected error to be a string (got %s)", readable(err));
             assertExpect(false, not success, "Expected %s to %sthrow an error", readable(self.received), flipTag(self.flipped));
-            local stripped = err:match(`^{safePattern(src)}:%d+: (.+)$`);
+            local stripped = err:match(`^.+:%d+: (.+)$`);
             if (stripped) then
                 assertExpect(self.flipped, stripped == expected, "Got error %s expected to %sthrow %s", readable(stripped), flipTag(self.flipped), readable(expected));
             else

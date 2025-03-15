@@ -45,13 +45,13 @@ describe("Require", function()
         test("Unknown File", function()
             local ok, res = pcall(require, "./samples/simpleLib2");
             expect(ok).toBeFalsy();
-            expect(res).toBe("FileNotFound");
+            expect(res:match("%w+")).toBe("FileNotFound");
         end)
 
         test("Unknown File #2", function()
             local ok, res = pcall(require, "./simpleLib");
             expect(ok).toBeFalsy();
-            expect(res).toBe("FileNotFound");
+            expect(res:match("%w+")).toBe("FileNotFound");
         end)
 
         test("Unknown Alias", function()

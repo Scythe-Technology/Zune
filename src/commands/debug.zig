@@ -1,5 +1,6 @@
 const std = @import("std");
 const luau = @import("luau");
+const builtin = @import("builtin");
 
 const command = @import("lib.zig");
 
@@ -27,7 +28,16 @@ pub fn DebuggerExit() void {
     SigInt();
 }
 
+pub fn PlatformSupported() bool {
+    return switch (comptime builtin.os.tag) {
+        .linux, .macos, .windows => true,
+        else => false,
+    };
+}
+
 fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    if (comptime !PlatformSupported())
+        return error.PlatformNotSupported;
     var history = try History.init(allocator, ".zune/.debug_history");
     errdefer history.deinit();
 
@@ -55,7 +65,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         return;
     }
 
-    Zune.loadConfiguration();
+    Zune.loadConfiguration(.{});
 
     var LOAD_FLAGS: Zune.Flags = .{
         .mode = .Debug,
@@ -63,7 +73,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var ALWAYS_DEBUG = true;
 
     if (flags) |f| for (f) |flag| {
-        if (flag.len >= 2 and std.mem.eql(u8, flag[0..2], "-O")) {
+        if (std.mem.startsWith(u8, flag, "-O")) {
             if (flag.len == 3 and flag[2] >= '0' and flag[2] <= '2') {
                 const level: u2 = switch (flag[2]) {
                     '0' => 0,
@@ -133,7 +143,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
         L.singlestep(true);
 
-        var scheduler = Scheduler.init(allocator, L);
+        var scheduler = try Scheduler.init(allocator, L);
         defer scheduler.deinit();
 
         try Scheduler.SCHEDULERS.append(&scheduler);
@@ -175,6 +185,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
             .path = fileName,
             .name = moduleRelativeName,
             .source = fileContent,
+            .main = true,
         });
 
         ML.setsafeenv(VM.lua.GLOBALSINDEX, true);

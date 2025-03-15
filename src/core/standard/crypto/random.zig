@@ -15,7 +15,7 @@ pub fn lua_nextinteger(L: *VM.lua.State) !i32 {
         L.pushinteger(std.crypto.random.int(i32));
         return 1;
     };
-    const max = L.Lcheckinteger(2);
+    const max = try L.Zcheckvalue(i32, 2, null);
     if (min > max)
         return L.Zerror("InvalidRange (min > max)");
     L.pushinteger(std.crypto.random.intRangeAtMost(i32, min, max));
@@ -27,7 +27,7 @@ pub fn lua_nextnumber(L: *VM.lua.State) !i32 {
         L.pushnumber(std.crypto.random.float(f64));
         return 1;
     };
-    const max = L.Lchecknumber(2);
+    const max = try L.Zcheckvalue(f64, 2, null);
     if (min > max)
         return L.Zerror("InvalidRange (min > max)");
     const v = std.crypto.random.float(f64);
@@ -36,9 +36,9 @@ pub fn lua_nextnumber(L: *VM.lua.State) !i32 {
 }
 
 pub fn lua_fill(L: *VM.lua.State) !i32 {
-    const buffer = L.Lcheckbuffer(1);
-    const offset = L.Lcheckinteger(2);
-    const length = L.Lcheckinteger(3);
+    const buffer = try L.Zcheckvalue([]u8, 1, null);
+    const offset = try L.Zcheckvalue(i32, 2, null);
+    const length = try L.Zcheckvalue(i32, 3, null);
 
     if (offset < 0)
         return L.Zerror("InvalidOffset (offset < 0)");

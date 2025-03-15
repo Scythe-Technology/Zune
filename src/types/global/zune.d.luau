@@ -49,14 +49,14 @@ export type FileHandle = {
 
         @param contents The contents to write to the file.
     ]]
-    write: (self: FileHandle, contents: buffer | string) -> (),
+    write: (self: FileHandle, contents: string | buffer) -> (),
 
     --[[
         Appends to a file.
 
         @param contents The contents to append to the file.
     ]]
-    append: (self: FileHandle, contents: buffer | string) -> (),
+    append: (self: FileHandle, contents: string | buffer) -> (),
 
     --[[
         Returns the size of the file. Based on current state of the file object.
@@ -216,7 +216,7 @@ type FileSystemLib = {
         @param contents The contents to write to the file.
         @return `FileWriteError` An error if the operation failed.
     ]]
-    writeFile: (path: string, contents: buffer | string) -> (),
+    writeFile: (path: string, contents: string | buffer) -> (),
 
     --[[
         Creates a directory.
@@ -929,7 +929,26 @@ declare class NetTCPConnection
     --[[
         Stops the socket.
     ]]
-    function close(self): ()
+    function stop(self): ()
+end
+
+declare class NetworkSocket
+    --[[
+        Whether the socket is active
+    ]]
+    open: boolean
+
+    function sendAsync(self, data: string | buffer, offset: number?): number
+    function sendMsgAsync(self, port: number, address: string, data: string | buffer, offset: number?): number
+    function recvAsync(self, max_size: number?): buffer
+    function recvMsgAsync(self, max_size: number?): (NetworkAddress, buffer)
+    function acceptAsync(self): NetworkSocket
+    function connectAsync(self, address: string, port: number): ()
+    function listen(self, backlog: number?): ()
+    function bindIp(self, address: string, port: number): ()
+    function getName(self): NetworkAddress
+    function setOption(self, level: number, optname: number, value: boolean | string | buffer): ()
+    function closeAsync(self): ()
 end
 
 declare class NetTCPServer
@@ -955,6 +974,12 @@ declare class NetServerHandle
     function stop(self): ()
 end
 
+export type NetworkAddress = {
+    family: number,
+    port: number,
+    address: string,
+}
+
 export type ServerRequest = {
     method: string,
     path: string,
@@ -966,7 +991,7 @@ export type ServerRequest = {
 export type ServerResponse = {
     statusCode: number,
     headers: {[string]: string}?,
-    body: buffer | string,
+    body: string | buffer,
 }
 
 export type ServerWebSocketHandlers = {
@@ -1026,7 +1051,7 @@ export type ServeOptions = {
     --[[
         The function to handle requests.
     ]]
-    request: (request: ServerRequest) -> buffer | string | ServerResponse,
+    request: (request: ServerRequest) -> string | buffer | ServerResponse,
 
     --[[
         Functions to handle websockets.
@@ -1047,16 +1072,16 @@ type BareRequestOptions = {
     headers: {[string]: string}?,
 
     --[[
-            Whether to follow redirects.
-            - Default: `true`
-        ]]
-        allowRedirects: boolean?,
+        Whether to follow redirects.
+        - Default: `true`
+    ]]
+    allowRedirects: boolean?,
 
-        --[[
-            The maximum body size to accept.
-            - Default: `2097152`
-        ]]
-        maxBodySize: number?,
+    --[[
+        The maximum body size to accept.
+        - Default: `2097152`
+    ]]
+    maxBodySize: number?,
 }
 
 type BodyRequestOptions = {
@@ -1176,7 +1201,218 @@ export type TCPServerOptions = {
     close: ((socket: NetTCPConnection) -> ())?,
 }
 
+type NetworkAddressFamily = {
+    RDS: number,
+    ROSE: number,
+    BRIDGE: number,
+    PHONET: number,
+    SNA: number,
+    FILE: number,
+    MPLS: number,
+    ROUTE: number,
+    WANPIPE: number,
+    UNSPEC: number,
+    CAIF: number,
+    NETROM: number,
+    UNIX: number,
+    INET: number,
+    ATMSVC: number,
+    MAX: number,
+    NETLINK: number,
+    IUCV: number,
+    SMC: number,
+    INET6: number,
+    TIPC: number,
+    KEY: number,
+    QIPCRTR: number,
+    VSOCK: number,
+    IPX: number,
+    ASH: number,
+    IB: number,
+    PACKET: number,
+    KCM: number,
+    DECnet: number,
+    RXRPC: number,
+    NETBEUI: number,
+    NFC: number,
+    ALG: number,
+    IEEE802154: number,
+    ISDN: number,
+    XDP: number,
+    LOCAL: number,
+    BLUETOOTH: number,
+    CAN: number,
+    LLC: number,
+    APPLETALK: number,
+    PPPOX: number,
+    ATMPVC: number,
+    AX25: number,
+    ECONET: number,
+    IRDA: number,
+    SECURITY: number,
+    X25: number,
+}
+
+type NetworkSocketFlags = {
+    DCCP: number,
+    RAW: number,
+    RDM: number,
+    DGRAM: number,
+    PACKET: number,
+    STREAM: number,
+    SEQPACKET: number,
+    CLOEXEC: number,
+    NONBLOCK: number,
+}
+
+type NetworkIPProtocols = {
+    COMP: number,
+    ICMP: number,
+    ESP: number,
+    IGMP: number,
+    TCP: number,
+    ICMPV6: number,
+    MTP: number,
+    GRE: number,
+    SCTP: number,
+    MAX: number,
+    NONE: number,
+    FRAGMENT: number,
+    IDP: number,
+    UDPLITE: number,
+    HOPOPTS: number,
+    MH: number,
+    BEETPH: number,
+    AH: number,
+    IPIP: number,
+    IPV6: number,
+    PIM: number,
+    DSTOPTS: number,
+    UDP: number,
+    DCCP: number,
+    RAW: number,
+    PUP: number,
+    MPLS: number,
+    ENCAP: number,
+    RSVP: number,
+    ROUTING: number,
+    EGP: number,
+    TP: number,
+    IP: number,
+}
+
+type NetworkSocketOptionLevel = {
+    PPPOL2TP: number,
+    RDS: number,
+    TIPC: number,
+    ALG: number,
+    PNPIPE: number,
+    BLUETOOTH: number,
+    PACKET: number,
+    IPV6: number,
+    KCM: number,
+    RXRPC: number,
+    NETBEUI: number,
+    DECNET: number,
+    TLS: number,
+    ICMPV6: number,
+    RAW: number,
+    XDP: number,
+    SOCKET: number,
+    LLC: number,
+    NFC: number,
+    CAIF: number,
+    IUCV: number,
+    X25: number,
+    AAL: number,
+    NETLINK: number,
+    DCCP: number,
+    IRDA: number,
+    ATM: number,
+    IP: number,
+}
+
+type NetworkSocketOption = {
+    ATTACH_FILTER: number,
+    CNX_ADVICE: number,
+    PEERCRED: number,
+    LINGER: number,
+    DEBUG: number,
+    RXQ_OVFL: number,
+    SNDBUF: number,
+    DONTROUTE: number,
+    ZEROCOPY: number,
+    PASSCRED: number,
+    DETACH_REUSEPORT_BPF: number,
+    ATTACH_REUSEPORT_EBPF: number,
+    MEMINFO: number,
+    COOKIE: number,
+    SNDBUFFORCE: number,
+    PRIORITY: number,
+    BSDCOMPAT: number,
+    SNDTIMEO: number,
+    BINDTODEVICE: number,
+    OOBINLINE: number,
+    BPF_EXTENSIONS: number,
+    TIMESTAMP_NEW: number,
+    NO_CHECK: number,
+    WIFI_STATUS: number,
+    PEERGROUPS: number,
+    TYPE: number,
+    NOFCS: number,
+    DOMAIN: number,
+    TIMESTAMPNS_NEW: number,
+    SNDLOWAT: number,
+    KEEPALIVE: number,
+    PEEK_OFF: number,
+    PEERSEC: number,
+    PEERNAME: number,
+    RCVBUF: number,
+    REUSEPORT: number?,
+    INCOMING_NAPI_ID: number,
+    TIMESTAMPING_OLD: number,
+    RCVBUFFORCE: number,
+    REUSEADDR: number,
+    MAX_PACING_RATE: number,
+    MARK: number,
+    RCVTIMEO_NEW: number,
+    BUSY_POLL: number,
+    TIMESTAMPING_NEW: number,
+    BINDTOIFINDEX: number,
+    TXTIME: number,
+    SECURITY_ENCRYPTION_NETWORK: number,
+    LOCK_FILTER: number,
+    RCVLOWAT: number,
+    SECURITY_ENCRYPTION_TRANSPORT: number,
+    ATTACH_BPF: number,
+    INCOMING_CPU: number,
+    ERROR: number,
+    SELECT_ERR_QUEUE: number,
+    DETACH_BPF: number,
+    SNDTIMEO_NEW: number,
+    TIMESTAMPNS_OLD: number,
+    PASSSEC: number,
+    TIMESTAMP_OLD: number,
+    GET_FILTER: number,
+    DETACH_FILTER: number,
+    ATTACH_REUSEPORT_CBPF: number,
+    BROADCAST: number,
+    SECURITY_AUTHENTICATION: number,
+    PROTOCOL: number,
+    ACCEPTCONN: number,
+    RCVTIMEO: number,
+}
+
 type NetworkLib = {
+    ADDRF: NetworkAddressFamily,
+    SOCKF: NetworkSocketFlags,
+    SOCKOPT: NetworkSocketOption,
+    SOCKOPTLV: NetworkSocketOptionLevel,
+    IPPROTO: NetworkIPProtocols,
+
+    createSocket: (address_family: number, flags: number, protocol: number) -> NetworkSocket,
+    getAddressList: (name: string, port: number) -> {NetworkAddress},
+
     --[[
         Creates a UDP Socket.
 
@@ -1489,6 +1725,11 @@ export type Terminal = {
     isTTY: boolean,
 
     --[[
+        Whether the terminal is in raw mode.
+    ]]
+    isRawMode: boolean,
+
+    --[[
         Enable raw mode.
 
         On unix: Will attempt to change terminal mode.
@@ -1676,37 +1917,36 @@ type StdioLib = {
 --[======[ Stdio ]======]--
 
 --[======[ Crypto ]======]--
-type HashFn = (str: string) -> string
-type HmacFn = (str: string, key: string) -> string
+declare class CryptoHash
+    digest:
+        & ((self: CryptoHash) -> buffer)
+        & ((self: CryptoHash, encoding: "binary") -> buffer)
+        & ((self: CryptoHash, encoding: "hex" | "base64") -> string)
+    function update(self, value: string | buffer): ()
+    function copy(self): CryptoHash
+end
 
-type HashAlgorithms<F> = {
-    sha1: F,
-    md5: F,
-    blake3: F,
-    sha2: {
-        sha224: F,
-        sha256: F,
-        sha384: F,
-        sha512: F,
-    },
-    sha3: {
-        sha3_224: F,
-        sha3_256: F,
-        sha3_384: F,
-        sha3_512: F,
-    },
-    blake2: {
-        b128: F,
-        b160: F,
-        b256: F,
-        b384: F,
-        b512: F,
-        s128: F,
-        s160: F,
-        s224: F,
-        s256: F,
-    },
-}
+type HashAlgorithms =
+    | "sha1"
+    | "md5"
+    | "blake3"
+    | "sha224"
+    | "sha256"
+    | "sha384"
+    | "sha512"
+    | "sha3_224"
+    | "sha3_256"
+    | "sha3_384"
+    | "sha3_512"
+    | "blake2b128"
+    | "blake2b160"
+    | "blake2b256"
+    | "blake2b384"
+    | "blake2b512"
+    | "blake2s128"
+    | "blake2s160"
+    | "blake2s224"
+    | "blake2s256"
 
 type BcryptPasswordOptions = {
     --- Default: "argon2d"
@@ -1732,21 +1972,18 @@ type Argon2PasswordOptions = {
 
 type PasswordOptions = BcryptPasswordOptions | Argon2PasswordOptions
 
-type EncryptedAes = {
-    cipher: string,
-    tag: string,
+type EncryptedData = {
+    cipher: buffer,
+    tag: buffer,
+}
+
+type Aead = {
+    encrypt: (data: string | buffer, key: string | buffer, nonce: string | buffer, ad: (string | buffer)?) -> EncryptedData,
+    decrypt: (cipher: string | buffer, tag: string | buffer, key: string | buffer, nonce: string | buffer, ad: (string | buffer)?) -> string,
 }
 
 type CryptoLib = {
-    --[[
-        Hash functions
-    ]]
-    hash: HashAlgorithms<HashFn>,
-
-    --[[
-        HMAC functions
-    ]]
-    hmac: HashAlgorithms<HmacFn>,
+    createHash: (algorithm: HashAlgorithms, secret: string?) -> CryptoHash,
 
     --[[
         Password hashing function
@@ -1786,18 +2023,13 @@ type CryptoLib = {
         fill: (buffer: buffer, offset: number, length: number) -> (),
     },
 
-    --[[
-        AES encryption and decryption.
-    ]]
-    aes: {
-        aes128: {
-            encrypt: (data: string | buffer, key: string | buffer, nonce: string | buffer) -> EncryptedAes,
-            decrypt: (cipher: string | buffer, tag: string | buffer, key: string | buffer, nonce: string | buffer) -> string,
-        },
-        aes256: {
-            encrypt: (data: string | buffer, key: string | buffer, nonce: string | buffer) -> EncryptedAes,
-            decrypt: (cipher: string | buffer, tag: string | buffer, key: string | buffer, nonce: string | buffer) -> string,
-        },
+    aes_gcm: {
+        aes128: Aead,
+        aes256: Aead,
+    },
+    aes_ocb: {
+        aes128: Aead,
+        aes256: Aead,
     },
 }
 --[======[ Crypto ]======]--
@@ -1929,56 +2161,67 @@ type DatetimeLib = {
 --[======[ Datetime ]======]--
 
 --[======[ FFI ]======]--
-export type Library = {
-    close: (self: Library) -> (),
-    getSymbol: (self: Library, symbol: string) -> Pointer,
+export type FFILibrary = {
+    getSymbol: (self: FFILibrary, symbol: string) -> FFIPointer,
     [string]: (...any) -> any,
 }
 
-declare class Structure
-    function size(self): number
-    function alignment(self): number
+declare class FFIDataType
+    size: number
+    alignment: number
+end
+
+declare class FFIStructureType extends FFIDataType
     function offset(self, field: string): number
     function new(self, fields: {{ [string]: buffer | number }}): buffer
 end
 
-export type FunctionDefinition = {
-    returns: Structure | number,
-    args: { Structure | number }
+declare class FFIPointerType extends FFIDataType
+    tag: number
+    function newTag(self, tag: string | buffer): FFIPointerType
+end
+
+type AnyDataType = FFIDataType | FFIStructureType | FFIPointerType
+
+export type FFIFunctionDef = {
+    returns: AnyDataType,
+    args: { AnyDataType }
 }
 
-export type Pointer = {
-    release: (self: Pointer) -> Pointer,
-    retain: (self: Pointer) -> Pointer,
-    drop: (self: Pointer) -> Pointer,
-    offset: (self: Pointer, offset: number) -> Pointer,
-    read: (self: Pointer, srcOffset: number, dest: buffer | Pointer, destOffset: number, count: number) -> buffer,
-    write: (self: Pointer, destOffset: number, src: buffer | Pointer, srcOffset: number, count: number) -> (),
-    readi8: (self: Pointer, offset: number?) -> number,
-    readu8: (self: Pointer, offset: number?) -> number,
-    readi16: (self: Pointer, offset: number?) -> number,
-    readu16: (self: Pointer, offset: number?) -> number,
-    readi32: (self: Pointer, offset: number?) -> number,
-    readu32: (self: Pointer, offset: number?) -> number,
-    readi64: (self: Pointer, offset: number?) -> buffer,
-    readu64: (self: Pointer, offset: number?) -> buffer,
-    readf32: (self: Pointer, offset: number?) -> number,
-    readf64: (self: Pointer, offset: number?) -> number,
-    readPtr: (self: Pointer, offset: number?) -> Pointer,
-    writei8: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writeu8: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writei16: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writeu16: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writei32: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writeu32: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writei64: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writeu64: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writef32: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writef64: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writePtr: (self: Pointer, offset: number, value: Pointer) -> (),
-    isNull: (self: Pointer) -> boolean,
-    setSize: (self: Pointer, size: number) -> (),
-    span: (self: Pointer, offset: number?) -> buffer,
+export type FFIPointer = {
+    release: (self: FFIPointer) -> FFIPointer,
+    retain: (self: FFIPointer) -> FFIPointer,
+    setTag: (self: FFIPointer, tag: number) -> FFIPointer,
+    getTag: (self: FFIPointer) -> number,
+    drop: (self: FFIPointer) -> FFIPointer,
+    offset: (self: FFIPointer, offset: number) -> FFIPointer,
+    read: (self: FFIPointer, srcOffset: number, dest: buffer | FFIPointer, destOffset: number, count: number) -> buffer,
+    write: (self: FFIPointer, destOffset: number, src: buffer | FFIPointer, srcOffset: number, count: number) -> (),
+    readi8: (self: FFIPointer, offset: number?) -> number,
+    readu8: (self: FFIPointer, offset: number?) -> number,
+    readi16: (self: FFIPointer, offset: number?) -> number,
+    readu16: (self: FFIPointer, offset: number?) -> number,
+    readi32: (self: FFIPointer, offset: number?) -> number,
+    readu32: (self: FFIPointer, offset: number?) -> number,
+    readi64: (self: FFIPointer, offset: number?) -> buffer,
+    readu64: (self: FFIPointer, offset: number?) -> buffer,
+    readf32: (self: FFIPointer, offset: number?) -> number,
+    readf64: (self: FFIPointer, offset: number?) -> number,
+    readPtr: (self: FFIPointer, offset: number?) -> FFIPointer,
+    writei8: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writeu8: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writei16: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writeu16: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writei32: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writeu32: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writei64: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writeu64: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writef32: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writef64: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writePtr: (self: FFIPointer, offset: number, value: FFIPointer) -> (),
+    isNull: (self: FFIPointer) -> boolean,
+    setSize: (self: FFIPointer, size: number) -> (),
+    span: (self: FFIPointer, offset: number?) -> buffer,
 }
 
 type FFILib = {
@@ -1988,36 +2231,35 @@ type FFILib = {
     suffix: string,
 
     types: {
-        void: number,
-        i8: number,
-        u8: number,
-        i16: number,
-        u16: number,
-        i32: number,
-        u32: number,
-        i64: number,
-        u64: number,
-        float: number,
-        double: number,
-        pointer: number,
+        void: FFIDataType,
+        i8: FFIDataType,
+        u8: FFIDataType,
+        i16: FFIDataType,
+        u16: FFIDataType,
+        i32: FFIDataType,
+        u32: FFIDataType,
+        i64: FFIDataType,
+        u64: FFIDataType,
+        float: FFIDataType,
+        double: FFIDataType,
+        pointer: FFIPointerType,
     },
 
-    sizeOf: (type: Structure | number) -> number,
-    alignOf: (type: Structure | number) -> number,
+    createPtr: (src: buffer) -> FFIPointer,
+    getRef: (src: FFIPointer) -> FFIPointer,
 
-    createPtr: (src: buffer) -> Pointer,
-    getRef: (src: Pointer) -> Pointer,
+    alloc: (size: number) -> FFIPointer,
+    free: (src: FFIPointer) -> (),
+    dupe: (src: buffer | FFIPointer) -> FFIPointer,
+    len: (src: buffer | FFIPointer) -> number?,
+    copy: (dest: buffer | FFIPointer, destOffset: number, src: buffer | FFIPointer, srcOffset: number, count: number) -> (),
 
-    alloc: (size: number) -> Pointer,
-    free: (src: Pointer) -> (),
-    dupe: (src: buffer | Pointer) -> Pointer,
-    len: (src: buffer | Pointer) -> number?,
-    copy: (dest: buffer | Pointer, destOffset: number, src: buffer | Pointer, srcOffset: number, count: number) -> (),
+    tagName: (tag: number) -> string,
 
-    struct: (fields: {{ [string]: Structure | number }}) -> Structure,
-    fn: (definition: FunctionDefinition, srcPtr: Pointer) -> ((...any) -> any),
-    closure: (definition: FunctionDefinition, handler: (...any) -> any) -> Pointer,
-    dlopen: (path: string, { [string]: FunctionDefinition }) -> Library,
+    struct: (fields: {{ [string]: AnyDataType }}) -> FFIStructureType,
+    fn: (definition: FFIFunctionDef, srcPtr: FFIPointer) -> ((...any) -> any),
+    closure: (definition: FFIFunctionDef, handler: (...any) -> any) -> FFIPointer,
+    dlopen: (path: string, { [string]: FFIFunctionDef }) -> FFILibrary,
 }
 --[======[ FFI ]======]--
 
@@ -2037,8 +2279,7 @@ declare class SQLite3Statement
 end
 
 declare class SQLite3Database
-    transaction: <T...>(self: SQLite3Database, callback: (T...) -> (), kind: ("deferred" | "immediate" | "exclusive")?) -> ((T...) -> ())
-
+    function transaction(self, callback: (...any) -> (), kind: ("deferred" | "immediate" | "exclusive")?): ((...any) -> ())
     function query(self, query: string): SQLite3Statement
     function exec(self, query: string, args: SQLite3Values?): ()
     function close(self): ()

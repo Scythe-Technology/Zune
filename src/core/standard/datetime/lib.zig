@@ -1,6 +1,7 @@
 const std = @import("std");
 const luau = @import("luau");
 const time = @import("datetime");
+const builtin = @import("builtin");
 
 const parse = @import("parse.zig");
 
@@ -11,12 +12,31 @@ const luaHelper = @import("../../utils/luahelper.zig");
 const VM = luau.VM;
 
 pub const LIB_NAME = "datetime";
+pub fn PlatformSupported() bool {
+    switch (comptime builtin.cpu.arch) {
+        .x86_64,
+        .aarch64,
+        .aarch64_be,
+        .riscv64,
+        .wasm64,
+        .powerpc64,
+        .powerpc64le,
+        .loongarch64,
+        .mips64,
+        .mips64el,
+        .spirv64,
+        .sparc64,
+        .nvptx64,
+        => return true,
+        else => return false,
+    }
+}
 
 const LuaDatetime = struct {
     pub const META = "datetime_instance";
 
     pub fn __namecall(L: *VM.lua.State) !i32 {
-        L.Lchecktype(1, .Userdata);
+        try L.Zchecktype(1, .Userdata);
         const ptr = L.touserdata(Time, 1) orelse unreachable;
 
         const namecall = L.namecallstr() orelse return 0;
@@ -42,15 +62,16 @@ const LuaDatetime = struct {
             else
                 datetime.*;
             const local = try date.tzConvert(.{ .tz = &tz });
-            L.newtable();
 
-            L.Zsetfield(-1, "year", local.year);
-            L.Zsetfield(-1, "month", local.month);
-            L.Zsetfield(-1, "day", local.day);
-            L.Zsetfield(-1, "hour", local.hour);
-            L.Zsetfield(-1, "minute", local.minute);
-            L.Zsetfield(-1, "second", local.second);
-            L.Zsetfield(-1, "millisecond", @divFloor(local.nanosecond, std.time.ns_per_ms));
+            L.Zpushvalue(.{
+                .year = local.year,
+                .month = local.month,
+                .day = local.day,
+                .hour = local.hour,
+                .minute = local.minute,
+                .second = local.second,
+                .millisecond = @divFloor(local.nanosecond, std.time.ns_per_ms),
+            });
 
             return 1;
         } else if (std.mem.eql(u8, namecall, "toUniversalTime") or std.mem.eql(u8, namecall, "ToUniversalTime")) {
@@ -58,15 +79,16 @@ const LuaDatetime = struct {
                 try datetime.tzConvert(.{ .tz = &time.Timezone.UTC })
             else
                 try datetime.tzLocalize(.{ .tz = &time.Timezone.UTC });
-            L.newtable();
 
-            L.Zsetfield(-1, "year", utc.year);
-            L.Zsetfield(-1, "month", utc.month);
-            L.Zsetfield(-1, "day", utc.day);
-            L.Zsetfield(-1, "hour", utc.hour);
-            L.Zsetfield(-1, "minute", utc.minute);
-            L.Zsetfield(-1, "second", utc.second);
-            L.Zsetfield(-1, "millisecond", @divFloor(utc.nanosecond, std.time.ns_per_ms));
+            L.Zpushvalue(.{
+                .year = utc.year,
+                .month = utc.month,
+                .day = utc.day,
+                .hour = utc.hour,
+                .minute = utc.minute,
+                .second = utc.second,
+                .millisecond = @divFloor(utc.nanosecond, std.time.ns_per_ms),
+            });
 
             return 1;
         } else if (std.mem.eql(u8, namecall, "formatLocalTime") or std.mem.eql(u8, namecall, "FormatLocalTime")) {
@@ -106,8 +128,8 @@ const LuaDatetime = struct {
         return 0;
     }
 
-    pub fn __index(L: *VM.lua.State) i32 {
-        L.Lchecktype(1, .Userdata);
+    pub fn __index(L: *VM.lua.State) !i32 {
+        try L.Zchecktype(1, .Userdata);
         const ptr = L.touserdata(Time, 1) orelse unreachable;
 
         const index = L.Lcheckstring(2);
@@ -252,22 +274,22 @@ pub fn loadLib(L: *VM.lua.State) void {
     {
         _ = L.Lnewmetatable(LuaDatetime.META);
 
-        L.Zsetfieldc(-1, luau.Metamethods.index, LuaDatetime.__index); // metatable.__index
-        L.Zsetfieldc(-1, luau.Metamethods.namecall, LuaDatetime.__namecall); // metatable.__namecall
+        L.Zsetfieldfn(-1, luau.Metamethods.index, LuaDatetime.__index); // metatable.__index
+        L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaDatetime.__namecall); // metatable.__namecall
 
-        L.Zsetfieldc(-1, luau.Metamethods.metatable, "Metatable is locked");
+        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.pop(1);
     }
 
-    L.newtable();
+    L.createtable(0, 7);
 
-    L.Zsetfieldc(-1, "now", datetime_now);
-    L.Zsetfieldc(-1, "parse", datetime_parse);
-    L.Zsetfieldc(-1, "fromIsoDate", datetime_fromIsoDate);
-    L.Zsetfieldc(-1, "fromUniversalTime", datetime_fromUniversalTime);
-    L.Zsetfieldc(-1, "fromLocalTime", datetime_fromUniversalTime);
-    L.Zsetfieldc(-1, "fromUnixTimestamp", datetime_fromUnixTimestamp);
-    L.Zsetfieldc(-1, "fromUnixTimestampMillis", datetime_fromUnixTimestampMillis);
+    L.Zsetfieldfn(-1, "now", datetime_now);
+    L.Zsetfieldfn(-1, "parse", datetime_parse);
+    L.Zsetfieldfn(-1, "fromIsoDate", datetime_fromIsoDate);
+    L.Zsetfieldfn(-1, "fromUniversalTime", datetime_fromUniversalTime);
+    L.Zsetfieldfn(-1, "fromLocalTime", datetime_fromUniversalTime);
+    L.Zsetfieldfn(-1, "fromUnixTimestamp", datetime_fromUnixTimestamp);
+    L.Zsetfieldfn(-1, "fromUnixTimestampMillis", datetime_fromUnixTimestampMillis);
 
     L.setreadonly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);
@@ -280,7 +302,11 @@ test {
 test "Datetime" {
     const TestRunner = @import("../../utils/testrunner.zig");
 
-    const testResult = try TestRunner.runTest(std.testing.allocator, @import("zune-test-files").@"datetime.test", &.{}, true);
+    const testResult = try TestRunner.runTest(
+        TestRunner.newTestFile("standard/datetime.test.luau"),
+        &.{},
+        true,
+    );
 
     try std.testing.expect(testResult.failed == 0);
     try std.testing.expect(testResult.total > 0);

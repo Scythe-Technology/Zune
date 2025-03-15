@@ -19,7 +19,7 @@ fn task_wait(L: *VM.lua.State) i32 {
 
 fn task_cancel(L: *VM.lua.State) !i32 {
     const scheduler = Scheduler.getScheduler(L);
-    L.Lchecktype(1, .Thread);
+    try L.Zchecktype(1, .Thread);
     const thread = L.tothread(1) orelse return L.Zerror("Expected thread");
     scheduler.cancelThread(thread);
     const status = L.costatus(thread);
@@ -131,6 +131,7 @@ fn task_count(L: *VM.lua.State) !i32 {
                 total += 1;
         }
         total += scheduler.tasks.items.len;
+        total += scheduler.async_tasks;
         L.pushnumber(@floatFromInt(total));
         return 1;
     };
@@ -160,7 +161,7 @@ fn task_count(L: *VM.lua.State) !i32 {
             },
             't' => {
                 out += 1;
-                L.pushnumber(@floatFromInt(scheduler.tasks.items.len));
+                L.pushnumber(@floatFromInt(scheduler.tasks.items.len + scheduler.async_tasks));
             },
             else => return L.Zerror("Invalid kind"),
         }
@@ -170,14 +171,14 @@ fn task_count(L: *VM.lua.State) !i32 {
 }
 
 pub fn loadLib(L: *VM.lua.State) void {
-    L.newtable();
+    L.createtable(0, 6);
 
-    L.Zsetfieldc(-1, "wait", task_wait);
-    L.Zsetfieldc(-1, "spawn", task_spawn);
-    L.Zsetfieldc(-1, "defer", task_defer);
-    L.Zsetfieldc(-1, "delay", task_delay);
-    L.Zsetfieldc(-1, "cancel", task_cancel);
-    L.Zsetfieldc(-1, "count", task_count);
+    L.Zsetfieldfn(-1, "wait", task_wait);
+    L.Zsetfieldfn(-1, "spawn", task_spawn);
+    L.Zsetfieldfn(-1, "defer", task_defer);
+    L.Zsetfieldfn(-1, "delay", task_delay);
+    L.Zsetfieldfn(-1, "cancel", task_cancel);
+    L.Zsetfieldfn(-1, "count", task_count);
 
     L.setreadonly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);
@@ -191,7 +192,11 @@ const TestResult = struct {
 test "Task" {
     const TestRunner = @import("../utils/testrunner.zig");
 
-    const testResult = try TestRunner.runTest(std.testing.allocator, @import("zune-test-files").@"task.test", &.{}, true);
+    const testResult = try TestRunner.runTest(
+        TestRunner.newTestFile("standard/task.test.luau"),
+        &.{},
+        true,
+    );
 
     try std.testing.expect(testResult.failed == 0);
     try std.testing.expect(testResult.total > 0);

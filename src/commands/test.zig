@@ -19,7 +19,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         return;
     }
 
-    Zune.loadConfiguration();
+    Zune.loadConfiguration(.{});
 
     const dir = std.fs.cwd();
     const module = args[0];
@@ -73,7 +73,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     var L = try luau.init(&gpa_allocator);
     defer L.deinit();
-    var scheduler = Scheduler.init(gpa_allocator, L);
+    var scheduler = try Scheduler.init(gpa_allocator, L);
     defer scheduler.deinit();
 
     try Scheduler.SCHEDULERS.append(&scheduler);
@@ -102,6 +102,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         .path = fileName,
         .name = moduleRelativeName,
         .source = fileContent,
+        .main = true,
     });
 
     ML.setsafeenv(VM.lua.GLOBALSINDEX, true);

@@ -115,7 +115,7 @@ pub fn build(b: *std.Build) !void {
         else => {},
     }
 
-    const dep_aio = b.dependency("aio", .{ .target = target, .optimize = optimize });
+    const dep_xev = b.dependency("libxev", .{ .target = target, .optimize = optimize });
     const dep_json = b.dependency("json", .{ .target = target, .optimize = optimize });
     const dep_yaml = b.dependency("yaml", .{ .target = target, .optimize = optimize });
     const dep_toml = b.dependency("toml", .{ .target = target, .optimize = optimize });
@@ -123,7 +123,7 @@ pub fn build(b: *std.Build) !void {
     const dep_luau = b.dependency("luau", .{ .target = target, .optimize = packed_optimize });
     const dep_lz4 = b.dependency("lz4", .{ .target = target, .optimize = packed_optimize });
     const dep_zstd = b.dependency("zstd", .{ .target = target, .optimize = packed_optimize });
-    const dep_czrex = b.dependency("czrex", .{ .target = target, .optimize = packed_optimize });
+    const dep_pcre2 = b.dependency("pcre2", .{ .target = target, .optimize = packed_optimize });
     const dep_tinycc = b.dependency("tinycc", .{ .target = target, .optimize = packed_optimize, .CONFIG_TCC_BACKTRACE = false });
     const dep_sqlite = b.dependency("sqlite", .{
         .target = target,
@@ -137,9 +137,16 @@ pub fn build(b: *std.Build) !void {
         .SQLITE_ENABLE_FTS3_PARENTHESIS = true,
     });
 
+    const no_bin = b.option(bool, "no-bin", "skip emitting binary") orelse false;
+
     const prebuild_step = b.step("prebuild", "Setup project for build");
 
     try prebuild(b, prebuild_step);
+    const lib = b.addInstallDirectory(.{
+        .source_dir = b.path("lib"),
+        .install_dir = .bin,
+        .install_subdir = "lib",
+    });
 
     var version = try getPackageVersion(b);
     if (std.mem.indexOf(u8, version, "-dev")) |_| {
@@ -158,23 +165,28 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
 
+    exe.step.dependOn(&lib.step);
     exe.step.dependOn(prebuild_step);
 
     exe.root_module.addOptions("zune-info", zune_info);
 
-    exe.root_module.addImport("aio", dep_aio.module("aio"));
+    exe.root_module.addImport("xev", dep_xev.module("xev"));
     exe.root_module.addImport("yaml", dep_yaml.module("yaml"));
-    exe.root_module.addImport("lz4", dep_lz4.module("zig-lz4"));
+    exe.root_module.addImport("lz4", dep_lz4.module("lz4"));
     exe.root_module.addImport("zstd", dep_zstd.module("zig-zstd"));
-    exe.root_module.addImport("json", dep_json.module("zig-json"));
+    exe.root_module.addImport("json", dep_json.module("json"));
     exe.root_module.addImport("luau", dep_luau.module("luau"));
-    exe.root_module.addImport("regex", dep_czrex.module("czrex"));
+    exe.root_module.addImport("regex", dep_pcre2.module("zpcre2"));
     exe.root_module.addImport("datetime", dep_datetime.module("zdt"));
     exe.root_module.addImport("toml", dep_toml.module("tomlz"));
-    exe.root_module.addImport("tinycc", dep_tinycc.module("tinycc"));
     exe.root_module.addImport("sqlite", dep_sqlite.module("z-sqlite"));
+    exe.root_module.addImport("tinycc", dep_tinycc.module("tinycc"));
 
-    b.installArtifact(exe);
+    if (no_bin) {
+        b.getInstallStep().dependOn(&exe.step);
+    } else {
+        b.installArtifact(exe);
+    }
 
     const run_cmd = b.addRunArtifact(exe);
 
@@ -206,28 +218,27 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
         .filters = b.args orelse &.{},
-        .test_runner = b.path("test/runner.zig"),
+        .test_runner = .{
+            .mode = .simple,
+            .path = b.path("test/runner.zig"),
+        },
     });
 
     exe_unit_tests.step.dependOn(prebuild_step);
 
     exe_unit_tests.root_module.addOptions("zune-info", zune_info);
 
-    exe_unit_tests.root_module.addImport("zune-test-files", b.addModule("test-files", .{
-        .root_source_file = b.path("test/files.zig"),
-    }));
-
-    exe_unit_tests.root_module.addImport("aio", dep_aio.module("aio"));
+    exe_unit_tests.root_module.addImport("xev", dep_xev.module("xev"));
     exe_unit_tests.root_module.addImport("yaml", dep_yaml.module("yaml"));
-    exe_unit_tests.root_module.addImport("lz4", dep_lz4.module("zig-lz4"));
+    exe_unit_tests.root_module.addImport("lz4", dep_lz4.module("lz4"));
     exe_unit_tests.root_module.addImport("zstd", dep_zstd.module("zig-zstd"));
-    exe_unit_tests.root_module.addImport("json", dep_json.module("zig-json"));
+    exe_unit_tests.root_module.addImport("json", dep_json.module("json"));
     exe_unit_tests.root_module.addImport("luau", dep_luau.module("luau"));
-    exe_unit_tests.root_module.addImport("regex", dep_czrex.module("czrex"));
+    exe_unit_tests.root_module.addImport("regex", dep_pcre2.module("zpcre2"));
     exe_unit_tests.root_module.addImport("datetime", dep_datetime.module("zdt"));
     exe_unit_tests.root_module.addImport("toml", dep_toml.module("tomlz"));
-    exe_unit_tests.root_module.addImport("tinycc", dep_tinycc.module("tinycc"));
     exe_unit_tests.root_module.addImport("sqlite", dep_sqlite.module("z-sqlite"));
+    exe_unit_tests.root_module.addImport("tinycc", dep_tinycc.module("tinycc"));
 
     exe_unit_tests.step.dependOn(&install_test_sample_dylib.step);
 

@@ -9,7 +9,7 @@
 <br/>
 
 <p align="left">
-Zune is a <a href="https://luau.org/">Luau</a> runtime built with Zig, inspired by <a href="https://lune-org.github.io/docs">Lune</a>, similar to <a href="https://nodejs.org">Node</a>, or <a href="https://bun.sh">Bun</a>.
+Zune is a <a href="https://luau.org/">Luau</a> runtime, inspired by <a href="https://lune-org.github.io/docs">Lune</a>, similar to <a href="https://nodejs.org">Node</a>, or <a href="https://bun.sh">Bun</a>.
 </p>
 
 ## Features

@@ -30,9 +30,10 @@ This project includes third-party components with the following licenses:
 | [`zig-json`](https://github.com/Scythe-Technology/zig-json) | [MIT](https://github.com/Scythe-Technology/zig-json/blob/master/LICENSE) |
 | [`zig-yaml`](https://github.com/kubkon/zig-yaml) | [MIT](https://github.com/kubkon/zig-yaml/blob/main/LICENSE) |
 | [`zig-lz4`](https://github.com/SnorlaxAssist/zig-lz4) | [MIT](https://github.com/SnorlaxAssist/zig-lz4/blob/master/LICENSE), [BSD 2-Clause](https://github.com/lz4/lz4/blob/dev/LICENSE) |
-| [`czrex`](https://github.com/Scythe-Technology/czrex) | [MIT](https://github.com/Scythe-Technology/czrex/blob/master/LICENSE) |
-| [`zffi`](https://github.com/Scythe-Technology/zffi) | [MIT](https://github.com/Scythe-Technology/zffi/blob/master/LICENSE) |
+| [`zpcre2`](https://github.com/Scythe-Technology/zpcre2) | [MIT](https://github.com/Scythe-Technology/zpcre2/blob/master/LICENSE), [BSD 3-Clause](https://github.com/Scythe-Technology/zpcre2/blob/master/PCRE2-LICENCE.md) |
+| [`zig-tinycc`](https://github.com/Scythe-Technology/zig-tinycc) | [MIT](https://github.com/Scythe-Technology/zffi/blob/master/LICENSE), [LGPL](https://github.com/TinyCC/tinycc/blob/mob/COPYING) |
 | [`zdt`](https://github.com/FObersteiner/zdt) | [MPL-2.0](https://github.com/FObersteiner/zdt/blob/master/LICENSE)|
 | [`tomlz`](https://github.com/mattyhall/tomlz) | [MIT](https://github.com/mattyhall/tomlz/blob/main/LICENCE) |
 | [`z-sqlite`](https://github.com/Scythe-Technology/z-sqlite) | [MIT](https://github.com/Scythe-Technology/z-sqlite/blob/master/LICENSE), [SQLite](https://sqlite.org/copyright.html) |
 | [`zig-zstd`](https://github.com/Scythe-Technology/zig-zstd) | [MIT](https://github.com/Scythe-Technology/zig-zstd/blob/master/LICENSE), [BSD 3-Clause](https://github.com/facebook/zstd/blob/dev/LICENSE) |
+| [`libxev`](https://github.com/Scythe-Technology/libxev) | [MIT](https://github.com/Scythe-Technology/libxev/blob/main/LICENSE) |

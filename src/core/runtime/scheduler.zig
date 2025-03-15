@@ -1,6 +1,7 @@
 const std = @import("std");
-const aio = @import("aio");
+const xev = @import("xev");
 const luau = @import("luau");
+const builtin = @import("builtin");
 
 const Engine = @import("engine.zig");
 const Zune = @import("../../zune.zig");
@@ -15,7 +16,7 @@ pub fn KillScheduler(scheduler: *Self, cleanUp: bool) void {
         while (i > 0) {
             i -= 1;
             const task = scheduler.tasks.items[i];
-            task.virtualDtor(task.data, stateFromPair(task.state), scheduler);
+            task.virtualDtor(task.data, task.state.value, scheduler);
             _ = scheduler.tasks.orderedRemove(i);
         }
     }
@@ -24,7 +25,7 @@ pub fn KillScheduler(scheduler: *Self, cleanUp: bool) void {
         while (i > 0) {
             i -= 1;
             const awaiting = scheduler.awaits.items[i];
-            awaiting.virtualDtor(awaiting.data, stateFromPair(awaiting.state), scheduler);
+            awaiting.virtualDtor(awaiting.data, awaiting.state.value, scheduler);
             _ = scheduler.awaits.orderedRemove(i);
         }
     }
@@ -42,11 +43,36 @@ pub fn KillSchedulers() void {
     SCHEDULERS.clearAndFree();
 }
 
-pub const LuauPair = struct { *VM.lua.State, ?i32 };
+pub const ThreadRef = struct {
+    value: *VM.lua.State,
+    ref: ?i32,
+
+    pub fn init(L: *VM.lua.State) ThreadRef {
+        const GL = L.mainthread();
+        if (GL == L)
+            return .{ .value = L, .ref = null };
+        if (L.pushthread()) {
+            L.pop(1);
+            return .{ .value = L, .ref = null };
+        }
+        L.xmove(GL, 1);
+        const ref = GL.ref(-1) orelse std.debug.panic("Tash Scheduler failed to create thread ref\n", .{});
+        GL.pop(1);
+        return .{ .value = L, .ref = ref };
+    }
+
+    pub fn deref(self: ThreadRef) void {
+        if (self.ref) |r| {
+            if (r <= 0)
+                return;
+            self.value.mainthread().unref(r);
+        }
+    }
+};
 
 const SleepingThread = struct {
     from: ?*VM.lua.State,
-    thread: LuauPair,
+    thread: ThreadRef,
     wake: f64,
     start: f64,
     args: i32,
@@ -55,7 +81,7 @@ const SleepingThread = struct {
 
 const DeferredThread = struct {
     from: ?*VM.lua.State,
-    thread: LuauPair,
+    thread: ThreadRef,
     args: i32,
 };
 
@@ -77,7 +103,7 @@ const AwaitedFn = TaskFnDtor; // Similar to TaskFnDtor
 pub fn TaskObject(comptime T: type) type {
     return struct {
         data: *T,
-        state: LuauPair,
+        state: ThreadRef,
         virtualFn: *const TaskFn,
         virtualDtor: *const TaskFnDtor,
     };
@@ -86,7 +112,7 @@ pub fn TaskObject(comptime T: type) type {
 pub fn AwaitingObject(comptime T: type) type {
     return struct {
         data: *T,
-        state: LuauPair,
+        state: ThreadRef,
         resumeFn: *const AwaitedFn,
         virtualDtor: *const TaskFnDtor,
         priority: AwaitTaskPriority,
@@ -95,7 +121,7 @@ pub fn AwaitingObject(comptime T: type) type {
 
 const AsyncIoThread = struct {
     data: ?*anyopaque,
-    state: LuauPair,
+    state: ThreadRef,
     handlerFn: ?*const AsyncCallbackFn,
 };
 
@@ -122,96 +148,44 @@ fn SleepOrder(_: void, a: SleepingThread, b: SleepingThread) std.math.Order {
     }
 }
 
-fn DeferredOrder(_: void, a: DeferredThread, b: DeferredThread) std.math.Order {
-    const wakeA = a;
-    const wakeB = b.wake;
-    if (wakeA == wakeB) {
-        return .eq;
-    } else if (wakeA < wakeB) {
-        return .lt;
-    } else if (wakeA > wakeB) {
-        return .gt;
-    } else {
-        unreachable;
-    }
-}
-
 const SleepingQueue = std.PriorityQueue(SleepingThread, void, SleepOrder);
 const DeferredLinkedList = std.DoublyLinkedList(DeferredThread);
+pub const CompletionLinkedList = std.DoublyLinkedList(xev.Dynamic.Completion);
 
 state: *VM.lua.State,
 allocator: std.mem.Allocator,
 sleeping: SleepingQueue,
-deferred: DeferredLinkedList,
+deferred: DeferredLinkedList = .{},
 tasks: std.ArrayList(TaskObject(anyopaque)),
 awaits: std.ArrayList(AwaitingObject(anyopaque)),
-dynamic: aio.Dynamic,
+timer: xev.Dynamic.Timer,
+loop: xev.Dynamic.Loop,
+@"async": xev.Dynamic.Async,
+thread_pool: *xev.ThreadPool,
 async_tasks: usize = 0,
+active_incr: u32 = 0,
 
 frame: FrameKind = .None,
 
-pub fn init(allocator: std.mem.Allocator, state: *VM.lua.State) Self {
-    var dyn = aio.Dynamic.init(allocator, 4096) catch |err| std.debug.panic("Error: {}\n", .{err});
-    dyn.queue_callback = ioQueue;
-    dyn.completion_callback = ioCompletion;
-    return .{
+pub fn init(allocator: std.mem.Allocator, state: *VM.lua.State) !Self {
+    const thread_pool = try allocator.create(xev.ThreadPool);
+    errdefer allocator.destroy(thread_pool);
+    thread_pool.* = xev.ThreadPool.init(.{});
+
+    return Self{
+        .loop = try xev.Dynamic.Loop.init(.{
+            .entries = 4096,
+            .thread_pool = thread_pool,
+        }),
+        .timer = try xev.Dynamic.Timer.init(),
+        .@"async" = try xev.Dynamic.Async.init(),
+        .thread_pool = thread_pool,
         .state = state,
         .allocator = allocator,
         .sleeping = SleepingQueue.init(allocator, {}),
-        .deferred = DeferredLinkedList{},
         .tasks = std.ArrayList(TaskObject(anyopaque)).init(allocator),
         .awaits = std.ArrayList(AwaitingObject(anyopaque)).init(allocator),
-        .dynamic = dyn,
     };
-}
-
-fn ioQueue(uop: aio.Dynamic.Uop, id: aio.Id) void {
-    _ = uop;
-    _ = id;
-    // place holder
-}
-
-fn ioCompletion(uop: aio.Dynamic.Uop, _: aio.Id, failed: bool) void {
-    switch (uop) {
-        inline else => |*op| {
-            std.debug.assert(op.userdata != 0);
-            const ctx: *AsyncIoThread = @ptrFromInt(op.userdata);
-            const state = stateFromPair(ctx.state);
-            const scheduler = getScheduler(state);
-            defer scheduler.allocator.destroy(ctx);
-            defer derefThread(ctx.state);
-            scheduler.async_tasks -= 1;
-            if (ctx.handlerFn) |handler|
-                handler(ctx.data, state, scheduler, failed);
-        },
-    }
-}
-
-pub fn refThread(L: *VM.lua.State) LuauPair {
-    const GL = L.mainthread();
-    if (GL == L)
-        return .{ L, null };
-    if (L.pushthread()) {
-        L.pop(1);
-        return .{ L, null };
-    }
-    L.xmove(GL, 1);
-    const ref = GL.ref(-1) orelse std.debug.panic("Tash Scheduler failed to create thread ref\n", .{});
-    GL.pop(1);
-    return .{ L, ref };
-}
-
-pub inline fn stateFromPair(pair: LuauPair) *VM.lua.State {
-    return pair[0];
-}
-
-pub fn derefThread(pair: LuauPair) void {
-    const L, const ref = pair;
-    if (ref) |r| {
-        if (r <= 0)
-            return;
-        L.mainthread().unref(r);
-    }
 }
 
 pub fn spawnThread(self: *Self, thread: *VM.lua.State, from: ?*VM.lua.State, args: i32) void {
@@ -224,7 +198,7 @@ pub fn deferThread(self: *Self, thread: *VM.lua.State, from: ?*VM.lua.State, arg
     ptr.* = .{
         .data = .{
             .from = from,
-            .thread = refThread(thread),
+            .thread = ThreadRef.init(thread),
             .args = args,
         },
     };
@@ -243,7 +217,7 @@ pub fn sleepThread(
     const wake = start + time + if (time == 0 and self.frame == .Sleeping) @as(f64, 0.0001) else @as(f64, 0);
 
     self.sleeping.add(.{
-        .thread = refThread(thread),
+        .thread = ThreadRef.init(thread),
         .from = from,
         .start = start,
         .wake = wake,
@@ -267,7 +241,7 @@ pub fn addTask(self: *Self, comptime T: type, data: *T, L: *VM.lua.State, compti
 
     self.tasks.append(.{
         .data = @ptrCast(data),
-        .state = refThread(L),
+        .state = ThreadRef.init(L),
         .virtualFn = virtualFn,
         .virtualDtor = virtualDtor,
     }) catch |err| std.debug.panic("Error: {}\n", .{err});
@@ -315,7 +289,7 @@ pub fn addSimpleTask(self: *Self, comptime T: type, data: T, L: *VM.lua.State, c
 
     self.tasks.append(.{
         .data = @ptrCast(ptr),
-        .state = refThread(L),
+        .state = ThreadRef.init(L),
         .virtualFn = virtualFn,
         .virtualDtor = virtualDtor,
     }) catch |err| std.debug.panic("Error: {}\n", .{err});
@@ -364,7 +338,7 @@ pub fn awaitResult(
 
     self.awaits.append(.{
         .data = @ptrCast(ptr),
-        .state = refThread(L),
+        .state = ThreadRef.init(L),
         .resumeFn = resumeFn,
         .virtualDtor = virtualDtor,
         .priority = priority orelse .User,
@@ -387,105 +361,35 @@ pub fn awaitCall(
     return awaitResult(self, T, data, L, handlerFn, dtorFn, .User);
 }
 
-pub fn asyncIoResumeState(L: *VM.lua.State, _: *Self, failed: bool) void {
-    if (failed) {
-        L.pushstring("Async IO failed");
-        _ = resumeStateError(L, null) catch {};
-    } else _ = resumeState(L, null, 0) catch {};
-}
-
-pub fn queueIoCallback(
+pub fn completeAsync(
     self: *Self,
-    L: *VM.lua.State,
-    io: anytype,
-    comptime handlerFn: ?*const fn (L: *VM.lua.State, scheduler: *Self, failed: bool) void,
-) !void {
-    const allocator = self.allocator;
-
-    const async_ptr = try allocator.create(AsyncIoThread);
-    errdefer allocator.destroy(async_ptr);
-
-    const handler = struct {
-        fn inner(_: ?*anyopaque, l: *VM.lua.State, scheduler: *Self, failed: bool) void {
-            @call(.always_inline, handlerFn.?, .{ l, scheduler, failed });
-        }
-    }.inner;
-
-    async_ptr.* = .{
-        .state = refThread(L),
-        .data = null,
-        .handlerFn = if (handlerFn != null) handler else null,
-    };
-    errdefer derefThread(async_ptr.state);
-
-    var queueItem = io;
-
-    queueItem.userdata = @intFromPtr(async_ptr);
-
-    try self.dynamic.queue(queueItem);
-    self.async_tasks += 1;
+    data: anytype,
+) void {
+    defer self.async_tasks -= 1;
+    defer self.active_incr += 1;
+    self.allocator.destroy(data);
 }
 
-pub fn queueIoCallbackCtx(
+pub fn addAsyncTick(
+    self: *Self,
+) void {
+    defer self.active_incr += 1;
+}
+
+pub fn createAsyncCtx(
     self: *Self,
     comptime T: type,
-    data: *T,
-    L: *VM.lua.State,
-    io: anytype,
-    comptime handlerFn: ?*const fn (ctx: *T, L: *VM.lua.State, scheduler: *Self, failed: bool) void,
-) !void {
-    const allocator = self.allocator;
-
-    const async_ptr = try allocator.create(AsyncIoThread);
-    errdefer allocator.destroy(async_ptr);
-
-    const handler = struct {
-        fn inner(ctx: ?*anyopaque, l: *VM.lua.State, scheduler: *Self, failed: bool) void {
-            @call(.always_inline, handlerFn.?, .{ @as(*T, @alignCast(@ptrCast(ctx.?))), l, scheduler, failed });
-        }
-    }.inner;
-
-    async_ptr.* = .{
-        .state = refThread(L),
-        .data = data,
-        .handlerFn = if (handlerFn != null) handler else null,
-    };
-    errdefer derefThread(async_ptr.state);
-
-    var queueItem = io;
-
-    queueItem.userdata = @intFromPtr(async_ptr);
-
-    try self.dynamic.queue(queueItem);
-    self.async_tasks += 1;
-}
-
-pub fn queueIo(
-    self: *Self,
-    L: *VM.lua.State,
-    io: anytype,
-) !void {
-    const allocator = self.allocator;
-
-    const async_ptr = try allocator.create(AsyncIoThread);
-    errdefer allocator.destroy(async_ptr);
-
-    async_ptr.* = .{
-        .state = refThread(L),
-        .data = null,
-        .handlerFn = null,
-    };
-    errdefer derefThread(async_ptr.state);
-
-    var queueItem = io;
-
-    queueItem.userdata = @intFromPtr(async_ptr);
-
-    try self.dynamic.queue(queueItem);
-    self.async_tasks += 1;
+) std.mem.Allocator.Error!*T {
+    const ptr = try self.allocator.create(T);
+    defer self.async_tasks += 1;
+    defer self.active_incr += 1;
+    return ptr;
 }
 
 pub fn resumeState(state: *VM.lua.State, from: ?*VM.lua.State, args: i32) !VM.lua.Status {
+    const status = state.status();
+    if (status != .Yield and status != .Ok)
+        return status.check();
     return state.resumethread(from, args).check() catch |err| {
         Engine.logError(state, err, false);
         if (Zune.Debugger.ACTIVE) {
@@ -500,6 +404,9 @@ pub fn resumeState(state: *VM.lua.State, from: ?*VM.lua.State, args: i32) !VM.lu
 }
 
 pub fn resumeStateError(state: *VM.lua.State, from: ?*VM.lua.State) !VM.lua.Status {
+    const status = state.status();
+    if (status != .Yield and status != .Ok)
+        return status.check();
     return state.resumeerror(from).check() catch |err| {
         Engine.logError(state, err, false);
         if (Zune.Debugger.ACTIVE) {
@@ -516,17 +423,17 @@ pub fn resumeStateError(state: *VM.lua.State, from: ?*VM.lua.State) !VM.lua.Stat
 pub fn cancelThread(self: *Self, thread: *VM.lua.State) void {
     const sleeping_items = self.sleeping.items;
     for (sleeping_items, 0..) |item, i| {
-        if (stateFromPair(item.thread) == thread) {
+        if (item.thread.value == thread) {
             const slept = self.sleeping.removeIndex(i);
-            derefThread(slept.thread);
+            slept.thread.deref();
             return;
         }
     }
     var node = self.deferred.first;
     while (node) |dnode| {
         const deferred = dnode.data;
-        if (stateFromPair(deferred.thread) == thread) {
-            derefThread(deferred.thread);
+        if (deferred.thread.value == thread) {
+            deferred.thread.deref();
             self.deferred.remove(dnode);
             self.allocator.destroy(dnode);
             break;
@@ -545,10 +452,10 @@ pub fn run(self: *Self, comptime mode: Zune.RunMode) void {
             while (i > 0) {
                 i -= 1;
                 const awaiting = self.awaits.items[i];
-                if (awaiting.state[0].status() != .Yield) {
-                    defer derefThread(awaiting.state);
+                if (awaiting.state.value.status() != .Yield) {
+                    defer awaiting.state.deref();
                     _ = self.awaits.orderedRemove(i);
-                    const state, _ = awaiting.state;
+                    const state = awaiting.state.value;
                     const data = awaiting.data;
                     awaiting.resumeFn(data, state, self);
                     awaiting.virtualDtor(data, state, self);
@@ -562,13 +469,13 @@ pub fn run(self: *Self, comptime mode: Zune.RunMode) void {
             while (i > 0) {
                 i -= 1;
                 const task = self.tasks.items[i];
-                switch (task.virtualFn(task.data, stateFromPair(task.state), self)) {
+                switch (task.virtualFn(task.data, task.state.value, self)) {
                     .Continue => {},
                     .ContinueFast => active += 1,
                     .Stop => {
-                        defer derefThread(task.state);
+                        defer task.state.deref();
                         _ = self.tasks.orderedRemove(i);
-                        task.virtualDtor(task.data, stateFromPair(task.state), self);
+                        task.virtualDtor(task.data, task.state.value, self);
                         active += 1;
                     },
                 }
@@ -580,9 +487,9 @@ pub fn run(self: *Self, comptime mode: Zune.RunMode) void {
                 if (current.wake <= now) {
                     const slept = self.sleeping.remove();
                     var args = slept.args;
-                    const thread, _ = slept.thread;
+                    const thread = slept.thread.value;
                     const status = thread.status();
-                    defer derefThread(slept.thread);
+                    defer slept.thread.deref();
                     if (status != .Ok and status != .Yield) {
                         std.debug.print("Cannot resume thread error status: {}\n", .{status});
                         continue;
@@ -604,26 +511,23 @@ pub fn run(self: *Self, comptime mode: Zune.RunMode) void {
         }
         jmp: {
             self.frame = .AsyncIO;
-            const res = self.dynamic.complete(.nonblocking) catch |err| {
-                std.debug.print("AsyncIO Error: {}\n", .{err});
-                break :jmp;
-            };
-            if (res.num_completed > 0) {
-                std.debug.print("completed async task: {}\n", .{res.num_completed});
-                active += res.num_completed;
+            if (self.async_tasks > 0) {
+                self.loop.run(.no_wait) catch |err| {
+                    std.debug.print("AsyncIO Error: {}\n", .{err});
+                    break :jmp;
+                };
             }
-            if (res.num_errors > 0) {
-                std.debug.print("errors: {}\n", .{res.num_errors});
-            }
+            active += self.active_incr;
+            self.active_incr = 0;
         }
         if (self.deferred.len > 0) {
             self.frame = .Deferred;
             while (self.deferred.popFirst()) |node| {
                 const deferred = node.data;
                 defer self.allocator.destroy(node);
-                const thread, _ = deferred.thread;
+                const thread = deferred.thread.value;
                 const status = thread.status();
-                defer derefThread(deferred.thread);
+                defer deferred.thread.deref();
                 if (status != .Ok and status != .Yield)
                     continue;
                 _ = resumeState(
@@ -654,11 +558,23 @@ pub fn deinit(self: *Self) void {
     }
     self.tasks.deinit();
     self.awaits.deinit();
-    self.dynamic.deinit(self.allocator);
+    self.timer.deinit();
+    self.loop.deinit();
+    self.@"async".deinit();
+    self.thread_pool.shutdown();
+    self.thread_pool.deinit();
+    self.allocator.destroy(self.thread_pool);
 }
 
-pub fn getScheduler(L: *VM.lua.State) *Self {
-    const GL = L.mainthread();
-    const scheduler = GL.getthreaddata(*Self);
-    return scheduler;
+pub fn getScheduler(L: anytype) *Self {
+    if (@TypeOf(L) == *VM.lua.State) {
+        const GL = L.mainthread();
+        const scheduler = GL.getthreaddata(*Self);
+        return scheduler;
+    } else if (@TypeOf(L) == ThreadRef) {
+        const state, _ = L;
+        const GL = state.mainthread();
+        const scheduler = GL.getthreaddata(*Self);
+        return scheduler;
+    } else @compileError("Invalid type for getScheduler");
 }

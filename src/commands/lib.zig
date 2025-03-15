@@ -30,3 +30,18 @@ pub fn initCommands(comptime commands: []const Command) std.StaticStringMap(Comm
 
     return std.StaticStringMap(Command).initComptime(list);
 }
+
+pub const CommandMap = initCommands(&.{
+    @import("run.zig").Command,
+    @import("test.zig").Command,
+    @import("eval.zig").Command,
+    @import("debug.zig").Command,
+    @import("setup.zig").Command,
+    @import("repl/lib.zig").Command,
+    @import("init.zig").Command,
+
+    @import("luau.zig").Command,
+    @import("help.zig").Command,
+
+    @import("version.zig").Command,
+});

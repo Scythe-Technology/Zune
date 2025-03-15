@@ -1,7 +1,7 @@
 # test configuration
 
 [runtime.debug]
-detailedError=true
+detailedError = true
 
-[experimental]
-ffi=true
+[features.builtins]
+ffi = true

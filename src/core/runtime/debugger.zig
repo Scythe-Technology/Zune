@@ -1226,7 +1226,7 @@ pub fn prompt(L: *VM.lua.State, comptime kind: BreakKind, debug_info: ?*VM.lua.c
                     },
                     .restart => {
                         // force a break, ignoring yield status
-                        L.tstatus = @intFromEnum(VM.lua.Status.Break);
+                        L.curr_status = @intFromEnum(VM.lua.Status.Break);
                         DEBUG.dead = true;
                         Scheduler.KillSchedulers();
                         return;

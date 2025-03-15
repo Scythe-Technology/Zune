@@ -1,10 +1,10 @@
 const std = @import("std");
-const aio = @import("aio");
+const xev = @import("xev").Dynamic;
 const luau = @import("luau");
 const builtin = @import("builtin");
 
 const tagged = @import("../../../tagged.zig");
-const method_map = @import("../../utils/method_map.zig");
+const MethodMap = @import("../../utils/method_map.zig");
 const luaHelper = @import("../../utils/luahelper.zig");
 
 const Scheduler = @import("../../runtime/scheduler.zig");
@@ -12,6 +12,14 @@ const Scheduler = @import("../../runtime/scheduler.zig");
 const VM = luau.VM;
 
 const File = @This();
+
+const TAG_FS_FILE = tagged.Tags.get("FS_FILE").?;
+pub fn PlatformSupported() bool {
+    return switch (comptime builtin.os.tag) {
+        .linux, .macos, .windows, .wasi => true,
+        else => false,
+    };
+}
 
 pub const FileKind = enum {
     File,
@@ -22,84 +30,61 @@ handle: std.fs.File,
 open: bool = true,
 kind: FileKind = .File,
 
-pub const ReadAsyncContext = struct {
-    file: std.fs.File,
-    lua_type: VM.lua.Type = .String,
-    auto_close: bool = true,
-
-    offset: usize = 0,
-    buffer_len: usize = 0,
+pub const AsyncReadContext = struct {
+    completion: xev.Completion = .{},
+    ref: Scheduler.ThreadRef,
     limit: usize = luaHelper.MAX_LUAU_SIZE,
     array: std.ArrayList(u8) = undefined,
+    lua_type: VM.lua.Type = .String,
+    buffer_len: usize = 0,
+    auto_close: bool = true,
     resumed: bool = false,
 
-    out_read: usize = 0,
-    out_error: aio.Read.Error = error.Unexpected,
-    out_close_error: aio.CloseFile.Error = error.Unexpected,
+    const This = @This();
 
-    fn end(ctx: *ReadAsyncContext, L: *VM.lua.State, scheduler: *Scheduler, err: ?anyerror) void {
-        if (ctx.auto_close) {
-            scheduler.queueIoCallbackCtx(ReadAsyncContext, ctx, L, aio.CloseFile{
-                .file = ctx.file,
-                .out_error = &ctx.out_close_error,
-            }, finished) catch |e| {
-                std.debug.print("Failed to queue close: {}\n", .{e});
-            };
+    pub fn end(
+        self: *This,
+        L: *VM.lua.State,
+        scheduler: *Scheduler,
+        file: xev.File,
+        err: ?anyerror,
+    ) xev.CallbackAction {
+        if (self.auto_close) {
+            file.close(&scheduler.loop, &self.completion, This, self, finished);
         }
 
         if (err) |e| {
-            if (e != error.None) {
-                defer if (!ctx.auto_close) ctx.cleanup(L);
-                L.pushstring(@errorName(e));
-                ctx.resumeResult(L, .Bad);
-            }
+            L.pushstring(@errorName(e));
+            self.resumeResult(L, .Bad);
         }
 
-        if (!ctx.auto_close) {
-            defer ctx.cleanup(L);
-            ctx.resumeResult(L, .Ok);
+        if (!self.auto_close) {
+            self.cleanup(scheduler);
         }
+
+        return .disarm;
     }
 
-    fn completion(ctx: *ReadAsyncContext, L: *VM.lua.State, scheduler: *Scheduler, failed: bool) void {
-        if (failed)
-            return ctx.end(L, scheduler, ctx.out_error);
-
-        ctx.offset += ctx.out_read;
-        ctx.buffer_len += ctx.out_read;
-
-        if (ctx.out_read == 0 or ctx.buffer_len > ctx.limit) {
-            return ctx.end(L, scheduler, null);
-        }
-
-        ctx.array.ensureTotalCapacity(ctx.buffer_len + ctx.offset + 1) catch |err| return ctx.end(L, scheduler, err);
-        if (ctx.array.capacity > ctx.limit)
-            ctx.array.shrinkAndFree(ctx.limit);
-        ctx.array.expandToCapacity();
-
-        scheduler.queueIoCallbackCtx(ReadAsyncContext, ctx, L, aio.Read{
-            .file = ctx.file,
-            .offset = ctx.offset,
-            .buffer = ctx.array.items[ctx.offset..],
-            .out_read = &ctx.out_read,
-            .out_error = &ctx.out_error,
-        }, completion) catch |err| return ctx.end(L, scheduler, err);
+    pub fn cleanup(self: *This, scheduler: *Scheduler) void {
+        self.ref.deref();
+        self.array.deinit();
+        scheduler.completeAsync(self);
     }
 
     const Kind = enum {
         Ok,
         Bad,
     };
-    fn resumeResult(ctx: *ReadAsyncContext, L: *VM.lua.State, comptime kind: Kind) void {
-        if (ctx.resumed)
+    fn resumeResult(self: *This, L: *VM.lua.State, comptime kind: Kind) void {
+        if (self.resumed)
             return;
-        ctx.resumed = true;
+        self.resumed = true;
         switch (kind) {
             .Ok => {
-                ctx.array.shrinkAndFree(ctx.buffer_len);
-                switch (ctx.lua_type) {
-                    .Buffer => L.Zpushbuffer(ctx.array.items),
-                    .String => L.pushlstring(ctx.array.items),
+                self.array.shrinkAndFree(@min(self.buffer_len, self.limit));
+                switch (self.lua_type) {
+                    .Buffer => L.Zpushbuffer(self.array.items),
+                    .String => L.pushlstring(self.array.items),
                     else => unreachable,
                 }
                 _ = Scheduler.resumeState(L, null, 1) catch {};
@@ -108,182 +93,243 @@ pub const ReadAsyncContext = struct {
         }
     }
 
-    fn finished(ctx: *ReadAsyncContext, L: *VM.lua.State, _: *Scheduler, failed: bool) void {
-        defer ctx.cleanup(L);
+    pub fn finished(
+        ud: ?*This,
+        _: *xev.Loop,
+        _: *xev.Completion,
+        _: xev.File,
+        c: xev.CloseError!void,
+    ) xev.CallbackAction {
+        const self = ud orelse unreachable;
+        const L = self.ref.value;
+        const scheduler = Scheduler.getScheduler(L);
+        defer self.cleanup(scheduler);
 
-        if (failed) {
-            L.pushstring(@errorName(ctx.out_close_error));
-            return ctx.resumeResult(L, .Bad);
-        }
+        c catch |err| {
+            L.pushstring(@errorName(err));
+            self.resumeResult(L, .Bad);
+            return .disarm;
+        };
 
-        ctx.resumeResult(L, .Ok);
+        self.resumeResult(L, .Ok);
+        return .disarm;
     }
 
-    fn cleanup(ctx: *ReadAsyncContext, L: *VM.lua.State) void {
-        const allocator = luau.getallocator(L);
-        defer allocator.destroy(ctx);
-        defer ctx.array.deinit();
+    pub fn complete(
+        ud: ?*This,
+        _: *xev.Loop,
+        completion: *xev.Completion,
+        file: xev.File,
+        _: xev.ReadBuffer,
+        r: xev.ReadError!usize,
+    ) xev.CallbackAction {
+        const self = ud orelse unreachable;
+        const L = self.ref.value;
+
+        const scheduler = Scheduler.getScheduler(L);
+        if (L.status() != .Yield)
+            return self.end(L, scheduler, file, null);
+
+        const read_len = r catch |err| switch (err) {
+            xev.ReadError.EOF => 0,
+            else => return self.end(L, scheduler, file, err),
+        };
+
+        self.buffer_len += read_len;
+
+        if (read_len == 0 or self.buffer_len > self.limit) {
+            return self.end(L, scheduler, file, null);
+        }
+
+        self.array.ensureTotalCapacity(self.buffer_len + 1) catch |err| return self.end(L, scheduler, file, err);
+        if (self.array.capacity > self.limit)
+            self.array.shrinkAndFree(self.limit);
+        self.array.expandToCapacity();
+
+        defer scheduler.addAsyncTick();
+        file.pread(
+            &scheduler.loop,
+            completion,
+            .{ .slice = self.array.items[self.buffer_len..] },
+            self.buffer_len,
+            This,
+            self,
+            This.complete,
+        );
+        return .disarm;
     }
 
     pub fn queue(
         L: *VM.lua.State,
-        file: std.fs.File,
+        f: std.fs.File,
         useBuffer: bool,
         pre_alloc_size: usize,
         max_size: usize,
         auto_close: bool,
     ) !i32 {
         if (!L.isyieldable())
-            return error.RaiseLuauYieldError;
+            return L.Zyielderror();
         const scheduler = Scheduler.getScheduler(L);
         const allocator = luau.getallocator(L);
 
-        const ctx = try allocator.create(ReadAsyncContext);
-        errdefer allocator.destroy(ctx);
+        const file = xev.File.init(f) catch unreachable;
+
+        const array = try std.ArrayList(u8).initCapacity(allocator, pre_alloc_size);
+        errdefer array.deinit();
+
+        const ctx = try scheduler.createAsyncCtx(AsyncReadContext);
+
         ctx.* = .{
-            .file = file,
+            .ref = Scheduler.ThreadRef.init(L),
             .lua_type = if (useBuffer) .Buffer else .String,
-            .array = try std.ArrayList(u8).initCapacity(allocator, pre_alloc_size),
+            .array = array,
             .limit = max_size,
             .auto_close = auto_close,
         };
 
         ctx.array.expandToCapacity();
 
-        try scheduler.queueIoCallbackCtx(ReadAsyncContext, ctx, L, aio.Read{
-            .file = file,
-            .buffer = ctx.array.items[ctx.offset..],
-            .out_read = &ctx.out_read,
-            .out_error = &ctx.out_error,
-        }, ReadAsyncContext.completion);
+        file.pread(
+            &scheduler.loop,
+            &ctx.completion,
+            .{ .slice = ctx.array.items },
+            0,
+            AsyncReadContext,
+            ctx,
+            AsyncReadContext.complete,
+        );
 
         return L.yield(0);
     }
 };
 
-pub const WriteAsyncContext = struct {
+pub const AsyncWriteContext = struct {
+    completion: xev.Completion = .{},
+    ref: Scheduler.ThreadRef,
+    data: []u8,
     auto_close: bool = true,
 
-    file: std.fs.File,
-    offset: usize = 0,
-    data: []u8,
-    buffer: []u8,
-    resumed: bool = false,
+    const This = @This();
 
-    out_written: usize = 0,
-    out_error: aio.Write.Error = error.Unexpected,
-    out_close_error: aio.CloseFile.Error = error.Unexpected,
-
-    fn end(ctx: *WriteAsyncContext, L: *VM.lua.State, scheduler: *Scheduler, err: ?anyerror) void {
-        if (ctx.auto_close) {
-            scheduler.queueIoCallbackCtx(WriteAsyncContext, ctx, L, aio.CloseFile{
-                .file = ctx.file,
-                .out_error = &ctx.out_close_error,
-            }, finished) catch |e| {
-                std.debug.print("Failed to queue close: {}\n", .{e});
-            };
+    pub fn end(
+        self: *This,
+        L: *VM.lua.State,
+        scheduler: *Scheduler,
+        file: xev.File,
+        err: ?anyerror,
+    ) xev.CallbackAction {
+        if (self.auto_close) {
+            file.close(&scheduler.loop, &self.completion, This, self, finished);
         }
 
         if (err) |e| {
-            if (e != error.None) {
-                defer if (!ctx.auto_close) ctx.cleanup(L);
-                L.pushstring(@errorName(e));
-                ctx.resumeResult(L, .Bad);
-            }
-            return;
+            L.pushstring(@errorName(e));
+            _ = Scheduler.resumeStateError(L, null) catch {};
         }
 
-        if (!ctx.auto_close) {
-            defer ctx.cleanup(L);
-            ctx.resumeResult(L, .Ok);
+        if (!self.auto_close) {
+            self.cleanup(L, scheduler);
         }
+
+        return .disarm;
     }
 
-    fn completion(ctx: *WriteAsyncContext, L: *VM.lua.State, scheduler: *Scheduler, failed: bool) void {
-        if (failed)
-            return ctx.end(L, scheduler, ctx.out_error);
-
-        ctx.offset += ctx.out_written;
-
-        if (ctx.out_written == ctx.data.len) {
-            return ctx.end(L, scheduler, null);
-        }
-
-        ctx.data = ctx.data[ctx.out_written..];
-
-        scheduler.queueIoCallbackCtx(WriteAsyncContext, ctx, L, aio.Write{
-            .file = ctx.file,
-            .offset = ctx.offset,
-            .buffer = ctx.data,
-            .out_written = &ctx.out_written,
-            .out_error = &ctx.out_error,
-        }, completion) catch |err| return ctx.end(L, scheduler, err);
-    }
-
-    const Kind = enum {
-        Ok,
-        Bad,
-    };
-    fn resumeResult(ctx: *WriteAsyncContext, L: *VM.lua.State, comptime kind: Kind) void {
-        if (ctx.resumed)
-            return;
-        ctx.resumed = true;
-        switch (kind) {
-            .Ok => _ = Scheduler.resumeState(L, null, 0) catch {},
-            .Bad => _ = Scheduler.resumeStateError(L, null) catch {},
-        }
-    }
-
-    fn finished(ctx: *WriteAsyncContext, L: *VM.lua.State, _: *Scheduler, failed: bool) void {
-        defer ctx.cleanup(L);
-
-        if (failed) {
-            L.pushstring(@errorName(ctx.out_close_error));
-            return ctx.resumeResult(L, .Bad);
-        }
-
-        ctx.resumeResult(L, .Ok);
-    }
-
-    fn cleanup(ctx: *WriteAsyncContext, L: *VM.lua.State) void {
+    pub fn cleanup(self: *This, L: *VM.lua.State, scheduler: *Scheduler) void {
         const allocator = luau.getallocator(L);
-        defer allocator.destroy(ctx);
-        defer allocator.free(ctx.buffer);
+        allocator.free(self.data);
+        self.ref.deref();
+        scheduler.completeAsync(self);
     }
 
-    pub fn queue(L: *VM.lua.State, file: std.fs.File, data: []const u8, auto_close: bool, offset: u64) !i32 {
+    pub fn finished(
+        ud: ?*This,
+        _: *xev.Loop,
+        _: *xev.Completion,
+        _: xev.File,
+        c: xev.CloseError!void,
+    ) xev.CallbackAction {
+        const self = ud orelse unreachable;
+        const L = self.ref.value;
+        const scheduler = Scheduler.getScheduler(L);
+        defer self.cleanup(L, scheduler);
+
+        c catch |err| {
+            L.pushstring(@errorName(err));
+            _ = Scheduler.resumeStateError(L, null) catch {};
+            return .disarm;
+        };
+
+        _ = Scheduler.resumeState(L, null, 0) catch {};
+        return .disarm;
+    }
+
+    pub fn complete(
+        ud: ?*This,
+        _: *xev.Loop,
+        _: *xev.Completion,
+        file: xev.File,
+        b: xev.WriteBuffer,
+        w: xev.WriteError!usize,
+    ) xev.CallbackAction {
+        const self = ud orelse unreachable;
+
+        const L = self.ref.value;
+        const scheduler = Scheduler.getScheduler(L);
+
+        if (L.status() != .Yield)
+            return self.end(L, scheduler, file, null);
+
+        const written = w catch |err| return self.end(L, scheduler, file, err);
+
+        if (written == 0 or written == b.slice.len) {
+            return self.end(L, scheduler, file, null);
+        }
+
+        defer scheduler.addAsyncTick();
+        file.write(
+            &scheduler.loop,
+            &self.completion,
+            .{ .slice = b.slice[written..] },
+            This,
+            self,
+            This.complete,
+        );
+        return .disarm;
+    }
+
+    pub fn queue(L: *VM.lua.State, f: std.fs.File, data: []const u8, auto_close: bool) !i32 {
         if (!L.isyieldable())
-            return error.RaiseLuauYieldError;
+            return L.Zyielderror();
         const scheduler = Scheduler.getScheduler(L);
         const allocator = luau.getallocator(L);
-
-        const ctx = try allocator.create(File.WriteAsyncContext);
-        errdefer allocator.destroy(ctx);
 
         const copy = try allocator.dupe(u8, data);
         errdefer allocator.free(copy);
 
+        const file = try xev.File.init(f);
+        const ctx = try scheduler.createAsyncCtx(This);
+
         ctx.* = .{
-            .file = file,
+            .ref = Scheduler.ThreadRef.init(L),
             .data = copy,
-            .buffer = copy,
             .auto_close = auto_close,
         };
 
-        try scheduler.queueIoCallbackCtx(File.WriteAsyncContext, ctx, L, aio.Write{
-            .file = file,
-            .buffer = ctx.data,
-            .offset = offset,
-            .out_written = &ctx.out_written,
-            .out_error = &ctx.out_error,
-        }, File.WriteAsyncContext.completion);
+        file.write(
+            &scheduler.loop,
+            &ctx.completion,
+            .{ .slice = data },
+            This,
+            ctx,
+            This.complete,
+        );
 
         return L.yield(0);
     }
 };
 
-pub fn __index(L: *VM.lua.State) i32 {
-    L.Lchecktype(1, .Userdata);
+pub fn __index(L: *VM.lua.State) !i32 {
+    try L.Zchecktype(1, .Userdata);
     // const index = L.Lcheckstring(2);
     // const ptr = L.touserdata(FileObject, 1) catch return 0;
 
@@ -291,17 +337,13 @@ pub fn __index(L: *VM.lua.State) i32 {
 }
 
 fn write(self: *File, L: *VM.lua.State) !i32 {
-    if (!self.open)
-        return L.Zerror("File is closed");
-    const data = if (L.isbuffer(2)) L.Lcheckbuffer(2) else L.Lcheckstring(2);
+    const data = try L.Zcheckvalue([]const u8, 2, null);
 
-    const pos = try self.handle.getPos();
-
-    return File.WriteAsyncContext.queue(L, self.handle, data, false, pos);
+    return File.AsyncWriteContext.queue(L, self.handle, data, false);
 }
 
 fn writeSync(self: *File, L: *VM.lua.State) !i32 {
-    const data = if (L.isbuffer(2)) L.Lcheckbuffer(2) else L.Lcheckstring(2);
+    const data = try L.Zcheckvalue([]const u8, 2, null);
 
     try self.handle.writeAll(data);
 
@@ -309,7 +351,7 @@ fn writeSync(self: *File, L: *VM.lua.State) !i32 {
 }
 
 fn append(self: *File, L: *VM.lua.State) !i32 {
-    const string = if (L.isbuffer(2)) L.Lcheckbuffer(2) else L.Lcheckstring(2);
+    const string = try L.Zcheckvalue([]const u8, 2, null);
 
     try self.handle.seekFromEnd(0);
     try self.handle.writeAll(string);
@@ -343,19 +385,15 @@ fn seekBy(self: *File, L: *VM.lua.State) !i32 {
 }
 
 fn read(self: *File, L: *VM.lua.State) !i32 {
-    // const scheduler = Scheduler.getScheduler(L);
     const size = L.Loptinteger(2, luaHelper.MAX_LUAU_SIZE);
-    const data = try self.handle.readToEndAlloc(luau.getallocator(L), @intCast(size));
-    defer luau.getallocator(L).free(data);
-
-    return ReadAsyncContext.queue(L, self.handle, L.Loptboolean(3, false), 1024, @intCast(size), false);
+    return AsyncReadContext.queue(L, self.handle, L.Loptboolean(3, false), 1024, @intCast(size), false);
 }
 
 fn readSync(self: *File, L: *VM.lua.State) !i32 {
-    // const scheduler = Scheduler.getScheduler(L);
     const allocator = luau.getallocator(L);
     const size = L.Loptinteger(2, luaHelper.MAX_LUAU_SIZE);
     const useBuffer = L.Loptboolean(3, false);
+
     const data = try self.handle.readToEndAlloc(allocator, @intCast(size));
     defer allocator.free(data);
 
@@ -368,6 +406,10 @@ fn readSync(self: *File, L: *VM.lua.State) !i32 {
 }
 
 fn lock(self: *File, L: *VM.lua.State) !i32 {
+    switch (comptime builtin.os.tag) {
+        .windows, .linux, .macos => {},
+        else => return error.UnsupportedPlatform,
+    }
     var lockOpt: std.fs.File.Lock = .exclusive;
     if (L.typeOf(2) == .String) {
         const lockType = L.tostring(2) orelse unreachable;
@@ -411,22 +453,26 @@ fn lock(self: *File, L: *VM.lua.State) !i32 {
 }
 
 fn unlock(self: *File, L: *VM.lua.State) !i32 {
+    switch (comptime builtin.os.tag) {
+        .windows, .linux, .macos => {},
+        else => return error.UnsupportedPlatform,
+    }
     _ = L;
     self.handle.unlock();
     return 0;
 }
 
-fn sync(self: *File, L: *VM.lua.State) !i32 {
-    const scheduler = Scheduler.getScheduler(L);
+fn sync(self: *File, _: *VM.lua.State) !i32 {
+    try self.handle.sync();
 
-    try scheduler.queueIoCallback(L, aio.Fsync{
-        .file = self.handle,
-    }, Scheduler.asyncIoResumeState);
-
-    return L.yield(0);
+    return 0;
 }
 
 fn readonly(self: *File, L: *VM.lua.State) !i32 {
+    switch (comptime builtin.os.tag) {
+        .windows, .linux, .macos => {},
+        else => return error.UnsupportedPlatform,
+    }
     const meta = try self.handle.metadata();
     var permissions = meta.permissions();
     const enabled = if (L.typeOf(2) != .Boolean) {
@@ -438,54 +484,101 @@ fn readonly(self: *File, L: *VM.lua.State) !i32 {
     return 0;
 }
 
-fn close(self: *File, L: *VM.lua.State) !i32 {
-    _ = L;
-    if (self.open) {
-        self.handle.close();
+pub const AsyncCloseContext = struct {
+    completion: xev.Completion = .{},
+    ref: Scheduler.ThreadRef,
+
+    const This = @This();
+
+    pub fn complete(
+        ud: ?*This,
+        _: *xev.Loop,
+        _: *xev.Completion,
+        _: xev.File,
+        _: xev.CloseError!void,
+    ) xev.CallbackAction {
+        const self = ud orelse unreachable;
+        const L = self.ref.value;
+        const scheduler = Scheduler.getScheduler(L);
+
+        defer scheduler.completeAsync(self);
+        defer self.ref.deref();
+
+        if (L.status() != .Yield)
+            return .disarm;
+
+        _ = Scheduler.resumeState(L, null, 0) catch {};
+        return .disarm;
     }
-    self.open = false;
+};
+
+fn closeAsync(self: *File, L: *VM.lua.State) !i32 {
+    if (self.open) {
+        self.open = false;
+        const scheduler = Scheduler.getScheduler(L);
+        const file = xev.File.init(self.handle) catch unreachable;
+
+        const ctx = try scheduler.createAsyncCtx(AsyncCloseContext);
+        ctx.* = .{
+            .ref = Scheduler.ThreadRef.init(L),
+        };
+
+        file.close(
+            &scheduler.loop,
+            &ctx.completion,
+            AsyncCloseContext,
+            ctx,
+            AsyncCloseContext.complete,
+        );
+
+        return L.yield(0);
+    }
     return 0;
 }
 
-const __namecall = method_map.CreateNamecallMap(File, .{
-    .{ "write", write },
-    .{ "writeSync", writeSync },
-    .{ "append", append },
-    .{ "getSeekPosition", getSeekPosition },
-    .{ "getSize", getSize },
-    .{ "seekFromEnd", seekFromEnd },
-    .{ "seekTo", seekTo },
-    .{ "seekBy", seekBy },
-    .{ "read", read },
-    .{ "readSync", readSync },
-    .{ "lock", lock },
-    .{ "unlock", unlock },
-    .{ "sync", sync },
-    .{ "readonly", readonly },
-    .{ "close", close },
+fn before_method(self: *File, L: *VM.lua.State) !void {
+    if (!self.open)
+        return L.Zerror("File is closed");
+}
+
+const __namecall = MethodMap.CreateNamecallMap(File, TAG_FS_FILE, .{
+    .{ "write", MethodMap.WithFn(File, write, before_method) },
+    .{ "writeSync", MethodMap.WithFn(File, writeSync, before_method) },
+    .{ "append", MethodMap.WithFn(File, append, before_method) },
+    .{ "getSeekPosition", MethodMap.WithFn(File, getSeekPosition, before_method) },
+    .{ "getSize", MethodMap.WithFn(File, getSize, before_method) },
+    .{ "seekFromEnd", MethodMap.WithFn(File, seekFromEnd, before_method) },
+    .{ "seekTo", MethodMap.WithFn(File, seekTo, before_method) },
+    .{ "seekBy", MethodMap.WithFn(File, seekBy, before_method) },
+    .{ "read", MethodMap.WithFn(File, read, before_method) },
+    .{ "readSync", MethodMap.WithFn(File, readSync, before_method) },
+    .{ "lock", MethodMap.WithFn(File, lock, before_method) },
+    .{ "unlock", MethodMap.WithFn(File, unlock, before_method) },
+    .{ "sync", MethodMap.WithFn(File, sync, before_method) },
+    .{ "readonly", MethodMap.WithFn(File, readonly, before_method) },
+    .{ "close", closeAsync },
 });
 
 pub fn __dtor(L: *VM.lua.State, ptr: *File) void {
     _ = L;
     if (ptr.open)
         ptr.handle.close();
-    ptr.open = false;
 }
 
 pub inline fn load(L: *VM.lua.State) void {
     _ = L.Lnewmetatable(@typeName(@This()));
 
-    L.Zsetfieldc(-1, luau.Metamethods.index, __index); // metatable.__index
-    L.Zsetfieldc(-1, luau.Metamethods.namecall, __namecall); // metatable.__namecall
+    L.Zsetfieldfn(-1, luau.Metamethods.index, __index); // metatable.__index
+    L.Zsetfieldfn(-1, luau.Metamethods.namecall, __namecall); // metatable.__namecall
 
-    L.Zsetfieldc(-1, luau.Metamethods.metatable, "Metatable is locked");
+    L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
 
-    L.setuserdatametatable(tagged.FS_FILE, -1);
-    L.setuserdatadtor(File, tagged.FS_FILE, __dtor);
+    L.setuserdatametatable(TAG_FS_FILE);
+    L.setuserdatadtor(File, TAG_FS_FILE, __dtor);
 }
 
-pub fn pushFile(L: *VM.lua.State, file: std.fs.File, kind: FileKind) void {
-    const ptr = L.newuserdatataggedwithmetatable(File, tagged.FS_FILE);
+pub fn push(L: *VM.lua.State, file: std.fs.File, kind: FileKind) void {
+    const ptr = L.newuserdatataggedwithmetatable(File, TAG_FS_FILE);
     ptr.* = .{
         .handle = file,
         .kind = kind,
