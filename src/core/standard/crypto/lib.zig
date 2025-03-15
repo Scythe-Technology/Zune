@@ -312,7 +312,7 @@ pub fn loadLib(L: *VM.lua.State) void {
 
         L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.setuserdatadtor(LuaCryptoHasher, TAG_CRYPTO_HASHER, LuaCryptoHasher.__dtor);
-        L.setuserdatametatable(TAG_CRYPTO_HASHER, -1);
+        L.setuserdatametatable(TAG_CRYPTO_HASHER);
     }
 
     L.createtable(0, 5);
@@ -406,7 +406,11 @@ test {
 test "Crypto" {
     const TestRunner = @import("../../utils/testrunner.zig");
 
-    const testResult = try TestRunner.runTest(std.testing.allocator, @import("zune-test-files").@"crypto.test", &.{}, true);
+    const testResult = try TestRunner.runTest(
+        TestRunner.newTestFile("standard/crypto/init.test.luau"),
+        &.{},
+        true,
+    );
 
     try std.testing.expect(testResult.failed == 0);
     try std.testing.expect(testResult.total > 0);

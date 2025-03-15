@@ -137,6 +137,8 @@ pub fn build(b: *std.Build) !void {
         .SQLITE_ENABLE_FTS3_PARENTHESIS = true,
     });
 
+    const no_bin = b.option(bool, "no-bin", "skip emitting binary") orelse false;
+
     const prebuild_step = b.step("prebuild", "Setup project for build");
 
     try prebuild(b, prebuild_step);
@@ -177,10 +179,14 @@ pub fn build(b: *std.Build) !void {
     exe.root_module.addImport("regex", dep_pcre2.module("zpcre2"));
     exe.root_module.addImport("datetime", dep_datetime.module("zdt"));
     exe.root_module.addImport("toml", dep_toml.module("tomlz"));
-    exe.root_module.addImport("tinycc", dep_tinycc.module("tinycc"));
     exe.root_module.addImport("sqlite", dep_sqlite.module("z-sqlite"));
+    exe.root_module.addImport("tinycc", dep_tinycc.module("tinycc"));
 
-    b.installArtifact(exe);
+    if (no_bin) {
+        b.getInstallStep().dependOn(&exe.step);
+    } else {
+        b.installArtifact(exe);
+    }
 
     const run_cmd = b.addRunArtifact(exe);
 
@@ -222,10 +228,6 @@ pub fn build(b: *std.Build) !void {
 
     exe_unit_tests.root_module.addOptions("zune-info", zune_info);
 
-    exe_unit_tests.root_module.addImport("zune-test-files", b.addModule("test-files", .{
-        .root_source_file = b.path("test/files.zig"),
-    }));
-
     exe_unit_tests.root_module.addImport("xev", dep_xev.module("xev"));
     exe_unit_tests.root_module.addImport("yaml", dep_yaml.module("yaml"));
     exe_unit_tests.root_module.addImport("lz4", dep_lz4.module("lz4"));
@@ -235,8 +237,8 @@ pub fn build(b: *std.Build) !void {
     exe_unit_tests.root_module.addImport("regex", dep_pcre2.module("zpcre2"));
     exe_unit_tests.root_module.addImport("datetime", dep_datetime.module("zdt"));
     exe_unit_tests.root_module.addImport("toml", dep_toml.module("tomlz"));
-    exe_unit_tests.root_module.addImport("tinycc", dep_tinycc.module("tinycc"));
     exe_unit_tests.root_module.addImport("sqlite", dep_sqlite.module("z-sqlite"));
+    exe_unit_tests.root_module.addImport("tinycc", dep_tinycc.module("tinycc"));
 
     exe_unit_tests.step.dependOn(&install_test_sample_dylib.step);
 

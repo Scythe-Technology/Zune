@@ -150,6 +150,7 @@ fn SleepOrder(_: void, a: SleepingThread, b: SleepingThread) std.math.Order {
 
 const SleepingQueue = std.PriorityQueue(SleepingThread, void, SleepOrder);
 const DeferredLinkedList = std.DoublyLinkedList(DeferredThread);
+pub const CompletionLinkedList = std.DoublyLinkedList(xev.Dynamic.Completion);
 
 state: *VM.lua.State,
 allocator: std.mem.Allocator,

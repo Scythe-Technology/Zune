@@ -17,6 +17,12 @@ const TAG_FFI_POINTER = tagged.Tags.get("FFI_POINTER").?;
 const TAG_FFI_DATATYPE = tagged.Tags.get("FFI_DATATYPE").?;
 
 pub const LIB_NAME = "ffi";
+pub fn PlatformSupported() bool {
+    return switch (comptime builtin.os.tag) {
+        .linux, .macos, .windows => true,
+        else => false,
+    };
+}
 
 const cpu_endian = builtin.cpu.arch.endian();
 
@@ -2104,7 +2110,7 @@ pub fn loadLib(L: *VM.lua.State) void {
 
         L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.setuserdatadtor(LuaDataType, TAG_FFI_DATATYPE, LuaDataType.__dtor);
-        L.setuserdatametatable(TAG_FFI_DATATYPE, -1);
+        L.setuserdatametatable(TAG_FFI_DATATYPE);
     }
     {
         _ = L.Lnewmetatable(LuaPointer.META);
@@ -2115,7 +2121,7 @@ pub fn loadLib(L: *VM.lua.State) void {
 
         L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
         L.setuserdatadtor(LuaPointer, TAG_FFI_POINTER, LuaPointer.__dtor);
-        L.setuserdatametatable(TAG_FFI_POINTER, -1);
+        L.setuserdatametatable(TAG_FFI_POINTER);
     }
 
     L.createtable(0, 17);
@@ -2149,7 +2155,7 @@ pub fn loadLib(L: *VM.lua.State) void {
     L.setreadonly(-1, true);
     L.setfield(-2, "types");
 
-    switch (builtin.os.tag) {
+    switch (comptime builtin.os.tag) {
         .linux => L.pushstring("so"),
         .macos => L.pushstring("dylib"),
         .windows => L.pushstring("dll"),
@@ -2157,7 +2163,7 @@ pub fn loadLib(L: *VM.lua.State) void {
     }
     L.setfield(-2, "suffix");
 
-    switch (builtin.os.tag) {
+    switch (comptime builtin.os.tag) {
         .windows => L.pushstring(""),
         else => L.pushstring("lib"),
     }
@@ -2170,7 +2176,11 @@ pub fn loadLib(L: *VM.lua.State) void {
 test "ffi" {
     const TestRunner = @import("../utils/testrunner.zig");
 
-    const testResult = try TestRunner.runTest(std.testing.allocator, @import("zune-test-files").@"ffi.test", &.{}, true);
+    const testResult = try TestRunner.runTest(
+        TestRunner.newTestFile("standard/ffi/init.test.luau"),
+        &.{},
+        true,
+    );
 
     try std.testing.expect(testResult.failed == 0);
     try std.testing.expect(testResult.total >= 0);

@@ -17,10 +17,14 @@ test {
 }
 
 test "Std" {
-    const ztesting = @import("std").testing;
+    const std = @import("std");
     const TestRunner = @import("../utils/testrunner.zig");
 
-    const testResult = try TestRunner.runTest(ztesting.allocator, @import("zune-test-files").@"lib.std.test", &.{}, true);
+    const testResult = try TestRunner.runTest(
+        TestRunner.newTestFile("lib/std.test.luau"),
+        &.{},
+        true,
+    );
 
-    try ztesting.expect(testResult.failed == 0);
+    try std.testing.expect(testResult.failed == 0);
 }

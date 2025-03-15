@@ -215,6 +215,10 @@ fn internal_metadata_table(L: *VM.lua.State, metadata: fs.File.Metadata, isSymli
 }
 
 fn fs_metadata(L: *VM.lua.State) !i32 {
+    switch (comptime builtin.os.tag) {
+        .windows, .linux, .macos => {},
+        else => return error.UnsupportedPlatform,
+    }
     const path = L.Lcheckstring(1);
     const allocator = luau.getallocator(L);
     const buf = try allocator.alloc(u8, 4096);
@@ -533,6 +537,10 @@ fn fs_createFile(L: *VM.lua.State) !i32 {
 }
 
 fn fs_watch(L: *VM.lua.State) !i32 {
+    switch (comptime builtin.os.tag) {
+        .windows, .linux, .macos => {},
+        else => return error.UnsupportedPlatform,
+    }
     const scheduler = Scheduler.getScheduler(L);
     const path = L.Lcheckstring(1);
     try L.Zchecktype(2, .Function);
@@ -624,7 +632,11 @@ test {
 test "Filesystem" {
     const TestRunner = @import("../../utils/testrunner.zig");
 
-    const testResult = try TestRunner.runTest(std.testing.allocator, @import("zune-test-files").@"fs.test", &.{}, true);
+    const testResult = try TestRunner.runTest(
+        TestRunner.newTestFile("standard/fs.test.luau"),
+        &.{},
+        true,
+    );
 
     try std.testing.expect(testResult.failed == 0);
     try std.testing.expect(testResult.total > 0);

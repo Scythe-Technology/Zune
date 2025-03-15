@@ -14,6 +14,12 @@ const VM = luau.VM;
 const File = @This();
 
 const TAG_FS_FILE = tagged.Tags.get("FS_FILE").?;
+pub fn PlatformSupported() bool {
+    return switch (comptime builtin.os.tag) {
+        .linux, .macos, .windows, .wasi => true,
+        else => false,
+    };
+}
 
 pub const FileKind = enum {
     File,
@@ -400,6 +406,10 @@ fn readSync(self: *File, L: *VM.lua.State) !i32 {
 }
 
 fn lock(self: *File, L: *VM.lua.State) !i32 {
+    switch (comptime builtin.os.tag) {
+        .windows, .linux, .macos => {},
+        else => return error.UnsupportedPlatform,
+    }
     var lockOpt: std.fs.File.Lock = .exclusive;
     if (L.typeOf(2) == .String) {
         const lockType = L.tostring(2) orelse unreachable;
@@ -443,6 +453,10 @@ fn lock(self: *File, L: *VM.lua.State) !i32 {
 }
 
 fn unlock(self: *File, L: *VM.lua.State) !i32 {
+    switch (comptime builtin.os.tag) {
+        .windows, .linux, .macos => {},
+        else => return error.UnsupportedPlatform,
+    }
     _ = L;
     self.handle.unlock();
     return 0;
@@ -455,6 +469,10 @@ fn sync(self: *File, _: *VM.lua.State) !i32 {
 }
 
 fn readonly(self: *File, L: *VM.lua.State) !i32 {
+    switch (comptime builtin.os.tag) {
+        .windows, .linux, .macos => {},
+        else => return error.UnsupportedPlatform,
+    }
     const meta = try self.handle.metadata();
     var permissions = meta.permissions();
     const enabled = if (L.typeOf(2) != .Boolean) {
@@ -555,7 +573,7 @@ pub inline fn load(L: *VM.lua.State) void {
 
     L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
 
-    L.setuserdatametatable(TAG_FS_FILE, -1);
+    L.setuserdatametatable(TAG_FS_FILE);
     L.setuserdatadtor(File, TAG_FS_FILE, __dtor);
 }
 

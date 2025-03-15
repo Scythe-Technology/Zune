@@ -1,6 +1,7 @@
 const std = @import("std");
 const luau = @import("luau");
 const time = @import("datetime");
+const builtin = @import("builtin");
 
 const parse = @import("parse.zig");
 
@@ -11,6 +12,25 @@ const luaHelper = @import("../../utils/luahelper.zig");
 const VM = luau.VM;
 
 pub const LIB_NAME = "datetime";
+pub fn PlatformSupported() bool {
+    switch (comptime builtin.cpu.arch) {
+        .x86_64,
+        .aarch64,
+        .aarch64_be,
+        .riscv64,
+        .wasm64,
+        .powerpc64,
+        .powerpc64le,
+        .loongarch64,
+        .mips64,
+        .mips64el,
+        .spirv64,
+        .sparc64,
+        .nvptx64,
+        => return true,
+        else => return false,
+    }
+}
 
 const LuaDatetime = struct {
     pub const META = "datetime_instance";
@@ -282,7 +302,11 @@ test {
 test "Datetime" {
     const TestRunner = @import("../../utils/testrunner.zig");
 
-    const testResult = try TestRunner.runTest(std.testing.allocator, @import("zune-test-files").@"datetime.test", &.{}, true);
+    const testResult = try TestRunner.runTest(
+        TestRunner.newTestFile("standard/datetime.test.luau"),
+        &.{},
+        true,
+    );
 
     try std.testing.expect(testResult.failed == 0);
     try std.testing.expect(testResult.total > 0);

@@ -295,7 +295,7 @@ pub const FileSystemWatcher = struct {
             .allocator = allocator,
             .dir = dir,
             .path = pathname,
-            .backend = switch (builtin.os.tag) {
+            .backend = switch (comptime builtin.os.tag) {
                 .ios, .macos, .tvos, .visionos, .watchos => .{ .darwin = .{} },
                 .windows => .{ .windows = .{} },
                 .linux => .{ .linux = .{} },
@@ -305,7 +305,7 @@ pub const FileSystemWatcher = struct {
     }
 
     pub fn start(self: *FileSystemWatcher) !void {
-        switch (builtin.os.tag) {
+        switch (comptime builtin.os.tag) {
             .linux => try self.startLinux(),
             .ios, .macos, .tvos, .visionos, .watchos => try self.startDarwin(),
             .windows => try self.startWindows(),
@@ -314,7 +314,7 @@ pub const FileSystemWatcher = struct {
     }
 
     pub fn next(self: *FileSystemWatcher) !?WatchInfo {
-        switch (builtin.os.tag) {
+        switch (comptime builtin.os.tag) {
             .linux => return self.nextLinux(),
             .ios, .macos, .tvos, .visionos, .watchos => return self.nextDarwin(),
             .windows => return self.nextWindows(),
@@ -636,7 +636,7 @@ pub const FileSystemWatcher = struct {
     }
 
     pub fn deinit(self: *FileSystemWatcher) void {
-        switch (builtin.os.tag) {
+        switch (comptime builtin.os.tag) {
             .linux => self.backend.linux.deinit(),
             .ios, .macos, .tvos, .visionos, .watchos => self.backend.darwin.deinit(self.allocator),
             else => {},

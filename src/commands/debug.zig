@@ -1,5 +1,6 @@
 const std = @import("std");
 const luau = @import("luau");
+const builtin = @import("builtin");
 
 const command = @import("lib.zig");
 
@@ -27,7 +28,16 @@ pub fn DebuggerExit() void {
     SigInt();
 }
 
+pub fn PlatformSupported() bool {
+    return switch (comptime builtin.os.tag) {
+        .linux, .macos, .windows => true,
+        else => false,
+    };
+}
+
 fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    if (comptime !PlatformSupported())
+        return error.PlatformNotSupported;
     var history = try History.init(allocator, ".zune/.debug_history");
     errdefer history.deinit();
 

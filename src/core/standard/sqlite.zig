@@ -424,7 +424,7 @@ pub fn loadLib(L: *VM.lua.State) void {
         L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaDatabase.__namecall); // metatable.__namecall
 
         L.setuserdatadtor(LuaDatabase, TAG_SQLITE_DATABASE, LuaDatabase.__dtor);
-        L.setuserdatametatable(TAG_SQLITE_DATABASE, -1);
+        L.setuserdatametatable(TAG_SQLITE_DATABASE);
     }
     {
         _ = L.Lnewmetatable(LuaStatement.META);
@@ -433,7 +433,7 @@ pub fn loadLib(L: *VM.lua.State) void {
         L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaStatement.__namecall); // metatable.__namecall
 
         L.setuserdatadtor(LuaStatement, TAG_SQLITE_STATEMENT, LuaStatement.__dtor);
-        L.setuserdatametatable(TAG_SQLITE_STATEMENT, -1);
+        L.setuserdatametatable(TAG_SQLITE_STATEMENT);
     }
 
     L.createtable(0, 1);
@@ -447,7 +447,11 @@ pub fn loadLib(L: *VM.lua.State) void {
 test "SQLite" {
     const TestRunner = @import("../utils/testrunner.zig");
 
-    const testResult = try TestRunner.runTest(std.testing.allocator, @import("zune-test-files").@"sqlite.test", &.{}, true);
+    const testResult = try TestRunner.runTest(
+        TestRunner.newTestFile("standard/sqlite/init.test.luau"),
+        &.{},
+        true,
+    );
 
     try std.testing.expect(testResult.failed == 0);
     try std.testing.expect(testResult.total > 0);

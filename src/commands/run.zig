@@ -113,7 +113,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
     }
 
     const fileContent = maybeFileContent orelse std.debug.panic("FileNotFound", .{});
-    const fileName = maybeFileName orelse std.debug.panic("FileNotFound", .{});
+    const filePath = maybeFileName orelse std.debug.panic("FileNotFound", .{});
 
     if (fileContent.len == 0) {
         std.debug.print("File is empty: {s}\n", .{run_args[0]});
@@ -139,21 +139,15 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     Zune.resolvers_require.load_require(ML);
 
-    const cwdDirPath = dir.realpathAlloc(allocator, ".") catch return error.FileNotFound;
-    defer allocator.free(cwdDirPath);
-
-    const moduleRelativeName = try std.fs.path.relative(allocator, cwdDirPath, fileName);
-    defer allocator.free(moduleRelativeName);
-
     Engine.setLuaFileContext(ML, .{
-        .path = fileName,
-        .name = moduleRelativeName,
+        .path = filePath,
+        .name = std.fs.path.basename(filePath),
         .source = fileContent,
     });
 
     ML.setsafeenv(VM.lua.GLOBALSINDEX, true);
 
-    const sourceNameZ = try std.mem.joinZ(allocator, "", &.{ "@", fileName });
+    const sourceNameZ = try std.mem.joinZ(allocator, "", &.{ "@", filePath });
     defer allocator.free(sourceNameZ);
 
     Engine.loadModule(ML, sourceNameZ, fileContent, null) catch |err| switch (err) {

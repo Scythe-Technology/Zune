@@ -17,15 +17,15 @@ const HttpClient = @import("httpclient.zig");
 const WebSocketClient = @import("websocket.zig");
 
 pub const LIB_NAME = "net";
+pub fn PlatformSupported() bool {
+    return switch (comptime builtin.os.tag) {
+        .linux, .macos, .windows => true,
+        else => false,
+    };
+}
 
-fn net_createSocket(L: *VM.lua.State) !i32 {
-    if (!L.isyieldable())
-        return L.Zyielderror();
-    const domain = L.Lcheckunsigned(1);
-    const flags = L.Lcheckunsigned(2);
-    const protocol = L.Lcheckunsigned(3);
-
-    const socket = switch (builtin.os.tag) {
+pub fn createSocket(domain: u32, flags: u32, protocol: u32) !std.posix.socket_t {
+    return switch (comptime builtin.os.tag) {
         .windows => socket: {
             const windows = std.os.windows;
             // NOTE: windows translates the SOCK.NONBLOCK/SOCK.CLOEXEC flags into
@@ -57,6 +57,16 @@ fn net_createSocket(L: *VM.lua.State) !i32 {
         },
         else => try std.posix.socket(domain, flags, protocol),
     };
+}
+
+fn net_createSocket(L: *VM.lua.State) !i32 {
+    if (!L.isyieldable())
+        return L.Zyielderror();
+    const domain = L.Lcheckunsigned(1);
+    const flags = L.Lcheckunsigned(2);
+    const protocol = L.Lcheckunsigned(3);
+
+    const socket = try createSocket(domain, flags, protocol);
 
     try Socket.push(L, socket);
 
@@ -142,7 +152,11 @@ test {
 test "Net" {
     const TestRunner = @import("../../utils/testrunner.zig");
 
-    const testResult = try TestRunner.runTest(std.testing.allocator, @import("zune-test-files").@"net.test", &.{}, true);
+    const testResult = try TestRunner.runTest(
+        TestRunner.newTestFile("standard/net.test.luau"),
+        &.{},
+        true,
+    );
 
     try std.testing.expect(testResult.failed == 0);
     try std.testing.expect(testResult.total > 0);

@@ -183,7 +183,7 @@ pub fn loadLib(L: *VM.lua.State) void {
         L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaRegex.__namecall); // metatable.__namecall
 
         L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
-        L.setuserdatametatable(TAG_REGEX_COMPILED, -1);
+        L.setuserdatametatable(TAG_REGEX_COMPILED);
         L.setuserdatadtor(*pcre2.Code, TAG_REGEX_COMPILED, LuaRegex.__dtor);
     }
 
@@ -198,7 +198,11 @@ pub fn loadLib(L: *VM.lua.State) void {
 test "Regex" {
     const TestRunner = @import("../utils/testrunner.zig");
 
-    const testResult = try TestRunner.runTest(std.testing.allocator, @import("zune-test-files").@"regex.test", &.{}, true);
+    const testResult = try TestRunner.runTest(
+        TestRunner.newTestFile("standard/regex.test.luau"),
+        &.{},
+        true,
+    );
 
     try std.testing.expect(testResult.failed == 0);
     try std.testing.expect(testResult.total > 0);

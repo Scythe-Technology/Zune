@@ -263,7 +263,11 @@ pub fn loadLib(L: *VM.lua.State, enabled: bool) void {
 test "Test" {
     const TestRunner = @import("../utils/testrunner.zig");
 
-    const testResult = try TestRunner.runTest(std.testing.allocator, @import("zune-test-files").@"testing.test", &.{}, false);
+    const testResult = try TestRunner.runTest(
+        TestRunner.newTestFile("standard/testing.test.luau"),
+        &.{},
+        false,
+    );
 
     try std.testing.expect(testResult.failed == 3);
     try std.testing.expect(testResult.total == 11);

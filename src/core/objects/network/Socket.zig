@@ -14,14 +14,18 @@ const VM = luau.VM;
 const Socket = @This();
 
 const TAG_NET_SOCKET = tagged.Tags.get("NET_SOCKET").?;
-
-const CompletionLinkedList = std.DoublyLinkedList(xev.Completion);
+pub fn PlatformSupported() bool {
+    return switch (comptime builtin.os.tag) {
+        .linux, .macos, .windows => true,
+        else => false,
+    };
+}
 
 const SocketRef = luaHelper.Ref(*Socket);
 
 socket: std.posix.socket_t,
 open: bool = true,
-list: *CompletionLinkedList,
+list: *Scheduler.CompletionLinkedList,
 
 fn closesocket(socket: std.posix.socket_t) void {
     switch (comptime builtin.os.tag) {
@@ -59,12 +63,12 @@ pub fn AddressToString(buf: []u8, address: std.net.Address) []const u8 {
 }
 
 const AsyncSendContext = struct {
-    completion: CompletionLinkedList.Node = .{
+    completion: Scheduler.CompletionLinkedList.Node = .{
         .data = .{},
     },
     ref: Scheduler.ThreadRef,
     buffer: []u8,
-    list: *CompletionLinkedList,
+    list: *Scheduler.CompletionLinkedList,
 
     const This = @This();
 
@@ -104,13 +108,13 @@ const AsyncSendContext = struct {
 };
 
 const AsyncSendMsgContext = struct {
-    completion: CompletionLinkedList.Node = .{
+    completion: Scheduler.CompletionLinkedList.Node = .{
         .data = .{},
     },
     state: xev.UDP.State,
     ref: Scheduler.ThreadRef,
     buffer: []u8,
-    list: *CompletionLinkedList,
+    list: *Scheduler.CompletionLinkedList,
 
     const This = @This();
 
@@ -151,12 +155,12 @@ const AsyncSendMsgContext = struct {
 };
 
 const AsyncRecvContext = struct {
-    completion: CompletionLinkedList.Node = .{
+    completion: Scheduler.CompletionLinkedList.Node = .{
         .data = .{},
     },
     ref: Scheduler.ThreadRef,
     buffer: []u8,
-    list: *CompletionLinkedList,
+    list: *Scheduler.CompletionLinkedList,
 
     const This = @This();
 
@@ -197,13 +201,13 @@ const AsyncRecvContext = struct {
 };
 
 const AsyncRecvMsgContext = struct {
-    completion: CompletionLinkedList.Node = .{
+    completion: Scheduler.CompletionLinkedList.Node = .{
         .data = .{},
     },
     state: xev.UDP.State,
     ref: Scheduler.ThreadRef,
     buffer: []u8,
-    list: *CompletionLinkedList,
+    list: *Scheduler.CompletionLinkedList,
 
     const This = @This();
 
@@ -252,11 +256,11 @@ const AsyncRecvMsgContext = struct {
 };
 
 const AsyncAcceptContext = struct {
-    completion: CompletionLinkedList.Node = .{
+    completion: Scheduler.CompletionLinkedList.Node = .{
         .data = .{},
     },
     ref: Scheduler.ThreadRef,
-    list: *CompletionLinkedList,
+    list: *Scheduler.CompletionLinkedList,
 
     const This = @This();
 
@@ -304,11 +308,11 @@ const AsyncAcceptContext = struct {
 };
 
 const AsyncConnectContext = struct {
-    completion: CompletionLinkedList.Node = .{
+    completion: Scheduler.CompletionLinkedList.Node = .{
         .data = .{},
     },
     ref: Scheduler.ThreadRef,
-    list: *CompletionLinkedList,
+    list: *Scheduler.CompletionLinkedList,
 
     const This = @This();
 
@@ -721,14 +725,14 @@ pub inline fn load(L: *VM.lua.State) void {
 
     L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
 
-    L.setuserdatametatable(TAG_NET_SOCKET, -1);
+    L.setuserdatametatable(TAG_NET_SOCKET);
     L.setuserdatadtor(Socket, TAG_NET_SOCKET, __dtor);
 }
 
 pub fn push(L: *VM.lua.State, value: std.posix.socket_t) !void {
     const allocator = luau.getallocator(L);
     const ptr = L.newuserdatataggedwithmetatable(Socket, TAG_NET_SOCKET);
-    const list = try allocator.create(CompletionLinkedList);
+    const list = try allocator.create(Scheduler.CompletionLinkedList);
     list.* = .{};
     ptr.* = .{
         .socket = value,

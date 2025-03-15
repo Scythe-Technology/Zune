@@ -11,7 +11,19 @@ const VM = luau.VM;
 
 const zune_test_files = @import("zune-test-files");
 
-pub fn runTest(allocator: std.mem.Allocator, comptime testFile: zune_test_files.File, args: []const []const u8, comptime stdOutEnabled: bool) !Zune.corelib.testing.TestResult {
+const TestFile = struct {
+    path: []const u8,
+};
+
+pub fn newTestFile(comptime path: []const u8) TestFile {
+    return TestFile{
+        .path = "test/" ++ path,
+    };
+}
+
+pub fn runTest(comptime testFile: TestFile, args: []const []const u8, comptime stdOutEnabled: bool) !Zune.corelib.testing.TestResult {
+    const allocator = std.testing.allocator;
+
     switch (comptime builtin.os.tag) {
         .linux => try xev.Dynamic.detect(), // multiple backends
         else => {},
@@ -58,6 +70,9 @@ pub fn runTest(allocator: std.mem.Allocator, comptime testFile: zune_test_files.
     const testFileAbsolute = try cwd_dir.realpathAlloc(allocator, testFile.path);
     defer allocator.free(testFileAbsolute);
 
+    const content = try cwd_dir.readFileAlloc(allocator, testFileAbsolute, std.math.maxInt(usize));
+    defer allocator.free(content);
+
     try Engine.prepAsync(L, &scheduler, .{
         .args = args,
     }, .{
@@ -75,7 +90,7 @@ pub fn runTest(allocator: std.mem.Allocator, comptime testFile: zune_test_files.
     Engine.setLuaFileContext(ML, .{
         .path = testFileAbsolute,
         .name = testFile.path,
-        .source = testFile.content,
+        .source = content,
     });
 
     ML.setsafeenv(VM.lua.GLOBALSINDEX, true);
@@ -83,7 +98,7 @@ pub fn runTest(allocator: std.mem.Allocator, comptime testFile: zune_test_files.
     const sourceNameZ = try std.mem.joinZ(allocator, "", &.{ "@", testFileAbsolute });
     defer allocator.free(sourceNameZ);
 
-    Engine.loadModule(ML, sourceNameZ, testFile.content, .{
+    Engine.loadModule(ML, sourceNameZ, content, .{
         .debug_level = 2,
     }) catch |err| switch (err) {
         error.Syntax => {
