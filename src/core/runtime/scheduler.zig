@@ -454,8 +454,8 @@ pub fn run(self: *Self, comptime mode: Zune.RunMode) void {
     var timer_completion: xev.Dynamic.Completion = .{};
     while (self.hasPendingWork()) {
         const now = VM.lperf.clock();
-        if (self.awaits.items.len > 0 or self.tasks.items.len > 0) {
-            // TODO: change `awaits` and `tasks` design to go on the event loop stack.
+        if (self.tasks.items.len > 0 or self.deferred.len > 0) {
+            // TODO: change `tasks` design to go on the event loop stack.
             self.timer.run(&self.loop, &timer_completion, 0, void, null, timerNoopCallback);
         } else if (self.sleeping.peek()) |lowest| {
             self.timer.run(
