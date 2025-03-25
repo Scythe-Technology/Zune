@@ -8,7 +8,7 @@ local test = testing.test;
 
 describe("Regex", function()
     test("match", function()
-        local re = regex.new("a(b+)c");
+        local re = regex.create("a(b+)c");
 
         expect(re:match("abbc")).toBe(expect.similar({
             { string = "abbc", index = 1 },
@@ -19,7 +19,7 @@ describe("Regex", function()
     end)
 
     test("search", function()
-        local re = regex.new("a(b+)c");
+        local re = regex.create("a(b+)c");
 
         expect(re:search("abbc")).toBe(expect.similar({
             { string = "abbc", index = 1 },
@@ -34,7 +34,7 @@ describe("Regex", function()
 
     describe("Captures", function()
         test("Basic", function()
-            local re = regex.new("a(b+)c");
+            local re = regex.create("a(b+)c");
 
             expect(re:captures("abbc")).toBe(expect.similar({
                 {
@@ -51,7 +51,7 @@ describe("Regex", function()
             }));
         end)
         test("Global Flag", function()
-            local re = regex.new("a(b+)c");
+            local re = regex.create("a(b+)c");
 
             expect(re:captures("abbc", true)).toBe(expect.similar({
                 {
@@ -72,7 +72,7 @@ describe("Regex", function()
             }));
         end)
         test("Multiline Flag", function()
-            local re = regex.new("a(b+)c", 'm');
+            local re = regex.create("a(b+)c", 'm');
 
             expect(re:captures("abbc")).toBe(expect.similar({
                 {
@@ -89,7 +89,7 @@ describe("Regex", function()
             }));
         end)
         test("CaseInsensitive Flag", function()
-            local re = regex.new("a(b+)c", 'i');
+            local re = regex.create("a(b+)c", 'i');
 
             expect(re:captures("abbc")).toBe(expect.similar({
                 {
@@ -106,7 +106,7 @@ describe("Regex", function()
             }));
         end)
         test("Unicode Flag", function()
-            local re = regex.new("a(🍕+)c", 'u');
+            local re = regex.create("a(🍕+)c", 'u');
 
             expect(re:captures("a🍕🍕c")).toBe(expect.similar({
                 {
@@ -123,7 +123,7 @@ describe("Regex", function()
             }));
         end)
         test("Global/CaseInsensitive Flag", function()
-            local re = regex.new("a(b+)c", 'i');
+            local re = regex.create("a(b+)c", 'i');
 
             expect(re:captures("abbc", true)).toBe(expect.similar({
                 {
@@ -155,7 +155,7 @@ describe("Regex", function()
             }));
         end)
         test("Global/Multiline Flag", function()
-            local re = regex.new("a(b+)c", 'm');
+            local re = regex.create("a(b+)c", 'm');
 
             expect(re:captures("abbc", true)).toBe(expect.similar({
                 {
@@ -184,7 +184,7 @@ describe("Regex", function()
             }));
         end)
         test("Global/Multiline/CaseInsensitive Flag", function()
-            local re = regex.new("a(b+)c", 'mi');
+            local re = regex.create("a(b+)c", 'mi');
 
             expect(re:captures("abbc", true)).toBe(expect.similar({
                 {
@@ -234,7 +234,7 @@ describe("Regex", function()
     end)
 
     test("isMatch", function()
-        local re = regex.new("a(b+)c");
+        local re = regex.create("a(b+)c");
 
         expect(re:isMatch("abbc")).toBe(true);
         expect(re:isMatch("  abbc")).toBe(false);
@@ -242,19 +242,19 @@ describe("Regex", function()
     end)
 
     test("Format", function()
-        local re = regex.new("(b+)");
+        local re = regex.create("(b+)");
 
         expect(re:format("abbc", "1=$1")).toBe("1=bb");
     end)
 
     test("Format Extended", function()
-        local re = regex.new("(B+)");
+        local re = regex.create("(B+)");
 
         expect(re:format("aBBc", "1=\\L$1")).toBe("1=bb");
     end)
 
     test("Replace", function()
-        local re = regex.new("b+");
+        local re = regex.create("b+");
 
         expect(re:replace("abbc", "")).toBe("ac");
         expect(re:replace("  abbc", "")).toBe("  ac");
@@ -263,7 +263,7 @@ describe("Regex", function()
     end)
 
     test("ReplaceAll", function()
-        local re = regex.new("b+");
+        local re = regex.create("b+");
 
         expect(re:replaceAll("abbc", "")).toBe("ac");
         expect(re:replaceAll("  abbc", "")).toBe("  ac");
@@ -272,7 +272,7 @@ describe("Regex", function()
     end)
 
     test("Replace CaseInsensitive", function()
-        local re = regex.new("b+", 'i');
+        local re = regex.create("b+", 'i');
 
         expect(re:replace("ABBC", "")).toBe("AC");
         expect(re:replace("  ABBC", "")).toBe("  AC");
@@ -281,7 +281,7 @@ describe("Regex", function()
     end)
 
     test("ReplaceAll CaseInsensitive", function()
-        local re = regex.new("b+", 'i');
+        local re = regex.create("b+", 'i');
 
         expect(re:replaceAll("ABBC", "")).toBe("AC");
         expect(re:replaceAll("  ABBC", "")).toBe("  AC");

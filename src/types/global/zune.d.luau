@@ -2109,7 +2109,7 @@ type RegexLib = {
         @param pattern Pattern to use
         @param flags Flags to use
     ]]
-    new: (pattern: string, flags: string?) -> Regex,
+    create: (pattern: string, flags: string?) -> Regex,
 }
 --[======[ Regex ]======]--
 

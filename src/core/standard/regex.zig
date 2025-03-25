@@ -155,7 +155,7 @@ const LuaRegex = struct {
     }
 };
 
-fn regex_new(L: *VM.lua.State) !i32 {
+fn regex_create(L: *VM.lua.State) !i32 {
     const flags = L.tolstring(2) orelse "";
 
     if (flags.len > 2)
@@ -189,7 +189,7 @@ pub fn loadLib(L: *VM.lua.State) void {
 
     L.createtable(0, 1);
 
-    L.Zsetfieldfn(-1, "new", regex_new);
+    L.Zsetfieldfn(-1, "create", regex_create);
 
     L.setreadonly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);
