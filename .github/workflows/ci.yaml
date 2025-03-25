@@ -6,6 +6,8 @@ on:
     branches:
       - master
   push:
+    branches:
+      - master
 
 jobs:
   fmt:
