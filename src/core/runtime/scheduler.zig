@@ -127,10 +127,10 @@ const AsyncIoThread = struct {
 
 const FrameKind = enum {
     None,
+    EventLoop,
     Awaiting,
     Task,
     Sleeping,
-    AsyncIO,
     Deferred,
 };
 
@@ -163,7 +163,6 @@ loop: xev.Dynamic.Loop,
 @"async": xev.Dynamic.Async,
 thread_pool: *xev.ThreadPool,
 async_tasks: usize = 0,
-active_incr: u32 = 0,
 
 frame: FrameKind = .None,
 
@@ -366,14 +365,7 @@ pub fn completeAsync(
     data: anytype,
 ) void {
     defer self.async_tasks -= 1;
-    defer self.active_incr += 1;
     self.allocator.destroy(data);
-}
-
-pub fn addAsyncTick(
-    self: *Self,
-) void {
-    defer self.active_incr += 1;
 }
 
 pub fn createAsyncCtx(
@@ -382,7 +374,6 @@ pub fn createAsyncCtx(
 ) std.mem.Allocator.Error!*T {
     const ptr = try self.allocator.create(T);
     defer self.async_tasks += 1;
-    defer self.active_incr += 1;
     return ptr;
 }
 
@@ -442,10 +433,46 @@ pub fn cancelThread(self: *Self, thread: *VM.lua.State) void {
     }
 }
 
+inline fn hasPendingWork(self: *Self) bool {
+    return self.sleeping.items.len > 0 or
+        self.deferred.len > 0 or
+        self.tasks.items.len > 0 or
+        self.awaits.items.len > 0 or
+        self.async_tasks > 0;
+}
+
+fn timerNoopCallback(
+    _: ?*void,
+    _: *xev.Dynamic.Loop,
+    _: *xev.Dynamic.Completion,
+    _: xev.Dynamic.Timer.RunError!void,
+) xev.CallbackAction {
+    return .disarm;
+}
+
 pub fn run(self: *Self, comptime mode: Zune.RunMode) void {
-    var active: usize = 0;
-    while ((self.sleeping.items.len > 0 or self.deferred.len > 0 or self.tasks.items.len > 0 or self.awaits.items.len > 0 or self.async_tasks > 0)) {
+    var timer_completion: xev.Dynamic.Completion = .{};
+    while (self.hasPendingWork()) {
         const now = VM.lperf.clock();
+        if (self.awaits.items.len > 0 or self.tasks.items.len > 0) {
+            // TODO: change `awaits` and `tasks` design to go on the event loop stack.
+            self.timer.run(&self.loop, &timer_completion, 0, void, null, timerNoopCallback);
+        } else if (self.sleeping.peek()) |lowest| {
+            self.timer.run(
+                &self.loop,
+                &timer_completion,
+                @intFromFloat(@max(lowest.wake - now, 0) * std.time.ms_per_s),
+                void,
+                null,
+                timerNoopCallback,
+            );
+        }
+        {
+            self.frame = .EventLoop;
+            self.loop.run(.once) catch |err| {
+                std.debug.print("EventLoop Error: {}\n", .{err});
+            };
+        }
         if (self.awaits.items.len > 0) {
             self.frame = .Awaiting;
             var i = self.awaits.items.len;
@@ -459,7 +486,6 @@ pub fn run(self: *Self, comptime mode: Zune.RunMode) void {
                     const data = awaiting.data;
                     awaiting.resumeFn(data, state, self);
                     awaiting.virtualDtor(data, state, self);
-                    active += 1;
                 }
             }
         }
@@ -471,12 +497,11 @@ pub fn run(self: *Self, comptime mode: Zune.RunMode) void {
                 const task = self.tasks.items[i];
                 switch (task.virtualFn(task.data, task.state.value, self)) {
                     .Continue => {},
-                    .ContinueFast => active += 1,
+                    .ContinueFast => {},
                     .Stop => {
                         defer task.state.deref();
                         _ = self.tasks.orderedRemove(i);
                         task.virtualDtor(task.data, task.state.value, self);
-                        active += 1;
                     },
                 }
             }
@@ -505,20 +530,8 @@ pub fn run(self: *Self, comptime mode: Zune.RunMode) void {
                         slept.from,
                         args,
                     ) catch {};
-                    active += 1;
                 } else break;
             }
-        }
-        jmp: {
-            self.frame = .AsyncIO;
-            if (self.async_tasks > 0) {
-                self.loop.run(.no_wait) catch |err| {
-                    std.debug.print("AsyncIO Error: {}\n", .{err});
-                    break :jmp;
-                };
-            }
-            active += self.active_incr;
-            self.active_incr = 0;
         }
         if (self.deferred.len > 0) {
             self.frame = .Deferred;
@@ -535,15 +548,9 @@ pub fn run(self: *Self, comptime mode: Zune.RunMode) void {
                     deferred.from,
                     deferred.args,
                 ) catch {};
-                active += 1;
             }
         }
         self.frame = .None;
-        if (active >= 5000)
-            active = 5000;
-        if (active == 0) {
-            std.time.sleep(std.time.ns_per_ms * 2);
-        } else active -= 1;
         if (comptime mode == .Test)
             _ = self.state.gc(.Collect, 0);
     }

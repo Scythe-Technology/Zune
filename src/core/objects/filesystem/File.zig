@@ -146,7 +146,6 @@ pub const AsyncReadContext = struct {
             self.array.shrinkAndFree(self.limit);
         self.array.expandToCapacity();
 
-        defer scheduler.addAsyncTick();
         file.pread(
             &scheduler.loop,
             completion,
@@ -285,7 +284,6 @@ pub const AsyncWriteContext = struct {
             return self.end(L, scheduler, file, null);
         }
 
-        defer scheduler.addAsyncTick();
         file.write(
             &scheduler.loop,
             &self.completion,
