@@ -77,7 +77,7 @@ fn fs_readFileAsync(L: *VM.lua.State) !i32 {
     };
     errdefer file.close();
 
-    return File.AsyncReadContext.queue(L, file, useBuffer, 1024, luaHelper.MAX_LUAU_SIZE, true);
+    return File.AsyncReadContext.queue(L, file, useBuffer, 1024, luaHelper.MAX_LUAU_SIZE, true, .File);
 }
 
 fn fs_readFileSync(L: *VM.lua.State) !i32 {

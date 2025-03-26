@@ -1,4 +1,5 @@
 const std = @import("std");
+const xev = @import("xev").Dynamic;
 const luau = @import("luau");
 const builtin = @import("builtin");
 
@@ -7,6 +8,9 @@ const Scheduler = @import("../runtime/scheduler.zig");
 const Formatter = @import("../resolvers/fmt.zig");
 
 const luaHelper = @import("../utils/luahelper.zig");
+const MethodMap = @import("../utils/method_map.zig");
+
+const File = @import("../objects/filesystem/File.zig");
 
 const Terminal = @import("../../commands/repl/Terminal.zig");
 const sysfd = @import("../utils/sysfd.zig");
@@ -240,183 +244,43 @@ fn stdio_erase(L: *VM.lua.State) !i32 {
     return 1;
 }
 
-const LuaStdIn = struct {
-    pub const META = "stdio_stdout_instance";
-
-    // Placeholder
-    pub fn __index(L: *VM.lua.State) !i32 {
-        try L.Zchecktype(1, .Userdata);
-        return 0;
-    }
-
-    pub fn __namecall(L: *VM.lua.State) !i32 {
-        const scheduler = Scheduler.getScheduler(L);
-
-        try L.Zchecktype(1, .Userdata);
-        var file_ptr = L.touserdata(std.fs.File, 1) orelse unreachable;
-        const namecall = L.namecallstr() orelse return 0;
-        // TODO: prob should switch to static string map
-        if (std.mem.eql(u8, namecall, "read")) {
-            var fds = [1]sysfd.context.pollfd{.{ .events = sysfd.context.POLLIN, .fd = file_ptr.handle, .revents = 0 }};
-
-            const poll = try sysfd.context.poll(&fds, 0);
-            if (poll < 0)
-                std.debug.panic("InternalError (Bad Poll)", .{});
-            if (poll == 0)
-                return 0;
-
-            const allocator = luau.getallocator(L);
-            const maxBytes = L.tounsigned(2) orelse 1;
-
-            var buffer = try allocator.alloc(u8, maxBytes);
-            defer allocator.free(buffer);
-
-            const amount = try file_ptr.read(buffer);
-
-            L.pushlstring(buffer[0..amount]);
-
-            return 1;
-        } else if (std.mem.eql(u8, namecall, "readAsync")) {
-            const maxBytes = L.tounsigned(2) orelse 1;
-
-            const TaskContext = struct { sysfd.context.pollfd, std.fs.File, usize };
-            return try scheduler.addSimpleTask(TaskContext, .{
-                .{ .events = sysfd.context.POLLIN, .fd = file_ptr.handle, .revents = 0 },
-                file_ptr.*,
-                maxBytes,
-            }, L, struct {
-                fn inner(ctx: *TaskContext, l: *VM.lua.State, _: *Scheduler) !i32 {
-                    const fd, const file, const max_bytes = ctx.*;
-                    var fds_poll = [1]sysfd.context.pollfd{fd};
-                    const async_poll = try sysfd.context.poll(&fds_poll, 0);
-                    if (async_poll < 0)
-                        std.debug.panic("InternalError (Bad Poll)", .{});
-                    if (async_poll == 0)
-                        return -1;
-
-                    const allocator = luau.getallocator(l);
-
-                    var buffer = try allocator.alloc(u8, max_bytes);
-                    defer allocator.free(buffer);
-
-                    const amount = try file.read(buffer);
-
-                    l.pushlstring(buffer[0..amount]);
-
-                    return 1;
-                }
-            }.inner);
-        } else return L.Zerrorf("Unknown method: {s}", .{namecall});
-        return 0;
-    }
-};
-
-const LuaStdOut = struct {
-    pub const META = "stdio_stdin_instance";
-
-    // Placeholder
-    pub fn __index(L: *VM.lua.State) !i32 {
-        try L.Zchecktype(1, .Userdata);
-        return 0;
-    }
-
-    pub fn __namecall(L: *VM.lua.State) !i32 {
-        try L.Zchecktype(1, .Userdata);
-        var file_ptr = L.touserdata(std.fs.File, 1) orelse unreachable;
-
-        const namecall = L.namecallstr() orelse return 0;
-
-        // TODO: prob should switch to static string map
-        if (std.mem.eql(u8, namecall, "write")) {
-            const string = try L.Zcheckvalue([]const u8, 2, null);
-
-            try file_ptr.writeAll(string);
-        } else return L.Zerrorf("Unknown method: {s}", .{namecall});
-        return 0;
-    }
-};
-
 const LuaTerminal = struct {
-    ptr: *Terminal,
-    pub const META = "stdio_terminal_instance";
-
-    pub fn __index(L: *VM.lua.State) !i32 {
-        try L.Zchecktype(1, .Userdata);
-        const data = L.touserdata(LuaTerminal, 1) orelse unreachable;
-        const term_ptr = data.ptr;
-        const arg = L.Lcheckstring(2);
-
-        // TODO: prob should switch to static string map
-        if (std.mem.eql(u8, arg, "isTTY")) {
-            L.pushboolean(term_ptr.stdin_istty and term_ptr.stdout_istty);
-            return 1;
-        } else if (std.mem.eql(u8, arg, "isRawMode")) {
-            L.pushboolean(term_ptr.mode == .Virtual);
-            return 1;
-        }
-
-        return 0;
+    pub fn enableRawMode(L: *VM.lua.State) !i32 {
+        const term = &(TERMINAL orelse return L.Zerror("Terminal not initialized"));
+        L.pushboolean(if (term.setRawMode()) true else |_| false);
+        return 1;
     }
 
-    pub fn __namecall(L: *VM.lua.State) !i32 {
-        try L.Zchecktype(1, .Userdata);
-        const ud_term = L.touserdata(LuaTerminal, 1) orelse unreachable;
+    pub fn restoreMode(L: *VM.lua.State) !i32 {
+        const term = &(TERMINAL orelse return L.Zerror("Terminal not initialized"));
+        L.pushboolean(if (term.restoreSettings()) true else |_| false);
+        return 1;
+    }
 
-        const term_ptr = ud_term.ptr;
+    pub fn getSize(L: *VM.lua.State) !i32 {
+        const term = &(TERMINAL orelse return L.Zerror("Terminal not initialized"));
+        const x, const y = term.getSize() catch |err| {
+            if (err == error.NotATerminal) return 0;
+            return err;
+        };
+        L.pushinteger(x);
+        L.pushinteger(y);
+        return 2;
+    }
 
-        const namecall = L.namecallstr() orelse return 0;
-
-        // TODO: prob should switch to static string map
-        if (std.mem.eql(u8, namecall, "enableRawMode")) {
-            L.pushboolean(if (term_ptr.setRawMode()) true else |_| false);
-            return 1;
-        } else if (std.mem.eql(u8, namecall, "restoreMode")) {
-            L.pushboolean(if (term_ptr.restoreSettings()) true else |_| false);
-            return 1;
-        } else if (std.mem.eql(u8, namecall, "getSize")) {
-            const x, const y = term_ptr.getSize() catch |err| {
-                if (err == error.NotATerminal) return 0;
-                return err;
-            };
-            L.pushinteger(x);
-            L.pushinteger(y);
-            return 2;
-        } else return L.Zerrorf("Unknown method: {s}", .{namecall});
-        return 0;
+    pub fn getCurrentMode(L: *VM.lua.State) !i32 {
+        const term = &(TERMINAL orelse return L.Zerror("Terminal not initialized"));
+        switch (term.mode) {
+            .Plain => L.pushstring("normal"),
+            .Virtual => L.pushstring("raw"),
+        }
+        return 1;
     }
 };
 
 pub var TERMINAL: ?Terminal = null;
 
 pub fn loadLib(L: *VM.lua.State) void {
-    {
-        _ = L.Lnewmetatable(LuaTerminal.META);
-
-        L.Zsetfieldfn(-1, luau.Metamethods.index, LuaTerminal.__index); // metatable.__index
-        L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaTerminal.__namecall); // metatable.__namecall
-
-        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
-        L.pop(1);
-    }
-    {
-        _ = L.Lnewmetatable(LuaStdIn.META);
-
-        L.Zsetfieldfn(-1, luau.Metamethods.index, LuaStdIn.__index); // metatable.__index
-        L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaStdIn.__namecall); // metatable.__namecall
-
-        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
-        L.pop(1);
-    }
-    {
-        _ = L.Lnewmetatable(LuaStdOut.META);
-
-        L.Zsetfieldfn(-1, luau.Metamethods.index, LuaStdOut.__index); // metatable.__index
-        L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaStdOut.__namecall); // metatable.__namecall
-
-        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
-        L.pop(1);
-    }
-
     L.createtable(0, 16);
 
     L.Zsetfield(-1, "MAX_READ", MAX_LUAU_SIZE);
@@ -426,40 +290,31 @@ pub fn loadLib(L: *VM.lua.State) void {
     const stdErr = std.io.getStdErr();
 
     // StdIn
-    const stdin_ptr = L.newuserdata(std.fs.File);
-    stdin_ptr.* = stdIn;
-    if (L.Lgetmetatable(LuaStdIn.META) == .Table)
-        _ = L.setmetatable(-2)
-    else
-        std.debug.panic("InternalError (Stdin Metatable not initialized)", .{});
+    File.push(L, stdIn, .Tty);
     L.setfield(-2, "stdin");
 
     // StdOut
-    const stdout_ptr = L.newuserdata(std.fs.File);
-    stdout_ptr.* = stdOut;
-    if (L.Lgetmetatable(LuaStdOut.META) == .Table)
-        _ = L.setmetatable(-2)
-    else
-        std.debug.panic("InternalError (StdOut Metatable not initialized)", .{});
+    File.push(L, stdOut, .Tty);
     L.setfield(-2, "stdout");
 
     // StdErr
-    const stderr_ptr = L.newuserdata(std.fs.File);
-    stderr_ptr.* = stdErr;
-    if (L.Lgetmetatable(LuaStdOut.META) == .Table)
-        _ = L.setmetatable(-2)
-    else
-        std.debug.panic("InternalError (StdOut Metatable not initialized)", .{});
+    File.push(L, stdErr, .Tty);
     L.setfield(-2, "stderr");
 
     // Terminal
     TERMINAL = Terminal.init(stdIn, stdOut);
-    const terminal_ptr = L.newuserdata(LuaTerminal);
-    terminal_ptr.* = .{ .ptr = &(TERMINAL.?) };
-    if (L.Lgetmetatable(LuaTerminal.META) == .Table)
-        _ = L.setmetatable(-2)
-    else
-        std.debug.panic("InternalError (Terminal Metatable not initialized)", .{});
+    {
+        L.newtable();
+
+        L.Zsetfieldfn(-1, "enableRawMode", LuaTerminal.enableRawMode);
+        L.Zsetfieldfn(-1, "restoreMode", LuaTerminal.restoreMode);
+        L.Zsetfieldfn(-1, "getSize", LuaTerminal.getSize);
+        L.Zsetfieldfn(-1, "getCurrentMode", LuaTerminal.getCurrentMode);
+
+        L.Zsetfield(-1, "isTTY", TERMINAL.?.stdin_istty and TERMINAL.?.stdout_istty);
+
+        L.setreadonly(-1, true);
+    }
     L.setfield(-2, "terminal");
 
     TERMINAL.?.setOutputMode() catch std.debug.print("[Win32] Failed to set output codepoint\n", .{});

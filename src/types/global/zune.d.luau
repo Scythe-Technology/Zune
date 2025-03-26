@@ -43,6 +43,28 @@ export type FileHandle = {
         & ((self: FileHandle, amount: number?, useBuffer: false?) -> string)
         & ((self: FileHandle, amount: number?, useBuffer: true) -> buffer),
 
+    --[[
+        Reads the contents of a file.
+
+        *Optional: The amount of bytes to read, if nil, reads the whole till EOF or Luau limit.*
+
+        @param amount The amount of bytes to read.
+    ]]
+    readSync:
+        & ((self: FileHandle, amount: number?, useBuffer: false?) -> string)
+        & ((self: FileHandle, amount: number?, useBuffer: true) -> buffer),
+
+    --[[
+        Reads the contents of a file.
+
+        *Optional: The amount of bytes to read, if nil, reads the whole till EOF or Luau limit.*
+
+        @param amount The amount of bytes to read.
+    ]]
+    readTtySync:
+        & ((self: FileHandle, amount: number?, useBuffer: false?) -> string?)
+        & ((self: FileHandle, amount: number?, useBuffer: true) -> buffer?),
+
 
     --[[
         Writes to a file.
@@ -52,11 +74,25 @@ export type FileHandle = {
     write: (self: FileHandle, contents: string | buffer) -> (),
 
     --[[
+        Writes to a file.
+
+        @param contents The contents to write to the file.
+    ]]
+    writeSync: (self: FileHandle, contents: string | buffer) -> (),
+
+    --[[
         Appends to a file.
 
         @param contents The contents to append to the file.
     ]]
     append: (self: FileHandle, contents: string | buffer) -> (),
+
+    --[[
+        Appends to a file.
+
+        @param contents The contents to append to the file.
+    ]]
+    appendSync: (self: FileHandle, contents: string | buffer) -> (),
 
     --[[
         Returns the size of the file. Based on current state of the file object.
@@ -1725,9 +1761,9 @@ export type Terminal = {
     isTTY: boolean,
 
     --[[
-        Whether the terminal is in raw mode.
+        Get current saved mode.
     ]]
-    isRawMode: boolean,
+    getCurrentMode: () -> "normal" | "raw",
 
     --[[
         Enable raw mode.
@@ -1737,7 +1773,7 @@ export type Terminal = {
 
         @return `boolean` Whether the mode was successfully changed.
     ]]
-    enableRawMode: (self: Terminal) -> boolean,
+    enableRawMode: () -> boolean,
 
     --[[
         Restore terminal mode.
@@ -1747,50 +1783,19 @@ export type Terminal = {
 
         @return `boolean` Whether the mode was successfully restored.
     ]]
-    restoreMode: (self: Terminal) -> boolean,
+    restoreMode: () -> boolean,
 
 
     --[[
         Get the terminal size.
 
         *Will return `nil` if the terminal is not TTY.*
-
         *Will **error** if there was an issue getting the terminal size.*
 
         @return `number` The width of the terminal.
         @return `number` The height of the terminal.
     ]]
-    getSize: (self: Terminal) -> (number, number),
-}
-
-export type StdWriter = {
-    --[[
-        Write text to the writer.
-
-        @param `text` The text to write.
-    ]]
-    write: (self: StdWriter, text: string | buffer) -> (),
-}
-
-export type StdReader = {
-    --[[
-        Read text from the reader.
-
-        Optional `amount`, defaults to `1`.
-
-        @param amount The amount of characters to read.
-        @return `string`
-    ]]
-    read: (self: StdReader, amount: number?) -> string,
-    --[[
-        Read text from the reader.
-
-        Optional `amount`, defaults to `1`.
-
-        @param amount The amount of characters to read.
-        @return `string`
-    ]]
-    readAsync: (self: StdReader, amount: number?) -> string,
+    getSize: () -> (number, number),
 }
 
 type ColorFunction = (color: "black" | "red" | "green" | "yellow" | "blue" | "magenta" | "cyan" | "white" | "bblack" | "bred" | "bgreen" | "byellow" | "bblue" | "bmagenta" | "bcyan" | "bwhite") -> string
@@ -1902,17 +1907,17 @@ type StdioLib = {
     ]]
     terminal: Terminal,
     --[[
-        stdout writer.
+        stdout handle.
     ]]
-    stdout: StdWriter,
+    stdout: FileHandle,
     --[[
-        stderr writer.
+        stderr handle.
     ]]
-    stderr: StdWriter,
+    stderr: FileHandle,
     --[[
-        stdin reader.
+        stdin handle.
     ]]
-    stdin: StdReader,
+    stdin: FileHandle,
 }
 --[======[ Stdio ]======]--
 

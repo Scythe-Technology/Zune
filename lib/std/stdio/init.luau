@@ -51,9 +51,9 @@ local function prompt(
         error("Not a terminal");
     end
 
-    local isRaw = internal.terminal.isRawMode;
+    local isRaw = internal.terminal.getCurrentMode() == "raw";
     if (not isRaw) then
-        if (not internal.terminal:enableRawMode()) then
+        if (not internal.terminal.enableRawMode()) then
             error("Failed to enable raw mode");
         end
     end
@@ -257,7 +257,7 @@ local function prompt(
     end
 
     if (not isRaw) then
-        internal.terminal:restoreMode();
+        internal.terminal.restoreMode();
     end
 
     if (kind == "multiselect" or kind == "select") then
