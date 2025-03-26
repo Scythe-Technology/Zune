@@ -650,29 +650,7 @@ fn closeAsync(self: *Socket, L: *VM.lua.State) !i32 {
             else => {
                 var node = self.list.first;
                 while (node) |n| {
-                    const cancel_completion = scheduler.allocator.create(xev.Completion) catch |err| std.debug.panic("{}\n", .{err});
-                    scheduler.loop.cancel(
-                        &n.data,
-                        cancel_completion,
-                        Scheduler,
-                        scheduler,
-                        (struct {
-                            fn callback(
-                                ud: ?*Scheduler,
-                                _: *xev.Loop,
-                                c: *xev.Completion,
-                                r: xev.CancelError!void,
-                            ) xev.CallbackAction {
-                                const sch = ud.?;
-                                defer sch.allocator.destroy(c);
-                                r catch |err| switch (err) {
-                                    inline error.Inactive => {},
-                                    inline else => std.debug.print("Cancel Error: {}\n", .{err}),
-                                };
-                                return .disarm;
-                            }
-                        }.callback),
-                    );
+                    scheduler.cancelAsyncTask(&n.data);
                     node = n.next;
                 }
             },
@@ -710,11 +688,11 @@ const __namecall = MethodMap.CreateNamecallMap(Socket, TAG_NET_SOCKET, .{
     .{ "closeAsync", closeAsync },
 });
 
-pub fn __dtor(L: *VM.lua.State, ptr: *Socket) void {
+pub fn __dtor(L: *VM.lua.State, self: *Socket) void {
     const allocator = luau.getallocator(L);
-    if (ptr.open)
-        closesocket(ptr.socket);
-    allocator.destroy(ptr.list);
+    if (self.open)
+        closesocket(self.socket);
+    allocator.destroy(self.list);
 }
 
 pub inline fn load(L: *VM.lua.State) void {
@@ -731,10 +709,10 @@ pub inline fn load(L: *VM.lua.State) void {
 
 pub fn push(L: *VM.lua.State, value: std.posix.socket_t) !void {
     const allocator = luau.getallocator(L);
-    const ptr = L.newuserdatataggedwithmetatable(Socket, TAG_NET_SOCKET);
+    const self = L.newuserdatataggedwithmetatable(Socket, TAG_NET_SOCKET);
     const list = try allocator.create(Scheduler.CompletionLinkedList);
     list.* = .{};
-    ptr.* = .{
+    self.* = .{
         .socket = value,
         .list = list,
     };

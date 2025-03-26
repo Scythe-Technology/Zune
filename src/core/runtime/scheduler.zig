@@ -377,6 +377,35 @@ pub fn createAsyncCtx(
     return ptr;
 }
 
+pub fn cancelAsyncTask(
+    self: *Self,
+    completion: *xev.Dynamic.Completion,
+) void {
+    const cancel_completion = self.allocator.create(xev.Dynamic.Completion) catch |err| std.debug.panic("{}\n", .{err});
+    self.loop.cancel(
+        completion,
+        cancel_completion,
+        Self,
+        self,
+        (struct {
+            fn callback(
+                ud: ?*Self,
+                _: *xev.Dynamic.Loop,
+                c: *xev.Dynamic.Completion,
+                r: xev.Dynamic.CancelError!void,
+            ) xev.Dynamic.CallbackAction {
+                const sch = ud.?;
+                defer sch.allocator.destroy(c);
+                r catch |err| switch (err) {
+                    inline error.Inactive => {},
+                    inline else => std.debug.print("Cancel Error: {}\n", .{err}),
+                };
+                return .disarm;
+            }
+        }.callback),
+    );
+}
+
 pub fn resumeState(state: *VM.lua.State, from: ?*VM.lua.State, args: i32) !VM.lua.Status {
     const status = state.status();
     if (status != .Yield and status != .Ok)

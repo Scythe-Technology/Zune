@@ -27,12 +27,35 @@ pub const FileKind = enum {
     Tty,
 };
 
-handle: std.fs.File,
-open: bool = true,
+pub const OpenMode = packed struct {
+    read: bool = false,
+    write: bool = false,
+
+    pub const close: OpenMode = .{ .read = false, .write = false };
+    pub const writable: OpenMode = .{ .read = false, .write = true };
+    pub const readable: OpenMode = .{ .read = true, .write = false };
+    pub const readwrite: OpenMode = .{ .read = true, .write = true };
+
+    pub inline fn isOpen(self: OpenMode) bool {
+        return self.read or self.write;
+    }
+    pub inline fn canRead(self: OpenMode) bool {
+        return self.read;
+    }
+    pub inline fn canWrite(self: OpenMode) bool {
+        return self.write;
+    }
+};
+
+file: std.fs.File,
+mode: OpenMode = .{},
 kind: FileKind = .File,
+list: *Scheduler.CompletionLinkedList,
 
 pub const AsyncReadContext = struct {
-    completion: xev.Completion = .{},
+    completion: Scheduler.CompletionLinkedList.Node = .{
+        .data = .{},
+    },
     ref: Scheduler.ThreadRef,
     limit: usize = luaHelper.MAX_LUAU_SIZE,
     array: std.ArrayList(u8) = undefined,
@@ -41,6 +64,7 @@ pub const AsyncReadContext = struct {
     auto_close: bool = true,
     resumed: bool = false,
     file_kind: FileKind = .File,
+    list: ?*Scheduler.CompletionLinkedList = null,
 
     const This = @This();
 
@@ -52,7 +76,7 @@ pub const AsyncReadContext = struct {
         err: ?anyerror,
     ) xev.CallbackAction {
         if (self.auto_close)
-            file.close(&scheduler.loop, &self.completion, This, self, finished);
+            file.close(&scheduler.loop, &self.completion.data, This, self, finished);
 
         if (err) |e| {
             L.pushstring(@errorName(e));
@@ -69,9 +93,11 @@ pub const AsyncReadContext = struct {
     }
 
     pub fn cleanup(self: *This, scheduler: *Scheduler) void {
+        defer scheduler.completeAsync(self);
         self.ref.deref();
         self.array.deinit();
-        scheduler.completeAsync(self);
+        if (self.list) |l|
+            l.remove(&self.completion);
     }
 
     const Kind = enum {
@@ -182,6 +208,7 @@ pub const AsyncReadContext = struct {
         max_size: usize,
         auto_close: bool,
         file_kind: FileKind,
+        list: ?*Scheduler.CompletionLinkedList,
     ) !i32 {
         if (!L.isyieldable())
             return L.Zyielderror();
@@ -209,7 +236,7 @@ pub const AsyncReadContext = struct {
         switch (file_kind) {
             .File => file.pread(
                 &scheduler.loop,
-                &ctx.completion,
+                &ctx.completion.data,
                 .{ .slice = ctx.array.items },
                 0,
                 This,
@@ -218,24 +245,29 @@ pub const AsyncReadContext = struct {
             ),
             .Tty => file.read(
                 &scheduler.loop,
-                &ctx.completion,
+                &ctx.completion.data,
                 .{ .slice = ctx.array.items },
                 This,
                 ctx,
                 This.complete,
             ),
         }
+        if (list) |l|
+            l.append(&ctx.completion);
 
         return L.yield(0);
     }
 };
 
 pub const AsyncWriteContext = struct {
-    completion: xev.Completion = .{},
+    completion: Scheduler.CompletionLinkedList.Node = .{
+        .data = .{},
+    },
     ref: Scheduler.ThreadRef,
     data: []u8,
     auto_close: bool = true,
     resumed: bool = false,
+    list: ?*Scheduler.CompletionLinkedList = null,
 
     const This = @This();
 
@@ -247,7 +279,7 @@ pub const AsyncWriteContext = struct {
         err: ?anyerror,
     ) xev.CallbackAction {
         if (self.auto_close) {
-            file.close(&scheduler.loop, &self.completion, This, self, finished);
+            file.close(&scheduler.loop, &self.completion.data, This, self, finished);
         }
 
         if (err) |e| {
@@ -265,10 +297,12 @@ pub const AsyncWriteContext = struct {
     }
 
     pub fn cleanup(self: *This, L: *VM.lua.State, scheduler: *Scheduler) void {
+        defer scheduler.completeAsync(self);
         const allocator = luau.getallocator(L);
         allocator.free(self.data);
         self.ref.deref();
-        scheduler.completeAsync(self);
+        if (self.list) |l|
+            l.remove(&self.completion);
     }
 
     const Kind = enum {
@@ -337,7 +371,7 @@ pub const AsyncWriteContext = struct {
 
         file.write(
             &scheduler.loop,
-            &self.completion,
+            completion,
             .{ .slice = b.slice[written..] },
             This,
             self,
@@ -346,7 +380,13 @@ pub const AsyncWriteContext = struct {
         return .disarm;
     }
 
-    pub fn queue(L: *VM.lua.State, f: std.fs.File, data: []const u8, auto_close: bool) !i32 {
+    pub fn queue(
+        L: *VM.lua.State,
+        f: std.fs.File,
+        data: []const u8,
+        auto_close: bool,
+        list: ?*Scheduler.CompletionLinkedList,
+    ) !i32 {
         if (!L.isyieldable())
             return L.Zyielderror();
         const scheduler = Scheduler.getScheduler(L);
@@ -366,12 +406,14 @@ pub const AsyncWriteContext = struct {
 
         file.write(
             &scheduler.loop,
-            &ctx.completion,
+            &ctx.completion.data,
             .{ .slice = data },
             This,
             ctx,
             This.complete,
         );
+        if (list) |l|
+            l.append(&ctx.completion);
 
         return L.yield(0);
     }
@@ -386,15 +428,19 @@ pub fn __index(L: *VM.lua.State) !i32 {
 }
 
 fn write(self: *File, L: *VM.lua.State) !i32 {
+    if (!self.mode.canWrite())
+        return error.NotOpenForWriting;
     const data = try L.Zcheckvalue([]const u8, 2, null);
 
-    return File.AsyncWriteContext.queue(L, self.handle, data, false);
+    return File.AsyncWriteContext.queue(L, self.file, data, false, self.list);
 }
 
 fn writeSync(self: *File, L: *VM.lua.State) !i32 {
+    if (!self.mode.canWrite())
+        return error.NotOpenForWriting;
     const data = try L.Zcheckvalue([]const u8, 2, null);
 
-    try self.handle.writeAll(data);
+    try self.file.writeAll(data);
 
     return 0;
 }
@@ -404,11 +450,13 @@ fn append(self: *File, L: *VM.lua.State) !i32 {
         .File => {},
         .Tty => return error.NotAppendable,
     }
+    if (!self.mode.canWrite())
+        return error.NotOpenForWriting;
     const string = try L.Zcheckvalue([]const u8, 2, null);
 
-    try self.handle.seekFromEnd(0);
+    try self.file.seekFromEnd(0);
 
-    return File.AsyncWriteContext.queue(L, self.handle, string, false);
+    return File.AsyncWriteContext.queue(L, self.file, string, false, self.list);
 }
 
 fn appendSync(self: *File, L: *VM.lua.State) !i32 {
@@ -416,10 +464,12 @@ fn appendSync(self: *File, L: *VM.lua.State) !i32 {
         .File => {},
         .Tty => return error.NotAppendable,
     }
+    if (!self.mode.canWrite())
+        return error.NotOpenForWriting;
     const string = try L.Zcheckvalue([]const u8, 2, null);
 
-    try self.handle.seekFromEnd(0);
-    try self.handle.writeAll(string);
+    try self.file.seekFromEnd(0);
+    try self.file.writeAll(string);
 
     return 0;
 }
@@ -429,7 +479,7 @@ fn getSeekPosition(self: *File, L: *VM.lua.State) !i32 {
         .File => {},
         .Tty => return error.NotSeekable,
     }
-    L.pushnumber(@floatFromInt(try self.handle.getPos()));
+    L.pushnumber(@floatFromInt(try self.file.getPos()));
     return 1;
 }
 
@@ -438,7 +488,7 @@ fn getSize(self: *File, L: *VM.lua.State) !i32 {
         .File => {},
         .Tty => return error.NotSeekable,
     }
-    L.pushnumber(@floatFromInt(try self.handle.getEndPos()));
+    L.pushnumber(@floatFromInt(try self.file.getEndPos()));
     return 1;
 }
 
@@ -447,7 +497,7 @@ fn seekFromEnd(self: *File, L: *VM.lua.State) !i32 {
         .File => {},
         .Tty => return error.NotSeekable,
     }
-    try self.handle.seekFromEnd(@intFromFloat(@max(0, L.Loptnumber(2, 0))));
+    try self.file.seekFromEnd(@intFromFloat(@max(0, L.Loptnumber(2, 0))));
     return 0;
 }
 
@@ -456,7 +506,7 @@ fn seekTo(self: *File, L: *VM.lua.State) !i32 {
         .File => {},
         .Tty => return error.NotSeekable,
     }
-    try self.handle.seekTo(@intFromFloat(@max(0, L.Loptnumber(2, 0))));
+    try self.file.seekTo(@intFromFloat(@max(0, L.Loptnumber(2, 0))));
     return 0;
 }
 
@@ -465,13 +515,24 @@ fn seekBy(self: *File, L: *VM.lua.State) !i32 {
         .File => {},
         .Tty => return error.NotSeekable,
     }
-    try self.handle.seekBy(@intFromFloat(L.Loptnumber(2, 1)));
+    try self.file.seekBy(@intFromFloat(L.Loptnumber(2, 1)));
     return 0;
 }
 
 fn read(self: *File, L: *VM.lua.State) !i32 {
     const size = L.Loptunsigned(2, luaHelper.MAX_LUAU_SIZE);
-    return AsyncReadContext.queue(L, self.handle, L.Loptboolean(3, false), 1024, @intCast(size), false, self.kind);
+    if (!self.mode.canRead())
+        return error.NotOpenForReading;
+    return AsyncReadContext.queue(
+        L,
+        self.file,
+        L.Loptboolean(3, false),
+        1024,
+        @intCast(size),
+        false,
+        self.kind,
+        self.list,
+    );
 }
 
 fn readSync(self: *File, L: *VM.lua.State) !i32 {
@@ -479,11 +540,13 @@ fn readSync(self: *File, L: *VM.lua.State) !i32 {
         .File => {},
         .Tty => return L.Zerror("readSync for TTY should be done with readTtySync"),
     }
+    if (!self.mode.canRead())
+        return error.NotOpenForReading;
     const allocator = luau.getallocator(L);
     const size = L.Loptunsigned(2, luaHelper.MAX_LUAU_SIZE);
     const useBuffer = L.Loptboolean(3, false);
 
-    const data = try self.handle.readToEndAlloc(allocator, @intCast(size));
+    const data = try self.file.readToEndAlloc(allocator, @intCast(size));
     defer allocator.free(data);
 
     if (useBuffer)
@@ -499,13 +562,15 @@ fn readTtySync(self: *File, L: *VM.lua.State) !i32 {
         .File => return error.NotTty,
         .Tty => {},
     }
+    if (!self.mode.canRead())
+        return error.NotOpenForReading;
     const allocator = luau.getallocator(L);
     const maxBytes = L.Loptunsigned(2, 1);
     const useBuffer = L.Loptboolean(3, false);
 
     var fds = [1]sysfd.context.pollfd{.{
         .events = sysfd.context.POLLIN,
-        .fd = self.handle.handle,
+        .fd = self.file.handle,
         .revents = 0,
     }};
 
@@ -518,7 +583,7 @@ fn readTtySync(self: *File, L: *VM.lua.State) !i32 {
     var buffer = try allocator.alloc(u8, maxBytes);
     defer allocator.free(buffer);
 
-    const amount = try self.handle.read(buffer);
+    const amount = try self.file.read(buffer);
 
     const data = buffer[0..amount];
     if (useBuffer)
@@ -557,7 +622,7 @@ fn lock(self: *File, L: *VM.lua.State) !i32 {
                 const range_off: std.os.windows.LARGE_INTEGER = 0;
                 const range_len: std.os.windows.LARGE_INTEGER = 1;
                 std.os.windows.LockFile(
-                    self.handle.handle,
+                    self.file.handle,
                     null,
                     null,
                     null,
@@ -575,7 +640,7 @@ fn lock(self: *File, L: *VM.lua.State) !i32 {
         }
         L.pushboolean(true);
     } else {
-        L.pushboolean(try self.handle.tryLock(lockOpt));
+        L.pushboolean(try self.file.tryLock(lockOpt));
     }
     return 1;
 }
@@ -590,7 +655,7 @@ fn unlock(self: *File, L: *VM.lua.State) !i32 {
         else => return error.UnsupportedPlatform,
     }
     _ = L;
-    self.handle.unlock();
+    self.file.unlock();
     return 0;
 }
 
@@ -599,7 +664,7 @@ fn sync(self: *File, _: *VM.lua.State) !i32 {
         .File => {},
         .Tty => return error.NotFile,
     }
-    try self.handle.sync();
+    try self.file.sync();
 
     return 0;
 }
@@ -609,14 +674,14 @@ fn readonly(self: *File, L: *VM.lua.State) !i32 {
         .windows, .linux, .macos => {},
         else => return error.UnsupportedPlatform,
     }
-    const meta = try self.handle.metadata();
+    const meta = try self.file.metadata();
     var permissions = meta.permissions();
     const enabled = if (L.typeOf(2) != .Boolean) {
         L.pushboolean(permissions.readOnly());
         return 1;
     } else L.toboolean(2);
     permissions.setReadOnly(enabled);
-    try self.handle.setPermissions(permissions);
+    try self.file.setPermissions(permissions);
     return 0;
 }
 
@@ -653,15 +718,26 @@ fn closeAsync(self: *File, L: *VM.lua.State) !i32 {
         .File => {},
         .Tty => return error.NotCloseable,
     }
-    if (self.open) {
-        self.open = false;
+    if (self.mode.isOpen()) {
+        self.mode = .close;
         const scheduler = Scheduler.getScheduler(L);
-        const file = xev.File.init(self.handle) catch unreachable;
+        const file = xev.File.init(self.file) catch unreachable;
 
         const ctx = try scheduler.createAsyncCtx(AsyncCloseContext);
         ctx.* = .{
             .ref = Scheduler.ThreadRef.init(L),
         };
+
+        switch (comptime builtin.os.tag) {
+            .windows => _ = std.os.windows.kernel32.CancelIoEx(self.file.handle, null),
+            else => {
+                var node = self.list.first;
+                while (node) |n| {
+                    scheduler.cancelAsyncTask(&n.data);
+                    node = n.next;
+                }
+            },
+        }
 
         file.close(
             &scheduler.loop,
@@ -677,7 +753,7 @@ fn closeAsync(self: *File, L: *VM.lua.State) !i32 {
 }
 
 fn before_method(self: *File, L: *VM.lua.State) !void {
-    if (!self.open)
+    if (!self.mode.isOpen())
         return L.Zerror("File is closed");
 }
 
@@ -702,9 +778,10 @@ const __namecall = MethodMap.CreateNamecallMap(File, TAG_FS_FILE, .{
 });
 
 pub fn __dtor(L: *VM.lua.State, self: *File) void {
-    _ = L;
-    if (self.open and self.kind == .File)
-        self.handle.close();
+    const allocator = luau.getallocator(L);
+    if (self.mode.isOpen() and self.kind == .File)
+        self.file.close();
+    allocator.destroy(self.list);
 }
 
 pub inline fn load(L: *VM.lua.State) void {
@@ -719,10 +796,15 @@ pub inline fn load(L: *VM.lua.State) void {
     L.setuserdatadtor(File, TAG_FS_FILE, __dtor);
 }
 
-pub fn push(L: *VM.lua.State, file: std.fs.File, kind: FileKind) void {
-    const ptr = L.newuserdatataggedwithmetatable(File, TAG_FS_FILE);
-    ptr.* = .{
-        .handle = file,
+pub fn push(L: *VM.lua.State, file: std.fs.File, kind: FileKind, mode: OpenMode) !void {
+    const allocator = luau.getallocator(L);
+    const self = L.newuserdatataggedwithmetatable(File, TAG_FS_FILE);
+    const list = try allocator.create(Scheduler.CompletionLinkedList);
+    list.* = .{};
+    self.* = .{
+        .file = file,
         .kind = kind,
+        .mode = mode,
+        .list = list,
     };
 }

@@ -77,7 +77,16 @@ fn fs_readFileAsync(L: *VM.lua.State) !i32 {
     };
     errdefer file.close();
 
-    return File.AsyncReadContext.queue(L, file, useBuffer, 1024, luaHelper.MAX_LUAU_SIZE, true, .File);
+    return File.AsyncReadContext.queue(
+        L,
+        file,
+        useBuffer,
+        1024,
+        luaHelper.MAX_LUAU_SIZE,
+        true,
+        .File,
+        null,
+    );
 }
 
 fn fs_readFileSync(L: *VM.lua.State) !i32 {
@@ -126,7 +135,7 @@ fn fs_writeFileAsync(L: *VM.lua.State) !i32 {
     };
     errdefer file.close();
 
-    return File.AsyncWriteContext.queue(L, file, data, true);
+    return File.AsyncWriteContext.queue(L, file, data, true, null);
 }
 
 fn fs_writeFileSync(L: *VM.lua.State) !i32 {
@@ -498,7 +507,11 @@ fn fs_openFile(L: *VM.lua.State) !i32 {
         }),
     };
 
-    File.push(L, file, .File);
+    try File.push(L, file, .File, switch (mode) {
+        .read_only => .readable,
+        .read_write => .readwrite,
+        .write_only => .writable,
+    });
 
     return 1;
 }
@@ -531,7 +544,7 @@ fn fs_createFile(L: *VM.lua.State) !i32 {
         }),
     };
 
-    File.push(L, file, .File);
+    try File.push(L, file, .File, .readwrite);
 
     return 1;
 }
