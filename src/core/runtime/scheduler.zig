@@ -128,10 +128,10 @@ const AsyncIoThread = struct {
 const FrameKind = enum {
     None,
     EventLoop,
-    Awaiting,
     Task,
     Sleeping,
     Deferred,
+    Awaiting,
 };
 
 fn SleepOrder(_: void, a: SleepingThread, b: SleepingThread) std.math.Order {
@@ -441,30 +441,49 @@ inline fn hasPendingWork(self: *Self) bool {
         self.async_tasks > 0;
 }
 
-fn timerNoopCallback(
+pub fn XevNoopCallback(err: type) fn (
     _: ?*void,
     _: *xev.Dynamic.Loop,
     _: *xev.Dynamic.Completion,
-    _: xev.Dynamic.Timer.RunError!void,
+    _: err,
 ) xev.CallbackAction {
-    return .disarm;
+    return struct {
+        fn inner(
+            _: ?*void,
+            _: *xev.Dynamic.Loop,
+            _: *xev.Dynamic.Completion,
+            _: err,
+        ) xev.CallbackAction {
+            return .disarm;
+        }
+    }.inner;
 }
 
 pub fn run(self: *Self, comptime mode: Zune.RunMode) void {
-    var timer_completion: xev.Dynamic.Completion = .{};
+    var timer_completion: xev.Dynamic.Completion = .init();
+    var timer_cancel_completion: xev.Dynamic.Completion = .init();
     while (self.hasPendingWork()) {
         const now = VM.lperf.clock();
         if (self.tasks.items.len > 0 or self.deferred.len > 0) {
             // TODO: change `tasks` design to go on the event loop stack.
-            self.timer.run(&self.loop, &timer_completion, 0, void, null, timerNoopCallback);
-        } else if (self.sleeping.peek()) |lowest| {
-            self.timer.run(
+            self.timer.reset(
                 &self.loop,
                 &timer_completion,
+                &timer_cancel_completion,
+                0,
+                void,
+                null,
+                XevNoopCallback(xev.Dynamic.Timer.RunError!void),
+            );
+        } else if (self.sleeping.peek()) |lowest| {
+            self.timer.reset(
+                &self.loop,
+                &timer_completion,
+                &timer_cancel_completion,
                 @intFromFloat(@max(lowest.wake - now, 0) * std.time.ms_per_s),
                 void,
                 null,
-                timerNoopCallback,
+                XevNoopCallback(xev.Dynamic.Timer.RunError!void),
             );
         }
         {
@@ -472,22 +491,6 @@ pub fn run(self: *Self, comptime mode: Zune.RunMode) void {
             self.loop.run(.once) catch |err| {
                 std.debug.print("EventLoop Error: {}\n", .{err});
             };
-        }
-        if (self.awaits.items.len > 0) {
-            self.frame = .Awaiting;
-            var i = self.awaits.items.len;
-            while (i > 0) {
-                i -= 1;
-                const awaiting = self.awaits.items[i];
-                if (awaiting.state.value.status() != .Yield) {
-                    defer awaiting.state.deref();
-                    _ = self.awaits.orderedRemove(i);
-                    const state = awaiting.state.value;
-                    const data = awaiting.data;
-                    awaiting.resumeFn(data, state, self);
-                    awaiting.virtualDtor(data, state, self);
-                }
-            }
         }
         if (self.tasks.items.len > 0) {
             self.frame = .Task;
@@ -548,6 +551,22 @@ pub fn run(self: *Self, comptime mode: Zune.RunMode) void {
                     deferred.from,
                     deferred.args,
                 ) catch {};
+            }
+        }
+        if (self.awaits.items.len > 0) {
+            self.frame = .Awaiting;
+            var i = self.awaits.items.len;
+            while (i > 0) {
+                i -= 1;
+                const awaiting = self.awaits.items[i];
+                if (awaiting.state.value.status() != .Yield) {
+                    defer awaiting.state.deref();
+                    _ = self.awaits.orderedRemove(i);
+                    const state = awaiting.state.value;
+                    const data = awaiting.data;
+                    awaiting.resumeFn(data, state, self);
+                    awaiting.virtualDtor(data, state, self);
+                }
             }
         }
         self.frame = .None;

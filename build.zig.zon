@@ -44,8 +44,8 @@
             .hash = "tinycc-0.0.1-T6dU82t3AQDiZLySKzUQMnY5AULuB_di2x_-rhneTrmO",
         },
         .libxev = .{
-            .url = "https://codeload.github.com/Scythe-Technology/libxev/tar.gz/1ab800d25bb8a8d02037c5a5918387509b256db2",
-            .hash = "libxev-0.0.0-GdacvuMRDACkFGU2Aq90ZqpI8GEUT_LoPo16dF23FbYi",
+            .url = "https://codeload.github.com/Scythe-Technology/libxev/tar.gz/08454e39682acab060a5313ac2d0b597675a49c6",
+            .hash = "libxev-0.0.0-GdacvpkSDAAUQrTdZQ2KgZG0N9i1cyIj9oTZOm521XBD",
         },
     },
     .paths = .{""},
