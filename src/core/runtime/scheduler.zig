@@ -527,12 +527,13 @@ pub fn run(self: *Self, comptime mode: Zune.RunMode) void {
             var i = self.tasks.items.len;
             while (i > 0) {
                 i -= 1;
-                const task = &self.tasks.items[i];
+                const task = self.tasks.items[i];
                 switch (task.virtualFn(task.data, task.state.value, self)) {
                     .Continue => {},
                     .ContinueFast => {},
                     .Stop => {
-                        defer task.state.deref();
+                        var state = task.state;
+                        defer state.deref();
                         _ = self.tasks.orderedRemove(i);
                         task.virtualDtor(task.data, task.state.value, self);
                     },

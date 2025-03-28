@@ -193,12 +193,6 @@ fn internal_isFile(srcDir: fs.Dir, path: []const u8) bool {
     return stat.kind == .file;
 }
 
-fn fs_isFile(L: *VM.lua.State) i32 {
-    const path = L.Lcheckstring(1);
-    L.pushboolean(internal_isFile(fs.cwd(), path));
-    return 1;
-}
-
 fn fs_isDir(L: *VM.lua.State) i32 {
     const path = L.Lcheckstring(1);
     L.pushboolean(internal_isDir(fs.cwd(), path));
@@ -245,7 +239,7 @@ fn fs_metadata(L: *VM.lua.State) !i32 {
                 },
             };
         internal_metadata_table(L, metadata, isLink);
-    } else if (internal_isFile(cwd, path)) {
+    } else {
         var file = try cwd.openFile(path, fs.File.OpenFlags{
             .mode = .read_only,
         });
@@ -259,7 +253,7 @@ fn fs_metadata(L: *VM.lua.State) !i32 {
                 },
             };
         internal_metadata_table(L, metadata, isLink);
-    } else return std.fs.File.OpenError.FileNotFound;
+    }
     return 1;
 }
 
@@ -282,16 +276,16 @@ fn copyDir(fromDir: fs.Dir, toDir: fs.Dir, overwrite: bool) !void {
         .file => {
             if (overwrite == false and internal_isFile(toDir, entry.name))
                 return error.PathAlreadyExists;
-            try fromDir.copyFile(entry.name, toDir, entry.name, fs.Dir.CopyFileOptions{});
+            try fromDir.copyFile(entry.name, toDir, entry.name, .{});
         },
         .directory => {
             toDir.makeDir(entry.name) catch |err| switch (err) {
                 error.PathAlreadyExists => {},
                 else => return err,
             };
-            var toEntryDir = try toDir.openDir(entry.name, fs.Dir.OpenDirOptions{ .access_sub_paths = true, .iterate = true, .no_follow = true });
+            var toEntryDir = try toDir.openDir(entry.name, .{ .access_sub_paths = true, .iterate = true, .no_follow = true });
             defer toEntryDir.close();
-            var fromEntryDir = try fromDir.openDir(entry.name, fs.Dir.OpenDirOptions{ .access_sub_paths = true, .iterate = true, .no_follow = true });
+            var fromEntryDir = try fromDir.openDir(entry.name, .{ .access_sub_paths = true, .iterate = true, .no_follow = true });
             defer fromEntryDir.close();
             try copyDir(fromEntryDir, toEntryDir, overwrite);
         },
@@ -304,12 +298,7 @@ fn fs_copy(L: *VM.lua.State) !i32 {
     const toPath = L.Lcheckstring(2);
     const override = L.Loptboolean(3, false);
     const cwd = std.fs.cwd();
-    if (internal_isFile(cwd, fromPath)) {
-        if (override == false and internal_isFile(cwd, toPath))
-            return std.fs.Dir.MakeError.PathAlreadyExists;
-
-        cwd.copyFile(fromPath, cwd, toPath, fs.Dir.CopyFileOptions{}) catch return UnhandledError.UnknownError;
-    } else {
+    if (internal_isDir(cwd, fromPath)) {
         var fromDir = try cwd.openDir(fromPath, fs.Dir.OpenDirOptions{
             .iterate = true,
             .access_sub_paths = true,
@@ -331,51 +320,42 @@ fn fs_copy(L: *VM.lua.State) !i32 {
         });
         defer toDir.close();
         try copyDir(fromDir, toDir, override);
+    } else {
+        if (override == false and internal_isFile(cwd, toPath))
+            return std.fs.Dir.MakeError.PathAlreadyExists;
+
+        try cwd.copyFile(fromPath, cwd, toPath, fs.Dir.CopyFileOptions{});
     }
     return 0;
 }
 
 fn fs_symlink(L: *VM.lua.State) !i32 {
-    if (builtin.os.tag == .windows)
-        return HardwareError.NotSupported;
-
     const fromPath = L.Lcheckstring(1);
     const toPath = L.Lcheckstring(2);
     const cwd = std.fs.cwd();
-
-    const isDir = internal_isDir(cwd, fromPath);
-    if (!isDir and !internal_isFile(cwd, fromPath))
-        return error.FileNotFound;
 
     const allocator = luau.getallocator(L);
 
     const fullPath = try cwd.realpathAlloc(allocator, fromPath);
     defer allocator.free(fullPath);
 
-    try cwd.symLink(fullPath, toPath, fs.Dir.SymLinkFlags{ .is_directory = isDir });
+    try cwd.symLink(fullPath, toPath, .{
+        // only this applies to windows
+        .is_directory = if (comptime builtin.os.tag == .windows)
+            internal_isDir(cwd, fromPath)
+        else
+            false,
+    });
 
     return 0;
 }
 
-pub fn prepRefType(comptime luaType: VM.lua.Type, L: *VM.lua.State, ref: i32) bool {
-    if (L.rawgeti(VM.lua.REGISTRYINDEX, ref) == luaType) {
-        return true;
-    }
-    L.pop(1);
-    return false;
-}
-
-const WatchObject = struct {
+const LuaWatch = struct {
     instance: Watch.FileSystemWatcher,
     active: bool = true,
-    callback: ?i32,
+    callback: luaHelper.Ref(void),
+    ref: luaHelper.Ref(void),
 
-    pub const Lua = struct {
-        ptr: ?*WatchObject,
-    };
-};
-
-const LuaWatch = struct {
     pub fn __index(L: *VM.lua.State) !i32 {
         try L.Zchecktype(1, .Userdata);
         return 0;
@@ -383,24 +363,24 @@ const LuaWatch = struct {
 
     pub fn __namecall(L: *VM.lua.State) !i32 {
         try L.Zchecktype(1, .Userdata);
-        const obj = L.touserdata(WatchObject.Lua, 1) orelse unreachable;
+        const obj = L.touserdata(LuaWatch, 1) orelse unreachable;
 
         const namecall = L.namecallstr() orelse return 0;
 
         // TODO: prob should switch to static string map
         if (std.mem.eql(u8, namecall, "stop")) {
-            if (obj.ptr) |ptr|
-                ptr.active = false;
-            obj.ptr = null;
+            obj.active = false;
         } else return L.Zerrorf("Unknown method: {s}", .{namecall});
         return 0;
     }
 
-    pub fn update(ctx: *WatchObject, L: *VM.lua.State, _: *Scheduler) Scheduler.TaskResult {
-        if (!ctx.active) return .Stop;
+    pub fn update(ctx: *LuaWatch, L: *VM.lua.State, _: *Scheduler) Scheduler.TaskResult {
+        if (!ctx.active)
+            return .Stop;
         const watch = &ctx.instance;
 
-        const callback = ctx.callback orelse return .Stop;
+        if (ctx.callback.ref == null)
+            return .Stop;
 
         if (watch.next() catch |err| {
             std.debug.print("LuaWatch error: {}\n", .{err});
@@ -408,7 +388,11 @@ const LuaWatch = struct {
         }) |info| {
             defer info.deinit();
             for (info.list.items) |item| {
-                if (prepRefType(.Function, L, callback)) {
+                if (ctx.callback.push(L)) {
+                    if (L.typeOf(-1) != .Function) {
+                        L.pop(1); // drop callback
+                        return .Stop;
+                    }
                     const thread = L.newthread();
                     L.xpush(thread, -2); // push: function
                     thread.pushlstring(item.name);
@@ -453,14 +437,10 @@ const LuaWatch = struct {
         return .Continue;
     }
 
-    pub fn dtor(ctx: *WatchObject, L: *VM.lua.State, _: *Scheduler) void {
-        const allocator = luau.getallocator(L);
-
-        defer allocator.destroy(ctx);
-
+    pub fn dtor(ctx: *LuaWatch, L: *VM.lua.State, _: *Scheduler) void {
+        ctx.callback.deref(L);
+        ctx.ref.deref(L);
         ctx.instance.deinit();
-        if (ctx.callback) |ref|
-            L.unref(ref);
     }
 };
 
@@ -556,24 +536,21 @@ fn fs_watch(L: *VM.lua.State) !i32 {
     errdefer watch.deinit();
     try watch.start();
 
-    const data = try allocator.create(WatchObject);
-    errdefer allocator.destroy(data);
-
-    const luaObj = L.newuserdata(WatchObject.Lua);
-    luaObj.ptr = data;
+    const ptr = L.newuserdata(LuaWatch);
 
     if (L.Lgetmetatable(@typeName(LuaWatch)) == .Table)
         _ = L.setmetatable(-2)
     else
         std.debug.panic("InternalError (Watch Metatable not initialized)", .{});
 
-    data.* = .{
+    ptr.* = .{
         .instance = watch,
         .active = true,
-        .callback = ref,
+        .callback = .{ .ref = .{ .registry = ref }, .value = undefined },
+        .ref = .init(L, -1, undefined),
     };
 
-    scheduler.addTask(WatchObject, data, L, LuaWatch.update, LuaWatch.dtor);
+    scheduler.addTask(LuaWatch, ptr, L, LuaWatch.update, LuaWatch.dtor);
 
     return 1;
 }
@@ -604,7 +581,6 @@ pub fn loadLib(L: *VM.lua.State) void {
     L.Zsetfieldfn(-1, "removeFile", fs_removeFile);
     L.Zsetfieldfn(-1, "removeDir", fs_removeDir);
 
-    L.Zsetfieldfn(-1, "isFile", fs_isFile);
     L.Zsetfieldfn(-1, "isDir", fs_isDir);
 
     L.Zsetfieldfn(-1, "metadata", fs_metadata);
