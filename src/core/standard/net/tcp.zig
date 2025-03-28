@@ -564,29 +564,29 @@ pub fn lua_tcp_server(L: *VM.lua.State) !i32 {
 
 pub fn lua_load(L: *VM.lua.State) void {
     {
-        _ = L.Lnewmetatable(TCPClient.LuaMeta.META);
-
-        L.Zsetfieldfn(-1, luau.Metamethods.index, TCPClient.LuaMeta.__index); // metatable.__index
-        L.Zsetfieldfn(-1, luau.Metamethods.namecall, TCPClient.LuaMeta.__namecall); // metatable.__namecall
-
-        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
+        _ = L.Znewmetatable(TCPClient.LuaMeta.META, .{
+            .__index = TCPClient.LuaMeta.__index,
+            .__namecall = TCPClient.LuaMeta.__namecall,
+            .__metatable = "Metatable is locked",
+        });
+        L.setreadonly(-1, true);
         L.pop(1);
     }
     {
-        _ = L.Lnewmetatable(TCPServer.LuaMeta.META);
-
-        L.Zsetfieldfn(-1, luau.Metamethods.index, TCPServer.LuaMeta.__index); // metatable.__index
-        L.Zsetfieldfn(-1, luau.Metamethods.namecall, TCPServer.LuaMeta.__namecall); // metatable.__namecall
-
-        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
+        _ = L.Znewmetatable(TCPServer.LuaMeta.META, .{
+            .__index = TCPServer.LuaMeta.__index,
+            .__namecall = TCPServer.LuaMeta.__namecall,
+            .__metatable = "Metatable is locked",
+        });
+        L.setreadonly(-1, true);
         L.pop(1);
     }
     {
-        _ = L.Lnewmetatable(TCPServer.Connection.LuaMeta.META);
-
-        L.Zsetfieldfn(-1, luau.Metamethods.namecall, TCPServer.Connection.LuaMeta.__namecall); // metatable.__namecall
-
-        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
+        _ = L.Znewmetatable(TCPServer.Connection.LuaMeta.META, .{
+            .__namecall = TCPServer.Connection.LuaMeta.__namecall,
+            .__metatable = "Metatable is locked",
+        });
+        L.setreadonly(-1, true);
         L.pop(1);
     }
 }

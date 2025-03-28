@@ -313,15 +313,15 @@ pub fn lua_setprops(L: *VM.lua.State) void {
     L.createtable(0, 0);
 
     { // JsonNull Metatable
-        L.createtable(0, 1);
-
-        L.Zsetfieldfn(-1, luau.Metamethods.tostring, struct {
-            fn inner(l: *VM.lua.State) i32 {
-                l.pushstring("JsonValue.Null");
-                return 1;
-            }
-        }.inner);
-
+        L.Zpushvalue(.{
+            .__tostring = struct {
+                fn inner(l: *VM.lua.State) i32 {
+                    l.pushstring("JsonValue.Null");
+                    return 1;
+                }
+            }.inner,
+        });
+        L.setreadonly(-1, true);
         _ = L.setmetatable(-2);
     }
 

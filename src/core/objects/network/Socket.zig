@@ -696,12 +696,13 @@ pub fn __dtor(L: *VM.lua.State, self: *Socket) void {
 }
 
 pub inline fn load(L: *VM.lua.State) void {
-    _ = L.Lnewmetatable(@typeName(@This()));
-
-    L.Zsetfieldfn(-1, luau.Metamethods.index, __index); // metatable.__index
-    L.Zsetfieldfn(-1, luau.Metamethods.namecall, __namecall); // metatable.__namecall
-
-    L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
+    _ = L.Znewmetatable(@typeName(@This()), .{
+        .__index = __index,
+        .__namecall = __namecall,
+        .__metatable = "Metatable is locked",
+        .__type = "SocketHandle",
+    });
+    L.setreadonly(-1, true);
 
     L.setuserdatametatable(TAG_NET_SOCKET);
     L.setuserdatadtor(Socket, TAG_NET_SOCKET, __dtor);

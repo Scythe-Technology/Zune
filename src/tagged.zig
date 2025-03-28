@@ -3,6 +3,8 @@ const TagNames: []const []const u8 = &.{
     "FS_FILE",
     // NET
     "NET_SOCKET",
+    // DATETIME
+    "DATETIME",
     // PROCESS
     "PROCESS_CHILD",
     // CRYPTO

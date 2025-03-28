@@ -181,11 +181,11 @@ pub fn lua_udpsocket(L: *VM.lua.State) !i32 {
 }
 
 pub fn lua_load(L: *VM.lua.State) void {
-    _ = L.Lnewmetatable(LuaMeta.META);
-
-    L.Zsetfieldfn(-1, luau.Metamethods.index, LuaMeta.__index); // metatable.__index
-    L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaMeta.__namecall); // metatable.__namecall
-
-    L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
+    _ = L.Znewmetatable(LuaMeta.META, .{
+        .__index = LuaMeta.__index,
+        .__namecall = LuaMeta.__namecall,
+        .__metatable = "Metatable is locked",
+    });
+    L.setreadonly(-1, true);
     L.pop(1);
 }

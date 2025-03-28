@@ -35,7 +35,7 @@ pub fn Ref(comptime T: type) type {
         pub fn init(L: *VM.lua.State, idx: i32, value: T) This {
             const GL = L.mainthread();
             L.xpush(GL, idx);
-            const ref = GL.ref(-1) orelse std.debug.panic("Tash Scheduler failed to create thread ref\n", .{});
+            const ref = GL.ref(-1) orelse std.debug.panic("Failed to create ref\n", .{});
             GL.pop(1);
             return .{
                 .value = value,

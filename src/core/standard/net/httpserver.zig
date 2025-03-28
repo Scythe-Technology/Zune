@@ -859,19 +859,19 @@ pub fn lua_serve(L: *VM.lua.State) !i32 {
 }
 
 pub fn lua_load(L: *VM.lua.State) void {
-    _ = L.Lnewmetatable(LuaMeta.SERVER_META);
-
-    L.Zsetfieldfn(-1, luau.Metamethods.index, LuaMeta.server__index); // metatable.__index
-    L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaMeta.server__namecall); // metatable.__namecall
-
-    L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
+    _ = L.Znewmetatable(LuaMeta.SERVER_META, .{
+        .__index = LuaMeta.server__index,
+        .__namecall = LuaMeta.server__namecall,
+        .__metatable = "Metatable is locked",
+    });
+    L.setreadonly(-1, true);
     L.pop(1);
 
-    _ = L.Lnewmetatable(LuaMeta.WEBSOCKET_META);
-
-    L.Zsetfieldfn(-1, luau.Metamethods.index, LuaMeta.websocket__index); // metatable.__index
-    L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaMeta.websocket__namecall); // metatable.__namecall
-
-    L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
+    _ = L.Znewmetatable(LuaMeta.WEBSOCKET_META, .{
+        .__index = LuaMeta.websocket__index,
+        .__namecall = LuaMeta.websocket__namecall,
+        .__metatable = "Metatable is locked",
+    });
+    L.setreadonly(-1, true);
     L.pop(1);
 }

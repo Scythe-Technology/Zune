@@ -178,11 +178,11 @@ fn regex_create(L: *VM.lua.State) !i32 {
 
 pub fn loadLib(L: *VM.lua.State) void {
     {
-        _ = L.Lnewmetatable(LuaRegex.META);
-
-        L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaRegex.__namecall); // metatable.__namecall
-
-        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
+        _ = L.Znewmetatable(LuaRegex.META, .{
+            .__namecall = LuaRegex.__namecall,
+            .__metatable = "Metatable is locked",
+        });
+        L.setreadonly(-1, true);
         L.setuserdatametatable(TAG_REGEX_COMPILED);
         L.setuserdatadtor(*pcre2.Code, TAG_REGEX_COMPILED, LuaRegex.__dtor);
     }

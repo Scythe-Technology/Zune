@@ -471,26 +471,20 @@ fn fs_openFile(L: *VM.lua.State) !i32 {
 
     var mode: fs.File.OpenMode = .read_write;
 
-    const optsType = L.typeOf(2);
-    if (!optsType.isnoneornil()) {
-        try L.Zchecktype(2, .Table);
-        const modeType = L.getfield(2, "mode");
-        if (!modeType.isnoneornil()) {
-            if (modeType != .String) return OpenError.InvalidMode;
-            const modeStr = L.tostring(-1) orelse unreachable;
-
-            const has_read = std.mem.indexOfScalar(u8, modeStr, 'r');
-            const has_write = std.mem.indexOfScalar(u8, modeStr, 'w');
-
-            if (has_read != null and has_write != null) {
-                mode = .read_write;
-            } else if (has_read != null) {
-                mode = .read_only;
-            } else if (has_write != null) {
-                mode = .write_only;
-            } else return OpenError.InvalidMode;
-        }
-        L.pop(1);
+    const Options = struct {
+        mode: ?[:0]const u8 = null,
+    };
+    const opts: Options = try L.Zcheckvalue(?Options, 2, null) orelse .{};
+    if (opts.mode) |m| {
+        const has_read = std.mem.indexOfScalar(u8, m, 'r');
+        const has_write = std.mem.indexOfScalar(u8, m, 'w');
+        if (has_read != null and has_write != null) {
+            mode = .read_write;
+        } else if (has_read != null) {
+            mode = .read_only;
+        } else if (has_write != null) {
+            mode = .write_only;
+        } else return OpenError.InvalidMode;
     }
 
     const file: fs.File = switch (comptime builtin.os.tag) {
@@ -519,28 +513,19 @@ fn fs_openFile(L: *VM.lua.State) !i32 {
 fn fs_createFile(L: *VM.lua.State) !i32 {
     const path = L.Lcheckstring(1);
 
-    var exclusive = false;
-
-    const optsType = L.typeOf(2);
-    if (!optsType.isnoneornil()) {
-        try L.Zchecktype(2, .Table);
-        const modeType = L.getfield(2, "exclusive");
-        if (!modeType.isnoneornil()) {
-            if (modeType != .Boolean)
-                return OpenError.BadExclusive;
-            exclusive = L.toboolean(-1);
-        }
-        L.pop(1);
-    }
+    const Options = struct {
+        exclusive: bool = false,
+    };
+    const opts: Options = try L.Zcheckvalue(?Options, 2, null) orelse .{};
 
     const file: fs.File = switch (comptime builtin.os.tag) {
         .windows => try windowsSupport.OpenFile(fs.cwd(), path, .{
             .accessMode = std.os.windows.GENERIC_READ | std.os.windows.GENERIC_WRITE,
-            .creationDisposition = if (exclusive) std.os.windows.CREATE_NEW else std.os.windows.CREATE_ALWAYS,
+            .creationDisposition = if (opts.exclusive) std.os.windows.CREATE_NEW else std.os.windows.CREATE_ALWAYS,
         }),
         else => try fs.cwd().createFile(path, .{
             .read = true,
-            .exclusive = exclusive,
+            .exclusive = opts.exclusive,
         }),
     };
 
@@ -597,12 +582,12 @@ fn fs_watch(L: *VM.lua.State) !i32 {
 
 pub fn loadLib(L: *VM.lua.State) void {
     {
-        _ = L.Lnewmetatable(LuaWatch.META);
-
-        L.Zsetfieldfn(-1, luau.Metamethods.index, LuaWatch.__index); // metatable.__index
-        L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaWatch.__namecall); // metatable.__namecall
-
-        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
+        _ = L.Znewmetatable(LuaWatch.META, .{
+            .__index = LuaWatch.__index,
+            .__namecall = LuaWatch.__namecall,
+            .__metatable = "Metatable is locked",
+        });
+        L.setreadonly(-1, true);
         L.pop(1);
     }
     L.createtable(0, 17);

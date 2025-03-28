@@ -306,11 +306,11 @@ fn crypto_createHash(L: *VM.lua.State) !i32 {
 
 pub fn loadLib(L: *VM.lua.State) void {
     {
-        _ = L.Lnewmetatable(LuaCryptoHasher.META);
-
-        L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaCryptoHasher.__namecall); // metatable.__namecall
-
-        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
+        _ = L.Znewmetatable(LuaCryptoHasher.META, .{
+            .__namecall = LuaCryptoHasher.__namecall,
+            .__metatable = "Metatable is locked",
+        });
+        L.setreadonly(-1, true);
         L.setuserdatadtor(LuaCryptoHasher, TAG_CRYPTO_HASHER, LuaCryptoHasher.__dtor);
         L.setuserdatametatable(TAG_CRYPTO_HASHER);
     }
@@ -320,23 +320,21 @@ pub fn loadLib(L: *VM.lua.State) void {
     L.Zsetfieldfn(-1, "createHash", crypto_createHash);
 
     { // password
-        L.createtable(0, 2);
-
-        L.Zsetfieldfn(-1, "hash", password.lua_hash);
-        L.Zsetfieldfn(-1, "verify", password.lua_verify);
-
+        L.Zpushvalue(.{
+            .hash = password.lua_hash,
+            .verify = password.lua_verify,
+        });
         L.setreadonly(-1, true);
         L.setfield(-2, "password");
     }
 
     { // random
-        L.createtable(0, 4);
-
-        L.Zsetfieldfn(-1, "nextNumber", random.lua_nextnumber);
-        L.Zsetfieldfn(-1, "nextInteger", random.lua_nextinteger);
-        L.Zsetfieldfn(-1, "nextBoolean", random.lua_boolean);
-        L.Zsetfieldfn(-1, "fill", random.lua_fill);
-
+        L.Zpushvalue(.{
+            .nextNumber = random.lua_nextnumber,
+            .nextInteger = random.lua_nextinteger,
+            .nextBoolean = random.lua_boolean,
+            .fill = random.lua_fill,
+        });
         L.setreadonly(-1, true);
         L.setfield(-2, "random");
     }
@@ -345,21 +343,19 @@ pub fn loadLib(L: *VM.lua.State) void {
         L.createtable(0, 2);
 
         { // aes128
-            L.createtable(0, 2);
-
-            L.Zsetfieldfn(-1, "encrypt", common.lua_genEncryptFn(aead.aes_gcm.Aes128Gcm));
-            L.Zsetfieldfn(-1, "decrypt", common.lua_genDecryptFn(aead.aes_gcm.Aes128Gcm));
-
+            L.Zpushvalue(.{
+                .encrypt = common.lua_genEncryptFn(aead.aes_gcm.Aes128Gcm),
+                .decrypt = common.lua_genDecryptFn(aead.aes_gcm.Aes128Gcm),
+            });
             L.setreadonly(-1, true);
             L.setfield(-2, "aes128");
         }
 
         { // aes256
-            L.createtable(0, 2);
-
-            L.Zsetfieldfn(-1, "encrypt", common.lua_genEncryptFn(aead.aes_gcm.Aes256Gcm));
-            L.Zsetfieldfn(-1, "decrypt", common.lua_genDecryptFn(aead.aes_gcm.Aes256Gcm));
-
+            L.Zpushvalue(.{
+                .encrypt = common.lua_genEncryptFn(aead.aes_gcm.Aes256Gcm),
+                .decrypt = common.lua_genDecryptFn(aead.aes_gcm.Aes256Gcm),
+            });
             L.setreadonly(-1, true);
             L.setfield(-2, "aes256");
         }
@@ -372,21 +368,19 @@ pub fn loadLib(L: *VM.lua.State) void {
         L.createtable(0, 2);
 
         { // aes128
-            L.createtable(0, 2);
-
-            L.Zsetfieldfn(-1, "encrypt", common.lua_genEncryptFn(aead.aes_ocb.Aes128Ocb));
-            L.Zsetfieldfn(-1, "decrypt", common.lua_genDecryptFn(aead.aes_ocb.Aes128Ocb));
-
+            L.Zpushvalue(.{
+                .encrypt = common.lua_genEncryptFn(aead.aes_ocb.Aes128Ocb),
+                .decrypt = common.lua_genDecryptFn(aead.aes_ocb.Aes128Ocb),
+            });
             L.setreadonly(-1, true);
             L.setfield(-2, "aes128");
         }
 
         { // aes256
-            L.createtable(0, 2);
-
-            L.Zsetfieldfn(-1, "encrypt", common.lua_genEncryptFn(aead.aes_ocb.Aes256Ocb));
-            L.Zsetfieldfn(-1, "decrypt", common.lua_genDecryptFn(aead.aes_ocb.Aes256Ocb));
-
+            L.Zpushvalue(.{
+                .encrypt = common.lua_genEncryptFn(aead.aes_ocb.Aes256Ocb),
+                .decrypt = common.lua_genDecryptFn(aead.aes_ocb.Aes256Ocb),
+            });
             L.setreadonly(-1, true);
             L.setfield(-2, "aes256");
         }

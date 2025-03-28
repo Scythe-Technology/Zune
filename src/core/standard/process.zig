@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const luau = @import("luau");
 
 const Zune = @import("../../zune.zig");
+const tagged = @import("../../tagged.zig");
 
 const Engine = @import("../runtime/engine.zig");
 const Scheduler = @import("../runtime/scheduler.zig");
@@ -10,12 +11,15 @@ const Parser = @import("../utils/parser.zig");
 
 const luaHelper = @import("../utils/luahelper.zig");
 const sysfd = @import("../utils/sysfd.zig");
+const MethodMap = @import("../utils/method_map.zig");
 
 const VM = luau.VM;
 
 const process = std.process;
 
 const native_os = builtin.os.tag;
+
+const TAG_PROCESS_CHILD = tagged.Tags.get("PROCESS_CHILD").?;
 
 pub const LIB_NAME = "process";
 pub fn PlatformSupported() bool {
@@ -155,7 +159,9 @@ const ProcessChildHandle = struct {
         return 0;
     }
 
-    fn method_readOutAsync(self: *ProcessChildHandle, L: *VM.lua.State, scheduler: *Scheduler) !i32 {
+    fn method_readOutAsync(self: *ProcessChildHandle, L: *VM.lua.State) !i32 {
+        const scheduler = Scheduler.getScheduler(L);
+
         const maxBytes = L.tounsigned(2) orelse luaHelper.MAX_LUAU_SIZE;
         if (maxBytes == 0)
             return 0;
@@ -222,7 +228,9 @@ const ProcessChildHandle = struct {
         return 0;
     }
 
-    fn method_readErrAsync(self: *ProcessChildHandle, L: *VM.lua.State, scheduler: *Scheduler) !i32 {
+    fn method_readErrAsync(self: *ProcessChildHandle, L: *VM.lua.State) !i32 {
+        const scheduler = Scheduler.getScheduler(L);
+
         const maxBytes = L.tounsigned(2) orelse luaHelper.MAX_LUAU_SIZE;
         if (maxBytes == 0)
             return 0;
@@ -277,41 +285,15 @@ const ProcessChildHandle = struct {
         return 1;
     }
 
-    pub const NamecallMap = std.StaticStringMap(enum {
-        Kill,
-        Wait,
-        ReadOut,
-        ReadOutAsync,
-        ReadErr,
-        ReadErrAsync,
-        WriteIn,
-    }).initComptime(.{
-        .{ "kill", .Kill },
-        .{ "wait", .Wait },
-        .{ "readOut", .ReadOut },
-        .{ "readOutAsync", .ReadOutAsync },
-        .{ "readErr", .ReadErr },
-        .{ "readErrAsync", .ReadErrAsync },
-        .{ "writeIn", .WriteIn },
+    pub const __namecall = MethodMap.CreateNamecallMap(ProcessChildHandle, TAG_PROCESS_CHILD, .{
+        .{ "kill", method_kill },
+        .{ "wait", method_wait },
+        .{ "readOut", method_readOut },
+        .{ "readOutAsync", method_readOutAsync },
+        .{ "readErr", method_readErr },
+        .{ "readErrAsync", method_readErrAsync },
+        .{ "writeIn", method_writeIn },
     });
-
-    pub fn __namecall(L: *VM.lua.State) !i32 {
-        const scheduler = Scheduler.getScheduler(L);
-
-        try L.Zchecktype(1, .Userdata);
-        const ptr = L.touserdata(ProcessChildHandle, 1) orelse unreachable;
-        const namecall = L.namecallstr() orelse unreachable;
-
-        return switch (NamecallMap.get(namecall) orelse return L.Zerrorf("Unknown method: {s}", .{namecall})) {
-            .Kill => method_kill(ptr, L),
-            .Wait => method_wait(ptr, L),
-            .ReadOut => method_readOut(ptr, L),
-            .ReadOutAsync => method_readOutAsync(ptr, L, scheduler),
-            .ReadErr => method_readErr(ptr, L),
-            .ReadErrAsync => method_readErrAsync(ptr, L, scheduler),
-            .WriteIn => method_writeIn(ptr, L),
-        };
-    }
 
     pub const IndexMap = std.StaticStringMap(enum {
         Dead,
@@ -331,7 +313,7 @@ const ProcessChildHandle = struct {
         return 1;
     }
 
-    pub fn __dtor(self: *ProcessChildHandle) void {
+    pub fn __dtor(_: *VM.lua.State, self: *ProcessChildHandle) void {
         var options = self.options;
         options.deinit();
         if (self.poller) |*poller| poller.deinit();
@@ -510,7 +492,7 @@ fn process_create(L: *VM.lua.State) !i32 {
 
     const childOptions = try ProcessChildOptions.init(L);
 
-    const handlePtr = L.newuserdatadtor(ProcessChildHandle, ProcessChildHandle.__dtor);
+    const handlePtr = L.newuserdatataggedwithmetatable(ProcessChildHandle, TAG_PROCESS_CHILD);
     var childProcess = process.Child.init(childOptions.argArray.items, allocator);
 
     childProcess.id = undefined;
@@ -757,13 +739,14 @@ pub fn loadLib(L: *VM.lua.State, args: []const []const u8) !void {
     const allocator = luau.getallocator(L);
 
     {
-        _ = L.Lnewmetatable(ProcessChildHandle.META);
-
-        L.Zsetfieldfn(-1, luau.Metamethods.index, ProcessChildHandle.__index); // metatable.__index
-        L.Zsetfieldfn(-1, luau.Metamethods.namecall, ProcessChildHandle.__namecall); // metatable.__namecall
-
-        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
-        L.pop(1);
+        _ = L.Znewmetatable(ProcessChildHandle.META, .{
+            .__index = ProcessChildHandle.__index,
+            .__namecall = ProcessChildHandle.__namecall,
+            .__metatable = "Metatable is locked",
+        });
+        L.setreadonly(-1, true);
+        L.setuserdatametatable(TAG_PROCESS_CHILD);
+        L.setuserdatadtor(ProcessChildHandle, TAG_PROCESS_CHILD, ProcessChildHandle.__dtor);
     }
 
     L.createtable(0, 10);

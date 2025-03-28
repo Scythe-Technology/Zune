@@ -14,39 +14,34 @@ fn luau_compile(L: *VM.lua.State) !i32 {
     const source = try L.Zcheckvalue([]const u8, 1, null);
 
     var compileOpts = luau.CompileOptions{
-        .debug_level = 2,
-        .optimization_level = 2,
+        .debug_level = Engine.DEBUG_LEVEL,
+        .optimization_level = Engine.OPTIMIZATION_LEVEL,
     };
 
-    if (!L.isnoneornil(2)) {
-        try L.Zchecktype(2, .Table);
-
-        const debug_level = try L.Zcheckfield(?i32, 2, "debug_level") orelse compileOpts.debug_level;
-        if (debug_level < 0 or debug_level > 2)
+    if (try L.Zcheckvalue(?struct {
+        debug_level: ?i32,
+        optimization_level: ?i32,
+        coverage_level: ?i32,
+        // vector_ctor: ?[:0]const u8,
+        // vector_lib: ?[:0]const u8,
+        // vector_type: ?[:0]const u8,
+    }, 2, null)) |opts| {
+        compileOpts.debug_level = opts.debug_level orelse compileOpts.debug_level;
+        if (compileOpts.debug_level < 0 or compileOpts.debug_level > 2)
             return L.Zerror("Invalid debug level");
-        compileOpts.debug_level = debug_level;
-        L.pop(1);
 
-        const optimization_level = try L.Zcheckfield(?i32, 2, "optimization_level") orelse compileOpts.optimization_level;
-        if (optimization_level < 0 or optimization_level > 2)
+        compileOpts.optimization_level = opts.optimization_level orelse compileOpts.optimization_level;
+        if (compileOpts.optimization_level < 0 or compileOpts.optimization_level > 3)
             return L.Zerror("Invalid optimization level");
-        compileOpts.optimization_level = optimization_level;
-        L.pop(1);
 
-        _ = L.getfield(2, "coverage_level");
-        const coverage_level = try L.Zcheckfield(?i32, 2, "coverage_level") orelse compileOpts.coverage_level;
-        if (coverage_level < 0 or coverage_level > 2)
+        compileOpts.coverage_level = opts.coverage_level orelse compileOpts.coverage_level;
+        if (compileOpts.coverage_level < 0 or compileOpts.coverage_level > 2)
             return L.Zerror("Invalid coverage level");
-        compileOpts.coverage_level = coverage_level;
-        L.pop(1);
 
         // TODO: Enable after tests are added
-        // if (L.getfield(2, "vector_ctor") == .String) compileOpts.vector_ctor = L.tostring(-1) orelse unreachable;
-        // L.pop(1);
-        // if (L.getfield(2, "vector_lib") == .String) compileOpts.vector_lib = L.tostring(-1) orelse unreachable;
-        // L.pop(1);
-        // if (L.getfield(2, "vector_type") == .String) compileOpts.vector_type = L.tostring(-1) orelse unreachable;
-        // L.pop(1);
+        // compileOpts.vector_ctor = opts.vector_ctor orelse compileOpts.vector_ctor;
+        // compileOpts.vector_lib = opts.vector_lib orelse compileOpts.vector_lib;
+        // compileOpts.vector_type = opts.vector_type orelse compileOpts.vector_type;
     }
 
     const allocator = luau.getallocator(L);
@@ -71,26 +66,21 @@ fn luau_compile(L: *VM.lua.State) !i32 {
 fn luau_load(L: *VM.lua.State) !i32 {
     const bytecode = try L.Zcheckvalue([]const u8, 1, null);
 
-    var useCodeGen = false;
-    var chunkName: [:0]const u8 = "(load)";
+    const Options = struct {
+        nativeCodeGen: bool = false,
+        chunkName: [:0]const u8 = "(load)",
+    };
+    const opts: Options = try L.Zcheckvalue(?Options, 2, null) orelse .{};
 
-    const optsExists = !L.isnoneornil(2);
-    if (optsExists) {
-        try L.Zchecktype(2, .Table);
-
-        _ = L.getfield(2, "nativeCodeGen");
-        useCodeGen = try L.Zcheckfield(?bool, 2, "nativeCodeGen") orelse useCodeGen;
-
-        _ = L.getfield(2, "chunkName");
-        chunkName = try L.Zcheckfield(?[:0]const u8, 2, "chunkName") orelse chunkName;
-    }
+    var useCodeGen = opts.nativeCodeGen;
+    const chunkName = opts.chunkName;
 
     try L.load(chunkName, bytecode, 0);
 
     if (L.typeOf(-1) != .Function)
         return L.Zerror("Luau Error (Bad Load)");
 
-    if (optsExists) {
+    if (L.typeOf(2) == .Table) {
         if (L.getfield(2, "env") == .Table) {
             // TODO: should allow env to have a metatable?
             if (L.getmetatable(-1)) {

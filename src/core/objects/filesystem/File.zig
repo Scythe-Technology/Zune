@@ -31,7 +31,7 @@ pub const OpenMode = packed struct {
     read: bool = false,
     write: bool = false,
 
-    pub const close: OpenMode = .{ .read = false, .write = false };
+    pub const closed: OpenMode = .{ .read = false, .write = false };
     pub const writable: OpenMode = .{ .read = false, .write = true };
     pub const readable: OpenMode = .{ .read = true, .write = false };
     pub const readwrite: OpenMode = .{ .read = true, .write = true };
@@ -419,14 +419,6 @@ pub const AsyncWriteContext = struct {
     }
 };
 
-pub fn __index(L: *VM.lua.State) !i32 {
-    try L.Zchecktype(1, .Userdata);
-    // const index = L.Lcheckstring(2);
-    // const ptr = L.touserdata(FileObject, 1) catch return 0;
-
-    return 0;
-}
-
 fn write(self: *File, L: *VM.lua.State) !i32 {
     if (!self.mode.canWrite())
         return error.NotOpenForWriting;
@@ -719,7 +711,7 @@ fn closeAsync(self: *File, L: *VM.lua.State) !i32 {
         .Tty => return error.NotCloseable,
     }
     if (self.mode.isOpen()) {
-        self.mode = .close;
+        self.mode = .closed;
         const scheduler = Scheduler.getScheduler(L);
         const file = xev.File.init(self.file) catch unreachable;
 
@@ -757,6 +749,14 @@ fn before_method(self: *File, L: *VM.lua.State) !void {
         return L.Zerror("File is closed");
 }
 
+pub fn __index(L: *VM.lua.State) !i32 {
+    try L.Zchecktype(1, .Userdata);
+    // const index = L.Lcheckstring(2);
+    // const ptr = L.touserdata(FileObject, 1) catch return 0;
+
+    return 0;
+}
+
 const __namecall = MethodMap.CreateNamecallMap(File, TAG_FS_FILE, .{
     .{ "write", MethodMap.WithFn(File, write, before_method) },
     .{ "writeSync", MethodMap.WithFn(File, writeSync, before_method) },
@@ -785,13 +785,13 @@ pub fn __dtor(L: *VM.lua.State, self: *File) void {
 }
 
 pub inline fn load(L: *VM.lua.State) void {
-    _ = L.Lnewmetatable(@typeName(@This()));
-
-    L.Zsetfieldfn(-1, luau.Metamethods.index, __index); // metatable.__index
-    L.Zsetfieldfn(-1, luau.Metamethods.namecall, __namecall); // metatable.__namecall
-
-    L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
-
+    _ = L.Znewmetatable(@typeName(@This()), .{
+        .__index = __index,
+        .__namecall = __namecall,
+        .__metatable = "Metatable is locked",
+        .__type = "FileHandle",
+    });
+    L.setreadonly(-1, true);
     L.setuserdatametatable(TAG_FS_FILE);
     L.setuserdatadtor(File, TAG_FS_FILE, __dtor);
 }
