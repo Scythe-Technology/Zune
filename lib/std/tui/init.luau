@@ -2,16 +2,12 @@
 --!native
 --!optimize 2
 
+local io = zune.io;
 local task = zune.task;
-local internal = zune.io;
 
 local ansi = require("@std/ansi");
 
-local stdio = {};
-
-stdio.stdin = internal.stdin;
-stdio.stdout = internal.stdout;
-stdio.stderr = internal.stderr;
+local tui = {};
 
 local function color(color: any, text: string)
     return `{ansi[color]}{text}{ansi.reset_color}`;
@@ -49,18 +45,18 @@ local function prompt(
     options: {string}
 ): string | boolean | number | {number}
     kind = kind or "text";
-    if (not internal.terminal.isTTY) then
+    if (not io.terminal.isTTY) then
         error("Not a terminal");
     end
 
-    local isRaw = internal.terminal.getCurrentMode() == "raw";
+    local isRaw = io.terminal.getCurrentMode() == "raw";
     if (not isRaw) then
-        if (not internal.terminal.enableRawMode()) then
+        if (not io.terminal.enableRawMode()) then
             error("Failed to enable raw mode");
         end
     end
 
-    internal.stderr:write(`{color("yellow", "?")} {style("bold", message)}`);
+    io.stderr:write(`{color("yellow", "?")} {style("bold", message)}`);
     
     local input = "";
     local order = 0;
@@ -75,39 +71,39 @@ local function prompt(
         for i = 1, #options do
             local option = options[i];
             if (kind == "select") then
-                internal.stderr:write(`\n {
+                io.stderr:write(`\n {
                     if (i == 1) then color("green", ">") else " "
                 } {style("bold", option)}`);
             elseif (kind == "multiselect") then
-                internal.stderr:write(`\n {
+                io.stderr:write(`\n {
                     if (i == 1) then color("green", "[ ]") else style("dim", "[ ]")
                 } {style("bold", option)}`);
             end
         end
-        internal.stderr:write(moveUp(#options - 1));
-        internal.stderr:write(moveToColumn(0));
+        io.stderr:write(moveUp(#options - 1));
+        io.stderr:write(moveToColumn(0));
         order = 1;
     elseif (kind == "confirm") then
-        internal.stderr:write(` {style("dim", "(y/n)")} › `);
+        io.stderr:write(` {style("dim", "(y/n)")} › `);
     elseif (kind == "text") then
-        internal.stderr:write(" › ");
+        io.stderr:write(" › ");
     end
 
     local function renderSelection(id: number, hovered: boolean)
         if (kind == "select") then
-            internal.stderr:write(`{moveToColumn(0)}\x1b[2K`);
-            internal.stderr:write(` {
+            io.stderr:write(`{moveToColumn(0)}\x1b[2K`);
+            io.stderr:write(` {
                 if (hovered) then color("green", ">") else " "
             } {style("bold", options[id])}`);
         else
-            internal.stderr:write(`{moveToColumn(0)}\x1b[2K`);
+            io.stderr:write(`{moveToColumn(0)}\x1b[2K`);
             local selected = selection[id];
             if (hovered) then
-                internal.stderr:write(` {color("green", "[")}{
+                io.stderr:write(` {color("green", "[")}{
                     if (selected) then color("green", "x") else " "
                 }{color("green", "]")} {style("bold", options[id])}`);
             else
-                internal.stderr:write(` {style("dim", "[")}{
+                io.stderr:write(` {style("dim", "[")}{
                     if (selected) then color("green", "x") else " "
                 }{style("dim", "]")} {style("bold", options[id])}`);
             end
@@ -116,7 +112,7 @@ local function prompt(
 
     while true do
         task.wait();
-        local combination = stdio.stdin:read(3);
+        local combination = io.stdin:read(3);
         if (not combination) then
             continue;
         end
@@ -141,9 +137,9 @@ local function prompt(
                         direction = moveUp();
                     end
                     renderSelection(lastOrder, false);
-                    internal.stderr:write(direction);
+                    io.stderr:write(direction);
                     renderSelection(order, true);
-                    internal.stderr:write(moveToColumn(0));
+                    io.stderr:write(moveToColumn(0));
                 end
             elseif (bytes[3] == 66) then -- down
                 if (kind == "select" or kind == "multiselect") then
@@ -160,9 +156,9 @@ local function prompt(
                         direction = moveDown();
                     end
                     renderSelection(lastOrder, false);
-                    internal.stderr:write(direction);
+                    io.stderr:write(direction);
                     renderSelection(order, true);
-                    internal.stderr:write(moveToColumn(0));
+                    io.stderr:write(moveToColumn(0));
                 end
             elseif (bytes[3] == 67) then -- right
                 if (kind == "text") then
@@ -170,7 +166,7 @@ local function prompt(
                         continue;
                     end
                     order += 1;
-                    internal.stderr:write(moveRight());
+                    io.stderr:write(moveRight());
                 end
             elseif (bytes[3] == 68) then -- left
                 if (kind == "text") then
@@ -178,7 +174,7 @@ local function prompt(
                         continue;
                     end
                     order -= 1;
-                    internal.stderr:write(moveLeft());
+                    io.stderr:write(moveLeft());
                 end
             else
                 continue;
@@ -192,14 +188,14 @@ local function prompt(
                 if (#input == 0) then
                     continue;
                 end
-                internal.stderr:write(moveLeft());
+                io.stderr:write(moveLeft());
                 input = input:sub(1, order - 1) .. input:sub(order + 1);
                 order -= 1;
-                internal.stderr:write(clearFromCursor);
+                io.stderr:write(clearFromCursor);
                 if (order ~= #input) then
                     local rest = input:sub(order + 1);
-                    internal.stderr:write(rest);
-                    internal.stderr:write(moveLeft(#rest));
+                    io.stderr:write(rest);
+                    io.stderr:write(moveLeft(#rest));
                 end
             end
         elseif (bytes[1] == 0x09) then -- tab
@@ -207,18 +203,18 @@ local function prompt(
                 if (selection[order]) then
                     selection[order] = false;
                     renderSelection(order, true);
-                    internal.stderr:write(moveToColumn(0));
+                    io.stderr:write(moveToColumn(0));
                 else
                     selection[order] = true;
                     renderSelection(order, true);
-                    internal.stderr:write(moveToColumn(0));
+                    io.stderr:write(moveToColumn(0));
                 end
             end
         elseif (bytes[1] >= 0x20 and bytes[1] <= 0x7E) then -- printable
             if (kind == "text") then
                 input ..= combination;
                 order += 1;
-                internal.stderr:write(combination);
+                io.stderr:write(combination);
             elseif (kind == "confirm") then
                 if (bytes[1] == 121 or bytes[1] == 89) then
                     input = "yes";
@@ -227,7 +223,7 @@ local function prompt(
                 else
                     continue;
                 end
-                internal.stderr:write(input);
+                io.stderr:write(input);
                 break;
             elseif (kind == "multiselect") then
                 if (bytes[1] == 65 or bytes[1] == 97) then
@@ -241,39 +237,39 @@ local function prompt(
                         end
                     end
                     for i = 1, order - 1 do
-                        internal.stderr:write(moveUp());
+                        io.stderr:write(moveUp());
                     end
                     for i = 1, #selection do
                         if (i ~= 1) then
-                            internal.stderr:write("\n");
+                            io.stderr:write("\n");
                         end
                         renderSelection(i, i == order);
                     end
                     for i = 1, #selection - order do
-                        internal.stderr:write(moveUp());
+                        io.stderr:write(moveUp());
                     end
-                    internal.stderr:write(moveToColumn(0));
+                    io.stderr:write(moveToColumn(0));
                 end
             end
         end
     end
 
     if (not isRaw) then
-        internal.terminal.restoreMode();
+        io.terminal.restoreMode();
     end
 
     if (kind == "multiselect" or kind == "select") then
         local len = #options;
         local down = len - order;
         if (down > 0) then
-            internal.stderr:write(moveDown(down));
+            io.stderr:write(moveDown(down));
         end
         for _ = 1, len do
-            internal.stderr:write(`{moveToColumn(0)}\x1b[2K`);
-            internal.stderr:write(moveUp());
+            io.stderr:write(`{moveToColumn(0)}\x1b[2K`);
+            io.stderr:write(moveUp());
         end
         if (kind == "select") then
-            internal.stderr:write(`\x1b[2K{color("green", "✔")} {style("bold", message)} · {
+            io.stderr:write(`\x1b[2K{color("green", "✔")} {style("bold", message)} · {
                 color("green", options[order])
             }`);
         else
@@ -284,24 +280,24 @@ local function prompt(
                 end
             end
             if (#selectedItems == 0) then
-                internal.stderr:write(`{color("green", "✔")} {style("bold", message)} · {style("dim", "empty")}`);
+                io.stderr:write(`{color("green", "✔")} {style("bold", message)} · {style("dim", "empty")}`);
             else
-                internal.stderr:write(`{color("green", "✔")} {style("bold", message)} · `);
+                io.stderr:write(`{color("green", "✔")} {style("bold", message)} · `);
                 for i = 1, #selectedItems do
                     if (i ~= 1) then
-                        internal.stderr:write(", ");
+                        io.stderr:write(", ");
                     end
                     local obj = selectedItems[i];
-                    internal.stderr:write(`{color("green", obj)}`);
+                    io.stderr:write(`{color("green", obj)}`);
                 end
             end
         end
     else
-        internal.stderr:write(`{moveToColumn(0)}\x1b[2K`);
-        internal.stderr:write(`{color("green", "✔")} {style("bold", message)} · {color("green", input)}`);
+        io.stderr:write(`{moveToColumn(0)}\x1b[2K`);
+        io.stderr:write(`{color("green", "✔")} {style("bold", message)} · {color("green", input)}`);
     end
 
-    internal.stderr:write("\n");
+    io.stderr:write("\n");
     if (kind == "text") then
         return input;
     elseif (kind == "confirm") then
@@ -320,6 +316,6 @@ local function prompt(
     error("unreachable");
 end
 
-stdio.prompt = (prompt :: any) :: PromptFn;
+tui.prompt = (prompt :: any) :: PromptFn;
 
-return stdio;
+return tui;
