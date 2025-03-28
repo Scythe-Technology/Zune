@@ -3,7 +3,9 @@
 --!optimize 2
 
 local task = zune.task;
-local internal = zune.stdio;
+local internal = zune.io;
+
+local ansi = require("@std/ansi");
 
 local stdio = {};
 
@@ -12,10 +14,10 @@ stdio.stdout = internal.stdout;
 stdio.stderr = internal.stderr;
 
 local function color(color: any, text: string)
-    return `{internal.color(color)}{text}{internal.reset("color")}`;
+    return `{ansi[color]}{text}{ansi.reset_color}`;
 end
 local function style(style: any, text: string)
-    return `{internal.style(style)}{text}{internal.reset(style)}`;
+    return `{ansi[style]}{text}{ansi["reset_" .. style]}`;
 end
 
 local function moveLeft(amount: number?)

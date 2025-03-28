@@ -725,6 +725,12 @@ type FunctionalCases = ExpectCases & {
         @param expected The expected error message.
     ]]
     toThrow: (expected: string?) -> (),
+    --[[
+        never
+
+        Flipped expectations.
+    ]]
+    never: FunctionalCases,
 }
 
 type ExpectHandler = {
@@ -1753,7 +1759,65 @@ type SerdeLib = {
 }
 --[======[ Serde ]======]--
 
---[======[ Stdio ]======]--
+--[======[ Io ]======]--
+declare class IoReadable
+    read:
+        & ((self: IoReadable, amount: number?, bytes: true?) -> buffer?)
+        & ((self: IoReadable, amount: number?, bytes: false) -> string?)
+
+    function readu8(self): number?
+    function readu16(self): number?
+    function readu32(self): number?
+    function readi8(self): number?
+    function readi16(self): number?
+    function readi32(self): number?
+    function readf32(self): number?
+    function readf64(self): number?
+end
+
+declare class IoWritable
+    function write(self, data: string | buffer): ()
+    function writeu8(self, value: number): ()
+    function writeu16(self, value: number): ()
+    function writeu32(self, value: number): ()
+    function writei8(self, value: number): ()
+    function writei16(self, value: number): ()
+    function writei32(self, value: number): ()
+    function writef32(self, value: number): ()
+    function writef64(self, value: number): ()
+end
+
+declare class BufferStream
+    pos: number
+    len: number
+    read:
+        & ((self: BufferStream, amount: number?, bytes: true?) -> buffer?)
+        & ((self: BufferStream, amount: number?, bytes: false) -> string?)
+
+    function seekTo(self, pos: number): ()
+    function seakBy(self, offset: number): ()
+    function write(self, data: string | buffer): ()
+    function writer(self): IoWritable
+    function reader(self): IoReadable
+end
+
+declare class BufferSink
+    --[[
+        Written length
+    ]]
+    len: boolean
+    closed: boolean
+
+    flush:
+        & ((self: BufferSink) -> buffer)
+        & ((self: BufferSink, true) -> buffer)
+        & ((self: BufferSink, false) -> string)
+
+    function write(self, data: string | buffer): ()
+    function writer(self): IoWritable
+    function close(self): ()
+end
+
 export type Terminal = {
     --[[
         Whether the terminal is a TTY.
@@ -1798,101 +1862,16 @@ export type Terminal = {
     getSize: () -> (number, number),
 }
 
-type ColorFunction = (color: "black" | "red" | "green" | "yellow" | "blue" | "magenta" | "cyan" | "white" | "bblack" | "bred" | "bgreen" | "byellow" | "bblue" | "bmagenta" | "bcyan" | "bwhite") -> string
+type BufferSinkOptions = {
+    --[[
+        The maximum size of the buffer.
+        - Default: `1073741824`
+    ]]
+    limit: number?,
+}
 
-type StdioLib = {
+type IoLib = {
     MAX_READ: number,
-
-    --[[
-        Generates escape sequence to move the cursor.
-
-        @param action The action.
-        @return `string`
-    ]]
-    cursorMove:
-        & ((action: "home") -> string)
-        & ((action: "goto", line: number, column: number) -> string)
-        & ((action: "up" | "down" | "right" | "left", amount: number) -> string)
-        & ((action: "nextline", linesDown: number) -> string)
-        & ((action: "prevline", linesUp: number) -> string)
-        & ((action: "gotocol", column: number) -> string),
-
-    --[[
-        Generates escape sequence to erase text.
-
-        @param erase The erase action.
-        @return `string`
-    ]]
-    erase: ((erase: "endOf" | "startOf" | "entire" | "savedLines" | "endOfLine" | "startOfLine" | "entireLine") -> string),
-
-    --[[
-        Generates style.
-
-        @param action The action.
-        @return `string`
-    ]]
-    style: (style: "bold" | "dim" | "italic" | "underline" | "blinking" | "inverse" | "hidden" | "strikethrough") -> string,
-
-    --[[
-        Resets styles.
-
-        Optional style parameter to reset a specific style. Nil to reset all.
-
-        @param style The style to reset.
-        @return `string`
-    ]]
-    reset:
-        & (() -> string)
-        & ((style: "weight" | "italic" | "underline" | "blinking" | "inverse" | "hidden" | "strikethrough" | "color") -> string),
-
-    --[[
-        Generates color.
-
-        @param color The color.
-        @return `string`
-    ]]
-    color: ColorFunction,
-    --[[
-        Generates background color.
-
-        @param color The color.
-        @return `string`
-    ]]
-    bgcolor: ColorFunction,
-
-    --[[
-        Generates color.
-
-        @param code The color code.
-        @return `string`
-    ]]
-    color256: (code: number) -> string,
-    --[[
-        Generates background color.
-
-        @param code The color code.
-        @return `string`
-    ]]
-    bgcolor256: (code: number) -> string,
-
-    --[[
-        Generates true color.
-
-        @param r The red value.
-        @param g The green value.
-        @param b The blue value.
-        @return `string`
-    ]]
-    trueColor: (r: number, g: number, b: number) -> string,
-    --[[
-        Generates background true color.
-
-        @param r The red value.
-        @param g The green value.
-        @param b The blue value.
-        @return `string`
-    ]]
-    bgtrueColor: (r: number, g: number, b: number) -> string,
 
     --[[
         Formats input to a readable string.
@@ -1901,6 +1880,22 @@ type StdioLib = {
         @return `string`
     ]]
     format: (...any) -> string,
+
+    --[[
+        Creates a buffer sink.
+
+        @param opts The options for the buffer sink.
+        @return `BufferSink`
+    ]]
+    createBufferSink: (opts: BufferSinkOptions?) -> BufferSink,
+
+    --[[
+        Creates a buffer stream with provided lua buffer.
+
+        @param buffer The lua buffer to use.
+        @return `BufferStream`
+    ]]
+    createFixedBufferStream: (buffer: buffer) -> BufferStream,
 
     --[[
         Terminal.
@@ -1919,7 +1914,7 @@ type StdioLib = {
     ]]
     stdin: FileHandle,
 }
---[======[ Stdio ]======]--
+--[======[ Io ]======]--
 
 --[======[ Crypto ]======]--
 declare class CryptoHash
@@ -2312,7 +2307,7 @@ declare zune: {
     net: NetworkLib,
     luau: LuauLib,
     serde: SerdeLib,
-    stdio: StdioLib,
+    io: IoLib,
     crypto: CryptoLib,
     regex: RegexLib,
     datetime: DatetimeLib,

@@ -912,7 +912,7 @@ pub fn prompt(L: *VM.lua.State, comptime kind: BreakKind, debug_info: ?*VM.lua.c
     var stdin = std.io.getStdIn();
     var in_reader = stdin.reader();
 
-    const terminal = &(Zune.corelib.stdio.TERMINAL orelse std.debug.panic("Terminal not initialized", .{}));
+    const terminal = &(Zune.corelib.io.TERMINAL orelse std.debug.panic("Terminal not initialized", .{}));
     const history = debug.HISTORY orelse std.debug.panic("History not initialized", .{});
 
     var buffer = std.ArrayList(u8).init(allocator);

@@ -1,0 +1,229 @@
+--!strict
+local io = zune.io;
+local testing = zune.testing;
+
+local test = testing.test;
+local expect = testing.expect;
+local describe = testing.describe;
+
+describe("IO", function()
+    describe("BufferSink", function()
+        test("Generic", function()
+            local sink = io.createBufferSink();
+            expect(sink).toBe(expect.type("userdata"));
+
+            local a = "test default";
+            sink:write(a);
+            expect(sink.len).toBe(#a);
+            expect(buffer.tostring(sink:flush())).toBe(a);
+            expect(sink.len).toBe(0);
+
+            local b = "test buffer";
+            sink:write(b);
+            expect(sink.len).toBe(#b);
+            expect(buffer.tostring(sink:flush(true))).toBe(b);
+            expect(sink.len).toBe(0);
+
+            local c = "test string";
+            sink:write(c);
+            expect(sink.len).toBe(#c);
+            expect(sink:flush(false)).toBe(c);
+            expect(sink.len).toBe(0);
+
+            local chunk = buffer.create(1024);
+            local data = "test chunk";
+            buffer.writestring(chunk, 0, data);
+            sink:write(chunk);
+            expect(sink.len).toBe(1024);
+            local flushed_chunk = sink:flush();
+            local rem = 1024 - #data;
+            expect(buffer.readstring(flushed_chunk, #data, rem)).toBe(string.rep("\0", rem));
+            expect(buffer.readstring(flushed_chunk, 0, 10)).toBe("test chunk");
+            expect(sink.len).toBe(0);
+
+            expect(function()
+                sink:close()
+            end).never.toThrow();
+        end)
+        test("WritableStream", function()
+            local sink = io.createBufferSink();
+            expect(sink).toBe(expect.type("userdata"));
+
+            local stream = sink:writer();
+            stream:writeu8(123);
+            expect(sink.len).toBe(1);
+            expect(buffer.readu8(sink:flush(), 0)).toBe(123);
+            expect(sink.len).toBe(0);
+
+            stream:writeu8(257);
+            expect(sink.len).toBe(1);
+            expect(buffer.readu8(sink:flush(), 0)).toBe(1);
+            expect(sink.len).toBe(0);
+
+            stream:writeu16(12345);
+            expect(sink.len).toBe(2);
+            expect(buffer.readu16(sink:flush(), 0)).toBe(12345);
+            expect(sink.len).toBe(0);
+
+            stream:writeu16(70000);
+            expect(sink.len).toBe(2);
+            expect(buffer.readu16(sink:flush(), 0)).toBe(4464);
+            expect(sink.len).toBe(0);
+
+            stream:writeu32(123456789);
+            expect(sink.len).toBe(4);
+            expect(buffer.readu32(sink:flush(), 0)).toBe(123456789);
+
+            stream:writef32(123.456);
+            expect(sink.len).toBe(4);
+            expect(
+                buffer.readf32(sink:flush(), 0) * 1000
+                // 1
+                / 1000
+            ).toBe(123.456);
+            expect(sink.len).toBe(0);
+
+            stream:writef64(12345.12345);
+            expect(sink.len).toBe(8);
+            expect(buffer.readf64(sink:flush(), 0)).toBe(12345.12345);
+            expect(sink.len).toBe(0);
+
+            expect(function()
+                sink:close()
+            end).never.toThrow();
+        end)
+        test("Limited Small", function()
+            local sink = io.createBufferSink({
+                limit = 1024,
+            });
+            expect(sink).toBe(expect.type("userdata"));
+    
+            local large = string.rep("a", 1024);
+            sink:write(large);
+            expect(sink.len).toBe(#large);
+            expect(buffer.tostring(sink:flush())).toBe(large);
+            expect(sink.len).toBe(0);
+
+            expect(function()
+                sink:write(large .. "a");
+            end).toThrow("BufferSink limit exceeded");
+    
+            expect(function()
+                sink:close()
+            end).never.toThrow();
+        end)
+    end)
+
+    describe("FixedBufferStream", function()
+        test("Generic Usage", function()
+            local buf = buffer.fromstring("test default");
+            local stream = io.createFixedBufferStream(buf);
+            expect(stream).toBe(expect.type("userdata"));
+
+            local a = "test default";
+            stream:write(a);
+            expect(buffer.tostring(buf)).toBe(a);
+            expect(stream.pos).toBe(#a);
+
+            stream:seekTo(0);
+            expect(stream.pos).toBe(0);
+
+            local b = "test buffer";
+            stream:write(b);
+            expect(buffer.tostring(buf)).toBe(b .. (a:sub(#b + 1)));
+            expect(stream.pos).toBe(#b);
+
+            stream:seekTo(0);
+            expect(stream.pos).toBe(0);
+
+            local c = "test string";
+            stream:write(c);
+            expect(buffer.tostring(buf)).toBe(c .. (a:sub(#c + 1)));
+            expect(stream.pos).toBe(#c);
+
+            stream:seekTo(0);
+            expect(stream.pos).toBe(0);
+
+            local all = stream:read()
+            expect(all).never.toBeNil();
+            assert(all)
+            expect(buffer.tostring(all)).toBe(c .. (a:sub(#c + 1)));
+
+            stream:seekTo(0);
+            expect(stream.pos).toBe(0);
+
+            buffer.writestring(buf, 0, "test default");
+            stream:write(buf);
+
+            local none = stream:read()
+            expect(none).toBeNil();
+
+            stream:seekTo(0);
+            expect(stream.pos).toBe(0)
+
+            none = stream:read(0)
+            expect(none).never.toBeNil()
+            assert(none)
+            expect(buffer.tostring(none)).toBe("")
+
+            local string_none = stream:read(0, false)
+            expect(string_none).toBe("")
+
+            local partial = stream:read(4)
+            expect(partial).never.toBeNil()
+            assert(partial)
+            expect(buffer.tostring(partial)).toBe("test")
+        end)
+        test("Generic Reader", function()
+            local buf = buffer.fromstring("test default");
+            local stream = io.createFixedBufferStream(buf);
+            expect(stream).toBe(expect.type("userdata"));
+            expect(stream.pos).toBe(0);
+
+            local reader = stream:reader();
+            expect(reader).toBe(expect.type("userdata"));
+
+            expect(reader:readu8()).toBe(116); -- 't'
+            expect(reader:readu8()).toBe(101); -- 'e'
+            expect(reader:readu8()).toBe(115); -- 's'
+            expect(reader:readu8()).toBe(116); -- 't'
+
+            expect(stream.pos).toBe(4);
+
+            expect(reader:read(nil, false)).toBe(" default");
+            expect(stream.pos).toBe(12);
+
+            expect(reader:readu8()).toBeNil();
+        end)
+        test("Generic Writer", function()
+            local buf = buffer.fromstring("____ _______");
+            local stream = io.createFixedBufferStream(buf);
+            expect(stream).toBe(expect.type("userdata"));
+            expect(stream.pos).toBe(0);
+
+            local writer = stream:writer();
+            expect(writer).toBe(expect.type("userdata"));
+
+            writer:writeu8(116); -- 't'
+            writer:writeu8(101); -- 'e'
+            writer:writeu8(115); -- 's'
+            writer:writeu8(116); -- 't'
+            expect(buffer.tostring(buf)).toBe("test _______");
+
+            expect(stream.pos).toBe(4);
+
+            writer:write(" default");
+            expect(buffer.tostring(buf)).toBe("test default");
+        end)
+    end)
+
+    test("Format", function()
+        expect(io.format("test")).toBe("test");
+        expect(io.format(123)).toBe("\x1B[96m123\x1B[0m");
+        local res : string = io.format({[" "] = 1});
+        local start : number = (res:find(">")) or error("Bad format");
+        start += 1;
+        expect(res:sub(start)).toBe(" {\x1B[0m\n    \x1B[2m[\x1B[0m\x1B[32m\" \"\x1B[0m\x1B[2m]\x1B[0m\x1B[2m = \x1B[0m\x1B[96m1\x1B[0m\x1B[2m,\x1B[0m \n\x1B[2m}\x1B[0m");
+        expect(((res:sub(1,start)):find("\x1B%[2m<table: 0x.+>"))).never.toBeNil();
+    end)
+end)

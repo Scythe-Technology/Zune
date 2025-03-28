@@ -44,11 +44,11 @@ pub const VERSION = "Zune " ++ zune_info.version ++ "+" ++ std.fmt.comptimePrint
 var STD_ENABLED = true;
 const FEATURES = struct {
     pub var fs = true;
+    pub var io = true;
     pub var net = true;
     pub var process = true;
     pub var task = true;
     pub var luau = true;
-    pub var stdio = true;
     pub var serde = true;
     pub var crypto = true;
     pub var datetime = true;
@@ -232,16 +232,18 @@ pub fn openZune(L: *VM.lua.State, args: []const []const u8, flags: Flags) !void 
     objects.load(L);
 
     L.createtable(0, 0);
-    L.createtable(0, 2);
-    L.Zsetfieldfn(-1, luau.Metamethods.index, struct {
-        fn inner(l: *VM.lua.State) !i32 {
-            _ = l.Lfindtable(VM.lua.REGISTRYINDEX, "_LIBS", 1);
-            l.pushvalue(2);
-            _ = l.gettable(-2);
-            return 1;
-        }
-    }.inner);
-    L.Zsetfield(-1, luau.Metamethods.metatable, "This metatable is locked");
+    L.Zpushvalue(.{
+        .__index = struct {
+            fn inner(l: *VM.lua.State) !i32 {
+                _ = l.Lfindtable(VM.lua.REGISTRYINDEX, "_LIBS", 1);
+                l.pushvalue(2);
+                _ = l.gettable(-2);
+                return 1;
+            }
+        }.inner,
+        .__metatable = "This metatable is locked",
+    });
+    L.setreadonly(-1, true);
     _ = L.setmetatable(-2);
     L.setreadonly(-1, true);
     L.setglobal("zune");
@@ -267,8 +269,8 @@ pub fn openZune(L: *VM.lua.State, args: []const []const u8, flags: Flags) !void 
             corelib.luau.loadLib(L);
         if (FEATURES.serde)
             corelib.serde.loadLib(L);
-        if (FEATURES.stdio)
-            corelib.stdio.loadLib(L);
+        if (FEATURES.io)
+            corelib.io.loadLib(L);
         if (FEATURES.crypto)
             corelib.crypto.loadLib(L);
         if (FEATURES.regex)

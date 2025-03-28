@@ -74,7 +74,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var stdin = std.io.getStdIn();
     var in_reader = stdin.reader();
 
-    const terminal = &(Zune.corelib.stdio.TERMINAL orelse std.debug.panic("Terminal not initialized", .{}));
+    const terminal = &(Zune.corelib.io.TERMINAL orelse std.debug.panic("Terminal not initialized", .{}));
     errdefer terminal.restoreSettings() catch {};
     errdefer terminal.restoreOutputMode() catch {};
 

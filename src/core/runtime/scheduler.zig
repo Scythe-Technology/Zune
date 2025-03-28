@@ -56,7 +56,7 @@ pub const ThreadRef = struct {
             return .{ .value = L, .ref = null };
         }
         L.xmove(GL, 1);
-        const ref = GL.ref(-1) orelse std.debug.panic("Tash Scheduler failed to create thread ref\n", .{});
+        const ref = GL.ref(-1) orelse std.debug.panic("Task Scheduler failed to create thread ref\n", .{});
         GL.pop(1);
         return .{ .value = L, .ref = ref };
     }
