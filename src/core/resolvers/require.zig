@@ -96,7 +96,7 @@ fn require_dtor(ctx: *RequireContext, _: *VM.lua.State, _: *Scheduler) void {
 
     const queue = REQUIRE_QUEUE_MAP.getEntry(ctx.path) orelse return;
 
-    for (queue.value_ptr.items) |item|
+    for (queue.value_ptr.items) |*item|
         item.state.deref();
     queue.value_ptr.deinit();
     allocator.free(queue.key_ptr.*);

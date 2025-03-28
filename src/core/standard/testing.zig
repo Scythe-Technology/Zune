@@ -75,7 +75,7 @@ fn testing_checkLeakedReferences(L: *VM.lua.State) !i32 {
         const scope_copy = try allocator.dupe(u8, scope);
 
         var buf = std.ArrayList(u8).init(allocator);
-        try formatter.fmt_write_idx(allocator, L, buf.writer(), -1, formatter.MAX_DEPTH);
+        try formatter.fmt_write_idx(allocator, L, buf.writer(), @intCast(L.gettop()), formatter.MAX_DEPTH);
 
         try REF_LEAKED_SOURCE.put(store_index, .{ .scope = scope_copy, .value = try buf.toOwnedSlice() });
     }
@@ -105,14 +105,13 @@ fn testing_droptasks(L: *VM.lua.State) i32 {
     var sleepingSize = scheduler.sleeping.items.len;
     while (sleepingSize > 0) {
         sleepingSize -= 1;
-        const slept = scheduler.sleeping.remove();
+        var slept = scheduler.sleeping.remove();
         slept.thread.deref();
     }
 
     while (scheduler.deferred.pop()) |node| {
-        const deferred = node.data;
         defer scheduler.allocator.destroy(node);
-        deferred.thread.deref();
+        node.data.thread.deref();
     }
 
     return 0;
@@ -164,6 +163,8 @@ pub fn finish_testing(L: *VM.lua.State, rawstart: f64) TestResult {
     else
         0;
     L.pop(1);
+
+    _ = L.gc(.Collect, 0);
 
     stepCheckLeakedReferences(L);
 

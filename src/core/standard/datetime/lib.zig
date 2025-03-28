@@ -39,8 +39,6 @@ pub const LuaDatetime = struct {
     datetime: time.Datetime,
     timezone: ?time.Timezone,
 
-    pub const META = "datetime_instance";
-
     fn toIsoDate(self: *LuaDatetime, L: *VM.lua.State) !i32 {
         const datetime = self.datetime;
         const utc = if (datetime.isAware())
@@ -287,7 +285,7 @@ fn datetime_parse(L: *VM.lua.State) !i32 {
 
 pub fn loadLib(L: *VM.lua.State) void {
     {
-        _ = L.Znewmetatable(LuaDatetime.META, .{
+        _ = L.Znewmetatable(@typeName(LuaDatetime), .{
             .__index = LuaDatetime.__index,
             .__namecall = LuaDatetime.__namecall,
             .__metatable = "Metatable is locked",

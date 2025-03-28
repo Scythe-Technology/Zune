@@ -21,7 +21,6 @@ const TCPClient = struct {
     stopped: bool,
 
     pub const LuaMeta = struct {
-        pub const META = "net_tcp_client_instance";
         pub fn __index(L: *VM.lua.State) !i32 {
             try L.Zchecktype(1, .Userdata);
             const self = L.touserdata(Self, 1) orelse unreachable;
@@ -211,7 +210,7 @@ pub fn lua_tcp_client(L: *VM.lua.State) !i32 {
         },
     };
 
-    if (L.Lgetmetatable(TCPClient.LuaMeta.META) == .Table) {
+    if (L.Lgetmetatable(@typeName(TCPClient.LuaMeta)) == .Table) {
         _ = L.setmetatable(-2);
     } else std.debug.panic("InternalError (UDP Metatable not initialized)", .{});
 
@@ -249,7 +248,6 @@ const TCPServer = struct {
         connected: bool,
 
         pub const LuaMeta = struct {
-            pub const META = "net_tcp_server_connection_instance";
             pub fn __namecall(L: *VM.lua.State) !i32 {
                 try L.Zchecktype(1, .Userdata);
                 const self = L.touserdata(Connection, 1) orelse unreachable;
@@ -282,7 +280,6 @@ const TCPServer = struct {
     };
 
     pub const LuaMeta = struct {
-        pub const META = "net_tcp_server_instance";
         pub fn __index(L: *VM.lua.State) !i32 {
             try L.Zchecktype(1, .Userdata);
             const self = L.touserdata(Self, 1) orelse unreachable;
@@ -421,7 +418,7 @@ const TCPServer = struct {
                         .connected = true,
                     };
                     connections[i] = ptr.*;
-                    if (L.Lgetmetatable(TCPServer.Connection.LuaMeta.META) == .Table) {
+                    if (L.Lgetmetatable(@typeName(TCPServer.Connection.LuaMeta)) == .Table) {
                         _ = L.setmetatable(-2);
                     } else std.debug.panic("InternalError (TCPServer Metatable not initialized)", .{});
                     if (ctx.handlers.open) |fnRef| {
@@ -553,7 +550,7 @@ pub fn lua_tcp_server(L: *VM.lua.State) !i32 {
         },
     };
 
-    if (L.Lgetmetatable(TCPServer.LuaMeta.META) == .Table) {
+    if (L.Lgetmetatable(@typeName(TCPServer.LuaMeta)) == .Table) {
         _ = L.setmetatable(-2);
     } else std.debug.panic("InternalError (TCPServer Metatable not initialized)", .{});
 
@@ -564,7 +561,7 @@ pub fn lua_tcp_server(L: *VM.lua.State) !i32 {
 
 pub fn lua_load(L: *VM.lua.State) void {
     {
-        _ = L.Znewmetatable(TCPClient.LuaMeta.META, .{
+        _ = L.Znewmetatable(@typeName(TCPClient.LuaMeta), .{
             .__index = TCPClient.LuaMeta.__index,
             .__namecall = TCPClient.LuaMeta.__namecall,
             .__metatable = "Metatable is locked",
@@ -573,7 +570,7 @@ pub fn lua_load(L: *VM.lua.State) void {
         L.pop(1);
     }
     {
-        _ = L.Znewmetatable(TCPServer.LuaMeta.META, .{
+        _ = L.Znewmetatable(@typeName(TCPServer.LuaMeta), .{
             .__index = TCPServer.LuaMeta.__index,
             .__namecall = TCPServer.LuaMeta.__namecall,
             .__metatable = "Metatable is locked",
@@ -582,7 +579,7 @@ pub fn lua_load(L: *VM.lua.State) void {
         L.pop(1);
     }
     {
-        _ = L.Znewmetatable(TCPServer.Connection.LuaMeta.META, .{
+        _ = L.Znewmetatable(@typeName(TCPServer.Connection.LuaMeta), .{
             .__namecall = TCPServer.Connection.LuaMeta.__namecall,
             .__metatable = "Metatable is locked",
         });

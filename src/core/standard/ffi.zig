@@ -189,8 +189,6 @@ const LuaPointer = struct {
         tag: u32 = 0,
     };
 
-    pub const META = "ffi_pointer";
-
     pub const PointerType = enum {
         Allocated,
         Static,
@@ -854,8 +852,6 @@ const LuaDataType = struct {
     type: DataType,
     offsets: ?[]usize = null,
     fields_map: ?std.StringArrayHashMap(DataType) = null,
-
-    pub const META = "ffi_data_type";
 
     pub const IndexMap = std.StaticStringMap(enum {
         Size,
@@ -2132,7 +2128,7 @@ fn ffi_dupe(L: *VM.lua.State) !i32 {
 
 pub fn loadLib(L: *VM.lua.State) void {
     {
-        _ = L.Znewmetatable(LuaDataType.META, .{
+        _ = L.Znewmetatable(@typeName(LuaDataType), .{
             .__index = LuaDataType.__index,
             .__namecall = LuaDataType.__namecall,
             .__metatable = "Metatable is locked",
@@ -2143,7 +2139,7 @@ pub fn loadLib(L: *VM.lua.State) void {
         L.setuserdatametatable(TAG_FFI_DATATYPE);
     }
     {
-        _ = L.Znewmetatable(LuaPointer.META, .{
+        _ = L.Znewmetatable(@typeName(LuaPointer), .{
             .__eq = LuaPointer.__eq,
             .__namecall = LuaPointer.__namecall,
             .__tostring = LuaPointer.__tostring,

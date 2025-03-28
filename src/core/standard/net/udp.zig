@@ -18,7 +18,6 @@ port: u16,
 stopped: bool,
 
 pub const LuaMeta = struct {
-    pub const META = "net_udp_instance";
     pub fn __index(L: *VM.lua.State) !i32 {
         try L.Zchecktype(1, .Userdata);
         const self = L.touserdata(Self, 1) orelse unreachable;
@@ -171,7 +170,7 @@ pub fn lua_udpsocket(L: *VM.lua.State) !i32 {
         },
     };
 
-    if (L.Lgetmetatable(LuaMeta.META) == .Table) {
+    if (L.Lgetmetatable(@typeName(LuaMeta)) == .Table) {
         _ = L.setmetatable(-2);
     } else std.debug.panic("InternalError (UDP Metatable not initialized)", .{});
 
@@ -181,7 +180,7 @@ pub fn lua_udpsocket(L: *VM.lua.State) !i32 {
 }
 
 pub fn lua_load(L: *VM.lua.State) void {
-    _ = L.Znewmetatable(LuaMeta.META, .{
+    _ = L.Znewmetatable(@typeName(LuaMeta), .{
         .__index = LuaMeta.__index,
         .__namecall = LuaMeta.__namecall,
         .__metatable = "Metatable is locked",

@@ -61,11 +61,12 @@ pub const ThreadRef = struct {
         return .{ .value = L, .ref = ref };
     }
 
-    pub fn deref(self: ThreadRef) void {
+    pub fn deref(self: *ThreadRef) void {
         if (self.ref) |r| {
             if (r <= 0)
                 return;
             self.value.mainthread().unref(r);
+            self.ref = null;
         }
     }
 };
@@ -444,21 +445,21 @@ pub fn cancelThread(self: *Self, thread: *VM.lua.State) void {
     const sleeping_items = self.sleeping.items;
     for (sleeping_items, 0..) |item, i| {
         if (item.thread.value == thread) {
-            const slept = self.sleeping.removeIndex(i);
+            var slept = self.sleeping.removeIndex(i);
             slept.thread.deref();
             return;
         }
     }
-    var node = self.deferred.first;
-    while (node) |dnode| {
-        const deferred = dnode.data;
+    var next_node = self.deferred.first;
+    while (next_node) |node| {
+        const deferred = node.data;
         if (deferred.thread.value == thread) {
-            deferred.thread.deref();
-            self.deferred.remove(dnode);
-            self.allocator.destroy(dnode);
+            node.data.thread.deref();
+            self.deferred.remove(node);
+            self.allocator.destroy(node);
             break;
         }
-        node = dnode.next;
+        next_node = node.next;
     }
 }
 
@@ -526,7 +527,7 @@ pub fn run(self: *Self, comptime mode: Zune.RunMode) void {
             var i = self.tasks.items.len;
             while (i > 0) {
                 i -= 1;
-                const task = self.tasks.items[i];
+                const task = &self.tasks.items[i];
                 switch (task.virtualFn(task.data, task.state.value, self)) {
                     .Continue => {},
                     .ContinueFast => {},
@@ -542,7 +543,7 @@ pub fn run(self: *Self, comptime mode: Zune.RunMode) void {
             self.frame = .Sleeping;
             while (self.sleeping.peek()) |current| {
                 if (current.wake <= now) {
-                    const slept = self.sleeping.remove();
+                    var slept = self.sleeping.remove();
                     var args = slept.args;
                     const thread = slept.thread.value;
                     const status = thread.status();
@@ -572,7 +573,7 @@ pub fn run(self: *Self, comptime mode: Zune.RunMode) void {
                 defer self.allocator.destroy(node);
                 const thread = deferred.thread.value;
                 const status = thread.status();
-                defer deferred.thread.deref();
+                defer node.data.thread.deref();
                 if (status != .Ok and status != .Yield)
                     continue;
                 _ = resumeState(
@@ -587,7 +588,7 @@ pub fn run(self: *Self, comptime mode: Zune.RunMode) void {
             var i = self.awaits.items.len;
             while (i > 0) {
                 i -= 1;
-                const awaiting = self.awaits.items[i];
+                const awaiting = &self.awaits.items[i];
                 if (awaiting.state.value.status() != .Yield) {
                     defer awaiting.state.deref();
                     _ = self.awaits.orderedRemove(i);

@@ -376,8 +376,6 @@ const WatchObject = struct {
 };
 
 const LuaWatch = struct {
-    pub const META = "fs_watch_instance";
-
     pub fn __index(L: *VM.lua.State) !i32 {
         try L.Zchecktype(1, .Userdata);
         return 0;
@@ -564,7 +562,7 @@ fn fs_watch(L: *VM.lua.State) !i32 {
     const luaObj = L.newuserdata(WatchObject.Lua);
     luaObj.ptr = data;
 
-    if (L.Lgetmetatable(LuaWatch.META) == .Table)
+    if (L.Lgetmetatable(@typeName(LuaWatch)) == .Table)
         _ = L.setmetatable(-2)
     else
         std.debug.panic("InternalError (Watch Metatable not initialized)", .{});
@@ -582,7 +580,7 @@ fn fs_watch(L: *VM.lua.State) !i32 {
 
 pub fn loadLib(L: *VM.lua.State) void {
     {
-        _ = L.Znewmetatable(LuaWatch.META, .{
+        _ = L.Znewmetatable(@typeName(LuaWatch), .{
             .__index = LuaWatch.__index,
             .__namecall = LuaWatch.__namecall,
             .__metatable = "Metatable is locked",

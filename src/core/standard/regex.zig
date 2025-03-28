@@ -15,8 +15,6 @@ pub const LIB_NAME = "regex";
 const LuaRegex = struct {
     code: *pcre2.Code,
 
-    pub const META = "regex_instance";
-
     pub fn match(self: *LuaRegex, L: *VM.lua.State) !i32 {
         const allocator = luau.getallocator(L);
 
@@ -178,7 +176,7 @@ fn regex_create(L: *VM.lua.State) !i32 {
 
 pub fn loadLib(L: *VM.lua.State) void {
     {
-        _ = L.Znewmetatable(LuaRegex.META, .{
+        _ = L.Znewmetatable(@typeName(LuaRegex), .{
             .__namecall = LuaRegex.__namecall,
             .__metatable = "Metatable is locked",
         });

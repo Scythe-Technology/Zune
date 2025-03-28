@@ -21,8 +21,6 @@ const LuaStatement = struct {
     statement: sqlite.Statement,
     closed: bool = false,
 
-    pub const META = "sqlite_statement_instance";
-
     // Placeholder
     pub fn __index(L: *VM.lua.State) !i32 {
         try L.Zchecktype(1, .Userdata);
@@ -179,8 +177,6 @@ const LuaDatabase = struct {
     db: sqlite.Database,
     statements: std.ArrayList(i32),
     closed: bool = false,
-
-    pub const META = "sqlite_database_instance";
 
     // Placeholder
     pub fn __index(L: *VM.lua.State) !i32 {
@@ -418,7 +414,7 @@ fn sqlite_open(L: *VM.lua.State) !i32 {
 
 pub fn loadLib(L: *VM.lua.State) void {
     {
-        _ = L.Znewmetatable(LuaDatabase.META, .{
+        _ = L.Znewmetatable(@typeName(LuaDatabase), .{
             .__index = LuaDatabase.__index,
             .__namecall = LuaDatabase.__namecall,
             .__metatable = "Metatable is locked",
@@ -428,7 +424,7 @@ pub fn loadLib(L: *VM.lua.State) void {
         L.setuserdatametatable(TAG_SQLITE_DATABASE);
     }
     {
-        _ = L.Znewmetatable(LuaStatement.META, .{
+        _ = L.Znewmetatable(@typeName(LuaStatement), .{
             .__index = LuaStatement.__index,
             .__namecall = LuaStatement.__namecall,
             .__metatable = "Metatable is locked",

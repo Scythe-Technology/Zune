@@ -118,8 +118,6 @@ const ProcessChildHandle = struct {
         stderr,
     };
 
-    pub const META = "process_child_instance";
-
     fn method_kill(self: *ProcessChildHandle, L: *VM.lua.State) !i32 {
         const term = try self.child.kill();
         self.dead = true;
@@ -534,7 +532,7 @@ fn process_create(L: *VM.lua.State) !i32 {
 
     handlePtr.child = childProcess;
 
-    if (L.Lgetmetatable(ProcessChildHandle.META) == .Table)
+    if (L.Lgetmetatable(@typeName(ProcessChildHandle)) == .Table)
         _ = L.setmetatable(-2)
     else
         std.debug.panic("InternalError (ProcessChild Metatable not initialized)", .{});
@@ -739,7 +737,7 @@ pub fn loadLib(L: *VM.lua.State, args: []const []const u8) !void {
     const allocator = luau.getallocator(L);
 
     {
-        _ = L.Znewmetatable(ProcessChildHandle.META, .{
+        _ = L.Znewmetatable(@typeName(ProcessChildHandle), .{
             .__index = ProcessChildHandle.__index,
             .__namecall = ProcessChildHandle.__namecall,
             .__metatable = "Metatable is locked",

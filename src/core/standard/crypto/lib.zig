@@ -141,8 +141,6 @@ const LuaCryptoHasher = struct {
 
     pub const AlgorithmMap = EnumMap.Gen(Algorithm);
 
-    pub const META = "crypto_hash_instance";
-
     fn update(self: *LuaCryptoHasher, L: *VM.lua.State) !i32 {
         if (self.extra != null and self.used)
             return L.Zerror("Hasher already used");
@@ -306,7 +304,7 @@ fn crypto_createHash(L: *VM.lua.State) !i32 {
 
 pub fn loadLib(L: *VM.lua.State) void {
     {
-        _ = L.Znewmetatable(LuaCryptoHasher.META, .{
+        _ = L.Znewmetatable(@typeName(LuaCryptoHasher), .{
             .__namecall = LuaCryptoHasher.__namecall,
             .__metatable = "Metatable is locked",
         });
