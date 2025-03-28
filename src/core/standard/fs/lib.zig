@@ -135,7 +135,7 @@ fn fs_writeFileAsync(L: *VM.lua.State) !i32 {
     };
     errdefer file.close();
 
-    return File.AsyncWriteContext.queue(L, file, data, true, null);
+    return File.AsyncWriteContext.queue(L, file, data, true, 0, null);
 }
 
 fn fs_writeFileSync(L: *VM.lua.State) !i32 {

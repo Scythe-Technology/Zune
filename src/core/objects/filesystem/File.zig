@@ -267,6 +267,7 @@ pub const AsyncWriteContext = struct {
     data: []u8,
     auto_close: bool = true,
     resumed: bool = false,
+    pos: u64 = 0,
     list: ?*Scheduler.CompletionLinkedList = null,
 
     const This = @This();
@@ -369,10 +370,13 @@ pub const AsyncWriteContext = struct {
         if (written == 0 or written == b.slice.len)
             return self.end(L, scheduler, file, null);
 
-        file.write(
+        self.pos += written;
+
+        file.pwrite(
             &scheduler.loop,
             completion,
             .{ .slice = b.slice[written..] },
+            self.pos,
             This,
             self,
             This.complete,
@@ -385,6 +389,7 @@ pub const AsyncWriteContext = struct {
         f: std.fs.File,
         data: []const u8,
         auto_close: bool,
+        pos: u64,
         list: ?*Scheduler.CompletionLinkedList,
     ) !i32 {
         if (!L.isyieldable())
@@ -402,12 +407,14 @@ pub const AsyncWriteContext = struct {
             .ref = Scheduler.ThreadRef.init(L),
             .data = copy,
             .auto_close = auto_close,
+            .pos = pos,
         };
 
-        file.write(
+        file.pwrite(
             &scheduler.loop,
             &ctx.completion.data,
             .{ .slice = data },
+            pos,
             This,
             ctx,
             This.complete,
@@ -424,7 +431,9 @@ fn write(self: *File, L: *VM.lua.State) !i32 {
         return error.NotOpenForWriting;
     const data = try L.Zcheckvalue([]const u8, 2, null);
 
-    return File.AsyncWriteContext.queue(L, self.file, data, false, self.list);
+    const pos = try self.file.getPos();
+
+    return File.AsyncWriteContext.queue(L, self.file, data, false, pos, self.list);
 }
 
 fn writeSync(self: *File, L: *VM.lua.State) !i32 {
@@ -447,8 +456,9 @@ fn append(self: *File, L: *VM.lua.State) !i32 {
     const string = try L.Zcheckvalue([]const u8, 2, null);
 
     try self.file.seekFromEnd(0);
+    const pos = try self.file.getPos();
 
-    return File.AsyncWriteContext.queue(L, self.file, string, false, self.list);
+    return File.AsyncWriteContext.queue(L, self.file, string, false, pos, self.list);
 }
 
 fn appendSync(self: *File, L: *VM.lua.State) !i32 {
