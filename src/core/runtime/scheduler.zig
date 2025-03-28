@@ -589,9 +589,10 @@ pub fn run(self: *Self, comptime mode: Zune.RunMode) void {
             var i = self.awaits.items.len;
             while (i > 0) {
                 i -= 1;
-                const awaiting = &self.awaits.items[i];
+                const awaiting = self.awaits.items[i];
                 if (awaiting.state.value.status() != .Yield) {
-                    defer awaiting.state.deref();
+                    var ref = awaiting.state;
+                    defer ref.deref();
                     _ = self.awaits.orderedRemove(i);
                     const state = awaiting.state.value;
                     const data = awaiting.data;
