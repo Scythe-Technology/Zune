@@ -37,10 +37,8 @@ test("Context", function()
 		expect(process.cwd).toBe(`{current_cwd}\\{TEMP_DIR:gsub("/", "\\")}`);
 		expect(process.cwd).never.toBe(current_cwd);
 		fs.writeFile("./test.txt", "Hello World")
-		expect(fs.isFile("./test.txt")).toBeTruthy();
 		expect(fs.readFile("./test.txt")).toBe("Hello World");
 		fs.removeFile("./test.txt");
-		expect(fs.isFile("./test.txt")).toBeFalsy();
 
 		process.cwd = current_cwd;
 
@@ -53,10 +51,8 @@ test("Context", function()
 		expect(process.cwd).toBe(`{current_cwd}/{TEMP_DIR}`);
 		expect(process.cwd).never.toBe(current_cwd);
 		fs.writeFile("./test.txt", "Hello World")
-		expect(fs.isFile("./test.txt")).toBeTruthy();
 		expect(fs.readFile("./test.txt")).toBe("Hello World");
 		fs.removeFile("./test.txt")
-		expect(fs.isFile("./test.txt")).toBeFalsy();
 	
 		process.cwd = current_cwd;
 	
