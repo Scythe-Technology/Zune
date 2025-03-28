@@ -289,14 +289,6 @@ type FileSystemLib = {
     metadata: (path: string) -> Metadata?,
 
     --[[
-        Checks if a file exists.
-
-        @param path The path to the file.
-        @return `boolean` Whether the file exists.
-    ]]
-    isFile: (path: string) -> boolean,
-
-    --[[
         Checks if a directory exists.
 
         @param path The path to the directory.
@@ -1796,7 +1788,7 @@ declare class BufferStream
 
     function write(self, data: string | buffer): ()
     function seekTo(self, pos: number): ()
-    function seakBy(self, offset: number): ()
+    function seekBy(self, offset: number): ()
     function canRead(self, amount: number?): ()
     function writer(self): IoWritable
     function reader(self): IoReadable

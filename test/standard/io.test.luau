@@ -175,6 +175,18 @@ describe("IO", function()
             stream:seekTo(0)
             expect(stream.pos).toBe(0)
 
+            stream:seekBy(1)
+            expect(stream.pos).toBe(1)
+            stream:seekBy(-1)
+            expect(stream.pos).toBe(0)
+            stream:seekBy(-1)
+            expect(stream.pos).toBe(0)
+            stream:seekBy(10000)
+            expect(stream.pos).toBe(12)
+
+            stream:seekTo(0)
+            expect(stream.pos).toBe(0)
+
             local string_none = stream:read(0, false)
             expect(string_none).toBeNil()
 
