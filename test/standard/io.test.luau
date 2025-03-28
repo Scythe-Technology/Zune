@@ -1,5 +1,6 @@
 --!strict
 local io = zune.io;
+local task = zune.task;
 local testing = zune.testing;
 
 local test = testing.test;
@@ -50,6 +51,9 @@ describe("IO", function()
             expect(sink).toBe(expect.type("userdata"));
 
             local stream = sink:writer();
+            expect(stream).toBe(sink:writer());
+            expect(stream).toBe(sink:writer());
+
             stream:writeu8(123);
             expect(sink.len).toBe(1);
             expect(buffer.readu8(sink:flush(), 0)).toBe(123);
@@ -161,13 +165,18 @@ describe("IO", function()
             stream:seekTo(0);
             expect(stream.pos).toBe(0)
 
-            none = stream:read(0)
-            expect(none).never.toBeNil()
-            assert(none)
-            expect(buffer.tostring(none)).toBe("")
+            expect(stream:canRead()).toBeTruthy()
+            expect(stream:canRead(4)).toBeTruthy()
+            expect(stream:canRead(#a)).toBeTruthy()
+            expect(stream:canRead(#a + 1)).toBeFalsy()
+
+            expect(stream:read(#a, false)).toBe(a)
+            
+            stream:seekTo(0)
+            expect(stream.pos).toBe(0)
 
             local string_none = stream:read(0, false)
-            expect(string_none).toBe("")
+            expect(string_none).toBeNil()
 
             local partial = stream:read(4)
             expect(partial).never.toBeNil()
@@ -182,6 +191,8 @@ describe("IO", function()
 
             local reader = stream:reader();
             expect(reader).toBe(expect.type("userdata"));
+            expect(reader).toBe(stream:reader());
+            expect(reader).toBe(stream:reader());
 
             expect(reader:readu8()).toBe(116); -- 't'
             expect(reader:readu8()).toBe(101); -- 'e'
@@ -203,6 +214,8 @@ describe("IO", function()
 
             local writer = stream:writer();
             expect(writer).toBe(expect.type("userdata"));
+            expect(writer).toBe(stream:writer());
+            expect(writer).toBe(stream:writer());
 
             writer:writeu8(116); -- 't'
             writer:writeu8(101); -- 'e'
@@ -214,6 +227,57 @@ describe("IO", function()
 
             writer:write(" default");
             expect(buffer.tostring(buf)).toBe("test default");
+        end)
+        test("Complex Reader", function()
+            local complex: {any} = setmetatable({}, {__mode = "v"}) :: any;
+
+            local buf = buffer.fromstring("test complex");
+            local stream = io.createFixedBufferStream(buf);
+            expect(stream).toBe(expect.type("userdata"));
+            expect(stream.pos).toBe(0);
+            local address = "";
+            do
+                local reader: IoReadable = stream:reader();
+                expect(reader:readu8()).toBe(116); -- 't'
+                expect(reader:readu8()).toBe(101); -- 'e'
+                task.wait();
+                expect(reader:readu8()).toBe(115); -- 's'
+                expect(reader:readu8()).toBe(116); -- 't'
+                address = tostring(reader);
+                complex[1] = reader;
+                reader = nil :: any; -- remove reference
+                repeat
+                    task.wait();
+                until complex[1] == nil;
+            end
+            local reader = stream:reader();
+            -- this should have created a new reader
+            -- old reader should be garbage collected
+            expect(address).never.toBe(tostring(reader));
+            expect(reader).toBe(expect.type("userdata"));
+
+            expect(reader:readu8()).toBe(32); -- ' '
+            expect(reader:readu8()).toBe(99); -- 'c'
+
+            complex[1] = stream;
+            stream = nil :: any; -- remove reference
+            for i = 1, 16 do
+                task.wait(); -- tick gc
+            end
+
+            -- stream should not be garbage collected
+            -- reader exists, so stream should be alive
+
+            expect(reader:read(nil, false)).toBe("omplex");
+
+            expect(reader:readu8()).toBeNil();
+            expect(reader:read(0, false)).toBeNil();
+
+            reader = nil :: any; -- remove reference
+
+            repeat
+                task.wait();
+            until complex[1] == nil;
         end)
     end)
 

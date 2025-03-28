@@ -22,231 +22,9 @@ const MAX_LUAU_SIZE = 1073741824; // 1 GB
 
 const TAG_STREAM = tagged.Tags.get("IO_STREAM").?;
 const TAG_BUFFERSINK = tagged.Tags.get("IO_BUFFERSINK").?;
+const TAG_BUFFERSTREAM = tagged.Tags.get("IO_BUFFERSTREAM").?;
 
 pub const LIB_NAME = "io";
-
-const CursorMoveKind = enum(u4) {
-    Home,
-    Goto,
-    Up,
-    Down,
-    Left,
-    Right,
-    Nextline,
-    PreviousLine,
-    GotoColumn,
-};
-
-const EraseKind = enum(u4) {
-    UntilEndOf,
-    ToStartOf,
-    Entire,
-    SavedLines,
-    ToEndOfLine,
-    StartOfLineTo,
-    EntireLine,
-};
-
-const ColorMap = std.StaticStringMap(u7).initComptime(.{
-    .{ "black", 30 },
-    .{ "red", 31 },
-    .{ "green", 32 },
-    .{ "yellow", 33 },
-    .{ "blue", 34 },
-    .{ "magenta", 35 },
-    .{ "cyan", 36 },
-    .{ "white", 37 },
-    .{ "bblack", 90 },
-    .{ "bred", 91 },
-    .{ "bgreen", 92 },
-    .{ "byellow", 93 },
-    .{ "bblue", 94 },
-    .{ "bmagenta", 95 },
-    .{ "bcyan", 96 },
-    .{ "bwhite", 97 },
-});
-
-const StyleMap = std.StaticStringMap(u4).initComptime(.{
-    .{ "bold", 1 },
-    .{ "dim", 2 },
-    .{ "italic", 3 },
-    .{ "underline", 4 },
-    .{ "blinking", 5 },
-    .{ "inverse", 7 },
-    .{ "hidden", 8 },
-    .{ "strikethrough", 9 },
-});
-
-const ResetMap = std.StaticStringMap(u6).initComptime(.{
-    .{ "weight", 22 },
-    .{ "italic", 23 },
-    .{ "underline", 24 },
-    .{ "blinking", 25 },
-    .{ "inverse", 27 },
-    .{ "hidden", 28 },
-    .{ "strikethrough", 29 },
-    .{ "color", 39 },
-});
-
-const CursorActionMap = std.StaticStringMap(CursorMoveKind).initComptime(.{
-    .{ "home", .Home },
-    .{ "goto", .Goto },
-    .{ "up", .Up },
-    .{ "down", .Down },
-    .{ "right", .Right },
-    .{ "left", .Left },
-    .{ "nextline", .Nextline },
-    .{ "prevline", .PreviousLine },
-    .{ "gotocol", .GotoColumn },
-});
-
-const EraseActionMap = std.StaticStringMap(EraseKind).initComptime(.{
-    .{ "endOf", .UntilEndOf },
-    .{ "startOf", .ToStartOf },
-    .{ "entire", .Entire },
-    .{ "savedLines", .SavedLines },
-    .{ "endOfLine", .ToEndOfLine },
-    .{ "startOfLine", .StartOfLineTo },
-    .{ "entireLine", .EntireLine },
-});
-
-fn stdio_color(L: *VM.lua.State) !i32 {
-    const color = try L.Zcheckvalue([:0]const u8, 1, null);
-
-    const code = ColorMap.get(color) orelse return L.Zerror("UnknownColor");
-
-    L.pushfstring("\x1b[{d}m", .{code});
-
-    return 1;
-}
-fn stdio_bgColor(L: *VM.lua.State) !i32 {
-    const color = try L.Zcheckvalue([:0]const u8, 1, null);
-
-    const code = ColorMap.get(color) orelse return L.Zerror("UnknownColor");
-
-    L.pushfstring("\x1b[{d}m", .{code + 10});
-
-    return 1;
-}
-
-fn stdio_color256(L: *VM.lua.State) !i32 {
-    const code = try L.Zcheckvalue(i32, 1, null);
-
-    if (code < 0 or code > 255)
-        return L.Zerror("Code must be between 0 to 255");
-
-    L.pushfstring("\x1b[38;5;{d}m", .{code});
-
-    return 1;
-}
-fn stdio_bgColor256(L: *VM.lua.State) !i32 {
-    const code = try L.Zcheckvalue(i32, 1, null);
-
-    if (code < 0 or code > 255)
-        return L.Zerror("Code must be between 0 to 255");
-
-    L.pushfstring("\x1b[48;5;{d}m", .{code});
-
-    return 1;
-}
-
-fn stdio_trueColor(L: *VM.lua.State) !i32 {
-    const r = try L.Zcheckvalue(i32, 1, null);
-    const g = try L.Zcheckvalue(i32, 2, null);
-    const b = try L.Zcheckvalue(i32, 3, null);
-
-    if (r < 0 or r > 255)
-        return L.Zerror("R must be between 0 to 255");
-    if (g < 0 or g > 255)
-        return L.Zerror("G must be between 0 to 255");
-    if (b < 0 or b > 255)
-        return L.Zerror("B must be between 0 to 255");
-
-    L.pushfstring("\x1b[38;2;{d};{d};{d}m", .{ r, g, b });
-
-    return 1;
-}
-fn stdio_bgTrueColor(L: *VM.lua.State) !i32 {
-    const r = try L.Zcheckvalue(i32, 1, null);
-    const g = try L.Zcheckvalue(i32, 2, null);
-    const b = try L.Zcheckvalue(i32, 3, null);
-
-    if (r < 0 or r > 255)
-        return L.Zerror("R must be between 0 to 255");
-    if (g < 0 or g > 255)
-        return L.Zerror("G must be between 0 to 255");
-    if (b < 0 or b > 255)
-        return L.Zerror("B must be between 0 to 255");
-
-    L.pushfstring("\x1b[48;2;{d};{d};{d}m", .{ r, g, b });
-
-    return 1;
-}
-
-fn stdio_style(L: *VM.lua.State) !i32 {
-    const color = try L.Zcheckvalue([:0]const u8, 1, null);
-
-    const code = StyleMap.get(color) orelse return L.Zerror("UnknownStyle");
-
-    L.pushfstring("\x1b[{d}m", .{code});
-
-    return 1;
-}
-
-fn stdio_reset(L: *VM.lua.State) !i32 {
-    const reset = L.tolstring(1);
-
-    if (reset) |kind| {
-        if (ResetMap.get(kind)) |code| {
-            L.pushfstring("\x1b[{d}m", .{code});
-            return 1;
-        }
-    }
-
-    L.pushlstring("\x1b[0m");
-
-    return 1;
-}
-
-fn stdio_cursorMove(L: *VM.lua.State) !i32 {
-    const action = try L.Zcheckvalue([:0]const u8, 1, null);
-
-    const kind = CursorActionMap.get(action) orelse return L.Zerror("UnknownKind");
-
-    switch (kind) {
-        .Home => L.pushfstring("\x1b[H", .{}),
-        .Goto => L.pushfstring("\x1b[{d};{d}H", .{ L.Lcheckinteger(2), L.Lcheckinteger(3) }),
-        .Up => L.pushfstring("\x1b[{d}A", .{L.Lcheckinteger(2)}),
-        .Down => L.pushfstring("\x1b[{d}B", .{L.Lcheckinteger(2)}),
-        .Right => L.pushfstring("\x1b[{d}C", .{L.Lcheckinteger(2)}),
-        .Left => L.pushfstring("\x1b[{d}D", .{L.Lcheckinteger(2)}),
-        .Nextline => L.pushfstring("\x1b[{d}E", .{L.Lcheckinteger(2)}),
-        .PreviousLine => L.pushfstring("\x1b[{d}F", .{L.Lcheckinteger(2)}),
-        .GotoColumn => L.pushfstring("\x1b[{d}G", .{L.Lcheckinteger(2)}),
-    }
-
-    return 1;
-}
-
-fn stdio_erase(L: *VM.lua.State) !i32 {
-    const action = try L.Zcheckvalue([:0]const u8, 1, null);
-
-    const kind = EraseActionMap.get(action) orelse return L.Zerror("UnknownKind");
-
-    const str = switch (kind) {
-        .UntilEndOf => "0J",
-        .ToStartOf => "1J",
-        .Entire => "2J",
-        .SavedLines => "3J",
-        .ToEndOfLine => "0K",
-        .StartOfLineTo => "1K",
-        .EntireLine => "2K",
-    };
-
-    L.pushfstring("\x1b[{s}", .{str});
-
-    return 1;
-}
 
 const LuaTerminal = struct {
     pub fn enableRawMode(L: *VM.lua.State) !i32 {
@@ -282,123 +60,6 @@ const LuaTerminal = struct {
     }
 };
 
-const BufferSink = struct {
-    alloc: std.mem.Allocator,
-    buf: std.ArrayListUnmanaged(u8),
-    limit: u32 = MAX_LUAU_SIZE,
-    closed: bool = false,
-
-    pub const META = "io_buffersink";
-
-    pub fn __index(L: *VM.lua.State) !i32 {
-        try L.Zchecktype(1, .Userdata);
-        const self = L.touserdata(BufferSink, 1) orelse return 0;
-        const index = try L.Zcheckvalue([:0]const u8, 2, null);
-
-        if (std.mem.eql(u8, index, "len")) {
-            L.pushunsigned(@truncate(self.buf.items.len));
-            return 1;
-        } else if (std.mem.eql(u8, index, "closed")) {
-            L.pushboolean(self.closed);
-            return 1;
-        }
-
-        return 0;
-    }
-
-    pub fn iwrite(self: *BufferSink, value: []const u8) !void {
-        try self.buf.appendSlice(self.alloc, value);
-    }
-
-    pub fn write(self: *BufferSink, L: *VM.lua.State) !i32 {
-        if (self.closed)
-            return error.Closed;
-        const str = try L.Zcheckvalue([]const u8, 2, null);
-        if (self.buf.items.len + str.len > self.limit)
-            return L.Zerror("BufferSink limit exceeded");
-        try self.iwrite(str);
-        return 0;
-    }
-
-    pub const StreamImpl: Stream.VTable = .{
-        .write = Stream.GenericWrite(BufferSink, BufferSink.iwrite),
-        .read = null,
-        .seekTo = null,
-        .seekBy = null,
-    };
-
-    pub fn writer(self: *BufferSink, L: *VM.lua.State) !i32 {
-        const ref = luaHelper.Ref(*anyopaque).init(L, 1, @ptrCast(@alignCast(self)));
-        const stream = L.newuserdatataggedwithmetatable(Stream, TAG_STREAM);
-
-        stream.* = .{
-            .vtable = &StreamImpl,
-            .ref = ref,
-            .mode = Stream.Mode.writable(false),
-        };
-
-        return 1;
-    }
-
-    pub fn flush(self: *BufferSink, L: *VM.lua.State) !i32 {
-        if (self.closed)
-            return error.Closed;
-        const use_buffer = L.Loptboolean(2, true);
-        if (self.buf.items.len == 0)
-            return 0;
-        const buf = self.buf.items;
-        defer self.buf.clearAndFree(self.alloc);
-        if (use_buffer)
-            L.Zpushbuffer(buf)
-        else
-            L.pushlstring(buf);
-        return 1;
-    }
-
-    pub fn clear(self: *BufferSink, _: *VM.lua.State) !i32 {
-        if (self.closed)
-            return error.Closed;
-        defer self.buf.clearAndFree(self.alloc);
-        return 0;
-    }
-
-    pub fn close(self: *BufferSink, _: *VM.lua.State) !i32 {
-        self.closed = true;
-        return 0;
-    }
-
-    pub const __namecall = MethodMap.CreateNamecallMap(BufferSink, null, .{
-        .{ "write", write },
-        .{ "writer", writer },
-        .{ "flush", flush },
-        .{ "clear", clear },
-        .{ "close", close },
-    });
-
-    pub fn __dtor(_: *VM.lua.State, self: *BufferSink) void {
-        self.buf.deinit(self.alloc);
-    }
-
-    pub fn create(L: *VM.lua.State) !i32 {
-        const allocator = luau.getallocator(L);
-
-        const opts = try L.Zcheckvalue(?struct {
-            limit: ?u32,
-        }, 1, null);
-
-        const self = L.newuserdatataggedwithmetatable(BufferSink, TAG_BUFFERSINK);
-
-        self.* = .{
-            .alloc = allocator,
-            .buf = .{},
-            .limit = if (opts) |o| o.limit orelse MAX_LUAU_SIZE else MAX_LUAU_SIZE,
-            .closed = false,
-        };
-
-        return 1;
-    }
-};
-
 const Stream = struct {
     vtable: *const VTable,
     ref: luaHelper.Ref(*anyopaque),
@@ -426,8 +87,6 @@ const Stream = struct {
             return .{ .read = true, .write = true, .seek = seakable };
         }
     };
-
-    pub const META = "io_stream";
 
     fn GenerateWriteMethod(comptime T: type) fn (self: *Stream, L: *VM.lua.State) anyerror!i32 {
         const len = @sizeOf(T);
@@ -602,14 +261,124 @@ const Stream = struct {
         }.inner;
     }
 
-    pub fn __dtor(_: *VM.lua.State, self: *Stream) void {
-        self.ref.deref();
+    pub fn __dtor(L: *VM.lua.State, self: *Stream) void {
+        self.ref.deref(L);
+    }
+};
+
+const BufferSink = struct {
+    alloc: std.mem.Allocator,
+    buf: std.ArrayListUnmanaged(u8),
+    limit: u32 = MAX_LUAU_SIZE,
+    closed: bool = false,
+
+    ref_table: luaHelper.RefTable,
+    stream_writer: luaHelper.Ref(void) = .empty,
+
+    pub fn __index(L: *VM.lua.State) !i32 {
+        try L.Zchecktype(1, .Userdata);
+        const self = L.touserdata(BufferSink, 1) orelse return 0;
+        const index = try L.Zcheckvalue([:0]const u8, 2, null);
+
+        if (std.mem.eql(u8, index, "len")) {
+            L.pushunsigned(@truncate(self.buf.items.len));
+            return 1;
+        } else if (std.mem.eql(u8, index, "closed")) {
+            L.pushboolean(self.closed);
+            return 1;
+        }
+
+        return 0;
+    }
+
+    pub fn iwrite(self: *BufferSink, value: []const u8) !void {
+        try self.buf.appendSlice(self.alloc, value);
+    }
+
+    pub fn write(self: *BufferSink, L: *VM.lua.State) !i32 {
+        if (self.closed)
+            return error.Closed;
+        const str = try L.Zcheckvalue([]const u8, 2, null);
+        if (self.buf.items.len + str.len > self.limit)
+            return L.Zerror("BufferSink limit exceeded");
+        try self.iwrite(str);
+        return 0;
+    }
+
+    pub const StreamImpl: Stream.VTable = .{
+        .write = Stream.GenericWrite(BufferSink, BufferSink.iwrite),
+        .read = null,
+        .seekTo = null,
+        .seekBy = null,
+    };
+
+    pub fn writer(self: *BufferSink, L: *VM.lua.State) !i32 {
+        if (self.stream_writer.push(L))
+            return 1;
+
+        const ref = luaHelper.Ref(*anyopaque).init(L, 1, @ptrCast(@alignCast(self)));
+        const stream = L.newuserdatataggedwithmetatable(Stream, TAG_STREAM);
+
+        stream.* = .{
+            .vtable = &StreamImpl,
+            .ref = ref,
+            .mode = Stream.Mode.writable(false),
+        };
+
+        self.stream_writer = .initWithTable(L, -1, undefined, &self.ref_table);
+
+        return 1;
+    }
+
+    pub fn flush(self: *BufferSink, L: *VM.lua.State) !i32 {
+        if (self.closed)
+            return error.Closed;
+        const use_buffer = L.Loptboolean(2, true);
+        if (self.buf.items.len == 0)
+            return 0;
+        const buf = self.buf.items;
+        defer self.buf.clearAndFree(self.alloc);
+        if (use_buffer)
+            L.Zpushbuffer(buf)
+        else
+            L.pushlstring(buf);
+        return 1;
+    }
+
+    pub fn clear(self: *BufferSink, _: *VM.lua.State) !i32 {
+        if (self.closed)
+            return error.Closed;
+        defer self.buf.clearAndFree(self.alloc);
+        return 0;
+    }
+
+    pub fn close(self: *BufferSink, _: *VM.lua.State) !i32 {
+        self.closed = true;
+        return 0;
+    }
+
+    pub const __namecall = MethodMap.CreateNamecallMap(BufferSink, null, .{
+        .{ "write", write },
+        .{ "writer", writer },
+        .{ "flush", flush },
+        .{ "clear", clear },
+        .{ "close", close },
+    });
+
+    pub fn __dtor(L: *VM.lua.State, self: *BufferSink) void {
+        self.buf.deinit(self.alloc);
+        self.ref_table.deinit(L);
+        self.stream_writer.deref(L);
     }
 };
 
 const BufferStream = struct {
     pos: usize,
     buf: luaHelper.Ref([]u8),
+
+    ref_table: luaHelper.RefTable,
+    stream_reader: luaHelper.Ref(void) = .empty,
+    stream_writer: luaHelper.Ref(void) = .empty,
 
     pub fn write(self: *BufferStream, L: *VM.lua.State) !i32 {
         try self.stream_write(try L.Zcheckvalue([]const u8, 2, null));
@@ -627,6 +396,12 @@ const BufferStream = struct {
         return 1;
     }
 
+    pub fn canRead(self: *BufferStream, L: *VM.lua.State) !i32 {
+        const amount = L.Loptunsigned(2, 0);
+        L.pushboolean(self.pos + amount <= self.buf.value.len);
+        return 1;
+    }
+
     pub fn seekTo(self: *BufferStream, L: *VM.lua.State) !i32 {
         try self.stream_seekTo(try L.Zcheckvalue(u32, 2, null));
         return 0;
@@ -638,6 +413,8 @@ const BufferStream = struct {
     }
 
     pub fn writer(self: *BufferStream, L: *VM.lua.State) !i32 {
+        if (self.stream_writer.push(L))
+            return 1;
         const ref = luaHelper.Ref(*anyopaque).init(L, 1, @ptrCast(@alignCast(self)));
         const stream = L.newuserdatataggedwithmetatable(Stream, TAG_STREAM);
 
@@ -647,10 +424,14 @@ const BufferStream = struct {
             .mode = Stream.Mode.writable(false),
         };
 
+        self.stream_writer = .initWithTable(L, -1, undefined, &self.ref_table);
+
         return 1;
     }
 
     pub fn reader(self: *BufferStream, L: *VM.lua.State) !i32 {
+        if (self.stream_reader.push(L))
+            return 1;
         const ref = luaHelper.Ref(*anyopaque).init(L, 1, @ptrCast(@alignCast(self)));
         const stream = L.newuserdatataggedwithmetatable(Stream, TAG_STREAM);
 
@@ -659,6 +440,8 @@ const BufferStream = struct {
             .ref = ref,
             .mode = Stream.Mode.readable(false),
         };
+
+        self.stream_reader = .initWithTable(L, -1, undefined, &self.ref_table);
 
         return 1;
     }
@@ -684,7 +467,15 @@ const BufferStream = struct {
         .{ "reader", reader },
         .{ "seekTo", seekTo },
         .{ "seekBy", seekBy },
+        .{ "canRead", canRead },
     });
+
+    pub fn __dtor(L: *VM.lua.State, self: *BufferStream) void {
+        self.buf.deref(L);
+        self.ref_table.deinit(L);
+        self.stream_writer.deref(L);
+        self.stream_reader.deref(L);
+    }
 
     pub const Impl: Stream.VTable = .{
         .write = Stream.GenericWrite(BufferStream, stream_write),
@@ -701,6 +492,8 @@ const BufferStream = struct {
         self.pos = end;
     }
     pub fn stream_read(self: *BufferStream, amount: u32, exact: bool) anyerror!?[]const u8 {
+        if (amount == 0)
+            return null;
         const buf = self.buf.value;
         if (self.pos >= buf.len)
             return null;
@@ -732,25 +525,35 @@ const BufferStream = struct {
     }
 };
 
+pub fn createBufferSink(L: *VM.lua.State) !i32 {
+    const allocator = luau.getallocator(L);
+
+    const opts = try L.Zcheckvalue(?struct {
+        limit: ?u32,
+    }, 1, null);
+
+    const self = L.newuserdatataggedwithmetatable(BufferSink, TAG_BUFFERSINK);
+
+    self.* = .{
+        .alloc = allocator,
+        .buf = .{},
+        .limit = if (opts) |o| o.limit orelse MAX_LUAU_SIZE else MAX_LUAU_SIZE,
+        .closed = false,
+        .ref_table = .init(L, true),
+    };
+
+    return 1;
+}
+
 pub fn createFixedBufferStream(L: *VM.lua.State) !i32 {
     const buffer = try L.Zcheckvalue([]u8, 1, null);
-    const self = L.newuserdatadtor(BufferStream, struct {
-        fn inner(ptr: *BufferStream) void {
-            ptr.buf.deref();
-        }
-    }.inner);
 
-    L.Zpushvalue(.{
-        .__index = BufferStream.__index,
-        .__namecall = BufferStream.__namecall,
-        .__metatable = "Metatable is locked",
-        .__type = "BufferStream",
-    });
-    _ = L.setmetatable(-2);
+    const self = L.newuserdatataggedwithmetatable(BufferStream, TAG_BUFFERSTREAM);
 
     self.* = .{
         .pos = 0,
         .buf = .init(L, 1, buffer),
+        .ref_table = .init(L, true),
     };
 
     return 1;
@@ -760,7 +563,7 @@ pub var TERMINAL: ?Terminal = null;
 
 pub fn loadLib(L: *VM.lua.State) void {
     {
-        _ = L.Znewmetatable(BufferSink.META, .{
+        _ = L.Znewmetatable(@typeName(BufferSink), .{
             .__index = BufferSink.__index,
             .__namecall = BufferSink.__namecall,
             .__metatable = "Metatable is locked",
@@ -770,13 +573,23 @@ pub fn loadLib(L: *VM.lua.State) void {
         L.setuserdatadtor(BufferSink, TAG_BUFFERSINK, BufferSink.__dtor);
     }
     {
-        _ = L.Znewmetatable(Stream.META, .{
+        _ = L.Znewmetatable(@typeName(Stream), .{
             .__namecall = Stream.__namecall,
             .__metatable = "Metatable is locked",
             .__type = "Stream",
         });
         L.setuserdatametatable(TAG_STREAM);
         L.setuserdatadtor(Stream, TAG_STREAM, Stream.__dtor);
+    }
+    {
+        _ = L.Znewmetatable(@typeName(BufferStream), .{
+            .__index = BufferStream.__index,
+            .__namecall = BufferStream.__namecall,
+            .__metatable = "Metatable is locked",
+            .__type = "BufferStream",
+        });
+        L.setuserdatametatable(TAG_BUFFERSTREAM);
+        L.setuserdatadtor(BufferStream, TAG_BUFFERSTREAM, BufferStream.__dtor);
     }
     L.createtable(0, 16);
 
@@ -816,20 +629,9 @@ pub fn loadLib(L: *VM.lua.State) void {
 
     TERMINAL.?.setOutputMode() catch std.debug.print("[Win32] Failed to set output codepoint\n", .{});
 
-    L.Zsetfieldfn(-1, "color", stdio_color);
-    L.Zsetfieldfn(-1, "style", stdio_style);
-    L.Zsetfieldfn(-1, "reset", stdio_reset);
-    L.Zsetfieldfn(-1, "erase", stdio_erase);
-    L.Zsetfieldfn(-1, "bgcolor", stdio_bgColor);
-    L.Zsetfieldfn(-1, "color256", stdio_color256);
-    L.Zsetfieldfn(-1, "bgcolor256", stdio_bgColor256);
-    L.Zsetfieldfn(-1, "trueColor", stdio_trueColor);
-    L.Zsetfieldfn(-1, "bgtrueColor", stdio_bgTrueColor);
-
-    L.Zsetfieldfn(-1, "cursorMove", stdio_cursorMove);
     L.Zsetfieldfn(-1, "format", Formatter.fmt_args);
 
-    L.Zsetfieldfn(-1, "createBufferSink", BufferSink.create);
+    L.Zsetfieldfn(-1, "createBufferSink", createBufferSink);
     L.Zsetfieldfn(-1, "createFixedBufferStream", createFixedBufferStream);
 
     L.setreadonly(-1, true);

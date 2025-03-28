@@ -6,6 +6,7 @@ const TagNames: []const []const u8 = &.{
     // IO
     "IO_STREAM",
     "IO_BUFFERSINK",
+    "IO_BUFFERSTREAM",
     // DATETIME
     "DATETIME",
     // PROCESS

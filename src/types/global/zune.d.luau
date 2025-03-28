@@ -1794,9 +1794,10 @@ declare class BufferStream
         & ((self: BufferStream, amount: number?, bytes: true?) -> buffer?)
         & ((self: BufferStream, amount: number?, bytes: false) -> string?)
 
+    function write(self, data: string | buffer): ()
     function seekTo(self, pos: number): ()
     function seakBy(self, offset: number): ()
-    function write(self, data: string | buffer): ()
+    function canRead(self, amount: number?): ()
     function writer(self): IoWritable
     function reader(self): IoReadable
 end
