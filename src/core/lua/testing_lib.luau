@@ -1,6 +1,6 @@
 --!strict
+local io = zune.io;
 local task = zune.task;
-local stdio = zune.stdio;
 
 local GLOBAL = getfenv();
 
@@ -40,17 +40,17 @@ local DEFER_QUEUE = {}::{()->()};
 local SCOPE_STACK = {}::{string};
 local TEST_STACK = {}::{string};
 
-local RESET = stdio.reset();
+local RESET = "\27[0m";
 
-local DIM = stdio.style("dim");
-local BOLD = stdio.style("bold");
-local UNDERLINE = stdio.style("underline");
+local DIM = "\27[2m";
+local BOLD = "\27[1m";
+local UNDERLINE = "\27[4m";
 
-local WHITE = stdio.color("white");
-local RED = stdio.color("red");
-local BLUE = stdio.color("blue");
-local GREEN = stdio.color("green");
-local YELLOW = stdio.color("yellow");
+local WHITE = "\27[37m";
+local RED = "\27[31m";
+local BLUE = "\27[34m";
+local GREEN = "\27[32m";
+local YELLOW = "\27[33m";
 
 function paddedNumber(line: number, longest: number, padding: string): string
     return `{line}{string.rep(padding, longest - #tostring(line))}`
@@ -407,7 +407,7 @@ local function readable(value : any)
         end)
         return `{GREEN}"{safeValue}"{RESET}`;
     elseif (t ~= "table") then
-        return stdio.format(value);
+        return io.format(value);
     else
         return tostring(value);
     end
@@ -547,7 +547,7 @@ local expect = setmetatable({
             error(`expect.any expected string, got {type(typename)}`, 2);
         end
         return Conditional.new(typename, function(value)
-            local t = typeof(value);
+            local t = type(value);
             return t == typename, t, `value is supposed to %sbe of type {typename}, got {t}`;
         end)
     end,
@@ -556,7 +556,7 @@ local expect = setmetatable({
             error(`expect.type expected string, got {type(typename)}`, 2);
         end
         return Conditional.new(typename, function(value)
-            local t = typeof(value);
+            local t = type(value);
             return t == typename, t, `value is supposed to %sbe of type {typename}, got {t}`;
         end)
     end,
