@@ -9,4 +9,7 @@ describe("@std", function()
     describe("Mem", function()
         require("./std/mem.test");
     end)
+    describe("Ansi", function()
+        require("./std/ansi.test");
+    end)
 end)

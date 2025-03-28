@@ -31,14 +31,6 @@ const Hash = std.crypto.hash.sha3.Sha3_256;
 var TAGGED_FFI_POINTERS = std.StringArrayHashMap(bool).init(Zune.DEFAULT_ALLOCATOR);
 var CACHED_C_COMPILATON = std.StringHashMap(*CallableFunction).init(Zune.DEFAULT_ALLOCATOR);
 
-inline fn intOutOfRange(comptime T: type, value: anytype) bool {
-    return value < std.math.minInt(T) or value > std.math.maxInt(T);
-}
-
-inline fn floatOutOfRange(comptime T: type, value: f64) bool {
-    return value < -std.math.floatMax(T) or value > std.math.floatMax(T);
-}
-
 pub const DataType = struct {
     size: usize,
     alignment: u29,
@@ -212,7 +204,7 @@ const LuaPointer = struct {
         const ptr = L.newuserdatataggedwithmetatable(LuaPointer, TAG_FFI_POINTER);
 
         ptr.* = .{
-            .ptr = @ptrFromInt(std.mem.readVarInt(usize, buf[0..@sizeOf(usize)], cpu_endian)),
+            .ptr = @ptrFromInt(std.mem.bytesToValue(usize, buf[0..@sizeOf(usize)])),
             .allocator = luau.getallocator(L),
             .destroyed = false,
             .type = .Static,
@@ -455,7 +447,6 @@ const LuaPointer = struct {
     pub fn GenerateReadMethod(comptime T: type) fn (ptr: *LuaPointer, L: *VM.lua.State) anyerror!i32 {
         if (comptime @sizeOf(T) == 0)
             @compileError("Cannot read void type");
-        const ti = @typeInfo(T);
         const len = @sizeOf(T);
         return struct {
             fn inner(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
@@ -468,19 +459,18 @@ const LuaPointer = struct {
 
                 const mem: [*]u8 = @as([*]u8, @ptrCast(@alignCast(ptr.ptr)))[pos..];
 
-                switch (ti) {
-                    .float => switch (len) {
-                        4 => L.pushnumber(@floatCast(@as(f32, @bitCast(std.mem.readVarInt(u32, mem[0..len], cpu_endian))))),
-                        8 => L.pushnumber(@as(f64, @bitCast(std.mem.readVarInt(u64, mem[0..len], cpu_endian)))),
-                        else => unreachable,
-                    },
-                    .int => switch (len) {
-                        1 => L.pushinteger(@intCast(@as(T, @bitCast(mem[0])))),
-                        2...4 => L.pushinteger(@intCast(std.mem.readVarInt(T, mem[0..len], cpu_endian))),
+                switch (@typeInfo(T)) {
+                    .float => L.pushnumber(@floatCast(std.mem.bytesToValue(T, mem[0..len]))),
+                    .int => |i| switch (len) {
+                        1...4 => {
+                            const push = if (comptime i.signedness == .signed) VM.lua.State.pushinteger else VM.lua.State.pushunsigned;
+                            push(L, @intCast(std.mem.bytesToValue(T, mem[0..len])));
+                        },
                         8 => L.Zpushbuffer(mem[0..len]),
+                        16 => L.Zpushbuffer(mem[0..len]),
                         else => return error.Unsupported,
                     },
-                    .pointer => _ = try LuaPointer.newStaticPtr(L, @ptrFromInt(std.mem.readVarInt(usize, mem[0..@sizeOf(usize)], cpu_endian)), false),
+                    .pointer => _ = try LuaPointer.newStaticPtr(L, @ptrFromInt(std.mem.bytesToValue(usize, mem[0..@sizeOf(usize)])), false),
                     else => @compileError("Unsupported type"),
                 }
 
@@ -1041,19 +1031,34 @@ pub fn FFITypeConversion(
     const ti = @typeInfo(T);
     if (ti != .int and ti != .float)
         @compileError("Unsupported type");
-    const isFloat = ti == .float;
+    const size = @sizeOf(T);
     switch (L.typeOf(index)) {
-        .Number => {
-            const value = if (isFloat) L.tonumber(index) orelse unreachable else fast: {
-                if (@bitSizeOf(T) > 32)
-                    break :fast @as(u64, @intFromFloat(L.tonumber(index) orelse unreachable))
-                else
-                    break :fast L.tointeger(index) orelse unreachable;
-            };
-            if (if (isFloat) floatOutOfRange(T, value) else intOutOfRange(T, value))
-                return error.OutOfRange;
-            var bytes: [@sizeOf(T)]u8 = @bitCast(@as(T, if (isFloat) @floatCast(value) else @intCast(value)));
-            @memcpy(mem[offset .. offset + @sizeOf(T)], &bytes);
+        .Number => switch (@typeInfo(T)) {
+            .int => |i| {
+                if (i.bits > 32) {
+                    const value = L.tonumber(-1).?;
+                    if (i.signedness == .unsigned) {
+                        var bytes: [size]u8 = @bitCast(@as(
+                            T,
+                            @truncate(@as(u64, @bitCast(@as(i64, @intFromFloat(value))))),
+                        ));
+                        @memcpy(mem[offset .. offset + @sizeOf(T)], &bytes);
+                    } else {
+                        var bytes: [size]u8 = @bitCast(@as(T, @truncate(@as(i64, @intFromFloat(value)))));
+                        @memcpy(mem[offset .. offset + @sizeOf(T)], &bytes);
+                    }
+                } else {
+                    const value = if (i.signedness == .signed) L.tointeger(-1).? else L.tounsigned(-1).?;
+                    var bytes: [size]u8 = @bitCast(@as(T, @truncate(value)));
+                    @memcpy(mem[offset .. offset + @sizeOf(T)], &bytes);
+                }
+            },
+            .float => {
+                const value = L.tonumber(-1).?;
+                var bytes: [size]u8 = @bitCast(@as(T, @floatCast(value)));
+                @memcpy(mem[offset .. offset + @sizeOf(T)], &bytes);
+            },
+            else => @compileError("Unsupported type"),
         },
         .Boolean => {
             const value = L.toboolean(index);
@@ -1075,16 +1080,25 @@ const ffi_c_interface = struct {
         const ti = @typeInfo(T);
         if (ti != .int and ti != .float)
             @compileError("Unsupported type");
-        const isFloat = ti == .float;
         const size = @sizeOf(T);
         return struct {
             fn inner(L: *VM.lua.State, index: i32) callconv(.C) T {
                 switch (L.typeOf(index)) {
-                    .Number => {
-                        const value = if (isFloat) L.tonumber(index).? else L.tointeger(index).?;
-                        if (if (isFloat) floatOutOfRange(T, value) else intOutOfRange(T, value))
-                            return L.LerrorL("Value OutOfRange", .{});
-                        return if (isFloat) @floatCast(value) else @intCast(value);
+                    .Number => switch (@typeInfo(T)) {
+                        .int => |i| {
+                            if (i.bits > 32) {
+                                const value = L.tonumber(index).?;
+                                if (i.signedness == .unsigned)
+                                    return @truncate(@as(u64, @bitCast(@as(i64, @intFromFloat(value)))))
+                                else
+                                    return @truncate(@as(i64, @intFromFloat(value)));
+                            } else {
+                                const value = if (i.signedness == .signed) L.tointeger(index).? else L.tounsigned(index).?;
+                                return @truncate(value);
+                            }
+                        },
+                        .float => return @floatCast(L.tonumber(index).?),
+                        else => @compileError("Unsupported type"),
                     },
                     .Boolean => {
                         return @as(T, if (L.toboolean(index) == true) 1 else 0);
@@ -1093,11 +1107,7 @@ const ffi_c_interface = struct {
                         const lua_buf = L.tobuffer(index).?;
                         if (lua_buf.len < size)
                             return L.LerrorL("Buffer Too Small", .{});
-                        if (isFloat) {
-                            if (size == 4)
-                                return @bitCast(std.mem.readVarInt(u32, lua_buf[0..size], cpu_endian));
-                            return @as(f64, @bitCast(std.mem.readVarInt(u64, lua_buf[0..size], cpu_endian)));
-                        } else return std.mem.readVarInt(T, lua_buf[0..size], cpu_endian);
+                        return std.mem.bytesToValue(T, lua_buf[0..size]);
                     },
                     else => L.LerrorL("Invalid Argument Type", .{}),
                 }
@@ -1508,16 +1518,35 @@ fn FFIReturnTypeConversion(
     ret_ptr: *anyopaque,
     L: *VM.lua.State,
 ) void {
-    const isFloat = @typeInfo(T) == .float;
     const size = @sizeOf(T);
     const mem = @as([*]u8, @ptrCast(@alignCast(ret_ptr)))[0..size];
     switch (L.typeOf(-1)) {
-        .Number => {
-            const value = if (isFloat) L.tonumber(-1) orelse unreachable else L.tointeger(-1) orelse unreachable;
-            if (if (isFloat) floatOutOfRange(T, value) else intOutOfRange(T, value))
-                return std.debug.panic("Out of range ('{s}')", .{@typeName(T)});
-            var bytes: [size]u8 = @bitCast(@as(T, if (isFloat) @floatCast(value) else @intCast(value)));
-            @memcpy(mem, &bytes);
+        .Number => switch (@typeInfo(T)) {
+            .int => |i| {
+                if (i.bits > 32) {
+                    const value = L.tonumber(-1).?;
+                    if (i.signedness == .unsigned) {
+                        var bytes: [size]u8 = @bitCast(@as(
+                            T,
+                            @truncate(@as(u64, @bitCast(@as(i64, @intFromFloat(value))))),
+                        ));
+                        @memcpy(mem, &bytes);
+                    } else {
+                        var bytes: [size]u8 = @bitCast(@as(T, @truncate(@as(i64, @intFromFloat(value)))));
+                        @memcpy(mem, &bytes);
+                    }
+                } else {
+                    const value = if (i.signedness == .signed) L.tointeger(-1).? else L.tounsigned(-1).?;
+                    var bytes: [size]u8 = @bitCast(@as(T, @truncate(value)));
+                    @memcpy(mem, &bytes);
+                }
+            },
+            .float => {
+                const value = L.tonumber(-1).?;
+                var bytes: [size]u8 = @bitCast(@as(T, @floatCast(value)));
+                @memcpy(mem, &bytes);
+            },
+            else => @compileError("Unsupported type"),
         },
         .Boolean => {
             var bytes: [size]u8 = @bitCast(@as(T, if (L.toboolean(-1) == true) 1 else 0));
@@ -2103,23 +2132,25 @@ fn ffi_dupe(L: *VM.lua.State) !i32 {
 
 pub fn loadLib(L: *VM.lua.State) void {
     {
-        _ = L.Lnewmetatable(LuaDataType.META);
-
-        L.Zsetfieldfn(-1, luau.Metamethods.index, LuaDataType.__index); // metatable.__index
-        L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaDataType.__namecall); // metatable.__namecall
-
-        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
+        _ = L.Znewmetatable(LuaDataType.META, .{
+            .__index = LuaDataType.__index,
+            .__namecall = LuaDataType.__namecall,
+            .__metatable = "Metatable is locked",
+            .__type = "FFIDataType",
+        });
+        L.setreadonly(-1, true);
         L.setuserdatadtor(LuaDataType, TAG_FFI_DATATYPE, LuaDataType.__dtor);
         L.setuserdatametatable(TAG_FFI_DATATYPE);
     }
     {
-        _ = L.Lnewmetatable(LuaPointer.META);
-
-        L.Zsetfieldfn(-1, luau.Metamethods.eq, LuaPointer.__eq); // metatable.__eq
-        L.Zsetfieldfn(-1, luau.Metamethods.namecall, LuaPointer.__namecall); // metatable.__namecall
-        L.Zsetfieldfn(-1, luau.Metamethods.tostring, LuaPointer.__tostring); // metatable.__tostring
-
-        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
+        _ = L.Znewmetatable(LuaPointer.META, .{
+            .__eq = LuaPointer.__eq,
+            .__namecall = LuaPointer.__namecall,
+            .__tostring = LuaPointer.__tostring,
+            .__metatable = "Metatable is locked",
+            .__type = "FFIPointer",
+        });
+        L.setreadonly(-1, true);
         L.setuserdatadtor(LuaPointer, TAG_FFI_POINTER, LuaPointer.__dtor);
         L.setuserdatametatable(TAG_FFI_POINTER);
     }
