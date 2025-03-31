@@ -289,9 +289,11 @@ describe("ChildProcess", function()
 	describe("Create", function()
 		test("Process Handle", function()
 			local result = process.create("cat");
-			result:writeIn("Hello World\n");
-			expect(result:readOutAsync(5)).toBe("Hello");
-			expect(result:readOutAsync()).toBe(" World\n");
+			assert(result.stdin)
+			assert(result.stdout)
+			result.stdin:write("Hello World\n");
+			expect(result.stdout:read(5)).toBe("Hello");
+			expect(result.stdout:read()).toBe(" World\n");
 
 			expect(result.dead).toBeFalsy();
 			local status = result:kill();
