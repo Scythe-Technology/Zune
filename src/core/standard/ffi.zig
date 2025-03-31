@@ -560,7 +560,7 @@ const LuaPointer = struct {
         return 1;
     }
 
-    pub const __namecall = MethodMap.CreateNamecallMap(LuaPointer, TAG_FFI_POINTER, .{
+    pub const __index = MethodMap.CreateStaticIndexMap(LuaPointer, TAG_FFI_POINTER, .{
         .{ "retain", retain },
         .{ "release", release },
         .{ "setTag", setTag },
@@ -853,17 +853,7 @@ const LuaDataType = struct {
     offsets: ?[]usize = null,
     fields_map: ?std.StringArrayHashMap(DataType) = null,
 
-    pub const IndexMap = std.StaticStringMap(enum {
-        Size,
-        Alignment,
-        Tag,
-    }).initComptime(.{
-        .{ "size", .Size },
-        .{ "alignment", .Alignment },
-        .{ "tag", .Tag },
-    });
-
-    pub fn newTag(self: *LuaDataType, L: *VM.lua.State) !i32 {
+    pub fn lua_newTag(self: *LuaDataType, L: *VM.lua.State) !i32 {
         if (self.type.kind != .pointer)
             return L.Zerror("'tag' is only available for pointers");
         if (self.type.kind.pointer.tag != 0)
@@ -890,7 +880,7 @@ const LuaDataType = struct {
         return 1;
     }
 
-    pub fn offset(self: *LuaDataType, L: *VM.lua.State) !i32 {
+    pub fn lua_offset(self: *LuaDataType, L: *VM.lua.State) !i32 {
         if (self.type.kind != .@"struct")
             return L.Zerror("'offset' is only available for structs");
         const field = try L.Zcheckvalue([]const u8, 2, null);
@@ -899,7 +889,7 @@ const LuaDataType = struct {
         return 1;
     }
 
-    pub fn new(self: *LuaDataType, L: *VM.lua.State) !i32 {
+    pub fn lua_new(self: *LuaDataType, L: *VM.lua.State) !i32 {
         if (self.type.kind != .@"struct")
             return L.Zerror("'new' is only available for structs");
         try L.Zchecktype(2, .Table);
@@ -951,30 +941,31 @@ const LuaDataType = struct {
         return 1;
     }
 
-    pub const __namecall = MethodMap.CreateNamecallMap(LuaDataType, TAG_FFI_DATATYPE, .{
-        .{ "offset", offset },
-        .{ "new", new },
-        .{ "newTag", newTag },
-    });
-
-    pub fn __index(L: *VM.lua.State) !i32 {
-        try L.Zchecktype(1, .Userdata);
-
-        const ptr = L.touserdatatagged(LuaDataType, 1, TAG_FFI_DATATYPE) orelse return L.Zerror("Invalid userdata");
-
-        const index = try L.Zcheckvalue([]const u8, 2, null);
-
-        switch (IndexMap.get(index) orelse return 0) {
-            .Size => L.pushinteger(@intCast(ptr.type.size)),
-            .Alignment => L.pushinteger(@intCast(ptr.type.alignment)),
-            .Tag => {
-                if (ptr.type.kind != .pointer)
-                    return 0;
-                L.pushinteger(@intCast(ptr.type.kind.pointer.tag));
-            },
-        }
+    pub fn lua_size(self: *LuaDataType, L: *VM.lua.State) !i32 {
+        L.pushinteger(@intCast(self.type.size));
         return 1;
     }
+
+    pub fn lua_alignment(self: *LuaDataType, L: *VM.lua.State) !i32 {
+        L.pushinteger(@intCast(self.type.alignment));
+        return 1;
+    }
+
+    pub fn lua_tag(self: *LuaDataType, L: *VM.lua.State) !i32 {
+        if (self.type.kind != .pointer)
+            return 0;
+        L.pushinteger(@intCast(self.type.kind.pointer.tag));
+        return 1;
+    }
+
+    pub const __index = MethodMap.CreateStaticIndexMap(LuaDataType, TAG_FFI_DATATYPE, .{
+        .{ "offset", lua_offset },
+        .{ "new", lua_new },
+        .{ "newTag", lua_newTag },
+        .{ "size", lua_size },
+        .{ "alignment", lua_alignment },
+        .{ "tag", lua_tag },
+    });
 
     pub fn __dtor(_: *VM.lua.State, self: *LuaDataType) void {
         if (self.fields_map == null)
@@ -2129,11 +2120,10 @@ fn ffi_dupe(L: *VM.lua.State) !i32 {
 pub fn loadLib(L: *VM.lua.State) void {
     {
         _ = L.Znewmetatable(@typeName(LuaDataType), .{
-            .__index = LuaDataType.__index,
-            .__namecall = LuaDataType.__namecall,
             .__metatable = "Metatable is locked",
             .__type = "FFIDataType",
         });
+        LuaDataType.__index(L, -1);
         L.setreadonly(-1, true);
         L.setuserdatadtor(LuaDataType, TAG_FFI_DATATYPE, LuaDataType.__dtor);
         L.setuserdatametatable(TAG_FFI_DATATYPE);
@@ -2141,11 +2131,11 @@ pub fn loadLib(L: *VM.lua.State) void {
     {
         _ = L.Znewmetatable(@typeName(LuaPointer), .{
             .__eq = LuaPointer.__eq,
-            .__namecall = LuaPointer.__namecall,
             .__tostring = LuaPointer.__tostring,
             .__metatable = "Metatable is locked",
             .__type = "FFIPointer",
         });
+        LuaPointer.__index(L, -1);
         L.setreadonly(-1, true);
         L.setuserdatadtor(LuaPointer, TAG_FFI_POINTER, LuaPointer.__dtor);
         L.setuserdatametatable(TAG_FFI_POINTER);

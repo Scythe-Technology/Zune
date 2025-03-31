@@ -27,19 +27,19 @@ const TAG_BUFFERSTREAM = tagged.Tags.get("IO_BUFFERSTREAM").?;
 pub const LIB_NAME = "io";
 
 const LuaTerminal = struct {
-    pub fn enableRawMode(L: *VM.lua.State) !i32 {
+    pub fn lua_enableRawMode(L: *VM.lua.State) !i32 {
         const term = &(TERMINAL orelse return L.Zerror("Terminal not initialized"));
         L.pushboolean(if (term.setRawMode()) true else |_| false);
         return 1;
     }
 
-    pub fn restoreMode(L: *VM.lua.State) !i32 {
+    pub fn lua_restoreMode(L: *VM.lua.State) !i32 {
         const term = &(TERMINAL orelse return L.Zerror("Terminal not initialized"));
         L.pushboolean(if (term.restoreSettings()) true else |_| false);
         return 1;
     }
 
-    pub fn getSize(L: *VM.lua.State) !i32 {
+    pub fn lua_getSize(L: *VM.lua.State) !i32 {
         const term = &(TERMINAL orelse return L.Zerror("Terminal not initialized"));
         const x, const y = term.getSize() catch |err| {
             if (err == error.NotATerminal) return 0;
@@ -50,7 +50,7 @@ const LuaTerminal = struct {
         return 2;
     }
 
-    pub fn getCurrentMode(L: *VM.lua.State) !i32 {
+    pub fn lua_getCurrentMode(L: *VM.lua.State) !i32 {
         const term = &(TERMINAL orelse return L.Zerror("Terminal not initialized"));
         switch (term.mode) {
             .Plain => L.pushstring("normal"),
@@ -88,7 +88,7 @@ const Stream = struct {
         }
     };
 
-    fn GenerateWriteMethod(comptime T: type) fn (self: *Stream, L: *VM.lua.State) anyerror!i32 {
+    fn GenerateWriteLuaMethod(comptime T: type) fn (self: *Stream, L: *VM.lua.State) anyerror!i32 {
         const len = @sizeOf(T);
         if (len == 0)
             @compileError("Too small");
@@ -116,7 +116,7 @@ const Stream = struct {
         }.inner;
     }
 
-    fn GenericReadMethod(comptime T: type) fn (self: *Stream, L: *VM.lua.State) anyerror!i32 {
+    fn GenericReadLuaMethod(comptime T: type) fn (self: *Stream, L: *VM.lua.State) anyerror!i32 {
         const len = @sizeOf(T);
         if (len == 0)
             @compileError("Too small");
@@ -142,7 +142,7 @@ const Stream = struct {
         }.inner;
     }
 
-    pub fn write(self: *Stream, L: *VM.lua.State) !i32 {
+    pub fn lua_write(self: *Stream, L: *VM.lua.State) !i32 {
         if (!self.mode.write)
             return L.Zerror("Stream is not writable");
         std.debug.assert(self.vtable.write != null);
@@ -151,7 +151,7 @@ const Stream = struct {
         return 0;
     }
 
-    pub fn read(self: *Stream, L: *VM.lua.State) !i32 {
+    pub fn lua_read(self: *Stream, L: *VM.lua.State) !i32 {
         if (!self.mode.read)
             return L.Zerror("Stream is not readable");
         std.debug.assert(self.vtable.read != null);
@@ -167,7 +167,7 @@ const Stream = struct {
         return 1;
     }
 
-    pub fn seekTo(self: *Stream, L: *VM.lua.State) !i32 {
+    pub fn lua_seekTo(self: *Stream, L: *VM.lua.State) !i32 {
         if (!self.mode.seek)
             return L.Zerror("Stream is not seekable");
         std.debug.assert(self.vtable.seekTo != null);
@@ -176,7 +176,7 @@ const Stream = struct {
         return 0;
     }
 
-    pub fn seekBy(self: *Stream, L: *VM.lua.State) !i32 {
+    pub fn lua_seekBy(self: *Stream, L: *VM.lua.State) !i32 {
         if (!self.mode.seek)
             return L.Zerror("Stream is not seekable");
         std.debug.assert(self.vtable.seekBy != null);
@@ -186,26 +186,26 @@ const Stream = struct {
     }
 
     pub const __index = MethodMap.CreateStaticIndexMap(Stream, TAG_STREAM, .{
-        .{ "write", write },
-        .{ "writeu8", GenerateWriteMethod(u8) },
-        .{ "writeu16", GenerateWriteMethod(u16) },
-        .{ "writeu32", GenerateWriteMethod(u32) },
-        .{ "writei8", GenerateWriteMethod(i8) },
-        .{ "writei16", GenerateWriteMethod(i16) },
-        .{ "writei32", GenerateWriteMethod(i32) },
-        .{ "writef32", GenerateWriteMethod(f32) },
-        .{ "writef64", GenerateWriteMethod(f64) },
-        .{ "read", read },
-        .{ "readu8", GenericReadMethod(u8) },
-        .{ "readu16", GenericReadMethod(u16) },
-        .{ "readu32", GenericReadMethod(u32) },
-        .{ "readi8", GenericReadMethod(i8) },
-        .{ "readi16", GenericReadMethod(i16) },
-        .{ "readi32", GenericReadMethod(i32) },
-        .{ "readf32", GenericReadMethod(f32) },
-        .{ "readf64", GenericReadMethod(f64) },
-        .{ "seekTo", seekTo },
-        .{ "seekBy", seekBy },
+        .{ "write", lua_write },
+        .{ "writeu8", GenerateWriteLuaMethod(u8) },
+        .{ "writeu16", GenerateWriteLuaMethod(u16) },
+        .{ "writeu32", GenerateWriteLuaMethod(u32) },
+        .{ "writei8", GenerateWriteLuaMethod(i8) },
+        .{ "writei16", GenerateWriteLuaMethod(i16) },
+        .{ "writei32", GenerateWriteLuaMethod(i32) },
+        .{ "writef32", GenerateWriteLuaMethod(f32) },
+        .{ "writef64", GenerateWriteLuaMethod(f64) },
+        .{ "read", lua_read },
+        .{ "readu8", GenericReadLuaMethod(u8) },
+        .{ "readu16", GenericReadLuaMethod(u16) },
+        .{ "readu32", GenericReadLuaMethod(u32) },
+        .{ "readi8", GenericReadLuaMethod(i8) },
+        .{ "readi16", GenericReadLuaMethod(i16) },
+        .{ "readi32", GenericReadLuaMethod(i32) },
+        .{ "readf32", GenericReadLuaMethod(f32) },
+        .{ "readf64", GenericReadLuaMethod(f64) },
+        .{ "seekTo", lua_seekTo },
+        .{ "seekBy", lua_seekBy },
     });
 
     pub fn GenericWrite(
@@ -293,28 +293,28 @@ const BufferSink = struct {
         return 0;
     }
 
-    pub fn iwrite(self: *BufferSink, value: []const u8) !void {
+    pub fn write(self: *BufferSink, value: []const u8) !void {
         try self.buf.appendSlice(self.alloc, value);
     }
 
-    pub fn write(self: *BufferSink, L: *VM.lua.State) !i32 {
+    pub fn lua_write(self: *BufferSink, L: *VM.lua.State) !i32 {
         if (self.closed)
             return error.Closed;
         const str = try L.Zcheckvalue([]const u8, 2, null);
         if (self.buf.items.len + str.len > self.limit)
             return L.Zerror("BufferSink limit exceeded");
-        try self.iwrite(str);
+        try self.write(str);
         return 0;
     }
 
     pub const StreamImpl: Stream.VTable = .{
-        .write = Stream.GenericWrite(BufferSink, BufferSink.iwrite),
+        .write = Stream.GenericWrite(BufferSink, BufferSink.write),
         .read = null,
         .seekTo = null,
         .seekBy = null,
     };
 
-    pub fn writer(self: *BufferSink, L: *VM.lua.State) !i32 {
+    pub fn lua_writer(self: *BufferSink, L: *VM.lua.State) !i32 {
         if (self.stream_writer.push(L))
             return 1;
 
@@ -332,7 +332,7 @@ const BufferSink = struct {
         return 1;
     }
 
-    pub fn flush(self: *BufferSink, L: *VM.lua.State) !i32 {
+    pub fn lua_flush(self: *BufferSink, L: *VM.lua.State) !i32 {
         if (self.closed)
             return error.Closed;
         const use_buffer = L.Loptboolean(2, true);
@@ -347,24 +347,24 @@ const BufferSink = struct {
         return 1;
     }
 
-    pub fn clear(self: *BufferSink, _: *VM.lua.State) !i32 {
+    pub fn lua_clear(self: *BufferSink, _: *VM.lua.State) !i32 {
         if (self.closed)
             return error.Closed;
         defer self.buf.clearAndFree(self.alloc);
         return 0;
     }
 
-    pub fn close(self: *BufferSink, _: *VM.lua.State) !i32 {
+    pub fn lua_close(self: *BufferSink, _: *VM.lua.State) !i32 {
         self.closed = true;
         return 0;
     }
 
     pub const __namecall = MethodMap.CreateNamecallMap(BufferSink, null, .{
-        .{ "write", write },
-        .{ "writer", writer },
-        .{ "flush", flush },
-        .{ "clear", clear },
-        .{ "close", close },
+        .{ "write", lua_write },
+        .{ "writer", lua_writer },
+        .{ "flush", lua_flush },
+        .{ "clear", lua_clear },
+        .{ "close", lua_close },
     });
 
     pub fn __dtor(L: *VM.lua.State, self: *BufferSink) void {
@@ -382,22 +382,22 @@ const BufferStream = struct {
     stream_reader: luaHelper.Ref(void) = .empty,
     stream_writer: luaHelper.Ref(void) = .empty,
 
-    pub fn getPos(self: *BufferStream, L: *VM.lua.State) !i32 {
+    pub fn lua_pos(self: *BufferStream, L: *VM.lua.State) !i32 {
         L.pushunsigned(self.pos);
         return 1;
     }
 
-    pub fn getSize(self: *BufferStream, L: *VM.lua.State) !i32 {
+    pub fn lua_size(self: *BufferStream, L: *VM.lua.State) !i32 {
         L.pushunsigned(@truncate(self.buf.value.len));
         return 1;
     }
 
-    pub fn write(self: *BufferStream, L: *VM.lua.State) !i32 {
+    pub fn lua_write(self: *BufferStream, L: *VM.lua.State) !i32 {
         try self.stream_write(try L.Zcheckvalue([]const u8, 2, null));
         return 0;
     }
 
-    pub fn read(self: *BufferStream, L: *VM.lua.State) !i32 {
+    pub fn lua_read(self: *BufferStream, L: *VM.lua.State) !i32 {
         const amount = L.Loptunsigned(2, MAX_LUAU_SIZE);
         if (amount == 0)
             return 0;
@@ -410,23 +410,23 @@ const BufferStream = struct {
         return 1;
     }
 
-    pub fn canRead(self: *BufferStream, L: *VM.lua.State) !i32 {
+    pub fn lua_canRead(self: *BufferStream, L: *VM.lua.State) !i32 {
         const amount = L.Loptunsigned(2, 0);
         L.pushboolean(self.pos + amount <= self.buf.value.len);
         return 1;
     }
 
-    pub fn seekTo(self: *BufferStream, L: *VM.lua.State) !i32 {
+    pub fn lua_seekTo(self: *BufferStream, L: *VM.lua.State) !i32 {
         try self.stream_seekTo(try L.Zcheckvalue(u32, 2, null));
         return 0;
     }
 
-    pub fn seekBy(self: *BufferStream, L: *VM.lua.State) !i32 {
+    pub fn lua_seekBy(self: *BufferStream, L: *VM.lua.State) !i32 {
         try self.stream_seekBy(try L.Zcheckvalue(i32, 2, null));
         return 0;
     }
 
-    pub fn writer(self: *BufferStream, L: *VM.lua.State) !i32 {
+    pub fn lua_writer(self: *BufferStream, L: *VM.lua.State) !i32 {
         if (self.stream_writer.push(L))
             return 1;
         const ref = luaHelper.Ref(*anyopaque).init(L, 1, @ptrCast(@alignCast(self)));
@@ -443,7 +443,7 @@ const BufferStream = struct {
         return 1;
     }
 
-    pub fn reader(self: *BufferStream, L: *VM.lua.State) !i32 {
+    pub fn lua_reader(self: *BufferStream, L: *VM.lua.State) !i32 {
         if (self.stream_reader.push(L))
             return 1;
         const ref = luaHelper.Ref(*anyopaque).init(L, 1, @ptrCast(@alignCast(self)));
@@ -461,15 +461,15 @@ const BufferStream = struct {
     }
 
     pub const __index = MethodMap.CreateStaticIndexMap(BufferStream, TAG_BUFFERSTREAM, .{
-        .{ "pos", getPos },
-        .{ "size", getSize },
-        .{ "canRead", canRead },
-        .{ "write", write },
-        .{ "read", read },
-        .{ "seekTo", seekTo },
-        .{ "seekBy", seekBy },
-        .{ "writer", writer },
-        .{ "reader", reader },
+        .{ "pos", lua_pos },
+        .{ "size", lua_size },
+        .{ "canRead", lua_canRead },
+        .{ "write", lua_write },
+        .{ "read", lua_read },
+        .{ "seekTo", lua_seekTo },
+        .{ "seekBy", lua_seekBy },
+        .{ "writer", lua_writer },
+        .{ "reader", lua_reader },
     });
 
     pub fn __dtor(L: *VM.lua.State, self: *BufferStream) void {
@@ -524,7 +524,7 @@ const BufferStream = struct {
     }
 };
 
-pub fn createBufferSink(L: *VM.lua.State) !i32 {
+pub fn lua_createBufferSink(L: *VM.lua.State) !i32 {
     const allocator = luau.getallocator(L);
 
     const opts = try L.Zcheckvalue(?struct {
@@ -544,7 +544,7 @@ pub fn createBufferSink(L: *VM.lua.State) !i32 {
     return 1;
 }
 
-pub fn createFixedBufferStream(L: *VM.lua.State) !i32 {
+pub fn lua_createFixedBufferStream(L: *VM.lua.State) !i32 {
     const buffer = try L.Zcheckvalue([]u8, 1, null);
 
     const self = L.newuserdatataggedwithmetatable(BufferStream, TAG_BUFFERSTREAM);
@@ -617,10 +617,10 @@ pub fn loadLib(L: *VM.lua.State) void {
     {
         L.newtable();
 
-        L.Zsetfieldfn(-1, "enableRawMode", LuaTerminal.enableRawMode);
-        L.Zsetfieldfn(-1, "restoreMode", LuaTerminal.restoreMode);
-        L.Zsetfieldfn(-1, "getSize", LuaTerminal.getSize);
-        L.Zsetfieldfn(-1, "getCurrentMode", LuaTerminal.getCurrentMode);
+        L.Zsetfieldfn(-1, "enableRawMode", LuaTerminal.lua_enableRawMode);
+        L.Zsetfieldfn(-1, "restoreMode", LuaTerminal.lua_restoreMode);
+        L.Zsetfieldfn(-1, "getSize", LuaTerminal.lua_getSize);
+        L.Zsetfieldfn(-1, "getCurrentMode", LuaTerminal.lua_getCurrentMode);
 
         L.Zsetfield(-1, "isTTY", TERMINAL.?.stdin_istty and TERMINAL.?.stdout_istty);
 
@@ -632,8 +632,8 @@ pub fn loadLib(L: *VM.lua.State) void {
 
     L.Zsetfieldfn(-1, "format", Formatter.fmt_args);
 
-    L.Zsetfieldfn(-1, "createBufferSink", createBufferSink);
-    L.Zsetfieldfn(-1, "createFixedBufferStream", createFixedBufferStream);
+    L.Zsetfieldfn(-1, "createBufferSink", lua_createBufferSink);
+    L.Zsetfieldfn(-1, "createFixedBufferStream", lua_createFixedBufferStream);
 
     L.setreadonly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);

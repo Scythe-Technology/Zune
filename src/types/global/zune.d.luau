@@ -2113,8 +2113,8 @@ export type FFILibrary = {
 }
 
 declare class FFIDataType
-    size: number
-    alignment: number
+    function size(self): number
+    function alignment(self): number
 end
 
 declare class FFIStructureType extends FFIDataType
@@ -2123,7 +2123,7 @@ declare class FFIStructureType extends FFIDataType
 end
 
 declare class FFIPointerType extends FFIDataType
-    tag: number
+    function tag(self): number
     function newTag(self, tag: string | buffer): FFIPointerType
 end
 

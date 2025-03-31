@@ -137,7 +137,7 @@ const LuaRegex = struct {
         return 1;
     }
 
-    pub const __namecall = MethodMap.CreateNamecallMap(LuaRegex, TAG_REGEX_COMPILED, .{
+    pub const __index = MethodMap.CreateStaticIndexMap(LuaRegex, TAG_REGEX_COMPILED, .{
         .{ "match", match },
         .{ "search", search },
         .{ "captures", captures },
@@ -177,17 +177,17 @@ fn regex_create(L: *VM.lua.State) !i32 {
 pub fn loadLib(L: *VM.lua.State) void {
     {
         _ = L.Znewmetatable(@typeName(LuaRegex), .{
-            .__namecall = LuaRegex.__namecall,
             .__metatable = "Metatable is locked",
         });
+        LuaRegex.__index(L, -1);
         L.setreadonly(-1, true);
         L.setuserdatametatable(TAG_REGEX_COMPILED);
         L.setuserdatadtor(*pcre2.Code, TAG_REGEX_COMPILED, LuaRegex.__dtor);
     }
 
-    L.createtable(0, 1);
-
-    L.Zsetfieldfn(-1, "create", regex_create);
+    L.Zpushvalue(.{
+        .create = regex_create,
+    });
 
     L.setreadonly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);

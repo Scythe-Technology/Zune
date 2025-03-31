@@ -461,7 +461,7 @@ pub const AsyncWriteContext = struct {
     }
 };
 
-fn write(self: *File, L: *VM.lua.State) !i32 {
+fn lua_write(self: *File, L: *VM.lua.State) !i32 {
     if (!self.mode.canWrite())
         return error.NotOpenForWriting;
     const data = try L.Zcheckvalue([]const u8, 2, null);
@@ -474,7 +474,7 @@ fn write(self: *File, L: *VM.lua.State) !i32 {
     return File.AsyncWriteContext.queue(L, self.file, data, false, pos, self.kind, self.list);
 }
 
-fn writeSync(self: *File, L: *VM.lua.State) !i32 {
+fn lua_writeSync(self: *File, L: *VM.lua.State) !i32 {
     if (!self.mode.canWrite())
         return error.NotOpenForWriting;
     const data = try L.Zcheckvalue([]const u8, 2, null);
@@ -484,7 +484,7 @@ fn writeSync(self: *File, L: *VM.lua.State) !i32 {
     return 0;
 }
 
-fn append(self: *File, L: *VM.lua.State) !i32 {
+fn lua_append(self: *File, L: *VM.lua.State) !i32 {
     switch (self.kind) {
         .File => {},
         .Tty => return error.NotAppendable,
@@ -504,7 +504,7 @@ fn append(self: *File, L: *VM.lua.State) !i32 {
     return File.AsyncWriteContext.queue(L, self.file, string, false, pos, self.kind, self.list);
 }
 
-fn appendSync(self: *File, L: *VM.lua.State) !i32 {
+fn lua_appendSync(self: *File, L: *VM.lua.State) !i32 {
     switch (self.kind) {
         .File => {},
         .Tty => return error.NotAppendable,
@@ -519,7 +519,7 @@ fn appendSync(self: *File, L: *VM.lua.State) !i32 {
     return 0;
 }
 
-fn getSeekPosition(self: *File, L: *VM.lua.State) !i32 {
+fn lua_getSeekPosition(self: *File, L: *VM.lua.State) !i32 {
     switch (self.kind) {
         .File => {},
         .Tty => return error.NotSeekable,
@@ -528,7 +528,7 @@ fn getSeekPosition(self: *File, L: *VM.lua.State) !i32 {
     return 1;
 }
 
-fn getSize(self: *File, L: *VM.lua.State) !i32 {
+fn lua_getSize(self: *File, L: *VM.lua.State) !i32 {
     switch (self.kind) {
         .File => {},
         .Tty => return error.NotSeekable,
@@ -537,7 +537,7 @@ fn getSize(self: *File, L: *VM.lua.State) !i32 {
     return 1;
 }
 
-fn seekFromEnd(self: *File, L: *VM.lua.State) !i32 {
+fn lua_seekFromEnd(self: *File, L: *VM.lua.State) !i32 {
     switch (self.kind) {
         .File => {},
         .Tty => return error.NotSeekable,
@@ -546,7 +546,7 @@ fn seekFromEnd(self: *File, L: *VM.lua.State) !i32 {
     return 0;
 }
 
-fn seekTo(self: *File, L: *VM.lua.State) !i32 {
+fn lua_seekTo(self: *File, L: *VM.lua.State) !i32 {
     switch (self.kind) {
         .File => {},
         .Tty => return error.NotSeekable,
@@ -555,7 +555,7 @@ fn seekTo(self: *File, L: *VM.lua.State) !i32 {
     return 0;
 }
 
-fn seekBy(self: *File, L: *VM.lua.State) !i32 {
+fn lua_seekBy(self: *File, L: *VM.lua.State) !i32 {
     switch (self.kind) {
         .File => {},
         .Tty => return error.NotSeekable,
@@ -564,7 +564,7 @@ fn seekBy(self: *File, L: *VM.lua.State) !i32 {
     return 0;
 }
 
-fn read(self: *File, L: *VM.lua.State) !i32 {
+fn lua_read(self: *File, L: *VM.lua.State) !i32 {
     const size = L.Loptunsigned(2, luaHelper.MAX_LUAU_SIZE);
     if (!self.mode.canRead())
         return error.NotOpenForReading;
@@ -580,7 +580,7 @@ fn read(self: *File, L: *VM.lua.State) !i32 {
     );
 }
 
-fn readSync(self: *File, L: *VM.lua.State) !i32 {
+fn lua_readSync(self: *File, L: *VM.lua.State) !i32 {
     switch (self.kind) {
         .File => {},
         .Tty => return L.Zerror("readSync for TTY should be done with readTtySync"),
@@ -602,7 +602,7 @@ fn readSync(self: *File, L: *VM.lua.State) !i32 {
     return 1;
 }
 
-fn readTtySync(self: *File, L: *VM.lua.State) !i32 {
+fn lua_readTtySync(self: *File, L: *VM.lua.State) !i32 {
     switch (self.kind) {
         .File => return error.NotTty,
         .Tty => {},
@@ -639,7 +639,7 @@ fn readTtySync(self: *File, L: *VM.lua.State) !i32 {
     return 1;
 }
 
-fn lock(self: *File, L: *VM.lua.State) !i32 {
+fn lua_lock(self: *File, L: *VM.lua.State) !i32 {
     switch (self.kind) {
         .File => {},
         .Tty => return error.NotFile,
@@ -690,7 +690,7 @@ fn lock(self: *File, L: *VM.lua.State) !i32 {
     return 1;
 }
 
-fn unlock(self: *File, L: *VM.lua.State) !i32 {
+fn lua_unlock(self: *File, L: *VM.lua.State) !i32 {
     switch (self.kind) {
         .File => {},
         .Tty => return error.NotFile,
@@ -704,7 +704,7 @@ fn unlock(self: *File, L: *VM.lua.State) !i32 {
     return 0;
 }
 
-fn sync(self: *File, _: *VM.lua.State) !i32 {
+fn lua_sync(self: *File, _: *VM.lua.State) !i32 {
     switch (self.kind) {
         .File => {},
         .Tty => return error.NotFile,
@@ -714,7 +714,7 @@ fn sync(self: *File, _: *VM.lua.State) !i32 {
     return 0;
 }
 
-fn readonly(self: *File, L: *VM.lua.State) !i32 {
+fn lua_readonly(self: *File, L: *VM.lua.State) !i32 {
     switch (comptime builtin.os.tag) {
         .windows, .linux, .macos => {},
         else => return error.UnsupportedPlatform,
@@ -758,7 +758,7 @@ pub const AsyncCloseContext = struct {
     }
 };
 
-fn closeAsync(self: *File, L: *VM.lua.State) !i32 {
+fn lua_close(self: *File, L: *VM.lua.State) !i32 {
     switch (self.kind) {
         .File => {},
         .Tty => return error.NotCloseable,
@@ -803,23 +803,23 @@ fn before_method(self: *File, L: *VM.lua.State) !void {
 }
 
 const __index = MethodMap.CreateStaticIndexMap(File, TAG_FS_FILE, .{
-    .{ "write", MethodMap.WithFn(File, write, before_method) },
-    .{ "writeSync", MethodMap.WithFn(File, writeSync, before_method) },
-    .{ "append", MethodMap.WithFn(File, append, before_method) },
-    .{ "appendSync", MethodMap.WithFn(File, appendSync, before_method) },
-    .{ "getSeekPosition", MethodMap.WithFn(File, getSeekPosition, before_method) },
-    .{ "getSize", MethodMap.WithFn(File, getSize, before_method) },
-    .{ "seekFromEnd", MethodMap.WithFn(File, seekFromEnd, before_method) },
-    .{ "seekTo", MethodMap.WithFn(File, seekTo, before_method) },
-    .{ "seekBy", MethodMap.WithFn(File, seekBy, before_method) },
-    .{ "read", MethodMap.WithFn(File, read, before_method) },
-    .{ "readSync", MethodMap.WithFn(File, readSync, before_method) },
-    .{ "readTtySync", MethodMap.WithFn(File, readTtySync, before_method) },
-    .{ "lock", MethodMap.WithFn(File, lock, before_method) },
-    .{ "unlock", MethodMap.WithFn(File, unlock, before_method) },
-    .{ "sync", MethodMap.WithFn(File, sync, before_method) },
-    .{ "readonly", MethodMap.WithFn(File, readonly, before_method) },
-    .{ "close", closeAsync },
+    .{ "write", MethodMap.WithFn(File, lua_write, before_method) },
+    .{ "writeSync", MethodMap.WithFn(File, lua_writeSync, before_method) },
+    .{ "append", MethodMap.WithFn(File, lua_append, before_method) },
+    .{ "appendSync", MethodMap.WithFn(File, lua_appendSync, before_method) },
+    .{ "getSeekPosition", MethodMap.WithFn(File, lua_getSeekPosition, before_method) },
+    .{ "getSize", MethodMap.WithFn(File, lua_getSize, before_method) },
+    .{ "seekFromEnd", MethodMap.WithFn(File, lua_seekFromEnd, before_method) },
+    .{ "seekTo", MethodMap.WithFn(File, lua_seekTo, before_method) },
+    .{ "seekBy", MethodMap.WithFn(File, lua_seekBy, before_method) },
+    .{ "read", MethodMap.WithFn(File, lua_read, before_method) },
+    .{ "readSync", MethodMap.WithFn(File, lua_readSync, before_method) },
+    .{ "readTtySync", MethodMap.WithFn(File, lua_readTtySync, before_method) },
+    .{ "lock", MethodMap.WithFn(File, lua_lock, before_method) },
+    .{ "unlock", MethodMap.WithFn(File, lua_unlock, before_method) },
+    .{ "sync", MethodMap.WithFn(File, lua_sync, before_method) },
+    .{ "readonly", MethodMap.WithFn(File, lua_readonly, before_method) },
+    .{ "close", lua_close },
 });
 
 pub fn __dtor(L: *VM.lua.State, self: *File) void {
