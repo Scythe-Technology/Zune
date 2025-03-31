@@ -1350,7 +1350,7 @@ pub fn debugbreak(L: *VM.lua.State, ar: *VM.lua.c.lua_Debug) callconv(.C) void {
     };
 }
 
-pub fn luau_panic(L: *VM.lua.State, errcode: i32) callconv(.C) void {
+pub fn luau_panic(L: *VM.lua.State, errcode: i32) void {
     if (DEBUG.dead or !DEBUG.unhandled_exception)
         return;
     _ = errcode;
