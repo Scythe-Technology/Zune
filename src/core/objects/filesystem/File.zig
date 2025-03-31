@@ -30,11 +30,18 @@ pub const FileKind = enum {
 pub const OpenMode = packed struct {
     read: bool = false,
     write: bool = false,
+    seek: bool = false,
 
-    pub const closed: OpenMode = .{ .read = false, .write = false };
-    pub const writable: OpenMode = .{ .read = false, .write = true };
-    pub const readable: OpenMode = .{ .read = true, .write = false };
-    pub const readwrite: OpenMode = .{ .read = true, .write = true };
+    pub const closed: OpenMode = .{};
+    pub fn writable(seekable: bool) OpenMode {
+        return .{ .read = false, .write = true, .seek = seekable };
+    }
+    pub fn readable(seekable: bool) OpenMode {
+        return .{ .read = true, .write = false, .seek = seekable };
+    }
+    pub fn readwrite(seekable: bool) OpenMode {
+        return .{ .read = true, .write = true, .seek = seekable };
+    }
 
     pub inline fn isOpen(self: OpenMode) bool {
         return self.read or self.write;
@@ -44,6 +51,9 @@ pub const OpenMode = packed struct {
     }
     pub inline fn canWrite(self: OpenMode) bool {
         return self.write;
+    }
+    pub inline fn canSeek(self: OpenMode) bool {
+        return self.seek;
     }
 };
 
@@ -268,6 +278,7 @@ pub const AsyncWriteContext = struct {
     auto_close: bool = true,
     resumed: bool = false,
     pos: u64 = 0,
+    file_kind: FileKind = .File,
     list: ?*Scheduler.CompletionLinkedList = null,
 
     const This = @This();
@@ -370,17 +381,28 @@ pub const AsyncWriteContext = struct {
         if (written == 0 or written == b.slice.len)
             return self.end(L, scheduler, file, null);
 
-        self.pos += written;
-
-        file.pwrite(
-            &scheduler.loop,
-            completion,
-            .{ .slice = b.slice[written..] },
-            self.pos,
-            This,
-            self,
-            This.complete,
-        );
+        switch (self.file_kind) {
+            .File => {
+                self.pos += written;
+                file.pwrite(
+                    &scheduler.loop,
+                    completion,
+                    .{ .slice = self.data[written..] },
+                    self.pos,
+                    This,
+                    self,
+                    This.complete,
+                );
+            },
+            .Tty => file.write(
+                &scheduler.loop,
+                completion,
+                .{ .slice = b.slice[written..] },
+                This,
+                self,
+                This.complete,
+            ),
+        }
         return .disarm;
     }
 
@@ -390,6 +412,7 @@ pub const AsyncWriteContext = struct {
         data: []const u8,
         auto_close: bool,
         pos: u64,
+        file_kind: FileKind,
         list: ?*Scheduler.CompletionLinkedList,
     ) !i32 {
         if (!L.isyieldable())
@@ -408,17 +431,29 @@ pub const AsyncWriteContext = struct {
             .data = copy,
             .auto_close = auto_close,
             .pos = pos,
+            .file_kind = file_kind,
         };
 
-        file.pwrite(
-            &scheduler.loop,
-            &ctx.completion.data,
-            .{ .slice = data },
-            pos,
-            This,
-            ctx,
-            This.complete,
-        );
+        switch (file_kind) {
+            .File => file.pwrite(
+                &scheduler.loop,
+                &ctx.completion.data,
+                .{ .slice = data },
+                pos,
+                This,
+                ctx,
+                This.complete,
+            ),
+            .Tty => file.write(
+                &scheduler.loop,
+                &ctx.completion.data,
+                .{ .slice = data },
+                This,
+                ctx,
+                This.complete,
+            ),
+        }
+
         if (list) |l|
             l.append(&ctx.completion);
 
@@ -431,9 +466,12 @@ fn write(self: *File, L: *VM.lua.State) !i32 {
         return error.NotOpenForWriting;
     const data = try L.Zcheckvalue([]const u8, 2, null);
 
-    const pos = try self.file.getPos();
+    const pos = switch (self.kind) {
+        .File => if (self.mode.canSeek()) try self.file.getPos() else 0,
+        .Tty => 0,
+    };
 
-    return File.AsyncWriteContext.queue(L, self.file, data, false, pos, self.list);
+    return File.AsyncWriteContext.queue(L, self.file, data, false, pos, self.kind, self.list);
 }
 
 fn writeSync(self: *File, L: *VM.lua.State) !i32 {
@@ -455,10 +493,15 @@ fn append(self: *File, L: *VM.lua.State) !i32 {
         return error.NotOpenForWriting;
     const string = try L.Zcheckvalue([]const u8, 2, null);
 
-    try self.file.seekFromEnd(0);
-    const pos = try self.file.getPos();
+    const pos = pos: {
+        if (self.mode.canSeek()) {
+            try self.file.seekFromEnd(0);
+            break :pos try self.file.getPos();
+        }
+        break :pos 0;
+    };
 
-    return File.AsyncWriteContext.queue(L, self.file, string, false, pos, self.list);
+    return File.AsyncWriteContext.queue(L, self.file, string, false, pos, self.kind, self.list);
 }
 
 fn appendSync(self: *File, L: *VM.lua.State) !i32 {

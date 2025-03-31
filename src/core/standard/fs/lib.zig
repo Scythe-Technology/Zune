@@ -135,7 +135,7 @@ fn fs_writeFileAsync(L: *VM.lua.State) !i32 {
     };
     errdefer file.close();
 
-    return File.AsyncWriteContext.queue(L, file, data, true, 0, null);
+    return File.AsyncWriteContext.queue(L, file, data, true, 0, .File, null);
 }
 
 fn fs_writeFileSync(L: *VM.lua.State) !i32 {
@@ -480,9 +480,9 @@ fn fs_openFile(L: *VM.lua.State) !i32 {
     };
 
     try File.push(L, file, .File, switch (mode) {
-        .read_only => .readable,
-        .read_write => .readwrite,
-        .write_only => .writable,
+        .read_only => .readable(true),
+        .read_write => .readwrite(true),
+        .write_only => .writable(true),
     });
 
     return 1;
@@ -507,7 +507,7 @@ fn fs_createFile(L: *VM.lua.State) !i32 {
         }),
     };
 
-    try File.push(L, file, .File, .readwrite);
+    try File.push(L, file, .File, .readwrite(true));
 
     return 1;
 }

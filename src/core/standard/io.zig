@@ -156,6 +156,8 @@ const Stream = struct {
             return L.Zerror("Stream is not readable");
         std.debug.assert(self.vtable.read != null);
         const amount = L.Loptunsigned(2, MAX_LUAU_SIZE);
+        if (amount == 0)
+            return 0;
         const use_buffer = L.Loptboolean(3, true);
         const data = try self.vtable.read.?(self.ref.value, amount, false) orelse return 0;
         if (use_buffer)
@@ -183,7 +185,7 @@ const Stream = struct {
         return 0;
     }
 
-    pub const __namecall = MethodMap.CreateNamecallMap(Stream, null, .{
+    pub const __index = MethodMap.CreateStaticIndexMap(Stream, TAG_STREAM, .{
         .{ "write", write },
         .{ "writeu8", GenerateWriteMethod(u8) },
         .{ "writeu16", GenerateWriteMethod(u16) },
@@ -373,12 +375,22 @@ const BufferSink = struct {
 };
 
 const BufferStream = struct {
-    pos: usize,
+    pos: u32,
     buf: luaHelper.Ref([]u8),
 
     ref_table: luaHelper.RefTable,
     stream_reader: luaHelper.Ref(void) = .empty,
     stream_writer: luaHelper.Ref(void) = .empty,
+
+    pub fn getPos(self: *BufferStream, L: *VM.lua.State) !i32 {
+        L.pushunsigned(self.pos);
+        return 1;
+    }
+
+    pub fn getSize(self: *BufferStream, L: *VM.lua.State) !i32 {
+        L.pushunsigned(@truncate(self.buf.value.len));
+        return 1;
+    }
 
     pub fn write(self: *BufferStream, L: *VM.lua.State) !i32 {
         try self.stream_write(try L.Zcheckvalue([]const u8, 2, null));
@@ -387,6 +399,8 @@ const BufferStream = struct {
 
     pub fn read(self: *BufferStream, L: *VM.lua.State) !i32 {
         const amount = L.Loptunsigned(2, MAX_LUAU_SIZE);
+        if (amount == 0)
+            return 0;
         const use_buffer = L.Loptboolean(3, true);
         const data = try self.stream_read(amount, false) orelse return 0;
         if (use_buffer)
@@ -446,28 +460,16 @@ const BufferStream = struct {
         return 1;
     }
 
-    pub fn __index(L: *VM.lua.State) !i32 {
-        const self = L.touserdata(BufferStream, 1) orelse return 0;
-        const index = try L.Zcheckvalue([:0]const u8, 2, null);
-
-        if (std.mem.eql(u8, index, "pos")) {
-            L.pushunsigned(@intCast(self.pos));
-            return 1;
-        } else if (std.mem.eql(u8, index, "len")) {
-            L.pushunsigned(@intCast(self.buf.value.len));
-            return 1;
-        }
-        return L.Zerror("Unknown property");
-    }
-
-    pub const __namecall = MethodMap.CreateNamecallMap(BufferStream, null, .{
+    pub const __index = MethodMap.CreateStaticIndexMap(BufferStream, TAG_BUFFERSTREAM, .{
+        .{ "pos", getPos },
+        .{ "size", getSize },
+        .{ "canRead", canRead },
         .{ "write", write },
         .{ "read", read },
-        .{ "writer", writer },
-        .{ "reader", reader },
         .{ "seekTo", seekTo },
         .{ "seekBy", seekBy },
-        .{ "canRead", canRead },
+        .{ "writer", writer },
+        .{ "reader", reader },
     });
 
     pub fn __dtor(L: *VM.lua.State, self: *BufferStream) void {
@@ -487,24 +489,21 @@ const BufferStream = struct {
         const buf = self.buf.value;
         const end = self.pos + value.len;
         if (end > buf.len)
-            return error.BufferOverflow;
+            return error.OutOfBounds;
         std.mem.copyForwards(u8, buf[self.pos..end], value);
-        self.pos = end;
+        self.pos = @intCast(end);
     }
     pub fn stream_read(self: *BufferStream, amount: u32, exact: bool) anyerror!?[]const u8 {
-        if (amount == 0)
-            return null;
         const buf = self.buf.value;
-        if (self.pos >= buf.len)
-            return null;
-        if (exact and self.pos + amount > buf.len)
+        const offset = if (exact) amount else 0;
+        if (self.pos + offset >= buf.len)
             return null;
         const result = buf[self.pos..@min(self.pos + amount, buf.len)];
-        self.pos += result.len;
+        self.pos += @intCast(result.len);
         return result;
     }
     pub fn stream_seekTo(self: *BufferStream, pos: u32) !void {
-        self.pos = @min(std.math.lossyCast(usize, pos), self.buf.value.len);
+        self.pos = @min(pos, self.buf.value.len);
     }
     pub fn stream_seekBy(self: *BufferStream, offset: i32) anyerror!void {
         const buf = self.buf.value;
@@ -516,10 +515,10 @@ const BufferStream = struct {
                 self.pos -= amount;
         } else {
             const new_pos = std.math.add(
-                usize,
+                u32,
                 self.pos,
                 std.math.cast(u32, offset) orelse std.math.maxInt(u32),
-            ) catch std.math.maxInt(usize);
+            ) catch std.math.maxInt(u32);
             self.pos = @min(buf.len, new_pos);
         }
     }
@@ -569,25 +568,29 @@ pub fn loadLib(L: *VM.lua.State) void {
             .__metatable = "Metatable is locked",
             .__type = "BufferSink",
         });
+        L.setreadonly(-1, true);
         L.setuserdatametatable(TAG_BUFFERSINK);
         L.setuserdatadtor(BufferSink, TAG_BUFFERSINK, BufferSink.__dtor);
     }
     {
         _ = L.Znewmetatable(@typeName(Stream), .{
-            .__namecall = Stream.__namecall,
             .__metatable = "Metatable is locked",
             .__type = "Stream",
         });
+        Stream.__index(L);
+        L.setfield(-2, "__index");
+        L.setreadonly(-1, true);
         L.setuserdatametatable(TAG_STREAM);
         L.setuserdatadtor(Stream, TAG_STREAM, Stream.__dtor);
     }
     {
         _ = L.Znewmetatable(@typeName(BufferStream), .{
-            .__index = BufferStream.__index,
-            .__namecall = BufferStream.__namecall,
             .__metatable = "Metatable is locked",
             .__type = "BufferStream",
         });
+        BufferStream.__index(L);
+        L.setfield(-2, "__index");
+        L.setreadonly(-1, true);
         L.setuserdatametatable(TAG_BUFFERSTREAM);
         L.setuserdatadtor(BufferStream, TAG_BUFFERSTREAM, BufferStream.__dtor);
     }
@@ -600,15 +603,15 @@ pub fn loadLib(L: *VM.lua.State) void {
     const stdErr = std.io.getStdErr();
 
     // StdIn
-    File.push(L, stdIn, .Tty, .readable) catch |err| std.debug.panic("{}", .{err});
+    File.push(L, stdIn, .Tty, .readable(false)) catch |err| std.debug.panic("{}", .{err});
     L.setfield(-2, "stdin");
 
     // StdOut
-    File.push(L, stdOut, .Tty, .writable) catch |err| std.debug.panic("{}", .{err});
+    File.push(L, stdOut, .Tty, .writable(false)) catch |err| std.debug.panic("{}", .{err});
     L.setfield(-2, "stdout");
 
     // StdErr
-    File.push(L, stdErr, .Tty, .writable) catch |err| std.debug.panic("{}", .{err});
+    File.push(L, stdErr, .Tty, .writable(false)) catch |err| std.debug.panic("{}", .{err});
     L.setfield(-2, "stderr");
 
     // Terminal

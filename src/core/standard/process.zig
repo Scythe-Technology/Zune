@@ -9,6 +9,8 @@ const Engine = @import("../runtime/engine.zig");
 const Scheduler = @import("../runtime/scheduler.zig");
 const Parser = @import("../utils/parser.zig");
 
+const File = @import("../objects/filesystem/File.zig");
+
 const luaHelper = @import("../utils/luahelper.zig");
 const sysfd = @import("../utils/sysfd.zig");
 const MethodMap = @import("../utils/method_map.zig");
@@ -110,8 +112,11 @@ fn internal_process_term(L: *VM.lua.State, term: process.Child.Term) void {
 const ProcessChildHandle = struct {
     options: ProcessChildOptions,
     child: process.Child,
-    poller: ?std.io.Poller(PollEnum),
     dead: bool = false,
+
+    stdin_file: luaHelper.Ref(void) = .empty,
+    stdout_file: luaHelper.Ref(void) = .empty,
+    stderr_file: luaHelper.Ref(void) = .empty,
 
     pub const PollEnum = enum {
         stdout,
@@ -134,188 +139,59 @@ const ProcessChildHandle = struct {
         return 1;
     }
 
-    fn method_readOut(self: *ProcessChildHandle, L: *VM.lua.State) !i32 {
-        const maxBytes = L.tounsigned(2) orelse luaHelper.MAX_LUAU_SIZE;
-        if (maxBytes == 0)
-            return 0;
-
-        if (self.poller) |*poller| {
-            if (!try poller.pollTimeout(0)) {
-                self.dead = true;
-                return 0;
-            }
-            const fifo = poller.fifo(.stdout);
-            if (fifo.count == 0)
-                return 0;
-
-            const read = @min(maxBytes, fifo.count);
-            L.pushlstring(fifo.readableSliceOfLen(read));
-            fifo.discard(read);
-
-            return 1;
-        }
-        return 0;
-    }
-
-    fn method_readOutAsync(self: *ProcessChildHandle, L: *VM.lua.State) !i32 {
-        const scheduler = Scheduler.getScheduler(L);
-
-        const maxBytes = L.tounsigned(2) orelse luaHelper.MAX_LUAU_SIZE;
-        if (maxBytes == 0)
-            return 0;
-
-        if (self.poller) |*poller| {
-            if (!try poller.pollTimeout(0)) {
-                self.dead = true;
-                return 0;
-            }
-            const fifo = poller.fifo(.stdout);
-            if (fifo.count == 0) {
-                const TaskContext = struct { *ProcessChildHandle, usize };
-                return try scheduler.addSimpleTask(TaskContext, .{ self, maxBytes }, L, struct {
-                    fn inner(ctx: *TaskContext, l: *VM.lua.State, _: *Scheduler) !i32 {
-                        const ptr, const max_bytes = ctx.*;
-                        if (ptr.poller) |*p| {
-                            if (!try p.pollTimeout(0)) {
-                                ptr.dead = true;
-                                return 0;
-                            }
-                            const sub_fifo = p.fifo(.stdout);
-                            if (sub_fifo.count == 0)
-                                return -1;
-
-                            const read = @min(max_bytes, sub_fifo.count);
-                            l.pushlstring(sub_fifo.readableSliceOfLen(read));
-                            sub_fifo.discard(read);
-
-                            return 1;
-                        }
-                        return 0;
-                    }
-                }.inner);
-            }
-
-            const read = @min(maxBytes, fifo.count);
-            L.pushlstring(fifo.readableSliceOfLen(read));
-            fifo.discard(read);
-            return 1;
-        }
-        return 0;
-    }
-
-    fn method_readErr(self: *ProcessChildHandle, L: *VM.lua.State) !i32 {
-        const maxBytes = L.tounsigned(2) orelse luaHelper.MAX_LUAU_SIZE;
-        if (maxBytes == 0)
-            return 0;
-
-        if (self.poller) |*poller| {
-            if (!try poller.pollTimeout(0)) {
-                self.dead = true;
-                return 0;
-            }
-            const fifo = poller.fifo(.stderr);
-            if (fifo.count == 0)
-                return 0;
-
-            const read = @min(maxBytes, fifo.count);
-            L.pushlstring(fifo.readableSliceOfLen(read));
-            fifo.discard(read);
-
-            return 1;
-        }
-        return 0;
-    }
-
-    fn method_readErrAsync(self: *ProcessChildHandle, L: *VM.lua.State) !i32 {
-        const scheduler = Scheduler.getScheduler(L);
-
-        const maxBytes = L.tounsigned(2) orelse luaHelper.MAX_LUAU_SIZE;
-        if (maxBytes == 0)
-            return 0;
-
-        if (self.poller) |*poller| {
-            if (!try poller.pollTimeout(0)) {
-                self.dead = true;
-                return 0;
-            }
-            const fifo = poller.fifo(.stderr);
-            if (fifo.count == 0) {
-                const TaskContext = struct { *ProcessChildHandle, usize };
-                return try scheduler.addSimpleTask(TaskContext, .{ self, maxBytes }, L, struct {
-                    fn inner(ctx: *TaskContext, l: *VM.lua.State, _: *Scheduler) !i32 {
-                        const ptr, const max_bytes = ctx.*;
-                        if (ptr.poller) |*p| {
-                            if (!try p.pollTimeout(0)) {
-                                ptr.dead = true;
-                                return 0;
-                            }
-                            const sub_fifo = p.fifo(.stderr);
-                            if (sub_fifo.count == 0)
-                                return -1;
-
-                            const read = @min(max_bytes, sub_fifo.count);
-                            l.pushlstring(sub_fifo.readableSliceOfLen(read));
-                            sub_fifo.discard(read);
-
-                            return 1;
-                        }
-                        return 0;
-                    }
-                }.inner);
-            }
-
-            const read = @min(maxBytes, fifo.count);
-            L.pushlstring(fifo.readableSliceOfLen(read));
-            fifo.discard(read);
-
-            return 1;
-        }
-        return 0;
-    }
-
-    fn method_writeIn(self: *ProcessChildHandle, L: *VM.lua.State) !i32 {
-        if (self.child.stdin == null)
-            return L.Zerror("InternalError (No stdin stream found)");
-        if (self.child.stdin_behavior != .Pipe)
-            return L.Zerror("InternalError (stdin stream is not a pipe)");
-        const buffer = try L.Zcheckvalue([]const u8, 2, null);
-        try self.child.stdin.?.writeAll(buffer);
-        return 1;
-    }
-
     pub const __namecall = MethodMap.CreateNamecallMap(ProcessChildHandle, TAG_PROCESS_CHILD, .{
         .{ "kill", method_kill },
         .{ "wait", method_wait },
-        .{ "readOut", method_readOut },
-        .{ "readOutAsync", method_readOutAsync },
-        .{ "readErr", method_readErr },
-        .{ "readErrAsync", method_readErrAsync },
-        .{ "writeIn", method_writeIn },
     });
 
     pub const IndexMap = std.StaticStringMap(enum {
         Dead,
+        Stdin,
+        Stdout,
+        Stderr,
     }).initComptime(.{
         .{ "dead", .Dead },
+        .{ "stdin", .Stdin },
+        .{ "stdout", .Stdout },
+        .{ "stderr", .Stderr },
     });
 
     pub fn __index(L: *VM.lua.State) !i32 {
         try L.Zchecktype(1, .Userdata);
-        const handlePtr = L.touserdata(ProcessChildHandle, 1) orelse unreachable;
+        const self = L.touserdatatagged(ProcessChildHandle, 1, TAG_PROCESS_CHILD) orelse return 0;
         const index = L.Lcheckstring(2);
 
         switch (IndexMap.get(index) orelse return L.Zerrorf("Unknown index: {s}", .{index})) {
-            .Dead => L.pushboolean(handlePtr.dead),
+            .Dead => L.pushboolean(self.dead),
+            .Stdin => {
+                if (self.stdin_file.push(L))
+                    return 1;
+                L.pushnil();
+                return 1;
+            },
+            .Stdout => {
+                if (self.stdout_file.push(L))
+                    return 1;
+                L.pushnil();
+                return 1;
+            },
+            .Stderr => {
+                if (self.stderr_file.push(L))
+                    return 1;
+                L.pushnil();
+                return 1;
+            },
         }
 
         return 1;
     }
 
-    pub fn __dtor(_: *VM.lua.State, self: *ProcessChildHandle) void {
+    pub fn __dtor(L: *VM.lua.State, self: *ProcessChildHandle) void {
         var options = self.options;
         options.deinit();
-        if (self.poller) |*poller| poller.deinit();
-        self.poller = null;
+        self.stdin_file.deref(L);
+        self.stdout_file.deref(L);
+        self.stderr_file.deref(L);
     }
 };
 
@@ -491,51 +367,56 @@ fn process_create(L: *VM.lua.State) !i32 {
     const childOptions = try ProcessChildOptions.init(L);
 
     const handlePtr = L.newuserdatataggedwithmetatable(ProcessChildHandle, TAG_PROCESS_CHILD);
-    var childProcess = process.Child.init(childOptions.argArray.items, allocator);
+    var child = process.Child.init(childOptions.argArray.items, allocator);
 
-    childProcess.id = undefined;
-    childProcess.thread_handle = undefined;
+    child.id = undefined;
+    child.thread_handle = undefined;
     if (builtin.os.tag != .windows)
-        childProcess.err_pipe = null;
-    childProcess.term = null;
-    childProcess.uid = if (native_os == .windows or native_os == .wasi) {} else null;
-    childProcess.gid = if (native_os == .windows or native_os == .wasi) {} else null;
-    childProcess.stdin = null;
-    childProcess.stdout = null;
-    childProcess.stderr = null;
-    childProcess.expand_arg0 = .no_expand;
+        child.err_pipe = null;
+    child.term = null;
+    child.uid = if (native_os == .windows or native_os == .wasi) {} else null;
+    child.gid = if (native_os == .windows or native_os == .wasi) {} else null;
+    child.stdin = null;
+    child.stdout = null;
+    child.stderr = null;
+    child.expand_arg0 = .no_expand;
 
-    childProcess.stdin_behavior = .Pipe;
-    childProcess.stdout_behavior = .Pipe;
-    childProcess.stderr_behavior = .Pipe;
-    childProcess.cwd = childOptions.cwd;
-    childProcess.env_map = if (childOptions.env) |env|
+    child.stdin_behavior = .Pipe;
+    child.stdout_behavior = .Pipe;
+    child.stderr_behavior = .Pipe;
+    child.cwd = childOptions.cwd;
+    child.env_map = if (childOptions.env) |env|
         &env
     else
         null;
 
-    handlePtr.* = ProcessChildHandle{
+    handlePtr.* = .{
         .options = childOptions,
-        .child = childProcess,
-        .poller = null,
+        .child = child,
     };
 
     {
         errdefer L.pop(2);
-        try childProcess.spawn();
+        try child.spawn();
     }
 
-    handlePtr.poller = std.io.poll(allocator, ProcessChildHandle.PollEnum, .{
-        .stdout = childProcess.stdout.?,
-        .stderr = childProcess.stderr.?,
-    });
+    if (child.stdin) |file| {
+        File.push(L, file, .Tty, .writable(false)) catch |err| std.debug.panic("{s}\n", .{@errorName(err)});
+        handlePtr.stdin_file = .init(L, -1, undefined);
+        L.pop(1);
+    }
+    if (child.stdout) |file| {
+        File.push(L, file, .Tty, .readable(false)) catch |err| std.debug.panic("{s}\n", .{@errorName(err)});
+        handlePtr.stdout_file = .init(L, -1, undefined);
+        L.pop(1);
+    }
+    if (child.stderr) |file| {
+        File.push(L, file, .Tty, .readable(false)) catch |err| std.debug.panic("{s}\n", .{@errorName(err)});
+        handlePtr.stderr_file = .init(L, -1, undefined);
+        L.pop(1);
+    }
 
-    handlePtr.child = childProcess;
-
-    if (L.Lgetmetatable(@typeName(ProcessChildHandle)) == .Table)
-        _ = L.setmetatable(-2)
-    else
-        std.debug.panic("InternalError (ProcessChild Metatable not initialized)", .{});
+    handlePtr.child = child;
 
     return 1;
 }

@@ -127,26 +127,26 @@ describe("IO", function()
             local a = "test default";
             stream:write(a);
             expect(buffer.tostring(buf)).toBe(a);
-            expect(stream.pos).toBe(#a);
+            expect(stream:pos()).toBe(#a);
 
             stream:seekTo(0);
-            expect(stream.pos).toBe(0);
+            expect(stream:pos()).toBe(0);
 
             local b = "test buffer";
             stream:write(b);
             expect(buffer.tostring(buf)).toBe(b .. (a:sub(#b + 1)));
-            expect(stream.pos).toBe(#b);
+            expect(stream:pos()).toBe(#b);
 
             stream:seekTo(0);
-            expect(stream.pos).toBe(0);
+            expect(stream:pos()).toBe(0);
 
             local c = "test string";
             stream:write(c);
             expect(buffer.tostring(buf)).toBe(c .. (a:sub(#c + 1)));
-            expect(stream.pos).toBe(#c);
+            expect(stream:pos()).toBe(#c);
 
             stream:seekTo(0);
-            expect(stream.pos).toBe(0);
+            expect(stream:pos()).toBe(0);
 
             local all = stream:read()
             expect(all).never.toBeNil();
@@ -154,7 +154,7 @@ describe("IO", function()
             expect(buffer.tostring(all)).toBe(c .. (a:sub(#c + 1)));
 
             stream:seekTo(0);
-            expect(stream.pos).toBe(0);
+            expect(stream:pos()).toBe(0);
 
             buffer.writestring(buf, 0, "test default");
             stream:write(buf);
@@ -163,7 +163,7 @@ describe("IO", function()
             expect(none).toBeNil();
 
             stream:seekTo(0);
-            expect(stream.pos).toBe(0)
+            expect(stream:pos()).toBe(0)
 
             expect(stream:canRead()).toBeTruthy()
             expect(stream:canRead(4)).toBeTruthy()
@@ -173,19 +173,19 @@ describe("IO", function()
             expect(stream:read(#a, false)).toBe(a)
             
             stream:seekTo(0)
-            expect(stream.pos).toBe(0)
+            expect(stream:pos()).toBe(0)
 
             stream:seekBy(1)
-            expect(stream.pos).toBe(1)
+            expect(stream:pos()).toBe(1)
             stream:seekBy(-1)
-            expect(stream.pos).toBe(0)
+            expect(stream:pos()).toBe(0)
             stream:seekBy(-1)
-            expect(stream.pos).toBe(0)
+            expect(stream:pos()).toBe(0)
             stream:seekBy(10000)
-            expect(stream.pos).toBe(12)
+            expect(stream:pos()).toBe(12)
 
             stream:seekTo(0)
-            expect(stream.pos).toBe(0)
+            expect(stream:pos()).toBe(0)
 
             local string_none = stream:read(0, false)
             expect(string_none).toBeNil()
@@ -199,7 +199,8 @@ describe("IO", function()
             local buf = buffer.fromstring("test default");
             local stream = io.createFixedBufferStream(buf);
             expect(stream).toBe(expect.type("userdata"));
-            expect(stream.pos).toBe(0);
+            expect(stream:pos()).toBe(0);
+            expect(stream:size()).toBe(buffer.len(buf));
 
             local reader = stream:reader();
             expect(reader).toBe(expect.type("userdata"));
@@ -211,18 +212,20 @@ describe("IO", function()
             expect(reader:readu8()).toBe(115); -- 's'
             expect(reader:readu8()).toBe(116); -- 't'
 
-            expect(stream.pos).toBe(4);
+            expect(stream:pos()).toBe(4);
 
             expect(reader:read(nil, false)).toBe(" default");
-            expect(stream.pos).toBe(12);
+            expect(stream:pos()).toBe(12);
 
             expect(reader:readu8()).toBeNil();
+            expect(stream:size()).toBe(buffer.len(buf));
         end)
         test("Generic Writer", function()
             local buf = buffer.fromstring("____ _______");
             local stream = io.createFixedBufferStream(buf);
             expect(stream).toBe(expect.type("userdata"));
-            expect(stream.pos).toBe(0);
+            expect(stream:pos()).toBe(0);
+            expect(stream:size()).toBe(buffer.len(buf));
 
             local writer = stream:writer();
             expect(writer).toBe(expect.type("userdata"));
@@ -235,10 +238,11 @@ describe("IO", function()
             writer:writeu8(116); -- 't'
             expect(buffer.tostring(buf)).toBe("test _______");
 
-            expect(stream.pos).toBe(4);
+            expect(stream:pos()).toBe(4);
 
             writer:write(" default");
             expect(buffer.tostring(buf)).toBe("test default");
+            expect(stream:size()).toBe(buffer.len(buf));
         end)
         test("Complex Reader", function()
             local complex: {any} = setmetatable({}, {__mode = "v"}) :: any;
@@ -246,7 +250,7 @@ describe("IO", function()
             local buf = buffer.fromstring("test complex");
             local stream = io.createFixedBufferStream(buf);
             expect(stream).toBe(expect.type("userdata"));
-            expect(stream.pos).toBe(0);
+            expect(stream:pos()).toBe(0);
             local address = "";
             do
                 local reader: IoReadable = stream:reader();

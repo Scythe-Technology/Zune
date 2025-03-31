@@ -31,7 +31,7 @@ export type Metadata = {
     },
 }
 
-export type FileHandle = {
+declare class FileHandle
     --[[
         Reads the contents of a file.
 
@@ -41,7 +41,7 @@ export type FileHandle = {
     ]]
     read:
         & ((self: FileHandle, amount: number?, useBuffer: false?) -> string)
-        & ((self: FileHandle, amount: number?, useBuffer: true) -> buffer),
+        & ((self: FileHandle, amount: number?, useBuffer: true) -> buffer)
 
     --[[
         Reads the contents of a file.
@@ -52,7 +52,7 @@ export type FileHandle = {
     ]]
     readSync:
         & ((self: FileHandle, amount: number?, useBuffer: false?) -> string)
-        & ((self: FileHandle, amount: number?, useBuffer: true) -> buffer),
+        & ((self: FileHandle, amount: number?, useBuffer: true) -> buffer)
 
     --[[
         Reads the contents of a file.
@@ -63,7 +63,7 @@ export type FileHandle = {
     ]]
     readTtySync:
         & ((self: FileHandle, amount: number?, useBuffer: false?) -> string?)
-        & ((self: FileHandle, amount: number?, useBuffer: true) -> buffer?),
+        & ((self: FileHandle, amount: number?, useBuffer: true) -> buffer?)
 
 
     --[[
@@ -71,38 +71,38 @@ export type FileHandle = {
 
         @param contents The contents to write to the file.
     ]]
-    write: (self: FileHandle, contents: string | buffer) -> (),
+    function write(self, contents: string | buffer): ()
 
     --[[
         Writes to a file.
 
         @param contents The contents to write to the file.
     ]]
-    writeSync: (self: FileHandle, contents: string | buffer) -> (),
+    function writeSync(self, contents: string | buffer): ()
 
     --[[
         Appends to a file.
 
         @param contents The contents to append to the file.
     ]]
-    append: (self: FileHandle, contents: string | buffer) -> (),
+    function append(self, contents: string | buffer): ()
 
     --[[
         Appends to a file.
 
         @param contents The contents to append to the file.
     ]]
-    appendSync: (self: FileHandle, contents: string | buffer) -> (),
+    function appendSync(self, contents: string | buffer): ()
 
     --[[
         Returns the size of the file. Based on current state of the file object.
     ]]
-    getSize: (self: FileHandle) -> number,
+    function getSize(self): number
 
     --[[
         Returns the current position of the file.
     ]]
-    getSeekPosition: (self: FileHandle) -> number,
+    function getSeekPosition(self): number
 
     --[[
         Seeks to a position in the file relative to the end.
@@ -111,7 +111,7 @@ export type FileHandle = {
 
         @param amount The amount of bytes to seek.
     ]]
-    seekFromEnd: (self: FileHandle, amount: number?) -> (),
+    function seekFromEnd(self, amount: number?): ()
 
     --[[
         Seeks to a position in the file absolute to the start.
@@ -120,7 +120,7 @@ export type FileHandle = {
 
         @param amount The amount of bytes to seek.
     ]]
-    seekTo: (self: FileHandle, amount: number?) -> (),
+    function seekTo(self, amount: number?): ()
 
     --[[
         Seeks to a position in the file relative to the current position.
@@ -131,7 +131,7 @@ export type FileHandle = {
 
         @param amount The amount of bytes to seek.
     ]]
-    seekBy: (self: FileHandle, amount: number?) -> (),
+    function seekBy(self, amount: number?): ()
 
     --[[
         Locks the file.
@@ -140,19 +140,19 @@ export type FileHandle = {
 
         @param lockMode The mode to lock the file.
     ]]
-    lock: (self: FileHandle, lockMode: ("shared" | "exclusive" | "none")?) -> boolean,
+    function lock(self, lockMode: ("shared" | "exclusive" | "none")?): boolean
 
     --[[
         Unlocks the file.
     ]]
-    unlock: (self: FileHandle) -> (),
+    function unlock(self): ()
 
     --[[
         Flushes the file. Writes the contents to the disk.
 
         Does not yield, **blocks** process.
     ]]
-    sync: (self: FileHandle) -> (),
+    function sync(self): ()
 
     --[[
         Returns whether the file is readonly.
@@ -163,13 +163,13 @@ export type FileHandle = {
     ]]
     readonly:
         & ((self: FileHandle) -> boolean)
-        & ((self: FileHandle, enabled: boolean) -> ()),
+        & ((self: FileHandle, enabled: boolean) -> ())
 
     --[[
         Closes the file. (Will flush the file)
     ]]
-    close: (self: FileHandle) -> (),
-}
+    function close(self): ()
+end
 
 export type FileWatcher = {
     --[[
@@ -462,6 +462,10 @@ export type ProcessRunResult = ProcessResult & {
 
 declare class ProcessChild
     dead: boolean
+    stdin: FileHandle?
+    stdout: FileHandle?
+    stderr: FileHandle?
+
     --[[
         Waits for the process to exit. Calls system function.
 
@@ -478,53 +482,6 @@ declare class ProcessChild
         @return `ProcessResult`
     ]]
     function kill(self): ProcessResult
-
-    --[[
-        Reads the output of the process. Stdout.
-
-        Optional size parameter to read a specific amount of bytes.
-        Nil to read all.
-
-        @param size The size of the output to read.
-        @return `string?`
-    ]]
-    function readOut(self, size: number?): string?
-    --[[
-        Reads the output of the process. Stdout.
-
-        Optional size parameter to read a specific amount of bytes.
-        Nil to read all.
-
-        @param size The size of the output to read.
-        @return `string?`
-    ]]
-    function readOutAsync(self, size: number?): string
-    --[[
-        Writes to the input of the process. Stdin.
-
-        @param data The data to write to the process.
-    ]]
-    function writeIn(self, data: string): ()
-    --[[
-        Reads the error output of the process. Stderr.
-
-        Optional size parameter to read a specific amount of bytes.
-        Nil to read all.
-
-        @param size The size of the output to read.
-        @return `string?`
-    ]]
-    function readErr(self, size: number?): string?
-    --[[
-        Reads the error output of the process. Stderr.
-
-        Optional size parameter to read a specific amount of bytes.
-        Nil to read all.
-
-        @param size The size of the output to read.
-        @return `string?`
-    ]]
-    function readErrAsync(self, size: number?): string?
 end
 
 type ProcessLib = {
@@ -1780,13 +1737,13 @@ declare class IoWritable
 end
 
 declare class BufferStream
-    pos: number
-    len: number
     read:
         & ((self: BufferStream, amount: number?, bytes: true?) -> buffer?)
         & ((self: BufferStream, amount: number?, bytes: false) -> string?)
 
     function write(self, data: string | buffer): ()
+    function pos(self): number
+    function size(self): number
     function seekTo(self, pos: number): ()
     function seekBy(self, offset: number): ()
     function canRead(self, amount: number?): ()
