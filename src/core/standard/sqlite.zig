@@ -6,6 +6,7 @@ const Engine = @import("../runtime/engine.zig");
 const Scheduler = @import("../runtime/scheduler.zig");
 
 const luaHelper = @import("../utils/luahelper.zig");
+const MethodMap = @import("../utils/method_map.zig");
 const tagged = @import("../../tagged.zig");
 
 const VM = luau.VM;
@@ -178,12 +179,6 @@ const LuaDatabase = struct {
     statements: std.ArrayList(i32),
     closed: bool = false,
 
-    // Placeholder
-    pub fn __index(L: *VM.lua.State) !i32 {
-        try L.Zchecktype(1, .Userdata);
-        return 0;
-    }
-
     const TransactionKind = enum {
         None,
         Deferred,
@@ -232,7 +227,7 @@ const LuaDatabase = struct {
             L.unref(ref);
     }
 
-    pub fn transaction(L: *VM.lua.State) !i32 {
+    pub fn lua_utransaction(L: *VM.lua.State) !i32 {
         const scheduler = Scheduler.getScheduler(L);
 
         const ptr = L.touserdatatagged(LuaDatabase, VM.lua.upvalueindex(1), TAG_SQLITE_DATABASE) orelse unreachable;
@@ -291,78 +286,85 @@ const LuaDatabase = struct {
         return 0;
     }
 
-    pub fn __namecall(L: *VM.lua.State) !i32 {
-        try L.Zchecktype(1, .Userdata);
-        const ptr = L.touserdata(LuaDatabase, 1) orelse unreachable;
-        const namecall = L.namecallstr() orelse return 0;
+    pub fn lua_query(self: *LuaDatabase, L: *VM.lua.State) !i32 {
+        if (self.closed)
+            return L.Zerror("Database is closed");
+        const query = try L.Zcheckvalue([]const u8, 2, null);
+        try self.statements.ensureTotalCapacity(self.statements.items.len + 1);
+        const statement = self.db.prepare(query) catch |err| switch (err) {
+            error.OutOfMemory => return err,
+            error.InvalidParameter => return L.Zerrorf("SQLite Query Error ({}): must have '$', ':', '?', or '@'", .{err}),
+            else => return L.Zerrorf("SQLite Error ({}): {s}", .{ err, self.db.getErrorMessage() }),
+        };
+        const ptr = L.newuserdatataggedwithmetatable(LuaStatement, TAG_SQLITE_STATEMENT);
+        const ref = L.ref(-1) orelse unreachable;
+        self.statements.append(ref) catch unreachable; // should have enough capacity
+        ptr.* = .{
+            .db = self,
+            .ref = ref,
+            .statement = statement,
+            .closed = false,
+        };
+        return 1;
+    }
 
+    pub fn lua_exec(self: *LuaDatabase, L: *VM.lua.State) !i32 {
+        if (self.closed)
+            return L.Zerror("Database is closed");
         const allocator = luau.getallocator(L);
 
-        // TODO: prob should switch to static string map
-        if (std.mem.eql(u8, namecall, "query")) {
-            if (ptr.closed)
-                return L.Zerror("Database is closed");
-            const query = try L.Zcheckvalue([]const u8, 2, null);
-            try ptr.statements.ensureTotalCapacity(ptr.statements.items.len + 1);
-            const statement = ptr.db.prepare(query) catch |err| switch (err) {
-                error.OutOfMemory => return err,
-                error.InvalidParameter => return L.Zerrorf("SQLite Query Error ({}): must have '$', ':', '?', or '@'", .{err}),
-                else => return L.Zerrorf("SQLite Error ({}): {s}", .{ err, ptr.db.getErrorMessage() }),
-            };
-            const stmt_ptr = L.newuserdatataggedwithmetatable(LuaStatement, TAG_SQLITE_STATEMENT);
-            const ref = L.ref(-1) orelse unreachable;
-            ptr.statements.append(ref) catch unreachable; // should have enough capacity
-            stmt_ptr.* = .{
-                .db = ptr,
-                .ref = ref,
-                .statement = statement,
-                .closed = false,
-            };
-            return 1;
-        } else if (std.mem.eql(u8, namecall, "exec")) {
-            if (ptr.closed)
-                return L.Zerror("Database is closed");
-            const query = try L.Zcheckvalue([]const u8, 2, null);
+        const query = try L.Zcheckvalue([]const u8, 2, null);
 
-            const stmt = ptr.db.prepare(query) catch |err| switch (err) {
-                error.OutOfMemory => return err,
-                error.InvalidParameter => return L.Zerrorf("SQLite Query Error ({}): must have '$', ':', '?', or '@'", .{err}),
-                else => return L.Zerrorf("SQLite Error ({}): {s}", .{ err, ptr.db.getErrorMessage() }),
-            };
-            defer stmt.deinit();
+        const stmt = self.db.prepare(query) catch |err| switch (err) {
+            error.OutOfMemory => return err,
+            error.InvalidParameter => return L.Zerrorf("SQLite Query Error ({}): must have '$', ':', '?', or '@'", .{err}),
+            else => return L.Zerrorf("SQLite Error ({}): {s}", .{ err, self.db.getErrorMessage() }),
+        };
+        defer stmt.deinit();
 
-            var params: ?[]?sqlite.Value = null;
-            defer if (params) |p| allocator.free(p);
-            if (stmt.paramSize() > 0)
-                params = try LuaStatement.loadParams(allocator, L, stmt, 3);
+        var params: ?[]?sqlite.Value = null;
+        defer if (params) |p| allocator.free(p);
+        if (stmt.paramSize() > 0)
+            params = try LuaStatement.loadParams(allocator, L, stmt, 3);
 
-            stmt.exec(allocator, params orelse &.{}) catch |err| switch (err) {
-                error.OutOfMemory => return err,
-                else => return L.Zerrorf("SQLite Error ({}): {s}", .{ err, ptr.db.getErrorMessage() }),
-            };
-        } else if (std.mem.eql(u8, namecall, "transaction")) {
-            try L.Zchecktype(2, .Function);
-            const kind_str = L.tostring(3);
-            const kind: TransactionKind = if (kind_str) |str|
-                TransactionMap.get(str) orelse return L.Zerrorf("Unknown transaction kind: {s}.", .{str})
-            else
-                .None;
-            L.pushvalue(1);
-            L.pushvalue(2);
-            L.pushinteger(@intFromEnum(kind));
-            L.pushcclosure(VM.zapi.toCFn(transaction), "Transaction", 3);
-            return 1;
-        } else if (std.mem.eql(u8, namecall, "close")) {
-            if (!L.Loptboolean(2, false)) {
-                ptr.close(L) catch {};
-            } else {
-                ptr.close(L) catch {
-                    return L.Zerrorf("SQLite Error: {s}", .{ptr.db.getErrorMessage()});
-                };
-            }
-        } else return L.Zerrorf("Unknown method: {s}", .{namecall});
+        stmt.exec(allocator, params orelse &.{}) catch |err| switch (err) {
+            error.OutOfMemory => return err,
+            else => return L.Zerrorf("SQLite Error ({}): {s}", .{ err, self.db.getErrorMessage() }),
+        };
         return 0;
     }
+
+    pub fn lua_transaction(_: *LuaDatabase, L: *VM.lua.State) !i32 {
+        try L.Zchecktype(2, .Function);
+        const kind_str = L.tostring(3);
+        const kind: TransactionKind = if (kind_str) |str|
+            TransactionMap.get(str) orelse return L.Zerrorf("Unknown transaction kind: {s}.", .{str})
+        else
+            .None;
+        L.pushvalue(1);
+        L.pushvalue(2);
+        L.pushinteger(@intFromEnum(kind));
+        L.pushcclosure(VM.zapi.toCFn(lua_utransaction), "Transaction", 3);
+        return 1;
+    }
+
+    pub fn lua_close(self: *LuaDatabase, L: *VM.lua.State) !i32 {
+        if (!L.Loptboolean(2, false)) {
+            self.close(L) catch {};
+        } else {
+            self.close(L) catch {
+                return L.Zerrorf("SQLite Error: {s}", .{self.db.getErrorMessage()});
+            };
+        }
+        return 0;
+    }
+
+    pub const __index = MethodMap.CreateStaticIndexMap(LuaDatabase, TAG_SQLITE_DATABASE, .{
+        .{ "query", lua_query },
+        .{ "exec", lua_exec },
+        .{ "transaction", lua_transaction },
+        .{ "close", lua_close },
+    });
 
     pub fn close(ptr: *LuaDatabase, L: *VM.lua.State) !void {
         if (ptr.closed)
@@ -415,10 +417,9 @@ fn sqlite_open(L: *VM.lua.State) !i32 {
 pub fn loadLib(L: *VM.lua.State) void {
     {
         _ = L.Znewmetatable(@typeName(LuaDatabase), .{
-            .__index = LuaDatabase.__index,
-            .__namecall = LuaDatabase.__namecall,
             .__metatable = "Metatable is locked",
         });
+        LuaDatabase.__index(L, -1);
         L.setreadonly(-1, true);
         L.setuserdatadtor(LuaDatabase, TAG_SQLITE_DATABASE, LuaDatabase.__dtor);
         L.setuserdatametatable(TAG_SQLITE_DATABASE);
@@ -444,7 +445,7 @@ pub fn loadLib(L: *VM.lua.State) void {
     luaHelper.registerModule(L, LIB_NAME);
 }
 
-test "SQLite" {
+test "sqlite" {
     const TestRunner = @import("../utils/testrunner.zig");
 
     const testResult = try TestRunner.runTest(

@@ -62,7 +62,7 @@ const windowsSupport = struct {
     }
 };
 
-fn fs_readFileAsync(L: *VM.lua.State) !i32 {
+fn lua_readFileAsync(L: *VM.lua.State) !i32 {
     const path = L.Lcheckstring(1);
     const useBuffer = L.Loptboolean(2, false);
 
@@ -89,7 +89,7 @@ fn fs_readFileAsync(L: *VM.lua.State) !i32 {
     );
 }
 
-fn fs_readFileSync(L: *VM.lua.State) !i32 {
+fn lua_readFileSync(L: *VM.lua.State) !i32 {
     const allocator = luau.getallocator(L);
     const path = L.Lcheckstring(1);
     const useBuffer = L.Loptboolean(2, false);
@@ -104,7 +104,7 @@ fn fs_readFileSync(L: *VM.lua.State) !i32 {
     return 1;
 }
 
-fn fs_readDir(L: *VM.lua.State) !i32 {
+fn lua_readDir(L: *VM.lua.State) !i32 {
     const path = L.Lcheckstring(1);
     var dir = try fs.cwd().openDir(path, fs.Dir.OpenDirOptions{
         .iterate = true,
@@ -122,7 +122,7 @@ fn fs_readDir(L: *VM.lua.State) !i32 {
     return 1;
 }
 
-fn fs_writeFileAsync(L: *VM.lua.State) !i32 {
+fn lua_writeFileAsync(L: *VM.lua.State) !i32 {
     const path = L.Lcheckstring(1);
     const data = try L.Zcheckvalue([]const u8, 2, null);
 
@@ -138,7 +138,7 @@ fn fs_writeFileAsync(L: *VM.lua.State) !i32 {
     return File.AsyncWriteContext.queue(L, file, data, true, 0, .File, null);
 }
 
-fn fs_writeFileSync(L: *VM.lua.State) !i32 {
+fn lua_writeFileSync(L: *VM.lua.State) !i32 {
     const path = L.Lcheckstring(1);
     const data = try L.Zcheckvalue([]const u8, 2, null);
     try fs.cwd().writeFile(fs.Dir.WriteFileOptions{
@@ -148,7 +148,7 @@ fn fs_writeFileSync(L: *VM.lua.State) !i32 {
     return 0;
 }
 
-fn fs_writeDir(L: *VM.lua.State) !i32 {
+fn lua_writeDir(L: *VM.lua.State) !i32 {
     const path = L.Lcheckstring(1);
     const recursive = L.Loptboolean(2, false);
     const cwd = std.fs.cwd();
@@ -159,13 +159,13 @@ fn fs_writeDir(L: *VM.lua.State) !i32 {
     return 0;
 }
 
-fn fs_removeFile(L: *VM.lua.State) !i32 {
+fn lua_removeFile(L: *VM.lua.State) !i32 {
     const path = L.Lcheckstring(1);
     try fs.cwd().deleteFile(path);
     return 0;
 }
 
-fn fs_removeDir(L: *VM.lua.State) !i32 {
+fn lua_removeDir(L: *VM.lua.State) !i32 {
     const path = L.Lcheckstring(1);
     const recursive = L.Loptboolean(2, false);
     const cwd = std.fs.cwd();
@@ -193,7 +193,7 @@ fn internal_isFile(srcDir: fs.Dir, path: []const u8) bool {
     return stat.kind == .file;
 }
 
-fn fs_isDir(L: *VM.lua.State) i32 {
+fn lua_isDir(L: *VM.lua.State) i32 {
     const path = L.Lcheckstring(1);
     L.pushboolean(internal_isDir(fs.cwd(), path));
     return 1;
@@ -217,7 +217,7 @@ fn internal_metadata_table(L: *VM.lua.State, metadata: fs.File.Metadata, isSymli
     });
 }
 
-fn fs_metadata(L: *VM.lua.State) !i32 {
+fn lua_metadata(L: *VM.lua.State) !i32 {
     switch (comptime builtin.os.tag) {
         .windows, .linux, .macos => {},
         else => return error.UnsupportedPlatform,
@@ -257,7 +257,7 @@ fn fs_metadata(L: *VM.lua.State) !i32 {
     return 1;
 }
 
-fn fs_move(L: *VM.lua.State) !i32 {
+fn lua_move(L: *VM.lua.State) !i32 {
     const fromPath = L.Lcheckstring(1);
     const toPath = L.Lcheckstring(2);
     const overwrite = L.Loptboolean(3, false);
@@ -293,7 +293,7 @@ fn copyDir(fromDir: fs.Dir, toDir: fs.Dir, overwrite: bool) !void {
     };
 }
 
-fn fs_copy(L: *VM.lua.State) !i32 {
+fn lua_copy(L: *VM.lua.State) !i32 {
     const fromPath = L.Lcheckstring(1);
     const toPath = L.Lcheckstring(2);
     const override = L.Loptboolean(3, false);
@@ -329,7 +329,7 @@ fn fs_copy(L: *VM.lua.State) !i32 {
     return 0;
 }
 
-fn fs_symlink(L: *VM.lua.State) !i32 {
+fn lua_symlink(L: *VM.lua.State) !i32 {
     const fromPath = L.Lcheckstring(1);
     const toPath = L.Lcheckstring(2);
     const cwd = std.fs.cwd();
@@ -444,7 +444,7 @@ const LuaWatch = struct {
     }
 };
 
-fn fs_openFile(L: *VM.lua.State) !i32 {
+fn lua_openFile(L: *VM.lua.State) !i32 {
     const path = L.Lcheckstring(1);
 
     var mode: fs.File.OpenMode = .read_write;
@@ -488,7 +488,7 @@ fn fs_openFile(L: *VM.lua.State) !i32 {
     return 1;
 }
 
-fn fs_createFile(L: *VM.lua.State) !i32 {
+fn lua_createFile(L: *VM.lua.State) !i32 {
     const path = L.Lcheckstring(1);
 
     const Options = struct {
@@ -512,7 +512,7 @@ fn fs_createFile(L: *VM.lua.State) !i32 {
     return 1;
 }
 
-fn fs_watch(L: *VM.lua.State) !i32 {
+fn lua_watch(L: *VM.lua.State) !i32 {
     switch (comptime builtin.os.tag) {
         .windows, .linux, .macos => {},
         else => return error.UnsupportedPlatform,
@@ -565,35 +565,27 @@ pub fn loadLib(L: *VM.lua.State) void {
         L.setreadonly(-1, true);
         L.pop(1);
     }
-    L.createtable(0, 17);
 
-    L.Zsetfieldfn(-1, "createFile", fs_createFile);
-    L.Zsetfieldfn(-1, "openFile", fs_openFile);
-
-    L.Zsetfieldfn(-1, "readFile", fs_readFileAsync);
-    L.Zsetfieldfn(-1, "readFileSync", fs_readFileSync);
-    L.Zsetfieldfn(-1, "readDir", fs_readDir);
-
-    L.Zsetfieldfn(-1, "writeFile", fs_writeFileAsync);
-    L.Zsetfieldfn(-1, "writeFileSync", fs_writeFileSync);
-    L.Zsetfieldfn(-1, "writeDir", fs_writeDir);
-
-    L.Zsetfieldfn(-1, "removeFile", fs_removeFile);
-    L.Zsetfieldfn(-1, "removeDir", fs_removeDir);
-
-    L.Zsetfieldfn(-1, "isDir", fs_isDir);
-
-    L.Zsetfieldfn(-1, "metadata", fs_metadata);
-
-    L.Zsetfieldfn(-1, "move", fs_move);
-
-    L.Zsetfieldfn(-1, "copy", fs_copy);
-
-    L.Zsetfieldfn(-1, "symlink", fs_symlink);
-
-    L.Zsetfieldfn(-1, "watch", fs_watch);
-
+    L.Zpushvalue(.{
+        .createFile = lua_createFile,
+        .openFile = lua_openFile,
+        .readFile = lua_readFileAsync,
+        .readFileSync = lua_readFileSync,
+        .readDir = lua_readDir,
+        .writeFile = lua_writeFileAsync,
+        .writeFileSync = lua_writeFileSync,
+        .writeDir = lua_writeDir,
+        .removeFile = lua_removeFile,
+        .removeDir = lua_removeDir,
+        .isDir = lua_isDir,
+        .metadata = lua_metadata,
+        .move = lua_move,
+        .copy = lua_copy,
+        .symlink = lua_symlink,
+        .watch = lua_watch,
+    });
     L.setreadonly(-1, true);
+
     luaHelper.registerModule(L, LIB_NAME);
 }
 

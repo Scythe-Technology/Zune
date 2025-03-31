@@ -141,7 +141,7 @@ const LuaCryptoHasher = struct {
 
     pub const AlgorithmMap = EnumMap.Gen(Algorithm);
 
-    fn update(self: *LuaCryptoHasher, L: *VM.lua.State) !i32 {
+    fn lua_update(self: *LuaCryptoHasher, L: *VM.lua.State) !i32 {
         if (self.extra != null and self.used)
             return L.Zerror("Hasher already used");
         const value = try L.Zcheckvalue([]const u8, 2, null);
@@ -161,7 +161,7 @@ const LuaCryptoHasher = struct {
         binary,
     };
     const DigestEncodingMap = EnumMap.Gen(DigestEncoding);
-    fn digest(self: *LuaCryptoHasher, L: *VM.lua.State) !i32 {
+    fn lua_digest(self: *LuaCryptoHasher, L: *VM.lua.State) !i32 {
         if (self.extra != null and self.used)
             return L.Zerror("Hasher already used");
         const encoding_name = try L.Zcheckvalue(?[:0]const u8, 2, null);
@@ -210,7 +210,7 @@ const LuaCryptoHasher = struct {
         return 1;
     }
 
-    fn copy(self: *LuaCryptoHasher, L: *VM.lua.State) !i32 {
+    fn lua_copy(self: *LuaCryptoHasher, L: *VM.lua.State) !i32 {
         if (self.extra != null and self.used)
             return L.Zerror("Hasher already used");
         const allocator = luau.getallocator(L);
@@ -232,10 +232,10 @@ const LuaCryptoHasher = struct {
         return 1;
     }
 
-    pub const __namecall = MethodMap.CreateNamecallMap(LuaCryptoHasher, TAG_CRYPTO_HASHER, .{
-        .{ "update", update },
-        .{ "digest", digest },
-        .{ "copy", copy },
+    pub const __index = MethodMap.CreateStaticIndexMap(LuaCryptoHasher, TAG_CRYPTO_HASHER, .{
+        .{ "update", lua_update },
+        .{ "digest", lua_digest },
+        .{ "copy", lua_copy },
     });
 
     pub fn __dtor(L: *VM.lua.State, self: *LuaCryptoHasher) void {
@@ -247,7 +247,7 @@ const LuaCryptoHasher = struct {
     }
 };
 
-fn crypto_createHash(L: *VM.lua.State) !i32 {
+fn lua_createHash(L: *VM.lua.State) !i32 {
     const allocator = luau.getallocator(L);
 
     const name = try L.Zcheckvalue([:0]const u8, 1, null);
@@ -305,9 +305,9 @@ fn crypto_createHash(L: *VM.lua.State) !i32 {
 pub fn loadLib(L: *VM.lua.State) void {
     {
         _ = L.Znewmetatable(@typeName(LuaCryptoHasher), .{
-            .__namecall = LuaCryptoHasher.__namecall,
             .__metatable = "Metatable is locked",
         });
+        LuaCryptoHasher.__index(L, -1);
         L.setreadonly(-1, true);
         L.setuserdatadtor(LuaCryptoHasher, TAG_CRYPTO_HASHER, LuaCryptoHasher.__dtor);
         L.setuserdatametatable(TAG_CRYPTO_HASHER);
@@ -315,7 +315,7 @@ pub fn loadLib(L: *VM.lua.State) void {
 
     L.createtable(0, 5);
 
-    L.Zsetfieldfn(-1, "createHash", crypto_createHash);
+    L.Zsetfieldfn(-1, "createHash", lua_createHash);
 
     { // password
         L.Zpushvalue(.{
@@ -395,7 +395,7 @@ test {
     std.testing.refAllDecls(@This());
 }
 
-test "Crypto" {
+test "crypto" {
     const TestRunner = @import("../../utils/testrunner.zig");
 
     const testResult = try TestRunner.runTest(

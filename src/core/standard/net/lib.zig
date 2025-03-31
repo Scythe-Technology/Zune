@@ -59,7 +59,7 @@ pub fn createSocket(domain: u32, flags: u32, protocol: u32) !std.posix.socket_t 
     };
 }
 
-fn net_createSocket(L: *VM.lua.State) !i32 {
+fn lua_createSocket(L: *VM.lua.State) !i32 {
     if (!L.isyieldable())
         return L.Zyielderror();
     const domain = L.Lcheckunsigned(1);
@@ -73,7 +73,7 @@ fn net_createSocket(L: *VM.lua.State) !i32 {
     return 1;
 }
 
-fn net_getAddressList(L: *VM.lua.State) !i32 {
+fn lua_getAddressList(L: *VM.lua.State) !i32 {
     const allocator = luau.getallocator(L);
     const name = L.Lcheckstring(1);
     const port = L.Lcheckunsigned(2);
@@ -129,8 +129,8 @@ pub fn loadLib(L: *VM.lua.State) void {
         L.setfield(-2, "http");
     }
 
-    L.Zsetfieldfn(-1, "createSocket", net_createSocket);
-    L.Zsetfieldfn(-1, "getAddressList", net_getAddressList);
+    L.Zsetfieldfn(-1, "createSocket", lua_createSocket);
+    L.Zsetfieldfn(-1, "getAddressList", lua_getAddressList);
 
     ImportConstants(L, std.posix.AF, "ADDRF");
     ImportConstants(L, std.posix.SOCK, "SOCKF");
@@ -139,6 +139,7 @@ pub fn loadLib(L: *VM.lua.State) void {
     ImportConstants(L, std.posix.SOL, "SOCKOPTLV");
 
     L.setreadonly(-1, true);
+
     luaHelper.registerModule(L, LIB_NAME);
 }
 

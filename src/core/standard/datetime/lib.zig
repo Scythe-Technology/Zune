@@ -39,7 +39,7 @@ pub const LuaDatetime = struct {
     datetime: time.Datetime,
     timezone: ?time.Timezone,
 
-    fn toIsoDate(self: *LuaDatetime, L: *VM.lua.State) !i32 {
+    fn lua_toIsoDate(self: *LuaDatetime, L: *VM.lua.State) !i32 {
         const datetime = self.datetime;
         const utc = if (datetime.isAware())
             try datetime.tzLocalize(null)
@@ -51,7 +51,7 @@ pub const LuaDatetime = struct {
         return 1;
     }
 
-    fn toLocalTime(self: *LuaDatetime, L: *VM.lua.State) !i32 {
+    fn lua_toLocalTime(self: *LuaDatetime, L: *VM.lua.State) !i32 {
         const allocator = luau.getallocator(L);
 
         const datetime = self.datetime;
@@ -76,7 +76,7 @@ pub const LuaDatetime = struct {
         return 1;
     }
 
-    fn toUniversalTime(self: *LuaDatetime, L: *VM.lua.State) !i32 {
+    fn lua_toUniversalTime(self: *LuaDatetime, L: *VM.lua.State) !i32 {
         const datetime = self.datetime;
         const utc = if (datetime.isAware())
             try datetime.tzConvert(.{ .tz = &time.Timezone.UTC })
@@ -96,7 +96,7 @@ pub const LuaDatetime = struct {
         return 1;
     }
 
-    fn formatLocalTime(self: *LuaDatetime, L: *VM.lua.State) !i32 {
+    fn lua_formatLocalTime(self: *LuaDatetime, L: *VM.lua.State) !i32 {
         const allocator = luau.getallocator(L);
 
         const datetime = self.datetime;
@@ -119,7 +119,7 @@ pub const LuaDatetime = struct {
         return 1;
     }
 
-    fn formatUniversalTime(self: *LuaDatetime, L: *VM.lua.State) !i32 {
+    fn lua_formatUniversalTime(self: *LuaDatetime, L: *VM.lua.State) !i32 {
         const allocator = luau.getallocator(L);
 
         const datetime = self.datetime;
@@ -140,16 +140,16 @@ pub const LuaDatetime = struct {
     }
 
     pub const __namecall = MethodMap.CreateNamecallMap(LuaDatetime, TAG_DATETIME, .{
-        .{ "toIsoDate", toIsoDate },
-        .{ "ToIsoDate", toIsoDate },
-        .{ "toLocalTime", toLocalTime },
-        .{ "ToLocalTime", toLocalTime },
-        .{ "toUniversalTime", toUniversalTime },
-        .{ "ToUniversalTime", toUniversalTime },
-        .{ "formatLocalTime", formatLocalTime },
-        .{ "FormatLocalTime", formatLocalTime },
-        .{ "formatUniversalTime", formatUniversalTime },
-        .{ "FormatUniversalTime", formatUniversalTime },
+        .{ "toIsoDate", lua_toIsoDate },
+        .{ "ToIsoDate", lua_toIsoDate },
+        .{ "toLocalTime", lua_toLocalTime },
+        .{ "ToLocalTime", lua_toLocalTime },
+        .{ "toUniversalTime", lua_toUniversalTime },
+        .{ "ToUniversalTime", lua_toUniversalTime },
+        .{ "formatLocalTime", lua_formatLocalTime },
+        .{ "FormatLocalTime", lua_formatLocalTime },
+        .{ "formatUniversalTime", lua_formatUniversalTime },
+        .{ "FormatUniversalTime", lua_formatUniversalTime },
     });
 
     pub fn __index(L: *VM.lua.State) !i32 {
@@ -176,7 +176,7 @@ pub const LuaDatetime = struct {
     }
 };
 
-fn datetime_now(L: *VM.lua.State) !i32 {
+fn lua_now(L: *VM.lua.State) !i32 {
     const self = L.newuserdatataggedwithmetatable(LuaDatetime, TAG_DATETIME);
     self.* = .{
         .datetime = try time.Datetime.now(null),
@@ -185,7 +185,7 @@ fn datetime_now(L: *VM.lua.State) !i32 {
     return 1;
 }
 
-fn datetime_fromUnixTimestamp(L: *VM.lua.State) !i32 {
+fn lua_fromUnixTimestamp(L: *VM.lua.State) !i32 {
     const timestamp = L.Lchecknumber(1);
 
     const self = L.newuserdatataggedwithmetatable(LuaDatetime, TAG_DATETIME);
@@ -196,7 +196,7 @@ fn datetime_fromUnixTimestamp(L: *VM.lua.State) !i32 {
     return 1;
 }
 
-fn datetime_fromUnixTimestampMillis(L: *VM.lua.State) !i32 {
+fn lua_fromUnixTimestampMillis(L: *VM.lua.State) !i32 {
     const timestamp = L.Lchecknumber(1);
 
     const self = L.newuserdatataggedwithmetatable(LuaDatetime, TAG_DATETIME);
@@ -207,7 +207,7 @@ fn datetime_fromUnixTimestampMillis(L: *VM.lua.State) !i32 {
     return 1;
 }
 
-fn datetime_fromUniversalTime(L: *VM.lua.State) !i32 {
+fn lua_fromUniversalTime(L: *VM.lua.State) !i32 {
     const year = L.Loptinteger(1, 1970);
     const month = L.Loptinteger(2, 1);
     const day = L.Loptinteger(3, 1);
@@ -232,7 +232,7 @@ fn datetime_fromUniversalTime(L: *VM.lua.State) !i32 {
     return 1;
 }
 
-fn datetime_fromLocalTime(L: *VM.lua.State) !i32 {
+fn lua_fromLocalTime(L: *VM.lua.State) !i32 {
     const year = L.Loptinteger(1, 1970);
     const month = L.Loptinteger(2, 1);
     const day = L.Loptinteger(3, 1);
@@ -262,7 +262,7 @@ fn datetime_fromLocalTime(L: *VM.lua.State) !i32 {
     return 1;
 }
 
-fn datetime_fromIsoDate(L: *VM.lua.State) !i32 {
+fn lua_fromIsoDate(L: *VM.lua.State) !i32 {
     const iso_date = L.Lcheckstring(1);
 
     const self = L.newuserdatataggedwithmetatable(LuaDatetime, TAG_DATETIME);
@@ -273,7 +273,7 @@ fn datetime_fromIsoDate(L: *VM.lua.State) !i32 {
     return 1;
 }
 
-fn datetime_parse(L: *VM.lua.State) !i32 {
+fn lua_parse(L: *VM.lua.State) !i32 {
     const allocator = luau.getallocator(L);
     const date_string = L.Lcheckstring(1);
 
@@ -296,13 +296,13 @@ pub fn loadLib(L: *VM.lua.State) void {
     }
 
     L.Zpushvalue(.{
-        .now = datetime_now,
-        .parse = datetime_parse,
-        .fromIsoDate = datetime_fromIsoDate,
-        .fromUniversalTime = datetime_fromUniversalTime,
-        .fromLocalTime = datetime_fromLocalTime,
-        .fromUnixTimestamp = datetime_fromUnixTimestamp,
-        .fromUnixTimestampMillis = datetime_fromUnixTimestampMillis,
+        .now = lua_now,
+        .parse = lua_parse,
+        .fromIsoDate = lua_fromIsoDate,
+        .fromUniversalTime = lua_fromUniversalTime,
+        .fromLocalTime = lua_fromLocalTime,
+        .fromUnixTimestamp = lua_fromUnixTimestamp,
+        .fromUnixTimestampMillis = lua_fromUnixTimestampMillis,
     });
     L.setreadonly(-1, true);
 

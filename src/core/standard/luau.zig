@@ -10,7 +10,7 @@ const VM = luau.VM;
 
 pub const LIB_NAME = "luau";
 
-fn luau_compile(L: *VM.lua.State) !i32 {
+fn lua_compile(L: *VM.lua.State) !i32 {
     const source = try L.Zcheckvalue([]const u8, 1, null);
 
     var compileOpts = luau.CompileOptions{
@@ -63,7 +63,7 @@ fn luau_compile(L: *VM.lua.State) !i32 {
     return 1;
 }
 
-fn luau_load(L: *VM.lua.State) !i32 {
+fn lua_load(L: *VM.lua.State) !i32 {
     const bytecode = try L.Zcheckvalue([]const u8, 1, null);
 
     const Options = struct {
@@ -101,16 +101,15 @@ fn luau_load(L: *VM.lua.State) !i32 {
 }
 
 pub fn loadLib(L: *VM.lua.State) void {
-    L.createtable(0, 2);
-
-    L.Zsetfieldfn(-1, "compile", luau_compile);
-    L.Zsetfieldfn(-1, "load", luau_load);
-
+    L.Zpushvalue(.{
+        .compile = lua_compile,
+        .load = lua_load,
+    });
     L.setreadonly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);
 }
 
-test "Luau" {
+test "luau" {
     const TestRunner = @import("../utils/testrunner.zig");
 
     const testResult = try TestRunner.runTest(

@@ -229,7 +229,7 @@ const LuaPointer = struct {
             .data = .{},
         };
 
-        try internal_retain(ptr, L);
+        try ptr.retain(L);
 
         return ptr;
     }
@@ -246,7 +246,7 @@ const LuaPointer = struct {
         };
 
         if (default_retain)
-            try internal_retain(ptr, L);
+            try ptr.retain(L);
 
         return ptr;
     }
@@ -278,12 +278,12 @@ const LuaPointer = struct {
             .data = .{},
         };
 
-        try internal_retain(ptr, L);
+        try ptr.retain(L);
 
         return 1;
     }
 
-    pub fn internal_retain(ptr: *LuaPointer, L: *VM.lua.State) !void {
+    pub fn retain(ptr: *LuaPointer, L: *VM.lua.State) !void {
         if (ptr.local_ref != null) {
             ptr.retained = true;
             return;
@@ -301,13 +301,13 @@ const LuaPointer = struct {
         return L.touserdatatagged(LuaPointer, idx, TAG_FFI_POINTER);
     }
 
-    pub fn retain(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
+    pub fn lua_retain(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
         L.pushvalue(1);
-        try internal_retain(ptr, L);
+        try ptr.retain(L);
         return 1;
     }
 
-    pub fn release(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
+    pub fn lua_release(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
         ptr.retained = false;
         if (ptr.local_ref) |ref|
             L.unref(ref);
@@ -316,7 +316,7 @@ const LuaPointer = struct {
         return 1;
     }
 
-    pub fn setTag(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
+    pub fn lua_setTag(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
         if (ptr.destroyed or ptr.ptr == null)
             return 0;
         ptr.data.tag = L.Loptunsigned(2, 0);
@@ -324,14 +324,14 @@ const LuaPointer = struct {
         return 1;
     }
 
-    pub fn getTag(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
+    pub fn lua_getTag(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
         if (ptr.destroyed or ptr.ptr == null)
             return 0;
         L.pushunsigned(ptr.data.tag);
         return 1;
     }
 
-    pub fn drop(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
+    pub fn lua_drop(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
         if (ptr.destroyed or ptr.ptr == null)
             return 0;
         if (ptr.type == .Static)
@@ -346,7 +346,7 @@ const LuaPointer = struct {
         return 1;
     }
 
-    pub fn offset(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
+    pub fn lua_offset(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
         const pos: usize = @intCast(try L.Zcheckvalue(i32, 2, null));
         if (ptr.ptr == null) {
             _ = try LuaPointer.newStaticPtr(L, @ptrFromInt(pos), false);
@@ -364,7 +364,7 @@ const LuaPointer = struct {
         return 1;
     }
 
-    pub fn read(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
+    pub fn lua_read(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
         if (ptr.destroyed or ptr.ptr == null)
             return error.NoAddressAvailable;
 
@@ -404,7 +404,7 @@ const LuaPointer = struct {
         return 1;
     }
 
-    pub fn write(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
+    pub fn lua_write(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
         if (ptr.destroyed or ptr.ptr == null)
             return error.NoAddressAvailable;
 
@@ -442,7 +442,7 @@ const LuaPointer = struct {
         return 0;
     }
 
-    pub fn GenerateReadMethod(comptime T: type) fn (ptr: *LuaPointer, L: *VM.lua.State) anyerror!i32 {
+    pub fn GenerateReadLuaMethod(comptime T: type) fn (ptr: *LuaPointer, L: *VM.lua.State) anyerror!i32 {
         if (comptime @sizeOf(T) == 0)
             @compileError("Cannot read void type");
         const len = @sizeOf(T);
@@ -477,7 +477,7 @@ const LuaPointer = struct {
         }.inner;
     }
 
-    pub fn GenerateWriteMethod(comptime T: type) fn (ptr: *LuaPointer, L: *VM.lua.State) anyerror!i32 {
+    pub fn GenerateWriteLuaMethod(comptime T: type) fn (ptr: *LuaPointer, L: *VM.lua.State) anyerror!i32 {
         if (comptime @sizeOf(T) == 0)
             @compileError("Cannot write void type");
         const ti = @typeInfo(T);
@@ -513,7 +513,7 @@ const LuaPointer = struct {
         }.inner;
     }
 
-    pub fn isNull(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
+    pub fn lua_isNull(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
         if (ptr.destroyed) {
             L.pushboolean(true);
             return 1;
@@ -522,7 +522,7 @@ const LuaPointer = struct {
         return 1;
     }
 
-    pub fn setSize(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
+    pub fn lua_setSize(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
         if (ptr.destroyed or ptr.ptr == null)
             return L.Zerror("NoAddressAvailable");
         const size = L.Lchecknumber(2);
@@ -544,7 +544,7 @@ const LuaPointer = struct {
         return 0;
     }
 
-    pub fn span(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
+    pub fn lua_span(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
         if (ptr.destroyed or ptr.ptr == null)
             return 0;
         const src_offset: usize = @intCast(L.Loptinteger(2, 0));
@@ -561,39 +561,39 @@ const LuaPointer = struct {
     }
 
     pub const __index = MethodMap.CreateStaticIndexMap(LuaPointer, TAG_FFI_POINTER, .{
-        .{ "retain", retain },
-        .{ "release", release },
-        .{ "setTag", setTag },
-        .{ "getTag", getTag },
-        .{ "drop", drop },
-        .{ "offset", offset },
-        .{ "read", read },
-        .{ "write", write },
-        .{ "readi8", GenerateReadMethod(i8) },
-        .{ "readu8", GenerateReadMethod(u8) },
-        .{ "readi16", GenerateReadMethod(i16) },
-        .{ "readu16", GenerateReadMethod(u16) },
-        .{ "readi32", GenerateReadMethod(i32) },
-        .{ "readu32", GenerateReadMethod(u32) },
-        .{ "readi64", GenerateReadMethod(i64) },
-        .{ "readu64", GenerateReadMethod(u64) },
-        .{ "readf32", GenerateReadMethod(f32) },
-        .{ "readf64", GenerateReadMethod(f64) },
-        .{ "readPtr", GenerateReadMethod(*anyopaque) },
-        .{ "writei8", GenerateWriteMethod(i8) },
-        .{ "writeu8", GenerateWriteMethod(u8) },
-        .{ "writei16", GenerateWriteMethod(i16) },
-        .{ "writeu16", GenerateWriteMethod(u16) },
-        .{ "writei32", GenerateWriteMethod(i32) },
-        .{ "writeu32", GenerateWriteMethod(u32) },
-        .{ "writei64", GenerateWriteMethod(i64) },
-        .{ "writeu64", GenerateWriteMethod(u64) },
-        .{ "writef32", GenerateWriteMethod(f32) },
-        .{ "writef64", GenerateWriteMethod(f64) },
-        .{ "writePtr", GenerateWriteMethod(*anyopaque) },
-        .{ "isNull", isNull },
-        .{ "setSize", setSize },
-        .{ "span", span },
+        .{ "retain", lua_retain },
+        .{ "release", lua_release },
+        .{ "setTag", lua_setTag },
+        .{ "getTag", lua_getTag },
+        .{ "drop", lua_drop },
+        .{ "offset", lua_offset },
+        .{ "read", lua_read },
+        .{ "write", lua_write },
+        .{ "readi8", GenerateReadLuaMethod(i8) },
+        .{ "readu8", GenerateReadLuaMethod(u8) },
+        .{ "readi16", GenerateReadLuaMethod(i16) },
+        .{ "readu16", GenerateReadLuaMethod(u16) },
+        .{ "readi32", GenerateReadLuaMethod(i32) },
+        .{ "readu32", GenerateReadLuaMethod(u32) },
+        .{ "readi64", GenerateReadLuaMethod(i64) },
+        .{ "readu64", GenerateReadLuaMethod(u64) },
+        .{ "readf32", GenerateReadLuaMethod(f32) },
+        .{ "readf64", GenerateReadLuaMethod(f64) },
+        .{ "readPtr", GenerateReadLuaMethod(*anyopaque) },
+        .{ "writei8", GenerateWriteLuaMethod(i8) },
+        .{ "writeu8", GenerateWriteLuaMethod(u8) },
+        .{ "writei16", GenerateWriteLuaMethod(i16) },
+        .{ "writeu16", GenerateWriteLuaMethod(u16) },
+        .{ "writei32", GenerateWriteLuaMethod(i32) },
+        .{ "writeu32", GenerateWriteLuaMethod(u32) },
+        .{ "writei64", GenerateWriteLuaMethod(i64) },
+        .{ "writeu64", GenerateWriteLuaMethod(u64) },
+        .{ "writef32", GenerateWriteLuaMethod(f32) },
+        .{ "writef64", GenerateWriteLuaMethod(f64) },
+        .{ "writePtr", GenerateWriteLuaMethod(*anyopaque) },
+        .{ "isNull", lua_isNull },
+        .{ "setSize", lua_setSize },
+        .{ "span", lua_span },
     });
 
     pub fn __eq(L: *VM.lua.State) !i32 {
@@ -656,7 +656,7 @@ const LuaHandle = struct {
     lib: std.DynLib,
     open: bool,
 
-    pub fn getSymbol(self: *LuaHandle, L: *VM.lua.State) !i32 {
+    pub fn lua_getSymbol(self: *LuaHandle, L: *VM.lua.State) !i32 {
         const symbol = try L.Zcheckvalue([:0]const u8, 2, null);
         const sym_ptr = self.lib.lookup(*anyopaque, symbol) orelse {
             L.pushnil();
@@ -667,7 +667,7 @@ const LuaHandle = struct {
     }
 
     pub const __namecall = MethodMap.CreateNamecallMap(LuaHandle, null, .{
-        .{ "getSymbol", getSymbol },
+        .{ "getSymbol", lua_getSymbol },
     });
 
     pub fn __dtor(ptr: *LuaHandle) void {
@@ -1000,10 +1000,7 @@ fn isFFIType(L: *VM.lua.State, idx: i32) bool {
 
 fn toFFIType(L: *VM.lua.State, idx: i32) !DataType {
     switch (L.typeOf(idx)) {
-        .Userdata => {
-            const lua_struct = L.touserdatatagged(LuaDataType, idx, TAG_FFI_DATATYPE) orelse return error.InvalidFFIType;
-            return lua_struct.*.type;
-        },
+        .Userdata => return (L.touserdatatagged(LuaDataType, idx, TAG_FFI_DATATYPE) orelse return error.InvalidFFIType).*.type,
         else => return error.InvalidType,
     }
 }
@@ -1160,7 +1157,7 @@ const ffi_c_interface = struct {
     }
 };
 
-fn ffi_struct(L: *VM.lua.State) !i32 {
+fn lua_struct(L: *VM.lua.State) !i32 {
     try L.Zchecktype(1, .Table);
 
     const allocator = luau.getallocator(L);
@@ -1370,7 +1367,7 @@ fn dynamicLoadImport(source: *std.ArrayList(u8), state: *tinycc.TCCState, return
     return pointers;
 }
 
-fn ffi_dlopen(L: *VM.lua.State) !i32 {
+fn lua_dlopen(L: *VM.lua.State) !i32 {
     const path = try L.Zcheckvalue([]const u8, 1, null);
 
     const allocator = luau.getallocator(L);
@@ -1636,7 +1633,7 @@ fn ffi_closure_inner(cif: *LuaClosure.CallInfo, extern_args: [*]?*anyopaque, ret
     }
 }
 
-fn ffi_closure(L: *VM.lua.State) !i32 {
+fn lua_closure(L: *VM.lua.State) !i32 {
     try L.Zchecktype(1, .Table);
     try L.Zchecktype(2, .Function);
 
@@ -1892,7 +1889,7 @@ const FFIFunction = struct {
     }
 };
 
-fn ffi_fn(L: *VM.lua.State) !i32 {
+fn lua_fn(L: *VM.lua.State) !i32 {
     try L.Zchecktype(1, .Table);
     const src = LuaPointer.value(L, 2) orelse return error.Failed;
     switch (src.type) {
@@ -1962,7 +1959,7 @@ fn ffi_fn(L: *VM.lua.State) !i32 {
     return 1;
 }
 
-fn ffi_copy(L: *VM.lua.State) !i32 {
+fn lua_copy(L: *VM.lua.State) !i32 {
     const target_offset: usize = @intFromFloat(L.Lchecknumber(2));
     var target_bounds: ?usize = null;
     const target: [*]u8 = blk: {
@@ -2014,11 +2011,11 @@ fn ffi_copy(L: *VM.lua.State) !i32 {
     return 0;
 }
 
-fn ffi_unsupported(L: *VM.lua.State) !i32 {
+fn lua_unsupported(L: *VM.lua.State) !i32 {
     return L.Zerror("ffi is not supported on this platform");
 }
 
-fn ffi_tagName(L: *VM.lua.State) !i32 {
+fn lua_tagName(L: *VM.lua.State) !i32 {
     const id = L.Lcheckunsigned(1);
     if (id == 0) {
         L.pushnil();
@@ -2034,13 +2031,13 @@ fn ffi_tagName(L: *VM.lua.State) !i32 {
     return 1;
 }
 
-fn ffi_alloc(L: *VM.lua.State) !i32 {
+fn lua_alloc(L: *VM.lua.State) !i32 {
     const len: usize = @intFromFloat(L.Lchecknumber(1));
     _ = try LuaPointer.allocBlockPtr(L, len);
     return 1;
 }
 
-fn ffi_free(L: *VM.lua.State) !i32 {
+fn lua_free(L: *VM.lua.State) !i32 {
     const ptr = LuaPointer.value(L, 1) orelse return L.Zerror("Invalid pointer");
     if (!ptr.destroyed) {
         const allocator = luau.getallocator(L);
@@ -2070,7 +2067,7 @@ fn ffi_free(L: *VM.lua.State) !i32 {
     return 0;
 }
 
-fn ffi_len(L: *VM.lua.State) !i32 {
+fn lua_len(L: *VM.lua.State) !i32 {
     switch (L.typeOf(1)) {
         .Buffer => {
             const buf = L.tobuffer(1) orelse unreachable;
@@ -2090,7 +2087,7 @@ fn ffi_len(L: *VM.lua.State) !i32 {
     return 1;
 }
 
-fn ffi_dupe(L: *VM.lua.State) !i32 {
+fn lua_dupe(L: *VM.lua.State) !i32 {
     switch (L.typeOf(1)) {
         .Buffer => {
             const buf = L.tobuffer(1) orelse unreachable;
@@ -2143,19 +2140,19 @@ pub fn loadLib(L: *VM.lua.State) void {
 
     L.createtable(0, 17);
 
-    L.Zsetfieldfn(-1, "dlopen", ffi_dlopen);
-    L.Zsetfieldfn(-1, "struct", ffi_struct);
-    L.Zsetfieldfn(-1, "closure", ffi_closure);
-    L.Zsetfieldfn(-1, "fn", ffi_fn);
+    L.Zsetfieldfn(-1, "dlopen", lua_dlopen);
+    L.Zsetfieldfn(-1, "struct", lua_struct);
+    L.Zsetfieldfn(-1, "closure", lua_closure);
+    L.Zsetfieldfn(-1, "fn", lua_fn);
     L.Zsetfield(-1, "supported", true);
 
-    L.Zsetfieldfn(-1, "alloc", ffi_alloc);
-    L.Zsetfieldfn(-1, "free", ffi_free);
-    L.Zsetfieldfn(-1, "copy", ffi_copy);
-    L.Zsetfieldfn(-1, "len", ffi_len);
-    L.Zsetfieldfn(-1, "dupe", ffi_dupe);
+    L.Zsetfieldfn(-1, "alloc", lua_alloc);
+    L.Zsetfieldfn(-1, "free", lua_free);
+    L.Zsetfieldfn(-1, "copy", lua_copy);
+    L.Zsetfieldfn(-1, "len", lua_len);
+    L.Zsetfieldfn(-1, "dupe", lua_dupe);
 
-    L.Zsetfieldfn(-1, "tagName", ffi_tagName);
+    L.Zsetfieldfn(-1, "tagName", lua_tagName);
 
     L.Zsetfieldfn(-1, "getRef", LuaPointer.getRef);
     L.Zsetfieldfn(-1, "createPtr", LuaPointer.ptrFromBuffer);

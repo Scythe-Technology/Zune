@@ -139,6 +139,7 @@ pub fn loadLib(L: *VM.lua.State) void {
     }
 
     L.setreadonly(-1, true);
+
     luaHelper.registerModule(L, LIB_NAME);
 }
 
@@ -146,7 +147,7 @@ test {
     std.testing.refAllDecls(@This());
 }
 
-test "Serde" {
+test "serde" {
     const TestRunner = @import("../../utils/testrunner.zig");
 
     const testResult = try TestRunner.runTest(

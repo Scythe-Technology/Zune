@@ -188,8 +188,8 @@ pub fn loadLib(L: *VM.lua.State) void {
     L.Zpushvalue(.{
         .create = regex_create,
     });
-
     L.setreadonly(-1, true);
+
     luaHelper.registerModule(L, LIB_NAME);
 }
 

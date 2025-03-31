@@ -672,6 +672,7 @@ pub fn loadLib(L: *VM.lua.State, args: []const []const u8) !void {
     L.remove(-2);
 
     L.setreadonly(-1, true);
+
     luaHelper.registerModule(L, LIB_NAME);
 }
 
