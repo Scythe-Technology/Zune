@@ -924,22 +924,18 @@ declare class NetTCPConnection
 end
 
 declare class NetworkSocket
-    --[[
-        Whether the socket is active
-    ]]
-    open: boolean
-
-    function sendAsync(self, data: string | buffer, offset: number?): number
-    function sendMsgAsync(self, port: number, address: string, data: string | buffer, offset: number?): number
-    function recvAsync(self, max_size: number?): buffer
-    function recvMsgAsync(self, max_size: number?): (NetworkAddress, buffer)
-    function acceptAsync(self): NetworkSocket
-    function connectAsync(self, address: string, port: number): ()
+    function isOpen(self): boolean
+    function send(self, data: string | buffer, offset: number?): number
+    function sendMsg(self, port: number, address: string, data: string | buffer, offset: number?): number
+    function recv(self, max_size: number?): buffer
+    function recvMsg(self, max_size: number?): (NetworkAddress, buffer)
+    function accept(self): NetworkSocket
+    function connect(self, address: string, port: number): ()
     function listen(self, backlog: number?): ()
     function bindIp(self, address: string, port: number): ()
     function getName(self): NetworkAddress
     function setOption(self, level: number, optname: number, value: boolean | string | buffer): ()
-    function closeAsync(self): ()
+    function close(self): ()
 end
 
 declare class NetTCPServer

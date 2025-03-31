@@ -577,8 +577,7 @@ pub fn loadLib(L: *VM.lua.State) void {
             .__metatable = "Metatable is locked",
             .__type = "Stream",
         });
-        Stream.__index(L);
-        L.setfield(-2, "__index");
+        Stream.__index(L, -1);
         L.setreadonly(-1, true);
         L.setuserdatametatable(TAG_STREAM);
         L.setuserdatadtor(Stream, TAG_STREAM, Stream.__dtor);
@@ -588,8 +587,7 @@ pub fn loadLib(L: *VM.lua.State) void {
             .__metatable = "Metatable is locked",
             .__type = "BufferStream",
         });
-        BufferStream.__index(L);
-        L.setfield(-2, "__index");
+        BufferStream.__index(L, -1);
         L.setreadonly(-1, true);
         L.setuserdatametatable(TAG_BUFFERSTREAM);
         L.setuserdatadtor(BufferStream, TAG_BUFFERSTREAM, BufferStream.__dtor);

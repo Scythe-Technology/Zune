@@ -47,14 +47,7 @@ local function sendSocketAsync(
     port: number,
     address: string
 ): number
-    local ok, amount = pcall(function(
-        socket: NetworkSocket, 
-        port: number,
-        address: string,
-        message: buffer | string
-    )
-        return socket:sendMsgAsync(port, address, message);
-    end, self.socket, port, address, message);
+    local ok, amount = pcall(self.socket.sendMsg, self.socket, port, address, message);
     if (not ok) then
         local err = amount::any;
         self:stop();
@@ -81,9 +74,7 @@ local function startSocket(
 ): ()
     local socket = self.socket;
     while not self.stopped do
-        local ok, address, msg = pcall(function(socket: NetworkSocket)
-            return socket:recvMsgAsync(maxBodySize);
-        end, socket);
+        local ok, address, msg = pcall(socket.recvMsg, socket, maxBodySize);
         if (not ok) then
             local err = address::any;
             if (SocketUtils.SocketClosedError[err]) then

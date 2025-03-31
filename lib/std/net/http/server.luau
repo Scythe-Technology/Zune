@@ -70,9 +70,7 @@ local function sendSocketAsync(socket: NetworkSocket, message: string | buffer):
     local length = if (type(message) == "buffer") then buffer.len(message) else #message;
     local written = 0;
     while (written < length) do
-        local ok, amount = pcall(function(socket: NetworkSocket)
-            return socket:sendAsync(message, written);
-        end, socket);
+        local ok, amount = pcall(socket.send, socket, message, written);
         if (not ok) then
             local err = amount::any;
             SocketUtils.close(socket);
@@ -89,7 +87,7 @@ end
 local sendQueue = {};
 local waitEvents = {};
 local function sendMessage(socket: NetworkSocket, message: string | buffer): ()
-    if (not socket.open) then
+    if (not socket:isOpen()) then
         return;
     end
     local queue = sendQueue[socket] or {};
@@ -98,7 +96,7 @@ local function sendMessage(socket: NetworkSocket, message: string | buffer): ()
         -- process the queue
         sendQueue[socket] = queue;
         task.spawn(function(socket: NetworkSocket)
-            while (#queue > 0 and socket.open) do
+            while (#queue > 0 and socket:isOpen()) do
                 local message = table.remove(queue, 1);
                 if (message) then
                     sendSocketAsync(socket, message);
@@ -132,7 +130,7 @@ local function closeClientTimedoutAsync(socket: NetworkSocket)
         })
     );
     waitForMessages(socket);
-    socket:closeAsync();
+    socket:close();
 end
 
 local function stopServer(server: Server): ()
@@ -155,7 +153,7 @@ local function listenHttpClient(
     local parser: Request.Parser = Request.newParser();
     local requests = 0;
     local request_header_read = 0;
-    while socket.open do
+    while socket:isOpen() do
         local open_timeout: thread;
         if (requests > 0) then
             if (requests >= keepAlive.maxRequests) then
@@ -168,9 +166,7 @@ local function listenHttpClient(
         if (request_header_read >= 8192) then
             break; -- too much client data
         end
-        local stream_ok, data = pcall(function(socket: NetworkSocket)
-            return socket:recvAsync(8192);
-        end, socket);
+        local stream_ok, data = pcall(socket.recv, socket, 8192);
         task.cancel(open_timeout);
         if (not stream_ok) then
             local err = data::any;
@@ -343,9 +339,7 @@ local function startServer(
             coroutine.yield();
             continue;
         end
-        local ok, client_socket = pcall(function(socket: NetworkSocket)
-            return socket:acceptAsync();
-        end, socket)
+        local ok, client_socket = pcall(socket.accept, socket);
         if (not ok) then
             local err = client_socket::any;
             server:stop();

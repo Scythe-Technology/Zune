@@ -149,7 +149,7 @@ test {
     _ = @import("http/response.zig");
 }
 
-test "Net" {
+test "net" {
     const TestRunner = @import("../../utils/testrunner.zig");
 
     const testResult = try TestRunner.runTest(

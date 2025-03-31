@@ -101,9 +101,7 @@ local function sendConnectionAsync(connection: TCPConnection, message: string | 
     local length = if (type(message) == "buffer") then buffer.len(message) else #message;
     local written = 0;
     while (written < length) do
-        local ok, amount = pcall(function(socket: NetworkSocket)
-            return socket:sendAsync(message, written);
-        end, connection.socket);
+        local ok, amount = pcall(connection.socket.send, connection.socket, message, written);
         if (not ok) then
             local err = amount::any;
             closeConnection(connection);
@@ -136,9 +134,7 @@ local function listenServerConnection(
 ): ()
     local connection = node.value;
     while not connection.stopped do
-        local ok, data = pcall(function(socket: NetworkSocket)
-            return socket:recvAsync(maxDataRead);
-        end, connection.socket)
+        local ok, data = pcall(connection.socket.recv, connection.socket, maxDataRead);
         if (not ok) then
             local err = data::any;
             if (SocketUtils.SocketClosedError[err]) then
@@ -193,9 +189,7 @@ local function startServer(
             coroutine.yield();
             continue;
         end
-        local ok, client_socket = pcall(function(socket: NetworkSocket)
-            return socket:acceptAsync();
-        end, server.socket)
+        local ok, client_socket = pcall(server.socket.accept, server.socket);
         if (not ok) then
             local err = client_socket::any;
             if (SocketUtils.SocketClosedError[err]) then
@@ -304,7 +298,7 @@ local function connectToHostAsync(name: string, port: number): NetworkSocket
             net.IPPROTO.TCP
         );
         local ok, err = pcall(function(): any?
-            socket:connectAsync(address.address, address.port);
+            socket:connect(address.address, address.port);
             return;
         end)
         if (not ok) then
@@ -325,9 +319,7 @@ local function startClient(
     callback_close: TCPClientCloseCallback?
 )
     while not client.stopped do
-        local ok, data = pcall(function(socket: NetworkSocket)
-            return socket:recvAsync(maxDataRead);
-        end, client.socket)
+        local ok, data = pcall(client.socket.recv, client.socket, maxDataRead);
         if (not ok) then
             local err = data::any;
             if (SocketUtils.SocketClosedError[err]) then

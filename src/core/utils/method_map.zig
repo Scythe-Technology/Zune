@@ -43,24 +43,23 @@ pub fn CreateNamecallMap(
 
 pub fn CreateStaticIndexMap(
     comptime T: type,
-    comptime tag: ?i32,
+    comptime tag: i32,
     comptime index_map: anytype,
-) fn (*VM.lua.State) void {
+) fn (L: *VM.lua.State, comptime idx: i32) void {
     return struct {
-        fn inner(state: *VM.lua.State) void {
+        fn inner(state: *VM.lua.State, comptime index: i32) void {
+            const idx = comptime if (index != VM.lua.GLOBALSINDEX and index != VM.lua.REGISTRYINDEX and index < 0) index - 1 else index;
             state.createtable(0, index_map.len);
             inline for (index_map) |kv| {
                 state.Zpushfunction(struct {
                     fn inner(L: *VM.lua.State) !i32 {
-                        const ptr = if (comptime tag) |t|
-                            L.touserdatatagged(T, 1, t) orelse return L.Zerror("Expected ':' calling member function " ++ kv[0])
-                        else
-                            L.touserdata(T, 1) orelse return L.Zerror("Expected ':' calling member function " ++ kv[0]);
+                        const ptr = L.touserdatatagged(T, 1, tag) orelse return L.Zerror("Expected ':' calling member function " ++ kv[0]);
                         return @call(.always_inline, kv[1], .{ ptr, L });
                     }
                 }.inner, kv[0]);
                 state.setfield(-2, kv[0]);
             }
+            state.setfield(idx, "__index");
         }
     }.inner;
 }

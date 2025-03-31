@@ -13,8 +13,6 @@ return {
         ["EOF"] = true,
     };
     close = function(socket: NetworkSocket)
-        task.spawn(function(inner_socket)
-            inner_socket:closeAsync()
-        end, socket);
+        task.spawn(socket.close, socket);
     end
 };

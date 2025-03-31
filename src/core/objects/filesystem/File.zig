@@ -802,15 +802,7 @@ fn before_method(self: *File, L: *VM.lua.State) !void {
         return L.Zerror("File is closed");
 }
 
-pub fn __index(L: *VM.lua.State) !i32 {
-    try L.Zchecktype(1, .Userdata);
-    // const index = L.Lcheckstring(2);
-    // const ptr = L.touserdata(FileObject, 1) catch return 0;
-
-    return 0;
-}
-
-const __namecall = MethodMap.CreateNamecallMap(File, TAG_FS_FILE, .{
+const __index = MethodMap.CreateStaticIndexMap(File, TAG_FS_FILE, .{
     .{ "write", MethodMap.WithFn(File, write, before_method) },
     .{ "writeSync", MethodMap.WithFn(File, writeSync, before_method) },
     .{ "append", MethodMap.WithFn(File, append, before_method) },
@@ -839,11 +831,10 @@ pub fn __dtor(L: *VM.lua.State, self: *File) void {
 
 pub inline fn load(L: *VM.lua.State) void {
     _ = L.Znewmetatable(@typeName(@This()), .{
-        .__index = __index,
-        .__namecall = __namecall,
         .__metatable = "Metatable is locked",
         .__type = "FileHandle",
     });
+    __index(L, -1);
     L.setreadonly(-1, true);
     L.setuserdatametatable(TAG_FS_FILE);
     L.setuserdatadtor(File, TAG_FS_FILE, __dtor);

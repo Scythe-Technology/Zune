@@ -601,7 +601,7 @@ test {
     _ = Watch;
 }
 
-test "Filesystem" {
+test "fs" {
     const TestRunner = @import("../../utils/testrunner.zig");
 
     const testResult = try TestRunner.runTest(

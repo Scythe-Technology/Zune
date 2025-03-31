@@ -34,19 +34,6 @@ fn closesocket(socket: std.posix.socket_t) void {
     }
 }
 
-pub fn __index(L: *VM.lua.State) !i32 {
-    try L.Zchecktype(1, .Userdata);
-    const ptr = L.touserdatatagged(Socket, 1, TAG_NET_SOCKET) orelse return 0;
-    const index = try L.Zcheckvalue([:0]const u8, 2, null);
-
-    if (std.mem.eql(u8, index, "open")) {
-        L.pushboolean(ptr.open);
-        return 1;
-    }
-
-    return 0;
-}
-
 pub const LONGEST_ADDRESS = 108;
 pub fn AddressToString(buf: []u8, address: std.net.Address) []const u8 {
     switch (address.any.family) {
@@ -347,7 +334,7 @@ const AsyncConnectContext = struct {
     }
 };
 
-fn sendAsync(self: *Socket, L: *VM.lua.State) !i32 {
+fn lua_send(self: *Socket, L: *VM.lua.State) !i32 {
     const allocator = luau.getallocator(L);
     const scheduler = Scheduler.getScheduler(L);
     const buf = try L.Zcheckvalue([]const u8, 2, null);
@@ -382,7 +369,7 @@ fn sendAsync(self: *Socket, L: *VM.lua.State) !i32 {
     return L.yield(0);
 }
 
-fn sendMsgAsync(self: *Socket, L: *VM.lua.State) !i32 {
+fn lua_sendMsg(self: *Socket, L: *VM.lua.State) !i32 {
     const allocator = luau.getallocator(L);
     const scheduler = Scheduler.getScheduler(L);
     const port = L.Lcheckunsigned(2);
@@ -428,7 +415,7 @@ fn sendMsgAsync(self: *Socket, L: *VM.lua.State) !i32 {
     return L.yield(0);
 }
 
-fn recvAsync(self: *Socket, L: *VM.lua.State) !i32 {
+fn lua_recv(self: *Socket, L: *VM.lua.State) !i32 {
     const allocator = luau.getallocator(L);
     const scheduler = Scheduler.getScheduler(L);
     const size = L.Loptinteger(2, 8192);
@@ -461,7 +448,7 @@ fn recvAsync(self: *Socket, L: *VM.lua.State) !i32 {
     return L.yield(0);
 }
 
-fn recvMsgAsync(self: *Socket, L: *VM.lua.State) !i32 {
+fn lua_recvMsg(self: *Socket, L: *VM.lua.State) !i32 {
     const allocator = luau.getallocator(L);
     const scheduler = Scheduler.getScheduler(L);
     const size = L.Loptinteger(2, 8192);
@@ -496,7 +483,7 @@ fn recvMsgAsync(self: *Socket, L: *VM.lua.State) !i32 {
     return L.yield(0);
 }
 
-fn acceptAsync(self: *Socket, L: *VM.lua.State) !i32 {
+fn lua_accept(self: *Socket, L: *VM.lua.State) !i32 {
     const scheduler = Scheduler.getScheduler(L);
 
     const ptr = try scheduler.createAsyncCtx(AsyncAcceptContext);
@@ -520,7 +507,7 @@ fn acceptAsync(self: *Socket, L: *VM.lua.State) !i32 {
     return L.yield(0);
 }
 
-fn connectAsync(self: *Socket, L: *VM.lua.State) !i32 {
+fn lua_connect(self: *Socket, L: *VM.lua.State) !i32 {
     const scheduler = Scheduler.getScheduler(L);
 
     const address_str = try L.Zcheckvalue([:0]const u8, 2, null);
@@ -555,7 +542,7 @@ fn connectAsync(self: *Socket, L: *VM.lua.State) !i32 {
     return L.yield(0);
 }
 
-fn listen(self: *Socket, L: *VM.lua.State) !i32 {
+fn lua_listen(self: *Socket, L: *VM.lua.State) !i32 {
     const backlog = L.Loptunsigned(2, 128);
     if (backlog > std.math.maxInt(u31))
         return L.Zerror("BacklogTooLarge");
@@ -563,7 +550,7 @@ fn listen(self: *Socket, L: *VM.lua.State) !i32 {
     return 0;
 }
 
-fn bindIp(self: *Socket, L: *VM.lua.State) !i32 {
+fn lua_bindIp(self: *Socket, L: *VM.lua.State) !i32 {
     const address_ip = try L.Zcheckvalue([:0]const u8, 2, null);
     const port = L.Lcheckunsigned(3);
     if (port > std.math.maxInt(u16))
@@ -576,7 +563,7 @@ fn bindIp(self: *Socket, L: *VM.lua.State) !i32 {
     return 0;
 }
 
-fn getName(self: *Socket, L: *VM.lua.State) !i32 {
+fn lua_getName(self: *Socket, L: *VM.lua.State) !i32 {
     var address: std.net.Address = undefined;
     var len: std.posix.socklen_t = @sizeOf(std.posix.sockaddr);
     try std.posix.getsockname(self.socket, &address.any, &len);
@@ -589,7 +576,7 @@ fn getName(self: *Socket, L: *VM.lua.State) !i32 {
     return 1;
 }
 
-fn setOption(self: *Socket, L: *VM.lua.State) !i32 {
+fn lua_setOption(self: *Socket, L: *VM.lua.State) !i32 {
     const level = try L.Zcheckvalue(i32, 2, null);
     const optname = try L.Zcheckvalue(u32, 3, null);
     const value = switch (L.typeOf(4)) {
@@ -634,7 +621,7 @@ pub const AsyncCloseContext = struct {
     }
 };
 
-fn closeAsync(self: *Socket, L: *VM.lua.State) !i32 {
+fn lua_close(self: *Socket, L: *VM.lua.State) !i32 {
     if (self.open) {
         self.open = false;
         const scheduler = Scheduler.getScheduler(L);
@@ -669,23 +656,29 @@ fn closeAsync(self: *Socket, L: *VM.lua.State) !i32 {
     return 0;
 }
 
+fn lua_getOpen(self: *Socket, L: *VM.lua.State) !i32 {
+    L.pushboolean(self.open);
+    return 1;
+}
+
 fn before_method(self: *Socket, L: *VM.lua.State) !void {
     if (!self.open)
         return L.Zerror("SocketClosed");
 }
 
-const __namecall = MethodMap.CreateNamecallMap(Socket, TAG_NET_SOCKET, .{
-    .{ "sendAsync", MethodMap.WithFn(Socket, sendAsync, before_method) },
-    .{ "sendMsgAsync", MethodMap.WithFn(Socket, sendMsgAsync, before_method) },
-    .{ "recvAsync", MethodMap.WithFn(Socket, recvAsync, before_method) },
-    .{ "recvMsgAsync", MethodMap.WithFn(Socket, recvMsgAsync, before_method) },
-    .{ "acceptAsync", MethodMap.WithFn(Socket, acceptAsync, before_method) },
-    .{ "connectAsync", MethodMap.WithFn(Socket, connectAsync, before_method) },
-    .{ "listen", MethodMap.WithFn(Socket, listen, before_method) },
-    .{ "bindIp", MethodMap.WithFn(Socket, bindIp, before_method) },
-    .{ "getName", MethodMap.WithFn(Socket, getName, before_method) },
-    .{ "setOption", MethodMap.WithFn(Socket, setOption, before_method) },
-    .{ "closeAsync", closeAsync },
+const __index = MethodMap.CreateStaticIndexMap(Socket, TAG_NET_SOCKET, .{
+    .{ "send", MethodMap.WithFn(Socket, lua_send, before_method) },
+    .{ "sendMsg", MethodMap.WithFn(Socket, lua_sendMsg, before_method) },
+    .{ "recv", MethodMap.WithFn(Socket, lua_recv, before_method) },
+    .{ "recvMsg", MethodMap.WithFn(Socket, lua_recvMsg, before_method) },
+    .{ "accept", MethodMap.WithFn(Socket, lua_accept, before_method) },
+    .{ "connect", MethodMap.WithFn(Socket, lua_connect, before_method) },
+    .{ "listen", MethodMap.WithFn(Socket, lua_listen, before_method) },
+    .{ "bindIp", MethodMap.WithFn(Socket, lua_bindIp, before_method) },
+    .{ "getName", MethodMap.WithFn(Socket, lua_getName, before_method) },
+    .{ "setOption", MethodMap.WithFn(Socket, lua_setOption, before_method) },
+    .{ "close", lua_close },
+    .{ "isOpen", lua_getOpen },
 });
 
 pub fn __dtor(L: *VM.lua.State, self: *Socket) void {
@@ -697,13 +690,11 @@ pub fn __dtor(L: *VM.lua.State, self: *Socket) void {
 
 pub inline fn load(L: *VM.lua.State) void {
     _ = L.Znewmetatable(@typeName(@This()), .{
-        .__index = __index,
-        .__namecall = __namecall,
         .__metatable = "Metatable is locked",
         .__type = "SocketHandle",
     });
+    __index(L, -1);
     L.setreadonly(-1, true);
-
     L.setuserdatametatable(TAG_NET_SOCKET);
     L.setuserdatadtor(Socket, TAG_NET_SOCKET, __dtor);
 }

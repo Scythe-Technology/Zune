@@ -16,7 +16,7 @@ test {
     @import("std").testing.refAllDecls(@This());
 }
 
-test "Std" {
+test "@std" {
     const std = @import("std");
     const TestRunner = @import("../utils/testrunner.zig");
 
