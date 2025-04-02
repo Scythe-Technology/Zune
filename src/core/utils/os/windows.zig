@@ -657,10 +657,10 @@ fn windowsMakeAsyncPipe(comptime kind: enum { in, out }, rd: *?windows.HANDLE, w
         break :blk tmp_bufw[0..len :0];
     };
 
-    // Create the read handle that can be used with overlapped IO ops.
+    // Create the read handle that is overlapped when kind is .out
     const read_handle = windows.kernel32.CreateNamedPipeW(
         pipe_path.ptr,
-        windows.PIPE_ACCESS_INBOUND | windows.FILE_FLAG_OVERLAPPED,
+        windows.PIPE_ACCESS_INBOUND | if (comptime kind == .in) 0 else windows.FILE_FLAG_OVERLAPPED,
         windows.PIPE_TYPE_BYTE,
         1,
         4096,
@@ -676,13 +676,17 @@ fn windowsMakeAsyncPipe(comptime kind: enum { in, out }, rd: *?windows.HANDLE, w
     errdefer posix.close(read_handle);
 
     var sattr_copy = sattr.*;
+    // Create a write handle that is overlapped when kind is .in
     const write_handle = windows.kernel32.CreateFileW(
         pipe_path.ptr,
         windows.GENERIC_WRITE,
-        windows.FILE_SHARE_READ | windows.FILE_SHARE_WRITE | windows.FILE_SHARE_DELETE,
+        if (comptime kind == .in)
+            windows.FILE_SHARE_READ | windows.FILE_SHARE_WRITE | windows.FILE_SHARE_DELETE
+        else
+            0,
         &sattr_copy,
         windows.OPEN_EXISTING,
-        windows.FILE_ATTRIBUTE_NORMAL | if (kind == .in) windows.FILE_FLAG_OVERLAPPED else 0,
+        windows.FILE_ATTRIBUTE_NORMAL | if (comptime kind == .in) windows.FILE_FLAG_OVERLAPPED else 0,
         null,
     );
     if (write_handle == windows.INVALID_HANDLE_VALUE) {
