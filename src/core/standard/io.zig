@@ -645,7 +645,7 @@ test "io" {
     const testResult = try TestRunner.runTest(
         TestRunner.newTestFile("standard/io.test.luau"),
         &.{},
-        true,
+        .{},
     );
 
     try std.testing.expect(testResult.failed == 0);

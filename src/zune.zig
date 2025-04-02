@@ -301,7 +301,7 @@ test "Zune" {
     const testResult = try TestRunner.runTest(
         TestRunner.newTestFile("zune.test.luau"),
         &.{},
-        true,
+        .{},
     );
 
     try std.testing.expect(testResult.failed == 0);

@@ -451,7 +451,7 @@ test "sqlite" {
     const testResult = try TestRunner.runTest(
         TestRunner.newTestFile("standard/sqlite/init.test.luau"),
         &.{},
-        true,
+        .{},
     );
 
     try std.testing.expect(testResult.failed == 0);

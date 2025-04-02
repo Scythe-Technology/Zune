@@ -128,7 +128,7 @@ test "net" {
     const testResult = try TestRunner.runTest(
         TestRunner.newTestFile("standard/net.test.luau"),
         &.{},
-        true,
+        .{},
     );
 
     try std.testing.expect(testResult.failed == 0);

@@ -193,13 +193,13 @@ pub fn loadLib(L: *VM.lua.State) void {
     luaHelper.registerModule(L, LIB_NAME);
 }
 
-test "Regex" {
+test "regex" {
     const TestRunner = @import("../utils/testrunner.zig");
 
     const testResult = try TestRunner.runTest(
         TestRunner.newTestFile("standard/regex.test.luau"),
         &.{},
-        true,
+        .{},
     );
 
     try std.testing.expect(testResult.failed == 0);

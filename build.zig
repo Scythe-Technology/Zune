@@ -120,7 +120,7 @@ pub fn build(b: *std.Build) !void {
     const dep_yaml = b.dependency("yaml", .{ .target = target, .optimize = optimize });
     const dep_toml = b.dependency("toml", .{ .target = target, .optimize = optimize });
     const dep_datetime = b.dependency("datetime", .{ .target = target, .optimize = optimize });
-    const dep_luau = b.dependency("luau", .{ .target = target, .optimize = packed_optimize });
+    const dep_luau = b.dependency("luau", .{ .target = target, .optimize = optimize });
     const dep_lz4 = b.dependency("lz4", .{ .target = target, .optimize = packed_optimize });
     const dep_zstd = b.dependency("zstd", .{ .target = target, .optimize = packed_optimize });
     const dep_pcre2 = b.dependency("pcre2", .{ .target = target, .optimize = packed_optimize });
@@ -200,6 +200,7 @@ pub fn build(b: *std.Build) !void {
     const sample_dylib = b.addSharedLibrary(.{
         .name = "sample",
         .root_source_file = b.path("test/standard/ffi/sample.zig"),
+        .link_libc = true,
         .target = target,
         .optimize = .ReleaseSmall,
     });

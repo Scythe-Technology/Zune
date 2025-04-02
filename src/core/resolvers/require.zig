@@ -336,13 +336,13 @@ pub fn load_require(L: *VM.lua.State) void {
     L.setglobal("require");
 }
 
-test "Require" {
+test "require" {
     const TestRunner = @import("../utils/testrunner.zig");
 
     const testResult = try TestRunner.runTest(
         TestRunner.newTestFile("engine/require.test.luau"),
         &.{},
-        true,
+        .{},
     );
 
     try std.testing.expect(testResult.failed == 0);

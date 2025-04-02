@@ -313,13 +313,13 @@ test {
     _ = parse;
 }
 
-test "Datetime" {
+test "datetime" {
     const TestRunner = @import("../../utils/testrunner.zig");
 
     const testResult = try TestRunner.runTest(
         TestRunner.newTestFile("standard/datetime.test.luau"),
         &.{},
-        true,
+        .{},
     );
 
     try std.testing.expect(testResult.failed == 0);

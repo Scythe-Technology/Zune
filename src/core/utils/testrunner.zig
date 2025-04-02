@@ -21,7 +21,12 @@ pub fn newTestFile(comptime path: []const u8) TestFile {
     };
 }
 
-pub fn runTest(comptime testFile: TestFile, args: []const []const u8, comptime stdOutEnabled: bool) !Zune.corelib.testing.TestResult {
+const TestOptions = struct {
+    std_out: bool = true,
+    ref_leak_check: bool = true,
+};
+
+pub fn runTest(comptime testFile: TestFile, args: []const []const u8, comptime options: TestOptions) !Zune.corelib.testing.TestResult {
     const allocator = std.testing.allocator;
 
     switch (comptime builtin.os.tag) {
@@ -48,7 +53,7 @@ pub fn runTest(comptime testFile: TestFile, args: []const []const u8, comptime s
     var L = try luau.init(&allocator);
     defer L.deinit();
 
-    if (!stdOutEnabled)
+    if (!options.std_out)
         L.Zsetfield(VM.lua.GLOBALSINDEX, "_testing_stdOut", false);
 
     var scheduler = try Scheduler.init(allocator, L);
@@ -109,5 +114,6 @@ pub fn runTest(comptime testFile: TestFile, args: []const []const u8, comptime s
         else => return err,
     };
 
+    Zune.corelib.testing.REF_LEAK_CHECK = options.ref_leak_check;
     return Zune.corelib.testing.runTestAsync(ML, &scheduler) catch |err| return err;
 }

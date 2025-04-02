@@ -178,7 +178,6 @@ const LuaPointer = struct {
     ptr: ?*anyopaque,
     allocator: std.mem.Allocator,
     size: ?usize = null,
-    ref: ?i32 = null,
     local_ref: ?i32 = null,
     destroyed: bool,
     retained: bool = false,
@@ -247,16 +246,6 @@ const LuaPointer = struct {
 
         if (default_retain)
             try ptr.retain(L);
-
-        return ptr;
-    }
-
-    pub fn newStaticPtrWithRef(L: *VM.lua.State, staticPtr: ?*anyopaque, idx: i32) !*LuaPointer {
-        const ref = L.ref(idx) orelse return error.Fail;
-
-        const ptr = try newStaticPtr(L, staticPtr, true);
-
-        ptr.ref = ref;
 
         return ptr;
     }
@@ -340,9 +329,6 @@ const LuaPointer = struct {
         if (ptr.local_ref) |ref|
             L.unref(ref);
         ptr.local_ref = null;
-        if (ptr.ref) |ref|
-            L.unref(ref);
-        ptr.ref = null;
         return 1;
     }
 
@@ -633,9 +619,8 @@ const LuaPointer = struct {
     }
 
     pub fn __dtor(L: *VM.lua.State, ptr: *LuaPointer) void {
+        _ = L;
         if (!ptr.destroyed) {
-            if (ptr.ref) |ref|
-                L.unref(ref);
             switch (ptr.type) {
                 .Allocated => {
                     if (!ptr.retained) {
@@ -830,16 +815,15 @@ fn fetchCallableFunction(returns: DataType, args: []const DataType) !*CallableFu
 const LuaClosure = struct {
     allocator: std.mem.Allocator,
     callinfo: *CallInfo,
-    thread: *VM.lua.State,
-    ptr: *anyopaque,
     sym: CompiledSymbol,
 
     callable: *anyopaque,
 
     pub const CallInfo = struct {
+        ref: ?i32,
         args: c_uint,
-        thread: *VM.lua.State,
         type: FunctionSymbol,
+        thread: *VM.lua.State,
     };
 
     pub fn __dtor(self: *LuaClosure) void {
@@ -1573,62 +1557,79 @@ fn FFIPushPtrType(
     }
 }
 
-fn ffi_closure_inner(cif: *LuaClosure.CallInfo, extern_args: [*]?*anyopaque, ret: ?*anyopaque) callconv(.c) void {
-    const args = extern_args[0..cif.args];
+fn ffi_closure_inner(call_info: *const LuaClosure.CallInfo, extern_args: [*]?*anyopaque, ret: ?*anyopaque) callconv(.c) void {
+    const scheduler = Scheduler.getScheduler(call_info.thread);
 
-    const subthread = cif.thread.newthread();
-    defer cif.thread.pop(1);
-    cif.thread.xpush(subthread, 1);
+    const main_thread = std.Thread.getCurrentId() == scheduler.threadId;
 
-    for (cif.type.args, 0..) |arg_type, i| {
+    if (!main_thread)
+        std.debug.panic("Cannot call FFI closure from non-main thread", .{});
+
+    const args = extern_args[0..call_info.args];
+
+    if (!call_info.thread.checkstack(1))
+        return std.debug.panic("Failed to grow stack for ffi closure", .{});
+
+    const L = call_info.thread.newthread();
+    defer call_info.thread.pop(1);
+    var ref: luaHelper.Ref(void) = .{
+        .ref = .{
+            .registry = call_info.ref orelse return std.debug.panic("Invalid call info: no reference to call", .{}),
+        },
+        .value = undefined,
+    };
+
+    _ = ref.push(L);
+
+    for (call_info.type.args, 0..) |arg_type, i| {
         switch (arg_type.kind) {
             .void => unreachable,
             .pointer => {
-                const ptr = LuaPointer.newStaticPtr(subthread, @as(*[*]u8, @ptrCast(@alignCast(args[i]))).*, false) catch |err| std.debug.panic("Failed: {}", .{err});
+                const ptr = LuaPointer.newStaticPtr(L, @as(*[*]u8, @ptrCast(@alignCast(args[i]))).*, false) catch |err| std.debug.panic("Failed: {}", .{err});
                 ptr.data = arg_type.kind.pointer;
             },
             .@"struct" => {
                 const bytes: [*]u8 = @ptrCast(@alignCast(args[i]));
-                subthread.Zpushbuffer(bytes[0..arg_type.size]);
+                L.Zpushbuffer(bytes[0..arg_type.size]);
             },
-            inline else => |_, tag| FFIPushPtrType(tag.asType(), subthread, args[i].?),
+            inline else => |_, tag| FFIPushPtrType(tag.asType(), L, args[i].?),
         }
     }
 
-    const has_return = cif.type.returns.size > 0;
+    const has_return = call_info.type.returns.size > 0;
 
-    _ = subthread.pcall(@intCast(args.len), if (has_return) 1 else 0, 0).check() catch {
-        std.debug.panic("C Closure Runtime Error: {s}", .{subthread.tostring(-1) orelse "UnknownError"});
+    _ = L.pcall(@intCast(args.len), if (has_return) 1 else 0, 0).check() catch {
+        std.debug.panic("C Closure Runtime Error: {s}", .{L.tostring(-1) orelse "UnknownError"});
     };
 
-    if (ret) |ret_ptr| {
-        defer subthread.pop(1);
-        switch (cif.type.returns.kind) {
+    if (has_return) {
+        defer L.pop(1);
+        switch (call_info.type.returns.kind) {
             .void => unreachable,
-            .pointer => switch (subthread.typeOf(-1)) {
+            .pointer => switch (L.typeOf(-1)) {
                 .Userdata => {
-                    const ptr = LuaPointer.value(subthread, -1) orelse std.debug.panic("Invalid pointer", .{});
+                    const ptr = LuaPointer.value(L, -1) orelse std.debug.panic("Invalid pointer", .{});
                     if (ptr.destroyed or ptr.ptr == null)
                         std.debug.panic("No address available", .{});
-                    if (ptr.data.tag != cif.type.returns.kind.pointer.tag)
+                    if (ptr.data.tag != call_info.type.returns.kind.pointer.tag)
                         std.debug.panic("Pointer tag mismatch", .{});
-                    @as(*[*]u8, @ptrCast(@alignCast(ret_ptr))).* = @ptrCast(ptr.ptr);
+                    @as(*[*]u8, @ptrCast(@alignCast(ret))).* = @ptrCast(ptr.ptr);
                 },
                 .String => std.debug.panic("Unsupported return type (use a pointer to a buffer instead)", .{}),
                 .Nil => {
-                    @as(*?*anyopaque, @ptrCast(@alignCast(ret_ptr))).* = null;
+                    @as(*?*anyopaque, @ptrCast(@alignCast(ret))).* = null;
                 },
                 else => return std.debug.panic("Invalid return type (expected buffer/nil for '*anyopaque')", .{}),
             },
             .@"struct" => {
-                if (subthread.typeOf(-1) != .Buffer)
+                if (L.typeOf(-1) != .Buffer)
                     return std.debug.panic("Invalid return type (expected buffer for struct)", .{});
-                const buf = subthread.tobuffer(-1) orelse unreachable;
-                if (buf.len != cif.type.returns.size)
-                    return std.debug.panic("Invalid return type (expected buffer of size {d} for struct)", .{cif.type.returns.size});
-                @memcpy(@as([*]u8, @ptrCast(@alignCast(ret_ptr))), buf);
+                const buf = L.tobuffer(-1) orelse unreachable;
+                if (buf.len != call_info.type.returns.size)
+                    return std.debug.panic("Invalid return type (expected buffer of size {d} for struct)", .{call_info.type.returns.size});
+                @memcpy(@as([*]u8, @ptrCast(@alignCast(ret))), buf);
             },
-            inline else => |_, T| FFIReturnTypeConversion(T.asType(), ret_ptr, subthread),
+            inline else => |_, T| FFIReturnTypeConversion(T.asType(), ret.?, L),
         }
     }
 }
@@ -1689,7 +1690,7 @@ fn lua_closure(L: *VM.lua.State) !i32 {
     const writer = source.writer();
 
     try generateExported(&source, "external_call", "void", &.{ "void*", "void**", "void*" });
-    try generateExported(&source, "external_ptr", "void*", &.{});
+    try generateExported(&source, "external_ptr", "void**", &.{});
 
     try writer.print("\n", .{});
 
@@ -1716,15 +1717,20 @@ fn lua_closure(L: *VM.lua.State) !i32 {
         try writer.print("args[{d}] = (void*)&arg_{d};\n  ", .{ i, i });
     }
 
-    try writer.print("external_call(&external_ptr, args, (void*)&ret);\n  ", .{});
-    try writer.print("return ret;\n}}\n", .{});
+    if (symbol_returns.size > 0) {
+        try writer.print("external_call(&external_ptr, args, (void*)&ret);\n  ", .{});
+        try writer.print("return ret;\n}}\n", .{});
+    } else {
+        try writer.print("external_call(&external_ptr, args, 0);\n}}", .{});
+    }
 
     const call_ptr = try allocator.create(LuaClosure.CallInfo);
     errdefer allocator.destroy(call_ptr);
 
     call_ptr.* = .{
         .args = @intCast(symbol_args.len),
-        .thread = undefined,
+        .thread = L.mainthread(),
+        .ref = null,
         .type = .{
             .returns = symbol_returns,
             .args = symbol_args,
@@ -1740,19 +1746,14 @@ fn lua_closure(L: *VM.lua.State) !i32 {
     };
     const callable = state.get_symbol("call_closure_ffi") orelse return error.BadCompilation;
 
-    const thread = L.newthread();
-    L.xpush(thread, 2);
-
-    call_ptr.thread = thread;
+    call_ptr.ref = L.ref(2);
 
     const data = L.newuserdatadtor(LuaClosure, LuaClosure.__dtor);
 
     data.* = .{
         .allocator = allocator,
+        .callable = callable,
         .callinfo = call_ptr,
-        .callable = @ptrCast(@alignCast(callable)),
-        .thread = thread,
-        .ptr = @ptrCast(@alignCast(call_ptr)),
         .sym = .{
             .state = state,
             .block = block,
@@ -1779,7 +1780,9 @@ fn lua_closure(L: *VM.lua.State) !i32 {
 
     _ = L.setmetatable(-2);
 
-    const ptr = try LuaPointer.newStaticPtrWithRef(L, data.callable, -1);
+    _ = L.ref(-1); // permenently reference the closure
+
+    const ptr = try LuaPointer.newStaticPtr(L, data.callable, true);
     ptr.size = 0;
 
     return 1;
@@ -1788,13 +1791,13 @@ fn lua_closure(L: *VM.lua.State) !i32 {
 const FFIFunction = struct {
     allocator: std.mem.Allocator,
     code: *CallableFunction,
-    ptr: *anyopaque,
+    ptr: *const anyopaque,
     pointers: ?[]*allowzero anyopaque,
     lib: ?*LuaHandle = null,
 
     callable: FFICallable,
 
-    pub const FFICallable = *const fn (lua_State: *anyopaque, fnPtr: *anyopaque, pointers: ?[*]*allowzero anyopaque) callconv(.c) void;
+    pub const FFICallable = *const fn (lua_State: *anyopaque, fnPtr: *const anyopaque, pointers: ?[*]*allowzero anyopaque) callconv(.c) void;
 
     pub fn fn_inner(L: *VM.lua.State) !i32 {
         const allocator = luau.getallocator(L);
@@ -2045,9 +2048,6 @@ fn lua_free(L: *VM.lua.State) !i32 {
             L.unref(ref);
             ptr.local_ref = null;
         }
-        if (ptr.ref) |ref|
-            L.unref(ref);
-        ptr.ref = null;
         switch (ptr.type) {
             .Allocated => {
                 ptr.destroyed = true;
@@ -2193,7 +2193,7 @@ test "ffi" {
     const testResult = try TestRunner.runTest(
         TestRunner.newTestFile("standard/ffi/init.test.luau"),
         &.{},
-        true,
+        .{ .ref_leak_check = false },
     );
 
     try std.testing.expect(testResult.failed == 0);

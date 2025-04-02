@@ -55,9 +55,8 @@ pub const ThreadRef = struct {
             L.pop(1);
             return .{ .value = L, .ref = null };
         }
-        L.xmove(GL, 1);
-        const ref = GL.ref(-1) orelse std.debug.panic("Task Scheduler failed to create thread ref\n", .{});
-        GL.pop(1);
+        const ref = L.ref(-1) orelse std.debug.panic("Task Scheduler failed to create thread ref\n", .{});
+        L.pop(1);
         return .{ .value = L, .ref = ref };
     }
 
@@ -165,6 +164,10 @@ loop: xev.Dynamic.Loop,
 thread_pool: *xev.ThreadPool,
 async_tasks: usize = 0,
 
+running: bool = false,
+threadId: std.Thread.Id = 0,
+static_completions: [1]xev.Dynamic.Completion,
+
 frame: FrameKind = .None,
 
 pub fn init(allocator: std.mem.Allocator, state: *VM.lua.State) !Self {
@@ -172,7 +175,7 @@ pub fn init(allocator: std.mem.Allocator, state: *VM.lua.State) !Self {
     errdefer allocator.destroy(thread_pool);
     thread_pool.* = xev.ThreadPool.init(.{});
 
-    return Self{
+    var self: Self = .{
         .loop = try xev.Dynamic.Loop.init(.{
             .entries = 4096,
             .thread_pool = thread_pool,
@@ -185,7 +188,13 @@ pub fn init(allocator: std.mem.Allocator, state: *VM.lua.State) !Self {
         .sleeping = SleepingQueue.init(allocator, {}),
         .tasks = std.ArrayList(TaskObject(anyopaque)).init(allocator),
         .awaits = std.ArrayList(AwaitingObject(anyopaque)).init(allocator),
+        .static_completions = undefined,
     };
+
+    for (self.static_completions, 0..) |_, i|
+        self.static_completions[i] = .init();
+
+    return self;
 }
 
 pub fn spawnThread(self: *Self, thread: *VM.lua.State, from: ?*VM.lua.State, args: i32) void {
@@ -471,7 +480,7 @@ inline fn hasPendingWork(self: *Self) bool {
         self.async_tasks > 0;
 }
 
-pub fn XevNoopCallback(err: type) fn (
+pub fn XevNoopCallback(err: type, action: xev.CallbackAction) fn (
     _: ?*void,
     _: *xev.Dynamic.Loop,
     _: *xev.Dynamic.Completion,
@@ -484,15 +493,30 @@ pub fn XevNoopCallback(err: type) fn (
             _: *xev.Dynamic.Completion,
             _: err,
         ) xev.CallbackAction {
-            return .disarm;
+            return action;
         }
     }.inner;
 }
 
 pub fn run(self: *Self, comptime mode: Zune.RunMode) void {
+    if (self.running) {
+        std.debug.print("Warning: Scheduler is already running, this may lead to unexpected behavior.\n", .{});
+        return;
+    }
+    self.threadId = std.Thread.getCurrentId();
+    self.running = true;
     var timer_completion: xev.Dynamic.Completion = .init();
     var timer_cancel_completion: xev.Dynamic.Completion = .init();
-    while (self.hasPendingWork()) {
+    self.@"async".wait(
+        &self.loop,
+        &self.static_completions[0],
+        void,
+        null,
+        XevNoopCallback(xev.Dynamic.Async.WaitError!void, .rearm),
+    );
+    while (true) {
+        if (!self.hasPendingWork())
+            break;
         const now = VM.lperf.clock();
         if (self.tasks.items.len > 0 or self.deferred.len > 0) {
             // TODO: change `tasks` design to go on the event loop stack.
@@ -503,7 +527,7 @@ pub fn run(self: *Self, comptime mode: Zune.RunMode) void {
                 0,
                 void,
                 null,
-                XevNoopCallback(xev.Dynamic.Timer.RunError!void),
+                XevNoopCallback(xev.Dynamic.Timer.RunError!void, .disarm),
             );
         } else if (self.sleeping.peek()) |lowest| {
             self.timer.reset(
@@ -513,7 +537,7 @@ pub fn run(self: *Self, comptime mode: Zune.RunMode) void {
                 @intFromFloat(@max(lowest.wake - now, 0) * std.time.ms_per_s),
                 void,
                 null,
-                XevNoopCallback(xev.Dynamic.Timer.RunError!void),
+                XevNoopCallback(xev.Dynamic.Timer.RunError!void, .disarm),
             );
         }
         {
@@ -605,6 +629,7 @@ pub fn run(self: *Self, comptime mode: Zune.RunMode) void {
         if (comptime mode == .Test)
             _ = self.state.gc(.Collect, 0);
     }
+    self.running = false;
 }
 
 pub fn deinit(self: *Self) void {

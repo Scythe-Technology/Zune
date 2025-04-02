@@ -115,7 +115,7 @@ test "luau" {
     const testResult = try TestRunner.runTest(
         TestRunner.newTestFile("standard/luau.test.luau"),
         &.{},
-        true,
+        .{},
     );
 
     try std.testing.expect(testResult.failed == 0);

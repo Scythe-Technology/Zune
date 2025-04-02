@@ -559,7 +559,7 @@ test "fs" {
     const testResult = try TestRunner.runTest(
         TestRunner.newTestFile("standard/fs.test.luau"),
         &.{},
-        true,
+        .{},
     );
 
     try std.testing.expect(testResult.failed == 0);

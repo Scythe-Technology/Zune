@@ -17,6 +17,8 @@ const VM = luau.VM;
 
 pub const LIB_NAME = "testing";
 
+pub var REF_LEAK_CHECK = false;
+
 fn testing_debug(L: *VM.lua.State) i32 {
     const str = L.Lcheckstring(1);
     std.debug.print("{s}\n", .{str});
@@ -54,6 +56,8 @@ fn stepCheckLeakedReferences(L: *VM.lua.State) void {
 }
 
 fn testing_checkLeakedReferences(L: *VM.lua.State) !i32 {
+    if (!REF_LEAK_CHECK)
+        return 0;
     const scope = L.Lcheckstring(1);
     const allocator = luau.getallocator(L);
 
@@ -267,7 +271,7 @@ test "Test" {
     const testResult = try TestRunner.runTest(
         TestRunner.newTestFile("standard/testing.test.luau"),
         &.{},
-        false,
+        .{ .std_out = false },
     );
 
     try std.testing.expect(testResult.failed == 3);

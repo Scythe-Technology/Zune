@@ -667,13 +667,13 @@ pub fn loadLib(L: *VM.lua.State, args: []const []const u8) !void {
     luaHelper.registerModule(L, LIB_NAME);
 }
 
-test "Process" {
+test "process" {
     const TestRunner = @import("../utils/testrunner.zig");
 
     const testResult = try TestRunner.runTest(
         TestRunner.newTestFile("standard/process.test.luau"),
         &.{ "Test", "someValue" },
-        true,
+        .{},
     );
 
     try std.testing.expect(testResult.failed == 0);
