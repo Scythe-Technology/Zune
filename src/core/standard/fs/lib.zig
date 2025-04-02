@@ -22,52 +22,12 @@ const OpenError = error{ InvalidMode, BadExclusive };
 
 pub const LIB_NAME = "fs";
 
-const windowsSupport = struct {
-    const windows = std.os.windows;
-
-    const Options = struct {
-        accessMode: windows.DWORD,
-        shareMode: windows.DWORD = windows.FILE_SHARE_WRITE | windows.FILE_SHARE_READ | windows.FILE_SHARE_DELETE,
-        creationDisposition: windows.DWORD,
-    };
-
-    fn OpenFile(self: fs.Dir, path: []const u8, opts: Options) fs.File.OpenError!fs.File {
-        const path_w = try windows.sliceToPrefixedFileW(self.fd, path);
-        const handle = windows.kernel32.CreateFileW(
-            path_w.span(),
-            opts.accessMode,
-            opts.shareMode,
-            null,
-            opts.creationDisposition,
-            windows.FILE_FLAG_OVERLAPPED,
-            null,
-        );
-        if (handle == windows.INVALID_HANDLE_VALUE) {
-            const err = windows.kernel32.GetLastError();
-            return switch (err) {
-                .FILE_NOT_FOUND => error.FileNotFound,
-                .PATH_NOT_FOUND => error.FileNotFound,
-                .INVALID_PARAMETER => unreachable,
-                .SHARING_VIOLATION => return error.AccessDenied,
-                .ACCESS_DENIED => return error.AccessDenied,
-                .PIPE_BUSY => return error.PipeBusy,
-                .FILE_EXISTS => return error.PathAlreadyExists,
-                .USER_MAPPED_FILE => return error.AccessDenied,
-                .INVALID_HANDLE => unreachable,
-                .VIRUS_INFECTED, .VIRUS_DELETED => return error.AntivirusInterference,
-                else => windows.unexpectedError(err),
-            };
-        }
-        return .{ .handle = handle };
-    }
-};
-
 fn lua_readFileAsync(L: *VM.lua.State) !i32 {
     const path = L.Lcheckstring(1);
     const useBuffer = L.Loptboolean(2, false);
 
     const file: fs.File = switch (comptime builtin.os.tag) {
-        .windows => try windowsSupport.OpenFile(fs.cwd(), path, .{
+        .windows => try @import("../../utils/os/windows.zig").OpenFile(fs.cwd(), path, .{
             .accessMode = std.os.windows.GENERIC_READ,
             .creationDisposition = std.os.windows.OPEN_EXISTING,
         }),
@@ -127,7 +87,7 @@ fn lua_writeFileAsync(L: *VM.lua.State) !i32 {
     const data = try L.Zcheckvalue([]const u8, 2, null);
 
     const file: fs.File = switch (comptime builtin.os.tag) {
-        .windows => try windowsSupport.OpenFile(fs.cwd(), path, .{
+        .windows => try @import("../../utils/os/windows.zig").OpenFile(fs.cwd(), path, .{
             .accessMode = std.os.windows.GENERIC_READ | std.os.windows.GENERIC_WRITE,
             .creationDisposition = std.os.windows.OPEN_ALWAYS,
         }),
@@ -466,7 +426,7 @@ fn lua_openFile(L: *VM.lua.State) !i32 {
     }
 
     const file: fs.File = switch (comptime builtin.os.tag) {
-        .windows => try windowsSupport.OpenFile(fs.cwd(), path, .{
+        .windows => try @import("../../utils/os/windows.zig").OpenFile(fs.cwd(), path, .{
             .accessMode = switch (mode) {
                 .read_only => std.os.windows.GENERIC_READ,
                 .read_write => std.os.windows.GENERIC_READ | std.os.windows.GENERIC_WRITE,
@@ -497,7 +457,7 @@ fn lua_createFile(L: *VM.lua.State) !i32 {
     const opts: Options = try L.Zcheckvalue(?Options, 2, null) orelse .{};
 
     const file: fs.File = switch (comptime builtin.os.tag) {
-        .windows => try windowsSupport.OpenFile(fs.cwd(), path, .{
+        .windows => try @import("../../utils/os/windows.zig").OpenFile(fs.cwd(), path, .{
             .accessMode = std.os.windows.GENERIC_READ | std.os.windows.GENERIC_WRITE,
             .creationDisposition = if (opts.exclusive) std.os.windows.CREATE_NEW else std.os.windows.CREATE_ALWAYS,
         }),

@@ -44,6 +44,42 @@ pub fn socket(domain: u32, flags: u32, protocol: u32) !windows.ws2_32.SOCKET {
     return rc;
 }
 
+const OpenFileOptions = struct {
+    accessMode: windows.DWORD,
+    shareMode: windows.DWORD = windows.FILE_SHARE_WRITE | windows.FILE_SHARE_READ | windows.FILE_SHARE_DELETE,
+    creationDisposition: windows.DWORD,
+};
+
+pub fn OpenFile(self: fs.Dir, path: []const u8, opts: OpenFileOptions) fs.File.OpenError!fs.File {
+    const path_w = try windows.sliceToPrefixedFileW(self.fd, path);
+    const handle = windows.kernel32.CreateFileW(
+        path_w.span(),
+        opts.accessMode,
+        opts.shareMode,
+        null,
+        opts.creationDisposition,
+        windows.FILE_FLAG_OVERLAPPED,
+        null,
+    );
+    if (handle == windows.INVALID_HANDLE_VALUE) {
+        const err = windows.kernel32.GetLastError();
+        return switch (err) {
+            .FILE_NOT_FOUND => error.FileNotFound,
+            .PATH_NOT_FOUND => error.FileNotFound,
+            .INVALID_PARAMETER => unreachable,
+            .SHARING_VIOLATION => return error.AccessDenied,
+            .ACCESS_DENIED => return error.AccessDenied,
+            .PIPE_BUSY => return error.PipeBusy,
+            .FILE_EXISTS => return error.PathAlreadyExists,
+            .USER_MAPPED_FILE => return error.AccessDenied,
+            .INVALID_HANDLE => unreachable,
+            .VIRUS_INFECTED, .VIRUS_DELETED => return error.AntivirusInterference,
+            else => windows.unexpectedError(err),
+        };
+    }
+    return .{ .handle = handle };
+}
+
 // based on std.process.Child
 pub fn spawnWindows(self: *ChildProcess) ChildProcess.SpawnError!void {
     var saAttr = windows.SECURITY_ATTRIBUTES{
@@ -643,7 +679,7 @@ fn windowsMakeAsyncPipe(comptime kind: enum { in, out }, rd: *?windows.HANDLE, w
     const write_handle = windows.kernel32.CreateFileW(
         pipe_path.ptr,
         windows.GENERIC_WRITE,
-        0,
+        windows.FILE_SHARE_READ | windows.FILE_SHARE_WRITE | windows.FILE_SHARE_DELETE,
         &sattr_copy,
         windows.OPEN_EXISTING,
         windows.FILE_ATTRIBUTE_NORMAL | if (kind == .in) windows.FILE_FLAG_OVERLAPPED else 0,
