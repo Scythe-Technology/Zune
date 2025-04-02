@@ -368,19 +368,7 @@ fn process_create(L: *VM.lua.State) !i32 {
 
     const handlePtr = L.newuserdatataggedwithmetatable(ProcessChildHandle, TAG_PROCESS_CHILD);
     var child = process.Child.init(childOptions.argArray.items, allocator);
-
-    child.id = undefined;
-    child.thread_handle = undefined;
-    if (builtin.os.tag != .windows)
-        child.err_pipe = null;
-    child.term = null;
-    child.uid = if (native_os == .windows or native_os == .wasi) {} else null;
-    child.gid = if (native_os == .windows or native_os == .wasi) {} else null;
-    child.stdin = null;
-    child.stdout = null;
-    child.stderr = null;
     child.expand_arg0 = .no_expand;
-
     child.stdin_behavior = .Pipe;
     child.stdout_behavior = .Pipe;
     child.stderr_behavior = .Pipe;
@@ -397,7 +385,10 @@ fn process_create(L: *VM.lua.State) !i32 {
 
     {
         errdefer L.pop(2);
-        try child.spawn();
+        switch (comptime builtin.os.tag) {
+            .windows => try @import("../utils/os/windows.zig").spawnWindows(&child),
+            else => try child.spawn(),
+        }
     }
 
     if (child.stdin) |file| {
