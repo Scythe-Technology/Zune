@@ -507,39 +507,27 @@ pub fn run(self: *Self, comptime mode: Zune.RunMode) void {
     self.running = true;
     var timer_completion: xev.Dynamic.Completion = .init();
     var timer_cancel_completion: xev.Dynamic.Completion = .init();
-    self.@"async".wait(
-        &self.loop,
-        &self.static_completions[0],
-        void,
-        null,
-        XevNoopCallback(xev.Dynamic.Async.WaitError!void, .rearm),
-    );
     while (true) {
         if (!self.hasPendingWork())
             break;
         const now = VM.lperf.clock();
-        if (self.tasks.items.len > 0 or self.deferred.len > 0) {
+        const sleep_time: ?u64 = if (self.tasks.items.len > 0 or self.deferred.len > 0)
             // TODO: change `tasks` design to go on the event loop stack.
+            0
+        else if (self.sleeping.peek()) |lowest|
+            @intFromFloat(@max(lowest.wake - now, 0) * std.time.ms_per_s)
+        else
+            null;
+        if (sleep_time) |time|
             self.timer.reset(
                 &self.loop,
                 &timer_completion,
                 &timer_cancel_completion,
-                0,
+                time,
                 void,
                 null,
                 XevNoopCallback(xev.Dynamic.Timer.RunError!void, .disarm),
             );
-        } else if (self.sleeping.peek()) |lowest| {
-            self.timer.reset(
-                &self.loop,
-                &timer_completion,
-                &timer_cancel_completion,
-                @intFromFloat(@max(lowest.wake - now, 0) * std.time.ms_per_s),
-                void,
-                null,
-                XevNoopCallback(xev.Dynamic.Timer.RunError!void, .disarm),
-            );
-        }
         {
             self.frame = .EventLoop;
             self.loop.run(.once) catch |err| {
