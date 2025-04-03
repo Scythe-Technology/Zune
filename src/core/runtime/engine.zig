@@ -12,7 +12,7 @@ pub var DEBUG_LEVEL: u2 = 2;
 pub var OPTIMIZATION_LEVEL: u2 = 1;
 pub var CODEGEN: bool = true;
 pub var JIT_ENABLED: bool = true;
-pub var USE_DETAILED_ERROR: bool = false;
+pub var USE_DETAILED_ERROR: bool = true;
 
 pub const LuauCompileError = error{
     Syntax,
