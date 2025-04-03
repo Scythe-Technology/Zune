@@ -1707,17 +1707,17 @@ type SerdeLib = {
 --[======[ Io ]======]--
 declare class IoReadable
     read:
-        & ((self: IoReadable, amount: number?, bytes: true?) -> buffer?)
-        & ((self: IoReadable, amount: number?, bytes: false) -> string?)
+    & ((self: IoReadable, amount: number?, bytes: true?) -> buffer)
+    & ((self: IoReadable, amount: number?, bytes: false) -> string)
 
-    function readu8(self): number?
-    function readu16(self): number?
-    function readu32(self): number?
-    function readi8(self): number?
-    function readi16(self): number?
-    function readi32(self): number?
-    function readf32(self): number?
-    function readf64(self): number?
+    function readu8(self): number
+    function readu16(self): number
+    function readu32(self): number
+    function readi8(self): number
+    function readi16(self): number
+    function readi32(self): number
+    function readf32(self): number
+    function readf64(self): number
 end
 
 declare class IoWritable

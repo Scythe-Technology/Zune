@@ -159,8 +159,9 @@ describe("IO", function()
             buffer.writestring(buf, 0, "test default");
             stream:write(buf);
 
-            local none = stream:read()
-            expect(none).toBeNil();
+            local ok, err = pcall(stream.read, stream)
+            expect(ok).toBeFalsy();
+            expect(err).toBe("EOF");
 
             stream:seekTo(0);
             expect(stream:pos()).toBe(0)
@@ -187,8 +188,9 @@ describe("IO", function()
             stream:seekTo(0)
             expect(stream:pos()).toBe(0)
 
-            local string_none = stream:read(0, false)
-            expect(string_none).toBeNil()
+            local string_ok, string_err = pcall(stream.read, stream, 0, false)
+            expect(string_ok).toBeFalsy()
+            expect(string_err).toBe("EOF")
 
             local partial = stream:read(4)
             expect(partial).never.toBeNil()
@@ -217,7 +219,9 @@ describe("IO", function()
             expect(reader:read(nil, false)).toBe(" default");
             expect(stream:pos()).toBe(12);
 
-            expect(reader:readu8()).toBeNil();
+            local ok, err = pcall(reader.readu8, reader)
+            expect(ok).toBeFalsy();
+            expect(err).toBe("EOF");
             expect(stream:size()).toBe(buffer.len(buf));
         end)
         test("Generic Writer", function()
@@ -286,8 +290,12 @@ describe("IO", function()
 
             expect(reader:read(nil, false)).toBe("omplex");
 
-            expect(reader:readu8()).toBeNil();
-            expect(reader:read(0, false)).toBeNil();
+            local ok, err = pcall(reader.readu8, reader)
+            expect(ok).toBeFalsy();
+            expect(err).toBe("EOF");
+            local string_ok, string_err = pcall(reader.read, reader, 0, false)
+            expect(string_ok).toBeFalsy()
+            expect(string_err).toBe("EOF");
 
             reader = nil :: any; -- remove reference
 

@@ -20,9 +20,9 @@ const VM = luau.VM;
 
 const MAX_LUAU_SIZE = 1073741824; // 1 GB
 
-const TAG_STREAM = tagged.Tags.get("IO_STREAM").?;
-const TAG_BUFFERSINK = tagged.Tags.get("IO_BUFFERSINK").?;
-const TAG_BUFFERSTREAM = tagged.Tags.get("IO_BUFFERSTREAM").?;
+const TAG_IO_STREAM = tagged.Tags.get("IO_STREAM").?;
+const TAG_IO_BUFFERSINK = tagged.Tags.get("IO_BUFFERSINK").?;
+const TAG_IO_BUFFERSTREAM = tagged.Tags.get("IO_BUFFERSTREAM").?;
 
 pub const LIB_NAME = "io";
 
@@ -125,7 +125,7 @@ const Stream = struct {
                 if (!self.mode.read)
                     return L.Zerror("Stream is not readable");
                 std.debug.assert(self.vtable.read != null);
-                const data = try self.vtable.read.?(self.ref.value, @sizeOf(T), true) orelse return 0;
+                const data = try self.vtable.read.?(self.ref.value, @sizeOf(T), true) orelse return error.EOF;
                 const value = std.mem.bytesToValue(T, data[0..len]);
                 switch (comptime @typeInfo(T)) {
                     .int => |i| {
@@ -156,10 +156,8 @@ const Stream = struct {
             return L.Zerror("Stream is not readable");
         std.debug.assert(self.vtable.read != null);
         const amount = L.Loptunsigned(2, MAX_LUAU_SIZE);
-        if (amount == 0)
-            return 0;
         const use_buffer = L.Loptboolean(3, true);
-        const data = try self.vtable.read.?(self.ref.value, amount, false) orelse return 0;
+        const data = try self.vtable.read.?(self.ref.value, amount, false) orelse return error.EOF;
         if (use_buffer)
             L.Zpushbuffer(data)
         else
@@ -185,7 +183,7 @@ const Stream = struct {
         return 0;
     }
 
-    pub const __index = MethodMap.CreateStaticIndexMap(Stream, TAG_STREAM, .{
+    pub const __index = MethodMap.CreateStaticIndexMap(Stream, TAG_IO_STREAM, .{
         .{ "write", lua_write },
         .{ "writeu8", GenerateWriteLuaMethod(u8) },
         .{ "writeu16", GenerateWriteLuaMethod(u16) },
@@ -319,7 +317,7 @@ const BufferSink = struct {
             return 1;
 
         const ref = luaHelper.Ref(*anyopaque).init(L, 1, @ptrCast(@alignCast(self)));
-        const stream = L.newuserdatataggedwithmetatable(Stream, TAG_STREAM);
+        const stream = L.newuserdatataggedwithmetatable(Stream, TAG_IO_STREAM);
 
         stream.* = .{
             .vtable = &StreamImpl,
@@ -399,10 +397,8 @@ const BufferStream = struct {
 
     pub fn lua_read(self: *BufferStream, L: *VM.lua.State) !i32 {
         const amount = L.Loptunsigned(2, MAX_LUAU_SIZE);
-        if (amount == 0)
-            return 0;
         const use_buffer = L.Loptboolean(3, true);
-        const data = try self.stream_read(amount, false) orelse return 0;
+        const data = try self.stream_read(amount, false) orelse return error.EOF;
         if (use_buffer)
             L.Zpushbuffer(data)
         else
@@ -430,7 +426,7 @@ const BufferStream = struct {
         if (self.stream_writer.push(L))
             return 1;
         const ref = luaHelper.Ref(*anyopaque).init(L, 1, @ptrCast(@alignCast(self)));
-        const stream = L.newuserdatataggedwithmetatable(Stream, TAG_STREAM);
+        const stream = L.newuserdatataggedwithmetatable(Stream, TAG_IO_STREAM);
 
         stream.* = .{
             .vtable = &BufferStream.Impl,
@@ -447,7 +443,7 @@ const BufferStream = struct {
         if (self.stream_reader.push(L))
             return 1;
         const ref = luaHelper.Ref(*anyopaque).init(L, 1, @ptrCast(@alignCast(self)));
-        const stream = L.newuserdatataggedwithmetatable(Stream, TAG_STREAM);
+        const stream = L.newuserdatataggedwithmetatable(Stream, TAG_IO_STREAM);
 
         stream.* = .{
             .vtable = &BufferStream.Impl,
@@ -460,7 +456,7 @@ const BufferStream = struct {
         return 1;
     }
 
-    pub const __index = MethodMap.CreateStaticIndexMap(BufferStream, TAG_BUFFERSTREAM, .{
+    pub const __index = MethodMap.CreateStaticIndexMap(BufferStream, TAG_IO_BUFFERSTREAM, .{
         .{ "pos", lua_pos },
         .{ "size", lua_size },
         .{ "canRead", lua_canRead },
@@ -496,9 +492,11 @@ const BufferStream = struct {
     pub fn stream_read(self: *BufferStream, amount: u32, exact: bool) anyerror!?[]const u8 {
         const buf = self.buf.value;
         const offset = if (exact) amount else 0;
-        if (self.pos + offset >= buf.len)
+        if (self.pos + offset > buf.len)
             return null;
         const result = buf[self.pos..@min(self.pos + amount, buf.len)];
+        if (result.len == 0)
+            return null;
         self.pos += @intCast(result.len);
         return result;
     }
@@ -531,7 +529,7 @@ pub fn lua_createBufferSink(L: *VM.lua.State) !i32 {
         limit: ?u32,
     }, 1, null);
 
-    const self = L.newuserdatataggedwithmetatable(BufferSink, TAG_BUFFERSINK);
+    const self = L.newuserdatataggedwithmetatable(BufferSink, TAG_IO_BUFFERSINK);
 
     self.* = .{
         .alloc = allocator,
@@ -547,7 +545,7 @@ pub fn lua_createBufferSink(L: *VM.lua.State) !i32 {
 pub fn lua_createFixedBufferStream(L: *VM.lua.State) !i32 {
     const buffer = try L.Zcheckvalue([]u8, 1, null);
 
-    const self = L.newuserdatataggedwithmetatable(BufferStream, TAG_BUFFERSTREAM);
+    const self = L.newuserdatataggedwithmetatable(BufferStream, TAG_IO_BUFFERSTREAM);
 
     self.* = .{
         .pos = 0,
@@ -569,8 +567,8 @@ pub fn loadLib(L: *VM.lua.State) void {
             .__type = "BufferSink",
         });
         L.setreadonly(-1, true);
-        L.setuserdatametatable(TAG_BUFFERSINK);
-        L.setuserdatadtor(BufferSink, TAG_BUFFERSINK, BufferSink.__dtor);
+        L.setuserdatametatable(TAG_IO_BUFFERSINK);
+        L.setuserdatadtor(BufferSink, TAG_IO_BUFFERSINK, BufferSink.__dtor);
     }
     {
         _ = L.Znewmetatable(@typeName(Stream), .{
@@ -579,8 +577,8 @@ pub fn loadLib(L: *VM.lua.State) void {
         });
         Stream.__index(L, -1);
         L.setreadonly(-1, true);
-        L.setuserdatametatable(TAG_STREAM);
-        L.setuserdatadtor(Stream, TAG_STREAM, Stream.__dtor);
+        L.setuserdatametatable(TAG_IO_STREAM);
+        L.setuserdatadtor(Stream, TAG_IO_STREAM, Stream.__dtor);
     }
     {
         _ = L.Znewmetatable(@typeName(BufferStream), .{
@@ -589,8 +587,8 @@ pub fn loadLib(L: *VM.lua.State) void {
         });
         BufferStream.__index(L, -1);
         L.setreadonly(-1, true);
-        L.setuserdatametatable(TAG_BUFFERSTREAM);
-        L.setuserdatadtor(BufferStream, TAG_BUFFERSTREAM, BufferStream.__dtor);
+        L.setuserdatametatable(TAG_IO_BUFFERSTREAM);
+        L.setuserdatadtor(BufferStream, TAG_IO_BUFFERSTREAM, BufferStream.__dtor);
     }
     L.createtable(0, 16);
 
