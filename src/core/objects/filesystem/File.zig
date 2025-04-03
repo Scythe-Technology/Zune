@@ -71,89 +71,63 @@ pub const AsyncReadContext = struct {
     array: std.ArrayList(u8) = undefined,
     lua_type: VM.lua.Type = .String,
     buffer_len: usize = 0,
+    err: ?anyerror = null,
     auto_close: bool = true,
-    resumed: bool = false,
     file_kind: FileKind = .File,
     list: ?*Scheduler.CompletionLinkedList = null,
 
     const This = @This();
 
-    pub fn end(
+    fn cleanup(
         self: *This,
         L: *VM.lua.State,
         scheduler: *Scheduler,
+        completion: *xev.Completion,
         file: xev.File,
-        err: ?anyerror,
     ) xev.CallbackAction {
-        if (self.auto_close)
-            file.close(&scheduler.loop, &self.completion.data, This, self, finished);
+        if (self.auto_close) {
+            self.auto_close = false;
+            file.close(&scheduler.loop, completion, This, self, close_complete);
+            return .disarm;
+        }
+        defer scheduler.completeAsync(self);
+        defer self.ref.deref();
+        defer self.array.deinit();
+        defer if (self.list) |l|
+            l.remove(&self.completion);
 
-        if (err) |e| {
+        if (self.err) |e| {
             L.pushstring(@errorName(e));
-            self.resumeResult(L, .Bad);
+            _ = Scheduler.resumeStateError(L, null) catch {};
+        } else {
+            self.array.shrinkAndFree(@min(self.buffer_len, self.limit));
+            switch (self.lua_type) {
+                .Buffer => L.Zpushbuffer(self.array.items),
+                .String => L.pushlstring(self.array.items),
+                else => unreachable,
+            }
+            _ = Scheduler.resumeState(L, null, 1) catch {};
         }
-
-        if (!self.auto_close) {
-            if (err == null)
-                self.resumeResult(L, .Ok);
-            self.cleanup(scheduler);
-        }
-
         return .disarm;
     }
 
-    pub fn cleanup(self: *This, scheduler: *Scheduler) void {
-        defer scheduler.completeAsync(self);
-        self.ref.deref();
-        self.array.deinit();
-        if (self.list) |l|
-            l.remove(&self.completion);
-    }
-
-    const Kind = enum {
-        Ok,
-        Bad,
-    };
-    fn resumeResult(self: *This, L: *VM.lua.State, comptime kind: Kind) void {
-        if (self.resumed)
-            return;
-        self.resumed = true;
-        switch (kind) {
-            .Ok => {
-                self.array.shrinkAndFree(@min(self.buffer_len, self.limit));
-                switch (self.lua_type) {
-                    .Buffer => L.Zpushbuffer(self.array.items),
-                    .String => L.pushlstring(self.array.items),
-                    else => unreachable,
-                }
-                _ = Scheduler.resumeState(L, null, 1) catch {};
-            },
-            .Bad => _ = Scheduler.resumeStateError(L, null) catch {},
-        }
-    }
-
-    pub fn finished(
+    pub fn close_complete(
         ud: ?*This,
         _: *xev.Loop,
-        _: *xev.Completion,
-        _: xev.File,
+        completion: *xev.Completion,
+        file: xev.File,
         c: xev.CloseError!void,
     ) xev.CallbackAction {
         const self = ud orelse unreachable;
         const L = self.ref.value;
         const scheduler = Scheduler.getScheduler(L);
-        defer self.cleanup(scheduler);
 
         c catch |err| {
-            if (!self.resumed) {
-                L.pushstring(@errorName(err));
-                self.resumeResult(L, .Bad);
-            }
-            return .disarm;
+            if (self.err == null)
+                self.err = err;
         };
 
-        self.resumeResult(L, .Ok);
-        return .disarm;
+        return self.cleanup(L, scheduler, completion, file);
     }
 
     pub fn complete(
@@ -168,28 +142,28 @@ pub const AsyncReadContext = struct {
         const L = self.ref.value;
 
         const scheduler = Scheduler.getScheduler(L);
-        if (L.status() != .Yield) {
-            if (self.auto_close) {
-                self.resumed = true;
-                file.close(&scheduler.loop, completion, This, self, finished);
-            } else self.cleanup(scheduler);
-            return .disarm;
-        }
+        if (L.status() != .Yield)
+            return self.cleanup(L, scheduler, completion, file);
 
         const read_len = r catch |err| switch (err) {
             xev.ReadError.EOF => 0,
-            else => return self.end(L, scheduler, file, err),
+            else => {
+                self.err = err;
+                return self.cleanup(L, scheduler, completion, file);
+            },
         };
 
         self.buffer_len += read_len;
 
-        if (read_len == 0 or self.buffer_len > self.limit) {
-            return self.end(L, scheduler, file, null);
-        }
+        if (read_len == 0 or self.buffer_len > self.limit)
+            return self.cleanup(L, scheduler, completion, file);
 
         switch (self.file_kind) {
             .File => {
-                self.array.ensureTotalCapacity(self.buffer_len + 1) catch |err| return self.end(L, scheduler, file, err);
+                self.array.ensureTotalCapacity(self.buffer_len + 1) catch |err| {
+                    self.err = err;
+                    return self.cleanup(L, scheduler, completion, file);
+                };
                 if (self.array.capacity > self.limit)
                     self.array.shrinkAndFree(self.limit);
                 self.array.expandToCapacity();
@@ -203,11 +177,11 @@ pub const AsyncReadContext = struct {
                     self,
                     This.complete,
                 );
-            },
-            .Tty => return self.end(L, scheduler, file, null),
-        }
 
-        return .disarm;
+                return .disarm;
+            },
+            .Tty => return self.cleanup(L, scheduler, completion, file),
+        }
     }
 
     pub fn queue(
@@ -275,84 +249,58 @@ pub const AsyncWriteContext = struct {
     },
     ref: Scheduler.ThreadRef,
     data: []u8,
+    err: ?anyerror = null,
     auto_close: bool = true,
-    resumed: bool = false,
     pos: u64 = 0,
     file_kind: FileKind = .File,
     list: ?*Scheduler.CompletionLinkedList = null,
 
     const This = @This();
 
-    pub fn end(
+    pub fn cleanup(
         self: *This,
         L: *VM.lua.State,
         scheduler: *Scheduler,
+        completion: *xev.Completion,
         file: xev.File,
-        err: ?anyerror,
     ) xev.CallbackAction {
         if (self.auto_close) {
-            file.close(&scheduler.loop, &self.completion.data, This, self, finished);
+            self.auto_close = false;
+            file.close(&scheduler.loop, completion, This, self, close_complete);
+            return .disarm;
         }
+        defer scheduler.completeAsync(self);
+        const allocator = luau.getallocator(L);
 
-        if (err) |e| {
+        defer allocator.free(self.data);
+        defer self.ref.deref();
+        defer if (self.list) |l|
+            l.remove(&self.completion);
+
+        if (self.err) |e| {
             L.pushstring(@errorName(e));
-            self.resumeResult(L, .Bad);
-        }
-
-        if (!self.auto_close) {
-            if (err == null)
-                self.resumeResult(L, .Ok);
-            self.cleanup(L, scheduler);
-        }
-
+            _ = Scheduler.resumeStateError(L, null) catch {};
+        } else _ = Scheduler.resumeState(L, null, 0) catch {};
         return .disarm;
     }
 
-    pub fn cleanup(self: *This, L: *VM.lua.State, scheduler: *Scheduler) void {
-        defer scheduler.completeAsync(self);
-        const allocator = luau.getallocator(L);
-        allocator.free(self.data);
-        self.ref.deref();
-        if (self.list) |l|
-            l.remove(&self.completion);
-    }
-
-    const Kind = enum {
-        Ok,
-        Bad,
-    };
-    fn resumeResult(self: *This, L: *VM.lua.State, comptime kind: Kind) void {
-        if (self.resumed)
-            return;
-        self.resumed = true;
-        switch (kind) {
-            .Ok => _ = Scheduler.resumeState(L, null, 0) catch {},
-            .Bad => _ = Scheduler.resumeStateError(L, null) catch {},
-        }
-    }
-
-    pub fn finished(
+    pub fn close_complete(
         ud: ?*This,
         _: *xev.Loop,
-        _: *xev.Completion,
-        _: xev.File,
+        completion: *xev.Completion,
+        file: xev.File,
         c: xev.CloseError!void,
     ) xev.CallbackAction {
         const self = ud orelse unreachable;
         const L = self.ref.value;
         const scheduler = Scheduler.getScheduler(L);
-        defer self.cleanup(L, scheduler);
 
         c catch |err| {
-            if (!self.resumed) {
-                L.pushstring(@errorName(err));
-                self.resumeResult(L, .Bad);
-            }
-            return .disarm;
+            if (self.err == null)
+                self.err = err;
         };
 
-        self.resumeResult(L, .Ok);
-        return .disarm;
+        return self.cleanup(L, scheduler, completion, file);
     }
 
     pub fn complete(
@@ -368,18 +316,16 @@ pub const AsyncWriteContext = struct {
         const L = self.ref.value;
         const scheduler = Scheduler.getScheduler(L);
 
-        if (L.status() != .Yield) {
-            if (self.auto_close) {
-                self.resumed = true;
-                file.close(&scheduler.loop, completion, This, self, finished);
-            } else self.cleanup(L, scheduler);
-            return .disarm;
-        }
+        if (L.status() != .Yield)
+            return self.cleanup(L, scheduler, completion, file);
 
-        const written = w catch |err| return self.end(L, scheduler, file, err);
+        const written = w catch |err| {
+            self.err = err;
+            return self.cleanup(L, scheduler, completion, file);
+        };
 
         if (written == 0 or written == b.slice.len)
-            return self.end(L, scheduler, file, null);
+            return self.cleanup(L, scheduler, completion, file);
 
         switch (self.file_kind) {
             .File => {
@@ -403,6 +349,7 @@ pub const AsyncWriteContext = struct {
                 This.complete,
             ),
         }
+
         return .disarm;
     }
 
