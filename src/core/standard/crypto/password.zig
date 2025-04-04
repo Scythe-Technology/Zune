@@ -1,8 +1,6 @@
 const std = @import("std");
 const luau = @import("luau");
 
-const common = @import("common.zig");
-
 const VM = luau.VM;
 
 const argon2 = std.crypto.pwhash.argon2;

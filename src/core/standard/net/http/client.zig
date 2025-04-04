@@ -19,8 +19,7 @@ const Self = @This();
 const ZUNE_CLIENT_HEADER = "Zune/" ++ zune_info.version;
 
 const RequestAsyncContext = struct {
-    async_completion: xev.Completion,
-    timeout_completion: xev.Completion,
+    completion: xev.Completion,
     task: xev.ThreadPool.Task,
     event: xev.Async,
 
@@ -54,28 +53,41 @@ const RequestAsyncContext = struct {
                     break;
                 },
             };
-            self.err = error.BackCompleted;
+            self.err = error.Completed;
             break;
         }
 
-        self.event.notify() catch {};
+        var attempts: u32 = 0;
+        while (attempts < 50) : (attempts += 1) {
+            self.event.notify() catch continue;
+            break;
+        }
     }
 
-    pub fn cleanup_complete(
+    pub fn complete(
         ud: ?*RequestAsyncContext,
         _: *xev.Loop,
         _: *xev.Completion,
-        res: xev.CancelError!void,
+        res: xev.Async.WaitError!void,
     ) xev.CallbackAction {
         const self = ud orelse unreachable;
         const L = self.ref.value;
 
         const allocator = luau.getallocator(L);
         const scheduler = Scheduler.getScheduler(L);
+
+        if (L.status() != .Yield)
+            return .disarm;
+
+        res catch |err| {
+            self.err = err;
+        };
+
         defer scheduler.completeAsync(self);
         defer allocator.free(self.server_header_buffer);
         defer if (self.payload) |p| allocator.free(p);
         defer self.ref.deref();
+        defer self.event.deinit();
         defer self.client.deinit();
         defer self.request.deinit();
         defer if (self.request.extra_headers.len > 0) {
@@ -92,7 +104,7 @@ const RequestAsyncContext = struct {
         res catch {};
 
         switch (self.err) {
-            error.BackCompleted, error.Completed => {
+            error.Completed => {
                 const status = @as(u10, @intFromEnum(self.request.response.status));
                 L.Zpushvalue(.{
                     .ok = status >= 200 and status < 300,
@@ -130,71 +142,6 @@ const RequestAsyncContext = struct {
 
         return .disarm;
     }
-
-    pub fn timeout_complete(
-        ud: ?*RequestAsyncContext,
-        loop: *xev.Loop,
-        completion: *xev.Completion,
-        res: xev.Timer.RunError!void,
-    ) xev.CallbackAction {
-        const self = ud orelse unreachable;
-        const L = self.ref.value;
-
-        const allocator = luau.getallocator(L);
-
-        res catch |err| switch (err) {
-            error.Canceled => return .disarm,
-            else => return .disarm,
-        };
-
-        if (self.request.connection) |conn| {
-            if (!self.request.response.parser.done)
-                conn.closing = true;
-            self.request.client.connection_pool.release(allocator, conn);
-        }
-
-        if (self.err == error.BackCompleted) {
-            // request was finished, but somehow notify did not work.
-            loop.cancel(
-                completion,
-                &self.async_completion,
-                RequestAsyncContext,
-                self,
-                cleanup_complete,
-            );
-        }
-
-        return .disarm;
-    }
-
-    pub fn complete(
-        ud: ?*RequestAsyncContext,
-        loop: *xev.Loop,
-        completion: *xev.Completion,
-        res: xev.Async.WaitError!void,
-    ) xev.CallbackAction {
-        const self = ud orelse unreachable;
-        const L = self.ref.value;
-
-        if (L.status() != .Yield)
-            return .disarm;
-
-        res catch |err| {
-            self.err = err;
-        };
-
-        self.err = error.Completed;
-
-        loop.cancel(
-            completion,
-            &self.timeout_completion,
-            RequestAsyncContext,
-            self,
-            cleanup_complete,
-        );
-
-        return .disarm;
-    }
 };
 
 pub fn lua_request(L: *VM.lua.State) !i32 {
@@ -210,19 +157,12 @@ pub fn lua_request(L: *VM.lua.State) !i32 {
     var redirectBehavior: ?std.http.Client.Request.RedirectBehavior = null;
     var headers: ?[]const std.http.Header = null;
     const server_header_buffer_size: usize = 16 * 1024;
-    var timeout: u64 = 30 * std.time.ms_per_s;
 
     const uri = try std.Uri.parse(uri_string);
 
     if (!L.typeOf(2).isnoneornil()) {
         if (try L.Zcheckfield(?[]const u8, 2, "body")) |body|
             payload = try allocator.dupe(u8, body);
-
-        if (try L.Zcheckfield(?f64, 2, "timeout")) |t| {
-            if (t <= 0)
-                return L.Zerror("timeout must be greater than 0");
-            timeout = @intFromFloat(t * std.time.ms_per_s);
-        }
 
         const headers_type = L.getfield(2, "headers");
         if (headers_type == .Table) {
@@ -294,25 +234,15 @@ pub fn lua_request(L: *VM.lua.State) !i32 {
         .payload = payload,
         .server_header_buffer = server_header_buffer,
         .event = try .init(),
-        .async_completion = .init(),
-        .timeout_completion = .init(),
+        .completion = .init(),
         .ref = .init(L),
         .request = req,
         .client = self.client,
     };
 
-    scheduler.timer.run(
-        &scheduler.loop,
-        &self.timeout_completion,
-        5 * std.time.ms_per_s,
-        RequestAsyncContext,
-        self,
-        RequestAsyncContext.timeout_complete,
-    );
-
     self.event.wait(
         &scheduler.loop,
-        &self.async_completion,
+        &self.completion,
         RequestAsyncContext,
         self,
         RequestAsyncContext.complete,
