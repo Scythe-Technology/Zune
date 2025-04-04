@@ -526,9 +526,7 @@ fn loadEnvironment(L: *VM.lua.State, allocator: std.mem.Allocator, file: []const
     };
     defer allocator.free(bytes);
 
-    decodeEnvironment(L, bytes) catch |err| {
-        std.debug.print("{}\n", .{err});
-    };
+    decodeEnvironment(L, bytes) catch {};
 }
 
 fn process_loadEnv(L: *VM.lua.State) !i32 {
