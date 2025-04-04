@@ -12,9 +12,6 @@ const Socket = @import("../../objects/network/Socket.zig");
 
 const UDP = @import("udp.zig");
 const TCP = @import("tcp.zig");
-const HttpServer = @import("httpserver.zig");
-const HttpClient = @import("httpclient.zig");
-const WebSocketClient = @import("websocket.zig");
 
 pub const LIB_NAME = "net";
 pub fn PlatformSupported() bool {
@@ -79,8 +76,6 @@ fn ImportConstants(L: *VM.lua.State, namespace: anytype, comptime name: [:0]cons
 }
 
 pub fn loadLib(L: *VM.lua.State) void {
-    HttpServer.lua_load(L);
-    WebSocketClient.lua_load(L);
     UDP.lua_load(L);
     TCP.lua_load(L);
 
@@ -91,13 +86,7 @@ pub fn loadLib(L: *VM.lua.State) void {
     L.Zsetfieldfn(-1, "tcpHost", TCP.lua_tcp_server);
 
     {
-        L.createtable(0, 3);
-
-        L.Zsetfieldfn(-1, "serve", HttpServer.lua_serve);
-        L.Zsetfieldfn(-1, "request", HttpClient.lua_request);
-        L.Zsetfieldfn(-1, "websocket", WebSocketClient.lua_websocket);
-
-        L.setreadonly(-1, true);
+        @import("http/lib.zig").load(L);
         L.setfield(-2, "http");
     }
 

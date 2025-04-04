@@ -26,14 +26,14 @@ describe("Server", function()
         });
         expect(server).toBe(expect.type("userdata"));
 
-        local rRes = net.http.request("http://localhost:8080");
-        expect(rRes).toBe(expect.type("table"));
-        expect(rRes.ok).toBe(true);
-        expect(rRes.statusCode).toBe(200);
-        expect(rRes.body).toBe("Hello");
-        expect(rRes.headers).toBe(expect.type("table"));
-        expect(rRes.headers["content-length"]).toBe("5");
-        expect(rRes.statusReason).toBe("OK");
+        local res = net.http.request("http://localhost:8080");
+        expect(res).toBe(expect.type("table"));
+        expect(res.ok).toBe(true);
+        expect(res.statusCode).toBe(200);
+        expect(res.body).toBe("Hello");
+        expect(res.headers).toBe(expect.type("table"));
+        expect(res.headers["Content-Length"]).toBe("5");
+        expect(res.statusReason).toBe("OK");
 
         expect(requests).toHaveLength(1);
 
@@ -44,7 +44,6 @@ describe("Server", function()
         expect(request.headers).toBe(expect.type("table"));
         expect(request.headers["host"]).toBe("localhost:8080");
         expect(request.headers["user-agent"]).toBe("Zune/" .. version);
-
         
         expect(function()
             local _ = net.http.request("http://localhost:8085");
@@ -85,20 +84,20 @@ describe("Server", function()
         end)
         expect(server).toBe(expect.type("userdata"));
 
-        local rRes = net.http.request("http://localhost:8080", {
+        local res = net.http.request("http://localhost:8080", {
             method = "PUT",
             headers = {
                 ["Content-Type"] = "text/plain",
             },
             body = "test",
         });
-        expect(rRes).toBe(expect.type("table"));
-        expect(rRes.ok).toBe(true);
-        expect(rRes.statusCode).toBe(200);
-        expect(rRes.body).toBe("Hello");
-        expect(rRes.headers).toBe(expect.type("table"));
-        expect(rRes.headers["content-length"]).toBe("5");
-        expect(rRes.statusReason).toBe("OK");
+        expect(res).toBe(expect.type("table"));
+        expect(res.ok).toBe(true);
+        expect(res.statusCode).toBe(200);
+        expect(res.body).toBe("Hello");
+        expect(res.headers).toBe(expect.type("table"));
+        expect(res.headers["Content-Length"]).toBe("5");
+        expect(res.statusReason).toBe("OK");
 
         expect(requests).toHaveLength(1);
 
@@ -129,14 +128,14 @@ describe("Server", function()
         });
         expect(server).toBe(expect.type("userdata"));
 
-        local rRes = net.http.request("http://localhost:8080");
-        expect(rRes).toBe(expect.type("table"));
-        expect(rRes.ok).toBe(true);
-        expect(rRes.statusCode).toBe(200);
-        expect(rRes.body).toBe("Hello Table Buffer");
-        expect(rRes.headers).toBe(expect.type("table"));
-        expect(rRes.headers["content-length"]).toBe("18");
-        expect(rRes.statusReason).toBe("OK");
+        local res = net.http.request("http://localhost:8080");
+        expect(res).toBe(expect.type("table"));
+        expect(res.ok).toBe(true);
+        expect(res.statusCode).toBe(200);
+        expect(res.body).toBe("Hello Table Buffer");
+        expect(res.headers).toBe(expect.type("table"));
+        expect(res.headers["Content-Length"]).toBe("18");
+        expect(res.statusReason).toBe("OK");
 
         expect(requests).toHaveLength(1);
 
@@ -165,14 +164,14 @@ describe("Server", function()
         });
         expect(server).toBe(expect.type("userdata"));
 
-        local rRes = net.http.request("http://localhost:8080");
-        expect(rRes).toBe(expect.type("table"));
-        expect(rRes.ok).toBe(true);
-        expect(rRes.statusCode).toBe(200);
-        expect(rRes.body).toBe("Hello Buffer");
-        expect(rRes.headers).toBe(expect.type("table"));
-        expect(rRes.headers["content-length"]).toBe("12");
-        expect(rRes.statusReason).toBe("OK");
+        local res = net.http.request("http://localhost:8080");
+        expect(res).toBe(expect.type("table"));
+        expect(res.ok).toBe(true);
+        expect(res.statusCode).toBe(200);
+        expect(res.body).toBe("Hello Buffer");
+        expect(res.headers).toBe(expect.type("table"));
+        expect(res.headers["Content-Length"]).toBe("12");
+        expect(res.statusReason).toBe("OK");
 
         expect(requests).toHaveLength(1);
 
@@ -204,16 +203,16 @@ describe("Server", function()
         local requestsMade = 0;
 
         for _ = 1, 10 do
-            local rRes = net.http.request("http://localhost:8080");
+            local res = net.http.request("http://localhost:8080");
             requestsMade += 1;
 
-            expect(rRes).toBe(expect.type("table"));
-            expect(rRes.ok).toBe(true);
-            expect(rRes.statusCode).toBe(200);
-            expect(rRes.body).toBe("Hello: " .. requestsMade);
-            expect(rRes.headers).toBe(expect.type("table"));
-            expect(rRes.headers["content-length"]).toBe(tostring(7 + #tostring(requestsMade)));
-            expect(rRes.statusReason).toBe("OK");
+            expect(res).toBe(expect.type("table"));
+            expect(res.ok).toBe(true);
+            expect(res.statusCode).toBe(200);
+            expect(res.body).toBe("Hello: " .. requestsMade);
+            expect(res.headers).toBe(expect.type("table"));
+            expect(res.headers["Content-Length"]).toBe(tostring(7 + #tostring(requestsMade)));
+            expect(res.statusReason).toBe("OK");
 
             expect(requests).toHaveLength(requestsMade);
 
@@ -261,15 +260,15 @@ describe("Server", function()
                 server:stop();
             end)
     
-            local rRes = net.http.request("http://localhost:8080");
-            expect(rRes).toBe(expect.type("table"));
-            expect(rRes.ok).toBe(false);
-            expect(rRes.statusCode).toBe(500);
-            expect(rRes.body).toBe("An error occurred on the server");
-            expect(rRes.headers).toBe(expect.type("table"));
-            expect(rRes.headers["content-length"]).toBe("31");
-            expect(rRes.headers["content-type"]).toBe("text/plain");
-            expect(rRes.statusReason).toBe("Internal Server Error");
+            local res = net.http.request("http://localhost:8080");
+            expect(res).toBe(expect.type("table"));
+            expect(res.ok).toBe(false);
+            expect(res.statusCode).toBe(500);
+            expect(res.body).toBe("An error occurred on the server");
+            expect(res.headers).toBe(expect.type("table"));
+            expect(res.headers["Content-Length"]).toBe("31");
+            expect(res.headers["Content-Type"]).toBe("text/plain");
+            expect(res.statusReason).toBe("Internal Server Error");
         end)
         test("Yielded", function()
             local server = net.http.serve({
@@ -286,16 +285,68 @@ describe("Server", function()
                 server:stop();
             end)
     
-            local rRes = net.http.request("http://localhost:8080");
-            expect(rRes).toBe(expect.type("table"));
-            expect(rRes.ok).toBe(false);
-            expect(rRes.statusCode).toBe(500);
-            expect(rRes.body).toBe("An error occurred on the server");
-            expect(rRes.headers).toBe(expect.type("table"));
-            expect(rRes.headers["content-length"]).toBe("31");
-            expect(rRes.headers["content-type"]).toBe("text/plain");
-            expect(rRes.statusReason).toBe("Internal Server Error");
+            local res = net.http.request("http://localhost:8080");
+            expect(res).toBe(expect.type("table"));
+            expect(res.ok).toBe(false);
+            expect(res.statusCode).toBe(500);
+            expect(res.body).toBe("An error occurred on the server");
+            expect(res.headers).toBe(expect.type("table"));
+            expect(res.headers["Content-Length"]).toBe("31");
+            expect(res.headers["Content-Type"]).toBe("text/plain");
+            expect(res.statusReason).toBe("Internal Server Error");
         end)
+    end)
+end)
+
+describe("Requests", function()
+    test("Basic", function()
+        local server = net.http.serve({
+            port = 8080,
+            reuseAddress = true,
+            request = function(req)
+                return {
+                    statusCode = 200,
+                    body = "Hello",
+                    headers = {
+                        ["Content-Type"] = "text/plain",
+                    },
+                }
+            end,
+        });
+        testing.defer(function()
+            server:stop();
+        end)
+        local res = net.http.request("http://localhost:8080", {
+            method = "GET",
+            headers = {
+                ["Content-Type"] = "text/plain",
+            },
+        });
+        expect(res).toBe(expect.type("table"));
+        expect(res.ok).toBe(true);
+        expect(res.statusCode).toBe(200);
+        expect(res.body).toBe("Hello");
+        expect(res.headers).toBe(expect.type("table"));
+        expect(res.headers["Content-Length"]).toBe("5");
+        expect(res.headers["Content-Type"]).toBe("text/plain");
+        expect(res.statusReason).toBe("OK");
+    end)
+    if (zune.process.args[1] ~= "allow") then
+        return;
+    end
+    test("TLS", function()
+        local res = net.http.request("https://github.com", {
+            method = "GET",
+            headers = {
+                ["Content-Type"] = "text/plain",
+            },
+        });
+        expect(res).toBe(expect.type("table"));
+        expect(res.ok).toBe(true);
+        expect(res.statusCode).toBe(200);
+        expect(res.body).toBe(expect.type("string"));
+        expect(res.headers).toBe(expect.type("table"));
+        expect(res.headers["Content-Type"]).toBe(expect.type("string"));
     end)
 end)
 
