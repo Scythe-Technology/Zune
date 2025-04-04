@@ -298,15 +298,14 @@ const ProcessChildOptions = struct {
 const ProcessAsyncRun = struct {
     child: process.Child,
     poller: std.io.Poller(ProcessChildHandle.PollEnum),
-    max_output_bytes: usize = 50 * 1024,
 
     pub fn update(ctx: *ProcessAsyncRun, L: *VM.lua.State, _: *Scheduler) !i32 {
         if (try ctx.poller.pollTimeout(0)) {
             errdefer _ = ctx.child.kill() catch {};
             errdefer ctx.poller.deinit();
-            if (ctx.poller.fifo(.stdout).count > ctx.max_output_bytes)
+            if (ctx.poller.fifo(.stdout).count > luaHelper.MAX_LUAU_SIZE)
                 return error.StdoutStreamTooLong;
-            if (ctx.poller.fifo(.stderr).count > ctx.max_output_bytes)
+            if (ctx.poller.fifo(.stderr).count > luaHelper.MAX_LUAU_SIZE)
                 return error.StderrStreamTooLong;
             return -1;
         }
