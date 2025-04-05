@@ -307,56 +307,6 @@ pub fn addTask(self: *Scheduler, comptime T: type, data: *T, L: *VM.lua.State, c
     }) catch |err| std.debug.panic("Error: {}\n", .{err});
 }
 
-pub fn addSimpleTask(self: *Scheduler, comptime T: type, data: T, L: *VM.lua.State, comptime handler: *const fn (ctx: *T, L: *VM.lua.State, scheduler: *Scheduler) anyerror!i32) !i32 {
-    const allocator = luau.getallocator(L);
-    const virtualFn = struct {
-        fn inner(ctx: *anyopaque, l: *VM.lua.State, scheduler: *Scheduler) TaskResult {
-            if (l.status() != .Yield)
-                return .Stop;
-            const top = l.gettop();
-            if (@call(.always_inline, handler, .{ @as(*T, @alignCast(@ptrCast(ctx))), l, scheduler })) |res| {
-                if (res < 0) {
-                    if (res == -3) {
-                        _ = resumeStateError(l, null) catch {};
-                        return .Stop;
-                    }
-                    const top_now = l.gettop();
-                    if (top_now > top)
-                        l.pop(@intCast(top_now - top));
-                    if (res == -2)
-                        return .ContinueFast;
-                    return .Continue;
-                }
-                _ = resumeState(l, null, res) catch {};
-                return .Stop;
-            } else |err| {
-                l.pushstring(@errorName(err));
-                _ = resumeStateError(l, null) catch {};
-                return .Stop;
-            }
-        }
-    }.inner;
-
-    const virtualDtor = struct {
-        fn inner(ctx: *anyopaque, l: *VM.lua.State, _: *Scheduler) void {
-            luau.getallocator(l).destroy(@as(*T, @alignCast(@ptrCast(ctx))));
-        }
-    }.inner;
-
-    const ptr = allocator.create(T) catch |err| std.debug.panic("Error: {}\n", .{err});
-
-    ptr.* = data;
-
-    self.tasks.append(.{
-        .data = @ptrCast(ptr),
-        .state = ThreadRef.init(L),
-        .virtualFn = virtualFn,
-        .virtualDtor = virtualDtor,
-    }) catch |err| std.debug.panic("Error: {}\n", .{err});
-
-    return L.yield(0);
-}
-
 pub fn awaitResult(
     self: *Scheduler,
     comptime T: type,
