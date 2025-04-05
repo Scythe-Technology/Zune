@@ -228,7 +228,6 @@ describe("ChildProcess", function()
 				ok = true,
 				code = 0,
 				stderr = "",
-				status = "Exited",
 				stdout = "some long message\n",
 			}));
 		end)
@@ -247,7 +246,6 @@ describe("ChildProcess", function()
 				ok = true,
 				code = 0,
 				stderr = "",
-				status = "Exited",
 				stdout = if IS_WINDOWS then "Test\r\n" else "Test\n",
 			}));
 		end)
@@ -267,7 +265,6 @@ describe("ChildProcess", function()
 					ok = true,
 					code = 0,
 					stderr = "",
-					status = "Exited",
 					stdout = "",
 				}));
 			end
@@ -279,7 +276,6 @@ describe("ChildProcess", function()
 					ok = false,
 					code = i,
 					stderr = "",
-					status = "Exited",
 					stdout = "",
 				}));
 			end
@@ -287,6 +283,19 @@ describe("ChildProcess", function()
 	end)
 
 	describe("Create", function()
+		test("Wait", function()
+			local result = process.create("exit", {"0"}, {
+				shell = true,
+			});
+			assert(result.stdin)
+			assert(result.stdout)
+			local status = result:wait();
+			expect(status).toBe(expect.any("table"));
+			expect(status).toBe(expect.similar({
+				ok = true,
+				code = 0,
+			}));
+		end)
 		test("Process Handle", function()
 			local result = process.create("cat");
 			assert(result.stdin)
@@ -295,14 +304,11 @@ describe("ChildProcess", function()
 			expect(result.stdout:read(5)).toBe("Hello");
 			expect(result.stdout:read()).toBe(" World\n");
 
-			expect(result.dead).toBeFalsy();
 			local status = result:kill();
-			expect(result.dead).toBeTruthy();
 			expect(status).toBe(expect.any("table"));
 			expect(status).toBe(expect.similar({
 				ok = false,
 				code = if IS_WINDOWS then 1 else 15,
-				status = if IS_WINDOWS then "Exited" else "Signal",
 			}));
 		end)
 	end)

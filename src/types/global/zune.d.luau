@@ -452,7 +452,6 @@ export type ProcessOptions = {
 export type ProcessResult = {
 	ok: boolean,
 	code: number,
-	status: "Exited" | "Stopped" | "Signal" | "Unknown",
 }
 
 export type ProcessRunResult = ProcessResult & {
@@ -461,7 +460,6 @@ export type ProcessRunResult = ProcessResult & {
 }
 
 declare class ProcessChild
-    dead: boolean
     stdin: FileHandle?
     stdout: FileHandle?
     stderr: FileHandle?
@@ -469,15 +467,11 @@ declare class ProcessChild
     --[[
         Waits for the process to exit. Calls system function.
 
-        Does not yield, **blocks** process.
-
         @return `ProcessResult`
     ]]
     function wait(self): ProcessResult
     --[[
         Kills process. Calls system function.
-
-        Does not yield, **blocks** process.
 
         @return `ProcessResult`
     ]]

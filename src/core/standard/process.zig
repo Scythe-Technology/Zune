@@ -1,6 +1,7 @@
 const std = @import("std");
-const builtin = @import("builtin");
+const xev = @import("xev").Dynamic;
 const luau = @import("luau");
+const builtin = @import("builtin");
 
 const Zune = @import("../../zune.zig");
 const tagged = @import("../../tagged.zig");
@@ -95,62 +96,151 @@ fn internal_process_envmap(L: *VM.lua.State, envMap: *std.process.EnvMap, idx: i
     L.pop(1);
 }
 
-fn internal_process_term(L: *VM.lua.State, term: process.Child.Term) void {
-    L.Zsetfield(-1, "status", @tagName(term));
-    switch (term) {
-        .Exited => |code| {
-            L.Zsetfield(-1, "code", code);
-            L.Zsetfield(-1, "ok", code == 0);
-        },
-        .Stopped, .Signal, .Unknown => |code| {
-            L.Zsetfield(-1, "code", code);
-            L.Zsetfield(-1, "ok", false);
-        },
-    }
-}
-
 const ProcessChildHandle = struct {
     options: ProcessChildOptions,
     child: process.Child,
     dead: bool = false,
+    code: u32 = 0,
+
+    stdin: ?std.fs.File = null,
+    stdout: ?std.fs.File = null,
+    stderr: ?std.fs.File = null,
 
     stdin_file: luaHelper.Ref(void) = .empty,
     stdout_file: luaHelper.Ref(void) = .empty,
     stderr_file: luaHelper.Ref(void) = .empty,
 
-    pub const PollEnum = enum {
-        stdout,
-        stderr,
+    pub const WaitAsyncContext = struct {
+        completion: xev.Completion,
+        ref: Scheduler.ThreadRef,
+        child: xev.Process,
+        handle: luaHelper.Ref(*ProcessChildHandle),
+
+        pub fn complete(
+            ud: ?*WaitAsyncContext,
+            _: *xev.Loop,
+            _: *xev.Completion,
+            r: xev.Process.WaitError!u32,
+        ) xev.CallbackAction {
+            const self = ud orelse unreachable;
+            const L = self.ref.value;
+
+            const scheduler = Scheduler.getScheduler(L);
+            defer scheduler.completeAsync(self);
+            defer self.ref.deref();
+            defer self.child.deinit();
+            defer self.handle.deref(L);
+
+            if (L.status() != .Yield)
+                return .disarm;
+
+            const code = r catch |err| blk: {
+                std.debug.print("[Process Wait Error: {}]\n", .{err});
+                break :blk 1;
+            };
+
+            self.handle.value.code = code;
+            self.handle.value.dead = true;
+
+            L.Zpushvalue(.{
+                .code = code,
+                .ok = code == 0,
+            });
+            _ = Scheduler.resumeState(L, null, 1) catch {};
+
+            return .disarm;
+        }
     };
 
-    fn method_kill(self: *ProcessChildHandle, L: *VM.lua.State) !i32 {
-        const term = try self.child.kill();
-        self.dead = true;
-        L.createtable(0, 3);
-        internal_process_term(L, term);
-        return 1;
+    fn lua_kill(self: *ProcessChildHandle, L: *VM.lua.State) !i32 {
+        if (self.dead) {
+            L.Zpushvalue(.{
+                .code = self.code,
+                .ok = self.code == 0,
+            });
+            return 1;
+        }
+        if (!L.isyieldable())
+            return L.Zyielderror();
+
+        const scheduler = Scheduler.getScheduler(L);
+
+        var child = try xev.Process.init(self.child.id);
+        errdefer child.deinit();
+
+        switch (comptime builtin.os.tag) {
+            .windows => std.os.windows.TerminateProcess(self.child.id, 1) catch |err| switch (err) {
+                error.PermissionDenied => return error.AlreadyTerminated,
+                else => return err,
+            },
+            else => try std.posix.kill(self.child.id, std.posix.SIG.TERM),
+        }
+
+        const wait = try scheduler.createAsyncCtx(WaitAsyncContext);
+
+        wait.* = .{
+            .completion = .init(),
+            .child = child,
+            .ref = .init(L),
+            .handle = .init(L, 1, self),
+        };
+
+        child.wait(
+            &scheduler.loop,
+            &wait.completion,
+            WaitAsyncContext,
+            wait,
+            WaitAsyncContext.complete,
+        );
+
+        return L.yield(0);
     }
 
-    fn method_wait(self: *ProcessChildHandle, L: *VM.lua.State) !i32 {
-        const term = try self.child.wait();
-        self.dead = true;
-        L.createtable(0, 3);
-        internal_process_term(L, term);
-        return 1;
+    fn lua_wait(self: *ProcessChildHandle, L: *VM.lua.State) !i32 {
+        if (self.dead) {
+            L.Zpushvalue(.{
+                .code = self.code,
+                .ok = self.code == 0,
+            });
+            return 1;
+        }
+        if (!L.isyieldable())
+            return L.Zyielderror();
+        const scheduler = Scheduler.getScheduler(L);
+
+        var child = try xev.Process.init(self.child.id);
+        errdefer child.deinit();
+
+        const wait = try scheduler.createAsyncCtx(WaitAsyncContext);
+
+        wait.* = .{
+            .completion = .init(),
+            .child = child,
+            .ref = .init(L),
+            .handle = .init(L, 1, self),
+        };
+
+        child.wait(
+            &scheduler.loop,
+            &wait.completion,
+            WaitAsyncContext,
+            wait,
+            WaitAsyncContext.complete,
+        );
+
+        return L.yield(0);
     }
 
     pub const __namecall = MethodMap.CreateNamecallMap(ProcessChildHandle, TAG_PROCESS_CHILD, .{
-        .{ "kill", method_kill },
-        .{ "wait", method_wait },
+        .{ "kill", lua_kill },
+        .{ "wait", lua_wait },
     });
 
     pub const IndexMap = std.StaticStringMap(enum {
-        Dead,
         Stdin,
         Stdout,
         Stderr,
     }).initComptime(.{
-        .{ "dead", .Dead },
         .{ "stdin", .Stdin },
         .{ "stdout", .Stdout },
         .{ "stderr", .Stderr },
@@ -162,7 +252,6 @@ const ProcessChildHandle = struct {
         const index = L.Lcheckstring(2);
 
         switch (IndexMap.get(index) orelse return L.Zerrorf("Unknown index: {s}", .{index})) {
-            .Dead => L.pushboolean(self.dead),
             .Stdin => {
                 if (self.stdin_file.push(L))
                     return 1;
@@ -192,29 +281,33 @@ const ProcessChildHandle = struct {
         self.stdin_file.deref(L);
         self.stdout_file.deref(L);
         self.stderr_file.deref(L);
+
+        if (self.stdin) |stdin|
+            stdin.close();
+        if (self.stdout) |stdout|
+            stdout.close();
+        if (self.stderr) |stderr|
+            stderr.close();
     }
 };
 
 const ProcessChildOptions = struct {
-    cmd: []const u8,
     cwd: ?[]const u8 = null,
     env: ?process.EnvMap = null,
-    shell: ?[]const u8 = null,
-    shell_inline: ?[]const u8 = "-c",
+    joined: ?[]const u8 = null,
     argArray: std.ArrayList([]const u8),
-    tagged: std.ArrayList([]const u8),
 
     pub fn init(L: *VM.lua.State) !ProcessChildOptions {
         const cmd = try L.Zcheckvalue([:0]const u8, 1, null);
-        const useArgs = L.typeOf(2) == .Table;
         const options = !L.typeOf(3).isnoneornil();
 
         const allocator = luau.getallocator(L);
 
+        var shell: ?[]const u8 = null;
+        var shell_inline: ?[]const u8 = "-c";
+
         var childOptions = ProcessChildOptions{
-            .cmd = cmd,
             .argArray = std.ArrayList([]const u8).init(allocator),
-            .tagged = std.ArrayList([]const u8).init(allocator),
         };
         errdefer childOptions.argArray.deinit();
 
@@ -243,24 +336,24 @@ const ProcessChildOptions = struct {
 
                     // TODO: prob should switch to static string map
                     if (std.mem.eql(u8, shellOption, "sh") or std.mem.eql(u8, shellOption, "/bin/sh")) {
-                        childOptions.shell = "/bin/sh";
+                        shell = "/bin/sh";
                     } else if (std.mem.eql(u8, shellOption, "bash")) {
-                        childOptions.shell = "bash";
+                        shell = "bash";
                     } else if (std.mem.eql(u8, shellOption, "powershell") or std.mem.eql(u8, shellOption, "ps")) {
-                        childOptions.shell = "powershell";
+                        shell = "powershell";
                     } else if (std.mem.eql(u8, shellOption, "cmd")) {
-                        childOptions.shell = "cmd";
-                        childOptions.shell_inline = "/c";
+                        shell = "cmd";
+                        shell_inline = "/c";
                     } else {
-                        childOptions.shell = shellOption;
-                        childOptions.shell_inline = null;
+                        shell = shellOption;
+                        shell_inline = null;
                     }
                 } else if (shellType == .Boolean) {
                     if (L.toboolean(-1)) {
                         switch (native_os) {
-                            .windows => childOptions.shell = "powershell",
-                            .macos, .linux => childOptions.shell = "/bin/sh",
-                            else => childOptions.shell = "/bin/sh",
+                            .windows => shell = "powershell",
+                            .macos, .linux => shell = "/bin/sh",
+                            else => shell = "/bin/sh",
                         }
                     }
                 } else return L.Zerrorf("Invalid shell (string or boolean expected, got {s})", .{VM.lapi.typename(shellType)});
@@ -268,16 +361,18 @@ const ProcessChildOptions = struct {
             L.pop(1);
         }
 
-        if (useArgs)
+        try childOptions.argArray.append(cmd);
+
+        if (L.typeOf(2) == .Table)
             try internal_process_getargs(L, &childOptions.argArray, 2);
 
-        try childOptions.argArray.insert(0, childOptions.cmd);
-        if (childOptions.shell) |shell| {
+        if (shell) |s| {
             const joined = try std.mem.join(allocator, " ", childOptions.argArray.items);
-            try childOptions.tagged.append(joined);
-            childOptions.argArray.clearAndFree();
-            try childOptions.argArray.append(shell);
-            if (childOptions.shell_inline) |inlineCmd|
+            errdefer allocator.free(joined);
+            childOptions.joined = joined;
+            childOptions.argArray.clearRetainingCapacity();
+            try childOptions.argArray.append(s);
+            if (shell_inline) |inlineCmd|
                 try childOptions.argArray.append(inlineCmd);
             try childOptions.argArray.append(joined);
         }
@@ -288,44 +383,72 @@ const ProcessChildOptions = struct {
     fn deinit(self: *ProcessChildOptions) void {
         if (self.env) |*env|
             env.deinit();
-        for (self.tagged.items) |mem|
-            self.tagged.allocator.free(mem);
+        if (self.joined) |mem|
+            self.argArray.allocator.free(mem);
         self.argArray.deinit();
-        self.tagged.deinit();
     }
 };
 
-const ProcessAsyncRun = struct {
-    child: process.Child,
-    poller: std.io.Poller(ProcessChildHandle.PollEnum),
+const ProcessAsyncRunContext = struct {
+    completion: xev.Completion,
+    ref: Scheduler.ThreadRef,
+    child: xev.Process,
+    poller: std.io.Poller(ProcessAsyncRunContext.PollEnum),
 
-    pub fn update(ctx: *ProcessAsyncRun, L: *VM.lua.State, _: *Scheduler) !i32 {
-        if (try ctx.poller.pollTimeout(0)) {
-            errdefer _ = ctx.child.kill() catch {};
-            errdefer ctx.poller.deinit();
-            if (ctx.poller.fifo(.stdout).count > luaHelper.MAX_LUAU_SIZE)
-                return error.StdoutStreamTooLong;
-            if (ctx.poller.fifo(.stderr).count > luaHelper.MAX_LUAU_SIZE)
-                return error.StderrStreamTooLong;
-            return -1;
+    stdout: ?std.fs.File,
+    stderr: ?std.fs.File,
+
+    pub const PollEnum = enum {
+        stdout,
+        stderr,
+    };
+
+    pub fn complete(
+        ud: ?*ProcessAsyncRunContext,
+        _: *xev.Loop,
+        _: *xev.Completion,
+        r: xev.Process.WaitError!u32,
+    ) xev.CallbackAction {
+        const self = ud orelse unreachable;
+        const L = self.ref.value;
+
+        _ = self.poller.poll() catch {};
+        defer self.poller.deinit();
+
+        const scheduler = Scheduler.getScheduler(L);
+        defer scheduler.completeAsync(self);
+        defer self.ref.deref();
+        defer self.child.deinit();
+        defer {
+            if (self.stdout) |stdout|
+                stdout.close();
+            if (self.stderr) |stderr|
+                stderr.close();
         }
-        defer ctx.poller.deinit();
 
-        const stdout_fifo = ctx.poller.fifo(.stdout);
-        const stdout = stdout_fifo.readableSliceOfLen(stdout_fifo.count);
-        const stderr_fifo = ctx.poller.fifo(.stderr);
-        const stderr = stderr_fifo.readableSliceOfLen(stderr_fifo.count);
+        if (L.status() != .Yield)
+            return .disarm;
 
-        const term = try ctx.child.wait();
+        const code = r catch |err| blk: {
+            std.debug.print("[Process Run Error: {}]\n", .{err});
+            break :blk 1;
+        };
 
-        L.createtable(0, 5);
+        const stdout_fifo = self.poller.fifo(.stdout);
+        const stdout = stdout_fifo.readableSliceOfLen(@min(stdout_fifo.count, luaHelper.MAX_LUAU_SIZE));
+        const stderr_fifo = self.poller.fifo(.stderr);
+        const stderr = stderr_fifo.readableSliceOfLen(@min(stderr_fifo.count, luaHelper.MAX_LUAU_SIZE));
 
-        L.Zsetfield(-1, "stdout", stdout);
-        L.Zsetfield(-1, "stderr", stderr);
+        L.Zpushvalue(.{
+            .code = code,
+            .ok = code == 0,
+            .stdout = stdout,
+            .stderr = stderr,
+        });
 
-        internal_process_term(L, term);
+        _ = Scheduler.resumeState(L, null, 1) catch {};
 
-        return 1;
+        return .disarm;
     }
 };
 
@@ -348,16 +471,37 @@ fn process_run(L: *VM.lua.State) !i32 {
     child.expand_arg0 = .no_expand;
 
     try child.spawn();
+    try child.waitForSpawn();
+    errdefer _ = child.kill() catch {};
 
-    const poller = std.io.poll(allocator, ProcessChildHandle.PollEnum, .{
+    const poller = std.io.poll(allocator, ProcessAsyncRunContext.PollEnum, .{
         .stdout = child.stdout.?,
         .stderr = child.stderr.?,
     });
 
-    return scheduler.addSimpleTask(ProcessAsyncRun, .{
-        .child = child,
+    var proc = try xev.Process.init(child.id);
+    errdefer proc.deinit();
+
+    const self = try scheduler.createAsyncCtx(ProcessAsyncRunContext);
+
+    self.* = .{
+        .completion = .init(),
+        .child = proc,
+        .stdout = child.stdout,
+        .stderr = child.stderr,
         .poller = poller,
-    }, L, ProcessAsyncRun.update);
+        .ref = .init(L),
+    };
+
+    proc.wait(
+        &scheduler.loop,
+        &self.completion,
+        ProcessAsyncRunContext,
+        self,
+        ProcessAsyncRunContext.complete,
+    );
+
+    return L.yield(0);
 }
 
 fn process_create(L: *VM.lua.State) !i32 {
@@ -365,7 +509,6 @@ fn process_create(L: *VM.lua.State) !i32 {
 
     const childOptions = try ProcessChildOptions.init(L);
 
-    const handlePtr = L.newuserdatataggedwithmetatable(ProcessChildHandle, TAG_PROCESS_CHILD);
     var child = process.Child.init(childOptions.argArray.items, allocator);
     child.expand_arg0 = .no_expand;
     child.stdin_behavior = .Pipe;
@@ -377,36 +520,38 @@ fn process_create(L: *VM.lua.State) !i32 {
     else
         null;
 
-    handlePtr.* = .{
+    switch (comptime builtin.os.tag) {
+        .windows => try @import("../utils/os/windows.zig").spawnWindows(&child),
+        else => try child.spawn(),
+    }
+    try child.waitForSpawn();
+    errdefer _ = child.kill() catch {};
+
+    const self = L.newuserdatataggedwithmetatable(ProcessChildHandle, TAG_PROCESS_CHILD);
+
+    self.* = .{
         .options = childOptions,
         .child = child,
     };
 
-    {
-        errdefer L.pop(2);
-        switch (comptime builtin.os.tag) {
-            .windows => try @import("../utils/os/windows.zig").spawnWindows(&child),
-            else => try child.spawn(),
-        }
-    }
-
-    if (child.stdin) |file| {
-        File.push(L, file, .Tty, .writable(false)) catch |err| std.debug.panic("{s}\n", .{@errorName(err)});
-        handlePtr.stdin_file = .init(L, -1, undefined);
+    if (self.child.stdin) |file| {
+        try File.push(L, file, .Tty, .writable(false));
+        self.stdin_file = .init(L, -1, undefined);
+        self.stdin = file;
         L.pop(1);
     }
-    if (child.stdout) |file| {
-        File.push(L, file, .Tty, .readable(false)) catch |err| std.debug.panic("{s}\n", .{@errorName(err)});
-        handlePtr.stdout_file = .init(L, -1, undefined);
+    if (self.child.stdout) |file| {
+        try File.push(L, file, .Tty, .readable(false));
+        self.stdout_file = .init(L, -1, undefined);
+        self.stdout = file;
         L.pop(1);
     }
-    if (child.stderr) |file| {
-        File.push(L, file, .Tty, .readable(false)) catch |err| std.debug.panic("{s}\n", .{@errorName(err)});
-        handlePtr.stderr_file = .init(L, -1, undefined);
+    if (self.child.stderr) |file| {
+        try File.push(L, file, .Tty, .readable(false));
+        self.stderr_file = .init(L, -1, undefined);
+        self.stderr = file;
         L.pop(1);
     }
-
-    handlePtr.child = child;
 
     return 1;
 }

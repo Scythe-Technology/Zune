@@ -316,20 +316,29 @@ describe("Requests", function()
         testing.defer(function()
             server:stop();
         end)
-        local res = net.http.request("http://localhost:8080", {
-            method = "GET",
-            headers = {
-                ["Content-Type"] = "text/plain",
-            },
-        });
-        expect(res).toBe(expect.type("table"));
-        expect(res.ok).toBe(true);
-        expect(res.statusCode).toBe(200);
-        expect(res.body).toBe("Hello");
-        expect(res.headers).toBe(expect.type("table"));
-        expect(res.headers["Content-Length"]).toBe("5");
-        expect(res.headers["Content-Type"]).toBe("text/plain");
-        expect(res.statusReason).toBe("OK");
+        local spawned = 10;
+        for _ = 1, spawned do
+            task.spawn(function()
+                local res = net.http.request("http://localhost:8080", {
+                    method = "GET",
+                    headers = {
+                        ["Content-Type"] = "text/plain",
+                    },
+                });
+                expect(res).toBe(expect.type("table"));
+                expect(res.ok).toBe(true);
+                expect(res.statusCode).toBe(200);
+                expect(res.body).toBe("Hello");
+                expect(res.headers).toBe(expect.type("table"));
+                expect(res.headers["Content-Length"]).toBe("5");
+                expect(res.headers["Content-Type"]).toBe("text/plain");
+                expect(res.statusReason).toBe("OK");
+                spawned -= 1;
+            end)
+        end
+        repeat
+            task.wait();
+        until (spawned == 0);
     end)
     if (zune.process.args[1] ~= "allow") then
         return;
