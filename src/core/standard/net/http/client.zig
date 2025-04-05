@@ -21,7 +21,6 @@ const ZUNE_CLIENT_HEADER = "Zune/" ++ zune_info.version;
 const RequestAsyncContext = struct {
     completion: xev.Completion,
     task: xev.ThreadPool.Task,
-    event: xev.Async,
 
     ref: Scheduler.ThreadRef,
     client: std.http.Client,
@@ -45,6 +44,8 @@ const RequestAsyncContext = struct {
     pub fn task_thread_main(task: *xev.ThreadPool.Task) void {
         const self: *RequestAsyncContext = @fieldParentPtr("task", task);
 
+        const scheduler = Scheduler.getScheduler(self.ref.value);
+
         while (true) {
             self.doWork() catch |err| switch (err) {
                 error.Retry => continue,
@@ -57,37 +58,17 @@ const RequestAsyncContext = struct {
             break;
         }
 
-        var attempts: u32 = 0;
-        while (attempts < 50) : (attempts += 1) {
-            self.event.notify() catch continue;
-            break;
-        }
+        scheduler.synchronize(self);
     }
 
-    pub fn complete(
-        ud: ?*RequestAsyncContext,
-        _: *xev.Loop,
-        _: *xev.Completion,
-        res: xev.Async.WaitError!void,
-    ) xev.CallbackAction {
-        const self = ud orelse unreachable;
+    pub fn complete(self: *RequestAsyncContext) void {
         const L = self.ref.value;
 
         const allocator = luau.getallocator(L);
-        const scheduler = Scheduler.getScheduler(L);
 
-        if (L.status() != .Yield)
-            return .disarm;
-
-        res catch |err| {
-            self.err = err;
-        };
-
-        defer scheduler.completeAsync(self);
         defer allocator.free(self.server_header_buffer);
         defer if (self.payload) |p| allocator.free(p);
         defer self.ref.deref();
-        defer self.event.deinit();
         defer self.client.deinit();
         defer self.request.deinit();
         defer if (self.request.extra_headers.len > 0) {
@@ -99,9 +80,7 @@ const RequestAsyncContext = struct {
         };
 
         if (L.status() != .Yield)
-            return .disarm;
-
-        res catch {};
+            return;
 
         switch (self.err) {
             error.Completed => {
@@ -126,7 +105,7 @@ const RequestAsyncContext = struct {
                 self.request.reader().readAllArrayList(&responseBody, luaHelper.MAX_LUAU_SIZE) catch |err| {
                     L.pushstring(@errorName(err));
                     _ = Scheduler.resumeStateError(L, null) catch {};
-                    return .disarm;
+                    return;
                 };
 
                 L.pushlstring(responseBody.items);
@@ -139,8 +118,6 @@ const RequestAsyncContext = struct {
                 _ = Scheduler.resumeStateError(L, null) catch {};
             },
         }
-
-        return .disarm;
     }
 };
 
@@ -207,8 +184,8 @@ pub fn lua_request(L: *VM.lua.State) !i32 {
     const server_header_buffer = try allocator.alloc(u8, server_header_buffer_size);
     errdefer allocator.free(server_header_buffer);
 
-    const self = try scheduler.createAsyncCtx(RequestAsyncContext);
-    errdefer scheduler.completeAsync(self);
+    const self = try scheduler.createSync(RequestAsyncContext, RequestAsyncContext.complete);
+    errdefer scheduler.freeSync(self);
 
     self.client = .{ .allocator = allocator };
     errdefer self.client.deinit();
@@ -233,20 +210,13 @@ pub fn lua_request(L: *VM.lua.State) !i32 {
         .task = .{ .callback = RequestAsyncContext.task_thread_main },
         .payload = payload,
         .server_header_buffer = server_header_buffer,
-        .event = try .init(),
         .completion = .init(),
         .ref = .init(L),
         .request = req,
         .client = self.client,
     };
 
-    self.event.wait(
-        &scheduler.loop,
-        &self.completion,
-        RequestAsyncContext,
-        self,
-        RequestAsyncContext.complete,
-    );
+    scheduler.asyncWaitForSync(self);
 
     scheduler.thread_pool.schedule(.from(&self.task));
 
