@@ -31,16 +31,34 @@ pub const OpenMode = packed struct {
     read: bool = false,
     write: bool = false,
     seek: bool = false,
+    close: bool = false,
 
     pub const closed: OpenMode = .{};
-    pub fn writable(seekable: bool) OpenMode {
-        return .{ .read = false, .write = true, .seek = seekable };
+
+    const ExtraOptions = enum { none, seek, close, seek_close };
+    pub fn writable(extra: ExtraOptions) OpenMode {
+        return .{
+            .read = false,
+            .write = true,
+            .seek = extra == .seek or extra == .seek_close,
+            .close = extra == .close or extra == .seek_close,
+        };
     }
-    pub fn readable(seekable: bool) OpenMode {
-        return .{ .read = true, .write = false, .seek = seekable };
+    pub fn readable(extra: ExtraOptions) OpenMode {
+        return .{
+            .read = true,
+            .write = false,
+            .seek = extra == .seek or extra == .seek_close,
+            .close = extra == .close or extra == .seek_close,
+        };
     }
-    pub fn readwrite(seekable: bool) OpenMode {
-        return .{ .read = true, .write = true, .seek = seekable };
+    pub fn readwrite(extra: ExtraOptions) OpenMode {
+        return .{
+            .read = true,
+            .write = true,
+            .seek = extra == .seek or extra == .seek_close,
+            .close = extra == .close or extra == .seek_close,
+        };
     }
 
     pub inline fn isOpen(self: OpenMode) bool {
@@ -706,11 +724,9 @@ pub const AsyncCloseContext = struct {
 };
 
 fn lua_close(self: *File, L: *VM.lua.State) !i32 {
-    switch (self.kind) {
-        .File => {},
-        .Tty => return error.NotCloseable,
-    }
     if (self.mode.isOpen()) {
+        if (!self.mode.close)
+            return error.NotCloseable;
         self.mode = .closed;
         const scheduler = Scheduler.getScheduler(L);
         const file = xev.File.init(self.file) catch unreachable;
@@ -771,7 +787,7 @@ const __index = MethodMap.CreateStaticIndexMap(File, TAG_FS_FILE, .{
 
 pub fn __dtor(L: *VM.lua.State, self: *File) void {
     const allocator = luau.getallocator(L);
-    if (self.mode.isOpen() and self.kind == .File)
+    if (self.mode.isOpen() and self.mode.close)
         self.file.close();
     allocator.destroy(self.list);
 }

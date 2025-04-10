@@ -599,15 +599,15 @@ pub fn loadLib(L: *VM.lua.State) void {
     const stdErr = std.io.getStdErr();
 
     // StdIn
-    File.push(L, stdIn, .Tty, .readable(false)) catch |err| std.debug.panic("{}", .{err});
+    File.push(L, stdIn, .Tty, .readable(.none)) catch |err| std.debug.panic("{}", .{err});
     L.setfield(-2, "stdin");
 
     // StdOut
-    File.push(L, stdOut, .Tty, .writable(false)) catch |err| std.debug.panic("{}", .{err});
+    File.push(L, stdOut, .Tty, .writable(.none)) catch |err| std.debug.panic("{}", .{err});
     L.setfield(-2, "stdout");
 
     // StdErr
-    File.push(L, stdErr, .Tty, .writable(false)) catch |err| std.debug.panic("{}", .{err});
+    File.push(L, stdErr, .Tty, .writable(.none)) catch |err| std.debug.panic("{}", .{err});
     L.setfield(-2, "stderr");
 
     // Terminal

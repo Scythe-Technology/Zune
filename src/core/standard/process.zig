@@ -134,10 +134,15 @@ const ProcessChildHandle = struct {
             if (L.status() != .Yield)
                 return .disarm;
 
-            const code = r catch |err| blk: {
-                std.debug.print("[Process Wait Error: {}]\n", .{err});
-                break :blk 1;
+            var code = r catch |err| switch (err) {
+                else => blk: {
+                    std.debug.print("[Process Wait Error: {}]\n", .{err});
+                    break :blk 1;
+                },
             };
+
+            if (self.handle.value.code != 0)
+                code = self.handle.value.code;
 
             self.handle.value.code = code;
             self.handle.value.dead = true;
@@ -173,7 +178,10 @@ const ProcessChildHandle = struct {
                 error.PermissionDenied => return error.AlreadyTerminated,
                 else => return err,
             },
-            else => try std.posix.kill(self.child.id, std.posix.SIG.TERM),
+            else => {
+                self.code = std.posix.SIG.TERM;
+                try std.posix.kill(self.child.id, std.posix.SIG.TERM);
+            },
         }
 
         const wait = try scheduler.createAsyncCtx(WaitAsyncContext);
@@ -192,6 +200,8 @@ const ProcessChildHandle = struct {
             wait,
             WaitAsyncContext.complete,
         );
+
+        scheduler.loop.submit() catch {};
 
         return L.yield(0);
     }
@@ -227,6 +237,8 @@ const ProcessChildHandle = struct {
             wait,
             WaitAsyncContext.complete,
         );
+
+        scheduler.loop.submit() catch {};
 
         return L.yield(0);
     }
@@ -281,13 +293,6 @@ const ProcessChildHandle = struct {
         self.stdin_file.deref(L);
         self.stdout_file.deref(L);
         self.stderr_file.deref(L);
-
-        if (self.stdin) |stdin|
-            stdin.close();
-        if (self.stdout) |stdout|
-            stdout.close();
-        if (self.stderr) |stderr|
-            stderr.close();
     }
 };
 
@@ -392,7 +397,7 @@ const ProcessChildOptions = struct {
 const ProcessAsyncRunContext = struct {
     completion: xev.Completion,
     ref: Scheduler.ThreadRef,
-    child: xev.Process,
+    proc: xev.Process,
     poller: std.io.Poller(ProcessAsyncRunContext.PollEnum),
 
     stdout: ?std.fs.File,
@@ -413,12 +418,12 @@ const ProcessAsyncRunContext = struct {
         const L = self.ref.value;
 
         _ = self.poller.poll() catch {};
-        defer self.poller.deinit();
 
         const scheduler = Scheduler.getScheduler(L);
         defer scheduler.completeAsync(self);
         defer self.ref.deref();
-        defer self.child.deinit();
+        defer self.proc.deinit();
+        defer self.poller.deinit();
         defer {
             if (self.stdout) |stdout|
                 stdout.close();
@@ -429,9 +434,11 @@ const ProcessAsyncRunContext = struct {
         if (L.status() != .Yield)
             return .disarm;
 
-        const code = r catch |err| blk: {
-            std.debug.print("[Process Run Error: {}]\n", .{err});
-            break :blk 1;
+        const code = r catch |err| switch (err) {
+            else => blk: {
+                std.debug.print("[Process Wait Error: {}]\n", .{err});
+                break :blk 1;
+            },
         };
 
         const stdout_fifo = self.poller.fifo(.stdout);
@@ -486,7 +493,7 @@ fn process_run(L: *VM.lua.State) !i32 {
 
     self.* = .{
         .completion = .init(),
-        .child = proc,
+        .proc = proc,
         .stdout = child.stdout,
         .stderr = child.stderr,
         .poller = poller,
@@ -500,6 +507,8 @@ fn process_run(L: *VM.lua.State) !i32 {
         self,
         ProcessAsyncRunContext.complete,
     );
+
+    scheduler.loop.submit() catch {};
 
     return L.yield(0);
 }
@@ -535,19 +544,19 @@ fn process_create(L: *VM.lua.State) !i32 {
     };
 
     if (self.child.stdin) |file| {
-        try File.push(L, file, .Tty, .writable(false));
+        try File.push(L, file, .Tty, .writable(.close));
         self.stdin_file = .init(L, -1, undefined);
         self.stdin = file;
         L.pop(1);
     }
     if (self.child.stdout) |file| {
-        try File.push(L, file, .Tty, .readable(false));
+        try File.push(L, file, .Tty, .readable(.close));
         self.stdout_file = .init(L, -1, undefined);
         self.stdout = file;
         L.pop(1);
     }
     if (self.child.stderr) |file| {
-        try File.push(L, file, .Tty, .readable(false));
+        try File.push(L, file, .Tty, .readable(.close));
         self.stderr_file = .init(L, -1, undefined);
         self.stderr = file;
         L.pop(1);
