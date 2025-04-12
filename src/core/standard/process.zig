@@ -11,6 +11,7 @@ const Scheduler = @import("../runtime/scheduler.zig");
 const Parser = @import("../utils/parser.zig");
 
 const File = @import("../objects/filesystem/File.zig");
+const ProcessChild = @import("../objects/process//Child.zig");
 
 const luaHelper = @import("../utils/luahelper.zig");
 const sysfd = @import("../utils/sysfd.zig");
@@ -26,10 +27,7 @@ const TAG_PROCESS_CHILD = tagged.Tags.get("PROCESS_CHILD").?;
 
 pub const LIB_NAME = "process";
 pub fn PlatformSupported() bool {
-    return switch (comptime builtin.os.tag) {
-        .linux, .macos, .windows => true,
-        else => false,
-    };
+    return true;
 }
 
 pub var SIGINT_LUA: ?LuaSigHandler = null;
@@ -95,206 +93,6 @@ fn internal_process_envmap(L: *VM.lua.State, envMap: *std.process.EnvMap, idx: i
     }
     L.pop(1);
 }
-
-const ProcessChildHandle = struct {
-    options: ProcessChildOptions,
-    child: process.Child,
-    dead: bool = false,
-    code: u32 = 0,
-
-    stdin: ?std.fs.File = null,
-    stdout: ?std.fs.File = null,
-    stderr: ?std.fs.File = null,
-
-    stdin_file: luaHelper.Ref(void) = .empty,
-    stdout_file: luaHelper.Ref(void) = .empty,
-    stderr_file: luaHelper.Ref(void) = .empty,
-
-    pub const WaitAsyncContext = struct {
-        completion: xev.Completion,
-        ref: Scheduler.ThreadRef,
-        child: xev.Process,
-        handle: luaHelper.Ref(*ProcessChildHandle),
-
-        pub fn complete(
-            ud: ?*WaitAsyncContext,
-            _: *xev.Loop,
-            _: *xev.Completion,
-            r: xev.Process.WaitError!u32,
-        ) xev.CallbackAction {
-            const self = ud orelse unreachable;
-            const L = self.ref.value;
-
-            const scheduler = Scheduler.getScheduler(L);
-            defer scheduler.completeAsync(self);
-            defer self.ref.deref();
-            defer self.child.deinit();
-            defer self.handle.deref(L);
-
-            if (L.status() != .Yield)
-                return .disarm;
-
-            var code = r catch |err| switch (err) {
-                else => blk: {
-                    std.debug.print("[Process Wait Error: {}]\n", .{err});
-                    break :blk 1;
-                },
-            };
-
-            if (self.handle.value.code != 0)
-                code = self.handle.value.code;
-
-            self.handle.value.code = code;
-            self.handle.value.dead = true;
-
-            L.Zpushvalue(.{
-                .code = code,
-                .ok = code == 0,
-            });
-            _ = Scheduler.resumeState(L, null, 1) catch {};
-
-            return .disarm;
-        }
-    };
-
-    fn lua_kill(self: *ProcessChildHandle, L: *VM.lua.State) !i32 {
-        if (self.dead) {
-            L.Zpushvalue(.{
-                .code = self.code,
-                .ok = self.code == 0,
-            });
-            return 1;
-        }
-        if (!L.isyieldable())
-            return L.Zyielderror();
-
-        const scheduler = Scheduler.getScheduler(L);
-
-        var child = try xev.Process.init(self.child.id);
-        errdefer child.deinit();
-
-        switch (comptime builtin.os.tag) {
-            .windows => std.os.windows.TerminateProcess(self.child.id, 1) catch |err| switch (err) {
-                error.PermissionDenied => return error.AlreadyTerminated,
-                else => return err,
-            },
-            else => {
-                self.code = std.posix.SIG.TERM;
-                try std.posix.kill(self.child.id, std.posix.SIG.TERM);
-            },
-        }
-
-        const wait = try scheduler.createAsyncCtx(WaitAsyncContext);
-
-        wait.* = .{
-            .completion = .init(),
-            .child = child,
-            .ref = .init(L),
-            .handle = .init(L, 1, self),
-        };
-
-        child.wait(
-            &scheduler.loop,
-            &wait.completion,
-            WaitAsyncContext,
-            wait,
-            WaitAsyncContext.complete,
-        );
-
-        scheduler.loop.submit() catch {};
-
-        return L.yield(0);
-    }
-
-    fn lua_wait(self: *ProcessChildHandle, L: *VM.lua.State) !i32 {
-        if (self.dead) {
-            L.Zpushvalue(.{
-                .code = self.code,
-                .ok = self.code == 0,
-            });
-            return 1;
-        }
-        if (!L.isyieldable())
-            return L.Zyielderror();
-        const scheduler = Scheduler.getScheduler(L);
-
-        var child = try xev.Process.init(self.child.id);
-        errdefer child.deinit();
-
-        const wait = try scheduler.createAsyncCtx(WaitAsyncContext);
-
-        wait.* = .{
-            .completion = .init(),
-            .child = child,
-            .ref = .init(L),
-            .handle = .init(L, 1, self),
-        };
-
-        child.wait(
-            &scheduler.loop,
-            &wait.completion,
-            WaitAsyncContext,
-            wait,
-            WaitAsyncContext.complete,
-        );
-
-        scheduler.loop.submit() catch {};
-
-        return L.yield(0);
-    }
-
-    pub const __namecall = MethodMap.CreateNamecallMap(ProcessChildHandle, TAG_PROCESS_CHILD, .{
-        .{ "kill", lua_kill },
-        .{ "wait", lua_wait },
-    });
-
-    pub const IndexMap = std.StaticStringMap(enum {
-        Stdin,
-        Stdout,
-        Stderr,
-    }).initComptime(.{
-        .{ "stdin", .Stdin },
-        .{ "stdout", .Stdout },
-        .{ "stderr", .Stderr },
-    });
-
-    pub fn __index(L: *VM.lua.State) !i32 {
-        try L.Zchecktype(1, .Userdata);
-        const self = L.touserdatatagged(ProcessChildHandle, 1, TAG_PROCESS_CHILD) orelse return 0;
-        const index = L.Lcheckstring(2);
-
-        switch (IndexMap.get(index) orelse return L.Zerrorf("Unknown index: {s}", .{index})) {
-            .Stdin => {
-                if (self.stdin_file.push(L))
-                    return 1;
-                L.pushnil();
-                return 1;
-            },
-            .Stdout => {
-                if (self.stdout_file.push(L))
-                    return 1;
-                L.pushnil();
-                return 1;
-            },
-            .Stderr => {
-                if (self.stderr_file.push(L))
-                    return 1;
-                L.pushnil();
-                return 1;
-            },
-        }
-
-        return 1;
-    }
-
-    pub fn __dtor(L: *VM.lua.State, self: *ProcessChildHandle) void {
-        var options = self.options;
-        options.deinit();
-        self.stdin_file.deref(L);
-        self.stdout_file.deref(L);
-        self.stderr_file.deref(L);
-    }
-};
 
 const ProcessChildOptions = struct {
     cwd: ?[]const u8 = null,
@@ -434,7 +232,8 @@ const ProcessAsyncRunContext = struct {
         if (L.status() != .Yield)
             return .disarm;
 
-        const code = r catch |err| switch (err) {
+        const code: u32 = r catch |err| switch (@as(anyerror, err)) {
+            error.NoSuchProcess => 0, // kqueue
             else => blk: {
                 std.debug.print("[Process Wait Error: {}]\n", .{err});
                 break :blk 1;
@@ -460,18 +259,20 @@ const ProcessAsyncRunContext = struct {
 };
 
 fn process_run(L: *VM.lua.State) !i32 {
+    if (comptime !std.process.can_spawn)
+        return L.Zerror("Platform cannot spawn process");
     const scheduler = Scheduler.getScheduler(L);
     const allocator = luau.getallocator(L);
 
-    var childOptions = try ProcessChildOptions.init(L);
-    defer childOptions.deinit();
+    var options = try ProcessChildOptions.init(L);
+    defer options.deinit();
 
-    var child = process.Child.init(childOptions.argArray.items, allocator);
+    var child = process.Child.init(options.argArray.items, allocator);
     child.stdin_behavior = .Ignore;
     child.stdout_behavior = .Pipe;
     child.stderr_behavior = .Pipe;
-    child.cwd = childOptions.cwd;
-    child.env_map = if (childOptions.env) |env|
+    child.cwd = options.cwd;
+    child.env_map = if (options.env) |env|
         &env
     else
         null;
@@ -514,17 +315,20 @@ fn process_run(L: *VM.lua.State) !i32 {
 }
 
 fn process_create(L: *VM.lua.State) !i32 {
+    if (comptime !std.process.can_spawn)
+        return L.Zerror("Platform cannot spawn process");
     const allocator = luau.getallocator(L);
 
-    const childOptions = try ProcessChildOptions.init(L);
+    var options = try ProcessChildOptions.init(L);
+    defer options.deinit();
 
-    var child = process.Child.init(childOptions.argArray.items, allocator);
+    var child = process.Child.init(options.argArray.items, allocator);
     child.expand_arg0 = .no_expand;
     child.stdin_behavior = .Pipe;
     child.stdout_behavior = .Pipe;
     child.stderr_behavior = .Pipe;
-    child.cwd = childOptions.cwd;
-    child.env_map = if (childOptions.env) |env|
+    child.cwd = options.cwd;
+    child.env_map = if (options.env) |env|
         &env
     else
         null;
@@ -536,31 +340,7 @@ fn process_create(L: *VM.lua.State) !i32 {
     try child.waitForSpawn();
     errdefer _ = child.kill() catch {};
 
-    const self = L.newuserdatataggedwithmetatable(ProcessChildHandle, TAG_PROCESS_CHILD);
-
-    self.* = .{
-        .options = childOptions,
-        .child = child,
-    };
-
-    if (self.child.stdin) |file| {
-        try File.push(L, file, .Tty, .writable(.close));
-        self.stdin_file = .init(L, -1, undefined);
-        self.stdin = file;
-        L.pop(1);
-    }
-    if (self.child.stdout) |file| {
-        try File.push(L, file, .Tty, .readable(.close));
-        self.stdout_file = .init(L, -1, undefined);
-        self.stdout = file;
-        L.pop(1);
-    }
-    if (self.child.stderr) |file| {
-        try File.push(L, file, .Tty, .readable(.close));
-        self.stderr_file = .init(L, -1, undefined);
-        self.stderr = file;
-        L.pop(1);
-    }
+    try ProcessChild.push(L, child);
 
     return 1;
 }
@@ -758,17 +538,6 @@ fn lib__newindex(L: *VM.lua.State) !i32 {
 
 pub fn loadLib(L: *VM.lua.State, args: []const []const u8) !void {
     const allocator = luau.getallocator(L);
-
-    {
-        _ = L.Znewmetatable(@typeName(ProcessChildHandle), .{
-            .__index = ProcessChildHandle.__index,
-            .__namecall = ProcessChildHandle.__namecall,
-            .__metatable = "Metatable is locked",
-        });
-        L.setreadonly(-1, true);
-        L.setuserdatametatable(TAG_PROCESS_CHILD);
-        L.setuserdatadtor(ProcessChildHandle, TAG_PROCESS_CHILD, ProcessChildHandle.__dtor);
-    }
 
     L.createtable(0, 10);
 

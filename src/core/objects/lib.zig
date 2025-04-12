@@ -10,6 +10,10 @@ pub const network = struct {
     pub const Socket = @import("network/Socket.zig");
 };
 
+pub const process = struct {
+    pub const Child = @import("process/Child.zig");
+};
+
 fn loadNamespace(comptime ns: type, L: *VM.lua.State) void {
     inline for (@typeInfo(ns).@"struct".decls) |field| {
         const object = @field(ns, field.name);
