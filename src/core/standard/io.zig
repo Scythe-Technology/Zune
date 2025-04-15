@@ -3,8 +3,6 @@ const xev = @import("xev").Dynamic;
 const luau = @import("luau");
 const builtin = @import("builtin");
 
-const Engine = @import("../runtime/engine.zig");
-const Scheduler = @import("../runtime/scheduler.zig");
 const Formatter = @import("../resolvers/fmt.zig");
 
 const luaHelper = @import("../utils/luahelper.zig");

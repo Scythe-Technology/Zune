@@ -10,7 +10,7 @@ var ticks: u64 = 0;
 var currentTicks: u64 = 0;
 
 var samples: u64 = 0;
-var frequency: u64 = 100;
+var frequency: u64 = 10000;
 
 var gcstats: [16]u64 = [_]u64{0} ** 16;
 

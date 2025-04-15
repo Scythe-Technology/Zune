@@ -3,7 +3,6 @@ const luau = @import("luau");
 
 const file = @import("file.zig");
 
-const Scheduler = @import("../runtime/scheduler.zig");
 const Parser = @import("../utils/parser.zig");
 
 const VM = luau.VM;

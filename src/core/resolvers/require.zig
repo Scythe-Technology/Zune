@@ -24,13 +24,6 @@ const RequireError = error{
     NoAlias,
 };
 
-pub const POSSIBLE_EXTENSIONS = [_][]const u8{
-    ".luau",
-    ".lua",
-    "/init.luau",
-    "/init.lua",
-};
-
 pub var ALIASES: std.StringArrayHashMap([]const u8) = std.StringArrayHashMap([]const u8).init(Zune.DEFAULT_ALLOCATOR);
 
 const States = enum {

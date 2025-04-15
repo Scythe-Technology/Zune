@@ -260,7 +260,7 @@ const ProcessAsyncRunContext = struct {
 
 fn process_run(L: *VM.lua.State) !i32 {
     if (comptime !std.process.can_spawn)
-        return L.Zerror("Platform cannot spawn process");
+        return error.UnsupportedPlatform;
     const scheduler = Scheduler.getScheduler(L);
     const allocator = luau.getallocator(L);
 
@@ -316,7 +316,7 @@ fn process_run(L: *VM.lua.State) !i32 {
 
 fn process_create(L: *VM.lua.State) !i32 {
     if (comptime !std.process.can_spawn)
-        return L.Zerror("Platform cannot spawn process");
+        return error.UnsupportedPlatform;
     const allocator = luau.getallocator(L);
 
     var options = try ProcessChildOptions.init(L);

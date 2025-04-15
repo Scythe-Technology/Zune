@@ -1,5 +1,6 @@
 const std = @import("std");
 const luau = @import("luau");
+const builtin = @import("builtin");
 
 const Zune = @import("../../zune.zig");
 
@@ -8,9 +9,6 @@ const Scheduler = @import("scheduler.zig");
 
 const debug = @import("../../commands/debug.zig");
 
-const Terminal = @import("../../commands/repl/Terminal.zig");
-
-const file = @import("../resolvers/file.zig");
 const formatter = @import("../resolvers/fmt.zig");
 
 const VM = luau.VM;
@@ -26,6 +24,8 @@ pub var BREAKPOINTS = std.StringHashMap(std.ArrayList(LuaBreakpoint)).init(Zune.
 
 const DEBUG_TAG = "\x1b[0m(dbg) ";
 const DEBUG_RESULT_TAG = "\x1b[0m(dbg): ";
+
+const NEW_LINE = if (builtin.os.tag == .windows) '\r' else '\n';
 
 pub fn addReference(allocator: std.mem.Allocator, L: *VM.lua.State, name: []const u8, id: i32) !void {
     const key = try allocator.dupe(u8, name);
@@ -993,7 +993,7 @@ pub fn prompt(L: *VM.lua.State, comptime kind: BreakKind, debug_info: ?*VM.lua.c
                 },
                 else => {},
             }
-        } else if (byte == Terminal.NEW_LINE) {
+        } else if (byte == NEW_LINE) {
             std.debug.print("\n", .{});
             out: {
                 defer position = 0;

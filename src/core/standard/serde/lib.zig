@@ -1,9 +1,6 @@
 const std = @import("std");
 const luau = @import("luau");
 
-const Engine = @import("../../runtime/engine.zig");
-const Scheduler = @import("../../runtime/scheduler.zig");
-
 const luaHelper = @import("../../utils/luahelper.zig");
 
 const json = @import("json.zig");
