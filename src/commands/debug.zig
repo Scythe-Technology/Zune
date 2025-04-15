@@ -116,7 +116,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         maybeFileContent = content;
         maybeFileName = try dir.realpathAlloc(allocator, module);
     } else {
-        const result = try Engine.findLuauFile(allocator, dir, module);
+        const result = try file.findLuauFile(allocator, dir, module);
         maybeResult = result;
         switch (result.result) {
             .exact => |e| maybeFileName = e,

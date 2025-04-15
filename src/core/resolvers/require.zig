@@ -123,7 +123,7 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
         else
             try allocator.dupe(u8, path);
 
-        searchResult = try Engine.findLuauFileFromPathZ(allocator, absPath, resolvedPath orelse unreachable);
+        searchResult = try file.findLuauFileFromPathZ(allocator, absPath, resolvedPath orelse unreachable);
     } else {
         if (!std.mem.startsWith(u8, moduleName[0..2], "./") and !std.mem.startsWith(u8, moduleName, "../"))
             return L.Zerror("must have either \"@\", \"./\", or \"../\" prefix");
@@ -140,9 +140,9 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
             .RelativeToFile => {
                 const relativeDirPath = std.fs.path.dirname(moduleFilePath) orelse return error.FileNotFound;
 
-                searchResult = try Engine.findLuauFileFromPathZ(allocator, relativeDirPath, moduleName);
+                searchResult = try file.findLuauFileFromPathZ(allocator, relativeDirPath, moduleName);
             },
-            .RelativeToCwd => searchResult = try Engine.findLuauFileFromPathZ(allocator, absPath, moduleName),
+            .RelativeToCwd => searchResult = try file.findLuauFileFromPathZ(allocator, absPath, moduleName),
         }
     }
 
