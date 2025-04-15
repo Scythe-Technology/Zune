@@ -137,6 +137,18 @@ pub fn build(b: *std.Build) !void {
         .SQLITE_ENABLE_FTS3_PARENTHESIS = true,
     });
 
+    const mod_luau = dep_luau.module("luau");
+    const mod_xev = dep_xev.module("xev");
+    const mod_json = dep_json.module("json");
+    const mod_yaml = dep_yaml.module("yaml");
+    const mod_toml = dep_toml.module("tomlz");
+    const mod_datetime = dep_datetime.module("zdt");
+    const mod_lz4 = dep_lz4.module("lz4");
+    const mod_zstd = dep_zstd.module("zig-zstd");
+    const mod_pcre2 = dep_pcre2.module("zpcre2");
+    const mod_sqlite = dep_sqlite.module("z-sqlite");
+    const mod_tinycc = dep_tinycc.module("tinycc");
+
     const no_bin = b.option(bool, "no-bin", "skip emitting binary") orelse false;
 
     const prebuild_step = b.step("prebuild", "Setup project for build");
@@ -163,6 +175,7 @@ pub fn build(b: *std.Build) !void {
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
+        .strip = true,
     });
 
     exe.step.dependOn(&lib.step);
@@ -170,17 +183,17 @@ pub fn build(b: *std.Build) !void {
 
     exe.root_module.addOptions("zune-info", zune_info);
 
-    exe.root_module.addImport("xev", dep_xev.module("xev"));
-    exe.root_module.addImport("yaml", dep_yaml.module("yaml"));
-    exe.root_module.addImport("lz4", dep_lz4.module("lz4"));
-    exe.root_module.addImport("zstd", dep_zstd.module("zig-zstd"));
-    exe.root_module.addImport("json", dep_json.module("json"));
-    exe.root_module.addImport("luau", dep_luau.module("luau"));
-    exe.root_module.addImport("regex", dep_pcre2.module("zpcre2"));
-    exe.root_module.addImport("datetime", dep_datetime.module("zdt"));
-    exe.root_module.addImport("toml", dep_toml.module("tomlz"));
-    exe.root_module.addImport("sqlite", dep_sqlite.module("z-sqlite"));
-    exe.root_module.addImport("tinycc", dep_tinycc.module("tinycc"));
+    exe.root_module.addImport("xev", mod_xev);
+    exe.root_module.addImport("yaml", mod_yaml);
+    exe.root_module.addImport("lz4", mod_lz4);
+    exe.root_module.addImport("zstd", mod_zstd);
+    exe.root_module.addImport("json", mod_json);
+    exe.root_module.addImport("luau", mod_luau);
+    exe.root_module.addImport("regex", mod_pcre2);
+    exe.root_module.addImport("datetime", mod_datetime);
+    exe.root_module.addImport("toml", mod_toml);
+    exe.root_module.addImport("sqlite", mod_sqlite);
+    exe.root_module.addImport("tinycc", mod_tinycc);
 
     if (no_bin) {
         b.getInstallStep().dependOn(&exe.step);
