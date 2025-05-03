@@ -111,23 +111,23 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     if (module.len == 1 and module[0] == '-') {
         maybeFileContent = try std.io.getStdIn().readToEndAlloc(allocator, std.math.maxInt(usize));
-        maybeFileName = try dir.realpathAlloc(allocator, "./");
+        maybeFileName = "STDIN";
     } else if (dir.readFileAlloc(allocator, module, std.math.maxInt(usize)) catch null) |content| {
         maybeFileContent = content;
-        maybeFileName = try dir.realpathAlloc(allocator, module);
+        maybeFileName = module;
     } else {
         const result = try file.findLuauFile(allocator, dir, module);
         maybeResult = result;
         switch (result.result) {
             .exact => |e| maybeFileName = e,
             .results => |results| maybeFileName = results[0],
-            .none => return error.FileNotFound,
+            .none => return std.debug.panic("Could not find file: {s}", .{module}),
         }
         maybeFileContent = try std.fs.cwd().readFileAlloc(allocator, maybeFileName.?, std.math.maxInt(usize));
     }
 
+    const fileName = maybeFileName orelse std.debug.panic("Could not find file: {s}", .{module});
     const fileContent = maybeFileContent orelse std.debug.panic("FileNotFound", .{});
-    const fileName = maybeFileName orelse std.debug.panic("FileNotFound", .{});
 
     if (fileContent.len == 0) {
         std.debug.print("File is empty: {s}\n", .{run_args[0]});
@@ -154,6 +154,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         callbacks.*.debugstep = Debugger.debugstep;
         callbacks.*.debugprotectederror = Debugger.debugprotectederror;
 
+        try Zune.loadLuaurc(allocator, std.fs.cwd(), null);
         try Engine.prepAsync(L, &scheduler, .{
             .args = run_args,
         }, LOAD_FLAGS);
@@ -173,24 +174,14 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
         ML.Lsandboxthread();
 
-        Zune.resolvers_require.load_require(ML);
-
-        const cwdDirPath = dir.realpathAlloc(allocator, ".") catch return error.FileNotFound;
-        defer allocator.free(cwdDirPath);
-
-        const moduleRelativeName = try std.fs.path.relative(allocator, cwdDirPath, fileName);
-        defer allocator.free(moduleRelativeName);
-
         Engine.setLuaFileContext(ML, .{
-            .path = fileName,
-            .name = moduleRelativeName,
             .source = fileContent,
             .main = true,
         });
 
         ML.setsafeenv(VM.lua.GLOBALSINDEX, true);
 
-        const sourceNameZ = try std.mem.joinZ(allocator, "", &.{ "@", fileName });
+        const sourceNameZ = try std.mem.concatWithSentinel(allocator, u8, &.{ "@", fileName }, 0);
         defer allocator.free(sourceNameZ);
 
         Engine.loadModule(ML, sourceNameZ, fileContent, null) catch |err| switch (err) {

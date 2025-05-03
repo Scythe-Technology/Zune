@@ -131,6 +131,10 @@ pub fn Ref(comptime T: type) type {
             };
         }
 
+        pub inline fn hasRef(self: *This) bool {
+            return self.ref != null;
+        }
+
         pub fn push(self: *This, L: *VM.lua.State) bool {
             if (self.ref) |r| {
                 switch (r) {

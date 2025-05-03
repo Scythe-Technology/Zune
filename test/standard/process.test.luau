@@ -21,42 +21,18 @@ test("Context", function()
 	expect(process.arch).toBe(expect.any("string"));
 	expect(#process.arch).toBeGreaterThan(0);
 
-	expect(process.cwd).toBe(expect.any("string"));
-	expect(#process.cwd).toBeGreaterThan(0);
+	local cwd = process.getCwd();
+	expect(cwd).toBe(expect.any("string"));
+	expect(#cwd).toBeGreaterThan(0);
 
 	expect(function()
 		process.args = {};
-	end).toThrow("Cannot change field (args)");
+	end).toThrow("attempt to modify a readonly table");
 	
-	local current_cwd = process.cwd;
 	if (IS_WINDOWS) then
-		expect(current_cwd:sub(2, 3) == ":\\").toBeTruthy();
-		
-		process.cwd = `{current_cwd}/{TEMP_DIR}`;
-
-		expect(process.cwd).toBe(`{current_cwd}\\{TEMP_DIR:gsub("/", "\\")}`);
-		expect(process.cwd).never.toBe(current_cwd);
-		fs.writeFile("./test.txt", "Hello World")
-		expect(fs.readFile("./test.txt")).toBe("Hello World");
-		fs.removeFile("./test.txt");
-
-		process.cwd = current_cwd;
-
-		expect(process.cwd).toBe(current_cwd);
+		expect(cwd:sub(2, 3) == ":\\").toBeTruthy();
 	else
-		expect(current_cwd:sub(1, 1) == "/").toBeTruthy();
-		
-		process.cwd = `{current_cwd}/{TEMP_DIR}`;
-
-		expect(process.cwd).toBe(`{current_cwd}/{TEMP_DIR}`);
-		expect(process.cwd).never.toBe(current_cwd);
-		fs.writeFile("./test.txt", "Hello World")
-		expect(fs.readFile("./test.txt")).toBe("Hello World");
-		fs.removeFile("./test.txt")
-	
-		process.cwd = current_cwd;
-	
-		expect(process.cwd).toBe(current_cwd);
+		expect(cwd:sub(1, 1) == "/").toBeTruthy();
 	end
 end)
 

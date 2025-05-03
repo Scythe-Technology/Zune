@@ -108,12 +108,10 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    var packed_optimize = optimize;
-
-    switch (optimize) {
-        .ReleaseFast => packed_optimize = .ReleaseSmall,
-        else => {},
-    }
+    const packed_optimize = switch (optimize) {
+        .ReleaseFast => .ReleaseSmall,
+        else => optimize,
+    };
 
     const dep_xev = b.dependency("libxev", .{ .target = target, .optimize = optimize });
     const dep_json = b.dependency("json", .{ .target = target, .optimize = optimize });
@@ -175,7 +173,10 @@ pub fn build(b: *std.Build) !void {
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
-        .strip = true,
+        .strip = switch (optimize) {
+            .Debug, .ReleaseSafe => null,
+            .ReleaseFast, .ReleaseSmall => true,
+        },
     });
 
     exe.step.dependOn(&lib.step);

@@ -1,9 +1,8 @@
 --  https://github.com/JohnnyMorganz/luau-lsp/issues/271
 
 declare _FILE: {
-    name: string,
-    path: string,
     source: string,
+    main: boolean,
 }
 
 --[======[ FileSystem ]======]--
@@ -53,18 +52,6 @@ declare class FileHandle
     readSync:
         & ((self: FileHandle, amount: number?, useBuffer: false?) -> string)
         & ((self: FileHandle, amount: number?, useBuffer: true) -> buffer)
-
-    --[[
-        Reads the contents of a file.
-
-        *Optional: The amount of bytes to read, if nil, reads the whole till EOF or Luau limit.*
-
-        @param amount The amount of bytes to read.
-    ]]
-    readTtySync:
-        & ((self: FileHandle, amount: number?, useBuffer: false?) -> string?)
-        & ((self: FileHandle, amount: number?, useBuffer: true) -> buffer?)
-
 
     --[[
         Writes to a file.
@@ -490,11 +477,6 @@ type ProcessLib = {
     arch: CPUArchitecture,
 
     --[[
-        The current working directory of the process.
-    ]]
-    cwd: string,
-
-    --[[
         The arguments passed to the process.
     ]]
     args: { string },
@@ -520,6 +502,11 @@ type ProcessLib = {
         @return `EnvironmentMap`
     ]]
     loadEnv: () -> { [string]: string },
+
+    --[[
+        Get current working directory of the process.
+    ]]
+    getCwd: () ->string,
 
     --[[
         Creates a new process.
@@ -866,7 +853,7 @@ type TaskLib = {
 --[======[ Task ]======]--
 
 --[======[ Network ]======]--
-declare class NetWebSocket
+declare class NetHttpWebSocket
     --[[
         Whether the websocket is connected.
     ]]
@@ -881,40 +868,6 @@ declare class NetWebSocket
         Closes the websocket.
     ]]
     function close(self): ()
-end
-
-declare class NetUDPSocket
-    --[[
-        Port used
-    ]]
-    port: number
-    --[[
-        Whether the socket is active
-    ]]
-    stopped: boolean
-    --[[
-        Send a UDP datagram message to remote host.
-    ]]
-    function send(self, message: string | buffer, port: number, address: string): ()
-    --[[
-        Stops the Socket.
-    ]]
-    function stop(self): ()
-end
-
-declare class NetTCPConnection
-    --[[
-        Whether the socket is active
-    ]]
-    stopped: boolean
-    --[[
-        Send a message to remote host.
-    ]]
-    function send(self, message: string | buffer): ()
-    --[[
-        Stops the socket.
-    ]]
-    function stop(self): ()
 end
 
 declare class NetworkSocket
@@ -932,27 +885,21 @@ declare class NetworkSocket
     function close(self): ()
 end
 
-declare class NetTCPServer
-    --[[
-        Whether the socket is active
-    ]]
-    stopped: boolean
-    --[[
-        Stops the socket.
-    ]]
-    function stop(self): ()
-end
-
-declare class NetServerHandle
-    --[[
-        Whether the socket is active
-    ]]
-    stopped: boolean
-
-    --[[
+declare class NetHttpServer
+     --[[
         Stops the server.
     ]]
     function stop(self): ()
+
+    --[[
+        The port the server is bound to.
+    ]]
+    function getPort(self): number
+
+    --[[
+        Checks if the server is running.
+    ]]
+    function isRunning(self): boolean
 end
 
 export type NetworkAddress = {
@@ -988,19 +935,19 @@ export type ServerWebSocketHandlers = {
 
         *`WebSocket` class will keep the same reference per connection*.
     ]]
-    open: ((websocket: NetWebSocket) -> ())?,
+    open: ((websocket: NetHttpWebSocket) -> ())?,
     --[[
         A function event for when a websocket receives a message.
 
         *`WebSocket` class will keep the same reference per connection*.
     ]]
-    message: ((websocket: NetWebSocket, message: string) -> ())?,
+    message: ((websocket: NetHttpWebSocket, message: string) -> ())?,
     --[[
         A function event for when a websocket is closed.
 
         *`WebSocket` class will keep the same reference per connection*.
     ]]
-    close: ((websocket: NetWebSocket) -> ())?,
+    close: ((websocket: NetHttpWebSocket) -> ())?,
 }
 
 export type ServeOptions = {
@@ -1024,10 +971,30 @@ export type ServeOptions = {
     reuseAddress: boolean?,
 
     --[[
+        The amount of connections to backlog
+        - Default: `128`
+    ]]
+    backlog: number?,
+
+    --[[
         The maximum body size to accept.
         - Default: `4096`
     ]]
     maxBodySize: number?,
+
+    --[[
+        The amount of seconds to wait before timing a client out.
+        - `0` for no timeout.
+        - Default: `60`
+    ]]
+    clientTimeout: number?,
+
+    --[[
+        The maximum number of connections to accept at a time.
+        - `0` for no limit.
+        - Default: `1024`
+    ]]
+    maxConnections: number?,
 
     --[[
         The function to handle requests.
@@ -1089,97 +1056,15 @@ export type WebSocketOptions = {
     --[[
         WebSocket open event.
     ]]
-    open: ((socket: NetWebSocket) -> ())?,
+    open: ((socket: NetHttpWebSocket) -> ())?,
     --[[
         WebSocket close event.
     ]]
-    close: ((socket: NetWebSocket, close: number?) -> ())?,
+    close: ((socket: NetHttpWebSocket, close: number?) -> ())?,
     --[[
         WebSocket message event.
     ]]
-    message: ((socket: NetWebSocket, message: string) -> ())?,
-}
-
-export type UDPSocketOptions = {
-    --[[
-        The port to bind to.
-
-        *Nil or None lets the system pick.*
-    ]]
-    port: number?,
-
-    --[[
-        The address to bind to.
-        - Default: `127.0.0.1`
-    ]]
-    address: string?,
-
-    --[[
-        Callback to handle UDP datagram
-    ]]
-    data: ((socket: NetUDPSocket, buffer: string, port: number, address: string) -> ())?,
-}
-
-export type TCPClientOptions = {
-    --[[
-        The port to connect with.
-    ]]
-    port: number,
-
-    --[[
-        The address to bind to.
-    ]]
-    address: string,
-
-    --[[
-        Callbacks for open event.
-    ]]
-    open: ((socket: NetTCPConnection) -> ())?,
-    --[[
-        Callbacks for data event.
-    ]]
-    data: ((socket: NetTCPConnection, buffer: string) -> ())?,
-    --[[
-        Callbacks for close event.
-    ]]
-    close: ((socket: NetTCPConnection) -> ())?,
-}
-
-export type TCPServerOptions = {
-    --[[
-        The port to bind to.
-
-        *Nil or None lets the system pick.*
-    ]]
-    port: number?,
-
-    --[[
-        The address to bind to.
-
-        *Default: `127.0.0.1`*
-    ]]
-    address: string?,
-
-    --[[
-        Whether to reuse the address.
-        - Useful for multi-threaded servers.
-
-        Default: `false`
-    ]]
-    reuseAddress: boolean?,
-
-    --[[
-        Callback for open event.
-    ]]
-    open: ((socket: NetTCPConnection) -> ())?,
-    --[[
-        Callback for data event.
-    ]]
-    data: ((socket: NetTCPConnection, buffer: string) -> ())?,
-    --[[
-        Callback for close event.
-    ]]
-    close: ((socket: NetTCPConnection) -> ())?,
+    message: ((socket: NetHttpWebSocket, message: string) -> ())?,
 }
 
 type NetworkAddressFamily = {
@@ -1394,39 +1279,15 @@ type NetworkLib = {
     createSocket: (address_family: number, flags: number, protocol: number) -> NetworkSocket,
     getAddressList: (name: string, port: number) -> {NetworkAddress},
 
-    --[[
-        Creates a UDP Socket.
-
-        @param opts The options for the UDP Socket.
-        @return `UDPSocket`
-    ]]
-    udpSocket: (opts: UDPSocketOptions) -> NetUDPSocket,
-
-    --[[
-        Creates a TCP Client.
-
-        @param opts The options for the TCP Client.
-        @return `TCPClient`
-    ]]
-    tcpConnect: (opts: TCPClientOptions) -> NetTCPConnection,
-
-    --[[
-        Creates a TCP Server.
-
-        @param opts The options for the TCP Server.
-        @return `TCPServer`
-    ]]
-    tcpHost: (opts: TCPServerOptions) -> NetTCPServer,
-
     http: {
         --[[
             Starts a server on the specified port.
 
             @param options The options for the server.
-            @return `string | ServerHandle` The error message, or the server handle.
+            @return `NetHttpServer` The server handle.
             @error `ServerStartError`
         ]]
-        serve: (options: ServeOptions) -> NetServerHandle,
+        serve: (options: ServeOptions) -> NetHttpServer,
 
         --[[
             Makes a request to the specified host.
@@ -1449,10 +1310,10 @@ type NetworkLib = {
 
             @param host The host to connect to.
             @param opts The options for the websocket.
-            @return `ClientWebSocket`
+            @return `NetHttpWebSocket`
             @error `WebSocketError`
         ]]
-        websocket: (host: string, opts: WebSocketOptions) -> NetWebSocket,
+        websocket: (host: string, opts: WebSocketOptions) -> NetHttpWebSocket,
     }
 }
 --[======[ Network ]======]--

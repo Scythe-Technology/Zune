@@ -25,7 +25,7 @@ pub fn main() !void {
         },
         .linux, .macos => {
             const handle = struct {
-                fn handler(_: c_int) callconv(.C) void {
+                fn handler(_: c_int) callconv(.c) void {
                     shutdown();
                 }
             }.handler;

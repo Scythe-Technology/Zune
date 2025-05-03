@@ -2,19 +2,13 @@ const std = @import("std");
 
 const fs = std.fs;
 
-const FileError = error{
-    NotAbsolute,
-};
-
-pub fn doesFileExist(path: []const u8) !bool {
-    if (!fs.path.isAbsolute(path))
-        return FileError.NotAbsolute;
-    var dir = fs.openDirAbsolute(path, .{}) catch |err| switch (err) {
+pub fn doesFileExist(dir: std.fs.Dir, path: []const u8) !bool {
+    var d = dir.openDir(path, .{}) catch |err| switch (err) {
         error.NotDir => return true,
         error.FileNotFound => return false,
         else => return err,
     };
-    defer dir.close();
+    defer d.close();
     return false;
 }
 
@@ -44,14 +38,14 @@ pub fn SearchResult(comptime T: type) type {
     };
 }
 
-pub fn searchForExtensions(allocator: std.mem.Allocator, fileName: []const u8, extensions: []const []const u8) !SearchResult([]const u8) {
+pub fn searchForExtensions(allocator: std.mem.Allocator, dir: std.fs.Dir, fileName: []const u8, extensions: []const []const u8) !SearchResult([]const u8) {
     var list = std.ArrayList([]const u8).init(allocator);
     defer list.deinit();
     errdefer for (list.items) |value| allocator.free(value);
     for (extensions) |ext| {
         const result = std.mem.join(allocator, "", &.{ fileName, ext }) catch continue;
         defer allocator.free(result);
-        if (try doesFileExist(result)) {
+        if (try doesFileExist(dir, result)) {
             const copy = try allocator.dupe(u8, result);
             errdefer allocator.free(copy);
             try list.append(copy);
@@ -67,14 +61,14 @@ pub fn searchForExtensions(allocator: std.mem.Allocator, fileName: []const u8, e
     };
 }
 
-pub fn searchForExtensionsZ(allocator: std.mem.Allocator, fileName: []const u8, extensions: []const []const u8) !SearchResult([:0]const u8) {
+pub fn searchForExtensionsZ(allocator: std.mem.Allocator, dir: std.fs.Dir, fileName: []const u8, extensions: []const []const u8) !SearchResult([:0]const u8) {
     var list = std.ArrayList([:0]const u8).init(allocator);
     defer list.deinit();
     errdefer for (list.items) |value| allocator.free(value);
     for (extensions) |ext| {
         const result = std.mem.join(allocator, "", &.{ fileName, ext }) catch continue;
         defer allocator.free(result);
-        if (try doesFileExist(result)) {
+        if (try doesFileExist(dir, result)) {
             const copy = try allocator.dupeZ(u8, result);
             errdefer allocator.free(copy);
             try list.append(copy);
@@ -111,29 +105,21 @@ pub fn getLuaFileType(path: []const u8) ?LuaFileType {
 }
 
 pub fn findLuauFile(allocator: std.mem.Allocator, dir: std.fs.Dir, fileName: []const u8) !SearchResult([]const u8) {
-    const absPath = try dir.realpathAlloc(allocator, ".");
-    defer allocator.free(absPath);
-    return findLuauFileFromPath(allocator, absPath, fileName);
+    return findLuauFileFromPath(allocator, dir, fileName);
 }
 
 pub fn findLuauFileZ(allocator: std.mem.Allocator, dir: std.fs.Dir, fileName: []const u8) !SearchResult([:0]const u8) {
-    const absPath = try dir.realpathAlloc(allocator, ".");
-    defer allocator.free(absPath);
-    return findLuauFileFromPathZ(allocator, absPath, fileName);
+    return findLuauFileFromPathZ(allocator, dir, fileName);
 }
 
-pub fn findLuauFileFromPath(allocator: std.mem.Allocator, absPath: []const u8, fileName: []const u8) !SearchResult([]const u8) {
-    const absF = try std.fs.path.resolve(allocator, &.{ absPath, fileName });
-    defer allocator.free(absF);
+pub fn findLuauFileFromPath(allocator: std.mem.Allocator, dir: std.fs.Dir, fileName: []const u8) !SearchResult([]const u8) {
     if (getLuaFileType(fileName)) |_|
         return error.RedundantFileExtension;
-    return try searchForExtensions(allocator, absF, &POSSIBLE_EXTENSIONS);
+    return try searchForExtensions(allocator, dir, fileName, &POSSIBLE_EXTENSIONS);
 }
 
-pub fn findLuauFileFromPathZ(allocator: std.mem.Allocator, absPath: []const u8, fileName: []const u8) !SearchResult([:0]const u8) {
-    const absF = try std.fs.path.resolve(allocator, &.{ absPath, fileName });
-    defer allocator.free(absF);
+pub fn findLuauFileFromPathZ(allocator: std.mem.Allocator, dir: std.fs.Dir, fileName: []const u8) !SearchResult([:0]const u8) {
     if (getLuaFileType(fileName)) |_|
         return error.RedundantFileExtension;
-    return try searchForExtensionsZ(allocator, absF, &POSSIBLE_EXTENSIONS);
+    return try searchForExtensionsZ(allocator, dir, fileName, &POSSIBLE_EXTENSIONS);
 }

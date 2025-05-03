@@ -114,8 +114,9 @@ fn testing_droptasks(L: *VM.lua.State) i32 {
     }
 
     while (scheduler.deferred.pop()) |node| {
-        defer scheduler.allocator.destroy(node);
-        node.data.thread.deref();
+        const deferred = Scheduler.DeferredThread.fromNode(node);
+        defer scheduler.allocator.destroy(deferred);
+        deferred.thread.deref();
     }
 
     return 0;

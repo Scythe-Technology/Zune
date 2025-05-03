@@ -123,7 +123,7 @@ local function runTest(fn: () -> (), info: TestInfo)
             thread = nil;
             local lastN = debug.info(1, "n");
             for i = 1, 30 do
-                local f, n, l, _ = debug.info(i + 1, "fnls");
+                local f, n, l, s = debug.info(i + 1, "fnls");
                 if (not f) then
                     break;
                 end
@@ -139,9 +139,11 @@ local function runTest(fn: () -> (), info: TestInfo)
                 if (type(file) ~= "table") then
                     continue;
                 end
+                local copy = table.clone(file);
+                copy.name = s;
                 table.insert(
                     stacktrace,
-                    writeStackTrace(file, ln::string, l, tostring(f))
+                    writeStackTrace(copy, ln::string, l, tostring(f))
                 );
             end
             err = e;

@@ -34,18 +34,6 @@ pub fn runTest(comptime testFile: TestFile, args: []const []const u8, comptime o
         else => {},
     }
 
-    const cwd_path = try std.fs.cwd().realpathAlloc(allocator, ".");
-    defer allocator.free(cwd_path);
-
-    const cwd_dir = try std.fs.cwd().openDir(cwd_path, .{});
-    defer cwd_dir.setAsCwd() catch std.debug.panic("Failed to set directory as cwd", .{});
-
-    const path_name = std.fs.path.dirname(testFile.path) orelse return error.Fail;
-    var path_dir = try cwd_dir.openDir(path_name, .{});
-    defer path_dir.close();
-
-    try path_dir.setAsCwd();
-
     Zune.loadConfiguration(.{
         .loadStd = false,
     });
@@ -72,12 +60,16 @@ pub fn runTest(comptime testFile: TestFile, args: []const []const u8, comptime o
     defer allocator.free(tempPath);
     L.Zsetglobal("__test_tempdir", tempPath);
 
-    const testFileAbsolute = try cwd_dir.realpathAlloc(allocator, testFile.path);
-    defer allocator.free(testFileAbsolute);
+    const cwd = std.fs.cwd();
 
-    const content = try cwd_dir.readFileAlloc(allocator, testFileAbsolute, std.math.maxInt(usize));
+    const content = try cwd.readFileAlloc(allocator, testFile.path, std.math.maxInt(usize));
     defer allocator.free(content);
 
+    const dir_path = std.fs.path.dirname(testFile.path) orelse unreachable;
+    var dir = try cwd.openDir(dir_path, .{});
+    defer dir.close();
+
+    try Zune.loadLuaurc(Zune.DEFAULT_ALLOCATOR, cwd, dir_path);
     try Engine.prepAsync(L, &scheduler, .{
         .args = args,
     }, .{
@@ -90,21 +82,14 @@ pub fn runTest(comptime testFile: TestFile, args: []const []const u8, comptime o
 
     ML.Lsandboxthread();
 
-    Zune.resolvers_require.load_require(ML);
-
     Engine.setLuaFileContext(ML, .{
-        .path = testFileAbsolute,
-        .name = testFile.path,
         .source = content,
         .main = true,
     });
 
     ML.setsafeenv(VM.lua.GLOBALSINDEX, true);
 
-    const sourceNameZ = try std.mem.joinZ(allocator, "", &.{ "@", testFileAbsolute });
-    defer allocator.free(sourceNameZ);
-
-    Engine.loadModule(ML, sourceNameZ, content, .{
+    Engine.loadModule(ML, "@" ++ testFile.path, content, .{
         .debug_level = 2,
     }) catch |err| switch (err) {
         error.Syntax => {

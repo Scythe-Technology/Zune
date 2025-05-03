@@ -220,7 +220,7 @@ end
 
 local tcp = {};
 
-function tcp.hostAsync(opts: TCPServerOptions): TCPServer
+function tcp.host(opts: TCPServerOptions): TCPServer
     assert(type(opts) == "table", "Expected opts to be a table");
 
     local address = opts.address or "127.0.0.1";
@@ -283,7 +283,7 @@ function tcp.hostAsync(opts: TCPServerOptions): TCPServer
     return self;
 end
 
-local function connectToHostAsync(name: string, port: number): NetworkSocket
+local function connectToHost(name: string, port: number): NetworkSocket
     local list = zune.net.getAddressList(name, port);
     if (#list == 0) then
         error("UnknownHostName");
@@ -341,7 +341,7 @@ local function startClient(
     end
 end
 
-function tcp.connectAsync(opts: TCPClientOptions): TCPConnection
+function tcp.connect(opts: TCPClientOptions): TCPConnection
     assert(type(opts) == "table", "Expected opts to be a table");
 
     local address = opts.address;
@@ -359,7 +359,7 @@ function tcp.connectAsync(opts: TCPClientOptions): TCPConnection
 
     local maxDataRead = opts.maxDataRead or 8192;
 
-    local socket = connectToHostAsync(address, port);
+    local socket = connectToHost(address, port);
 
     local self: TCPConnection = newConnection(socket);
 

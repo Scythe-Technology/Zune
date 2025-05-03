@@ -229,6 +229,8 @@ pub fn openZune(L: *VM.lua.State, args: []const []const u8, flags: Flags) !void 
 
     L.Lopenlibs();
 
+    L.Zsetglobalfn("require", resolvers_require.zune_require);
+
     objects.load(L);
 
     L.createtable(0, 0);
@@ -289,8 +291,6 @@ pub fn openZune(L: *VM.lua.State, args: []const []const u8, flags: Flags) !void 
         corelib.testing.loadLib(L, flags.mode == .Test);
     }
 
-    try loadLuaurc(DEFAULT_ALLOCATOR, std.fs.cwd(), null);
-
     if (STD_ENABLED)
         try loadEnv(allocator);
 }
@@ -305,4 +305,8 @@ test "Zune" {
     );
 
     try std.testing.expect(testResult.failed == 0);
+}
+
+test {
+    _ = @import("./core/utils/lib.zig");
 }

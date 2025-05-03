@@ -546,61 +546,48 @@ fn lua_read(self: *File, L: *VM.lua.State) !i32 {
 }
 
 fn lua_readSync(self: *File, L: *VM.lua.State) !i32 {
-    switch (self.kind) {
-        .File => {},
-        .Tty => return L.Zerror("readSync for TTY should be done with readTtySync"),
-    }
     if (!self.mode.canRead())
         return error.NotOpenForReading;
     const allocator = luau.getallocator(L);
     const size = L.Loptunsigned(2, luaHelper.MAX_LUAU_SIZE);
     const useBuffer = L.Loptboolean(3, false);
-
-    const data = try self.file.readToEndAlloc(allocator, @intCast(size));
-    defer allocator.free(data);
-
-    if (useBuffer)
-        L.Zpushbuffer(data)
-    else
-        L.pushlstring(data);
-
-    return 1;
-}
-
-fn lua_readTtySync(self: *File, L: *VM.lua.State) !i32 {
     switch (self.kind) {
-        .File => return error.NotTty,
-        .Tty => {},
+        .File => {
+            const data = try self.file.readToEndAlloc(allocator, @intCast(size));
+            defer allocator.free(data);
+
+            if (useBuffer)
+                L.Zpushbuffer(data)
+            else
+                L.pushlstring(data);
+        },
+        .Tty => blk: {
+            var fds = [1]sysfd.context.pollfd{.{
+                .events = sysfd.context.POLLIN,
+                .fd = self.file.handle,
+                .revents = 0,
+            }};
+
+            const poll = try sysfd.context.poll(&fds, 0);
+            if (poll < 0)
+                std.debug.panic("InternalError (Bad Poll)", .{});
+            if (poll == 0) {
+                L.pushlstring("");
+                break :blk;
+            }
+
+            var buffer = try allocator.alloc(u8, @intCast(size));
+            defer allocator.free(buffer);
+
+            const amount = try self.file.read(buffer);
+
+            const data = buffer[0..amount];
+            if (useBuffer)
+                L.Zpushbuffer(data)
+            else
+                L.pushlstring(data);
+        },
     }
-    if (!self.mode.canRead())
-        return error.NotOpenForReading;
-    const allocator = luau.getallocator(L);
-    const maxBytes = L.Loptunsigned(2, 1);
-    const useBuffer = L.Loptboolean(3, false);
-
-    var fds = [1]sysfd.context.pollfd{.{
-        .events = sysfd.context.POLLIN,
-        .fd = self.file.handle,
-        .revents = 0,
-    }};
-
-    const poll = try sysfd.context.poll(&fds, 0);
-    if (poll < 0)
-        std.debug.panic("InternalError (Bad Poll)", .{});
-    if (poll == 0)
-        return 0;
-
-    var buffer = try allocator.alloc(u8, maxBytes);
-    defer allocator.free(buffer);
-
-    const amount = try self.file.read(buffer);
-
-    const data = buffer[0..amount];
-    if (useBuffer)
-        L.Zpushbuffer(data)
-    else
-        L.pushlstring(data);
-
     return 1;
 }
 
@@ -777,7 +764,6 @@ const __index = MethodMap.CreateStaticIndexMap(File, TAG_FS_FILE, .{
     .{ "seekBy", MethodMap.WithFn(File, lua_seekBy, before_method) },
     .{ "read", MethodMap.WithFn(File, lua_read, before_method) },
     .{ "readSync", MethodMap.WithFn(File, lua_readSync, before_method) },
-    .{ "readTtySync", MethodMap.WithFn(File, lua_readTtySync, before_method) },
     .{ "lock", MethodMap.WithFn(File, lua_lock, before_method) },
     .{ "unlock", MethodMap.WithFn(File, lua_unlock, before_method) },
     .{ "sync", MethodMap.WithFn(File, lua_sync, before_method) },

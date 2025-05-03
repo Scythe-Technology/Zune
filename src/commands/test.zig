@@ -27,16 +27,15 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var maybeResult: ?file.SearchResult([]const u8) = null;
     defer if (maybeResult) |r| r.deinit();
     var maybeFileName: ?[]const u8 = null;
-    defer if (maybeResult == null) if (maybeFileName) |f| allocator.free(f);
     var maybeFileContent: ?[]const u8 = null;
     defer if (maybeFileContent) |c| allocator.free(c);
 
     if (module.len == 1 and module[0] == '-') {
         maybeFileContent = try std.io.getStdIn().readToEndAlloc(allocator, std.math.maxInt(usize));
-        maybeFileName = try dir.realpathAlloc(allocator, "./");
+        maybeFileName = "STDIN";
     } else if (dir.readFileAlloc(allocator, module, std.math.maxInt(usize)) catch null) |content| {
         maybeFileContent = content;
-        maybeFileName = try dir.realpathAlloc(allocator, module);
+        maybeFileName = module;
     } else {
         const result = try file.findLuauFile(allocator, dir, module);
         maybeResult = result;
@@ -78,6 +77,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     try Scheduler.SCHEDULERS.append(&scheduler);
 
+    try Zune.loadLuaurc(Zune.DEFAULT_ALLOCATOR, std.fs.cwd(), null);
     try Engine.prepAsync(L, &scheduler, .{
         .args = args,
     }, .{
@@ -90,17 +90,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     ML.Lsandboxthread();
 
-    Zune.resolvers_require.load_require(ML);
-
-    const cwdDirPath = dir.realpathAlloc(gpa_allocator, ".") catch return error.FileNotFound;
-    defer gpa_allocator.free(cwdDirPath);
-
-    const moduleRelativeName = try std.fs.path.relative(gpa_allocator, cwdDirPath, fileName);
-    defer gpa_allocator.free(moduleRelativeName);
-
     Engine.setLuaFileContext(ML, .{
-        .path = fileName,
-        .name = moduleRelativeName,
         .source = fileContent,
         .main = true,
     });

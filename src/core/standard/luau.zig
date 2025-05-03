@@ -1,9 +1,12 @@
 const std = @import("std");
 const luau = @import("luau");
+const json = @import("json");
 
 const Engine = @import("../runtime/engine.zig");
 
 const luaHelper = @import("../utils/luahelper.zig");
+
+const SerdeJson = @import("./serde/json.zig");
 
 const VM = luau.VM;
 
@@ -99,10 +102,208 @@ fn lua_load(L: *VM.lua.State) !i32 {
     return 1;
 }
 
+fn lua_parse(L: *VM.lua.State) !i32 {
+    const allocator = luau.getallocator(L);
+
+    const source = try L.Zcheckvalue([]const u8, 1, null);
+
+    const lallocator = luau.Ast.Allocator.init();
+    defer lallocator.deinit();
+
+    const astNameTable = luau.Ast.Lexer.AstNameTable.init(lallocator);
+    defer astNameTable.deinit();
+
+    const parseResult = luau.Ast.Parser.parse(source, astNameTable, lallocator, .{
+        .captureComments = true,
+        .allowDeclarationSyntax = false,
+        .storeCstData = true, // doesn't do anything with AstJsonEncoder
+    });
+    defer parseResult.deinit();
+
+    var static_loc_buf: [256]u8 = undefined;
+    if (!parseResult.errors.empty()) {
+        L.createtable(0, 1);
+        {
+            L.createtable(@truncate(@as(isize, @intCast(parseResult.errors.size()))), 0);
+            var iter = parseResult.errors.iterator();
+            var count: i32 = 1;
+            while (iter.next()) |err| : (count += 1) {
+                const loc_str = try std.fmt.bufPrint(static_loc_buf[0..], "{d},{d} - {d},{d}", .{
+                    err.value.location.begin.line,
+                    err.value.location.begin.column,
+                    err.value.location.end.line,
+                    err.value.location.end.column,
+                });
+                L.Zpushvalue(.{
+                    .message = err.value.message.slice(),
+                    .location = loc_str,
+                });
+                L.rawseti(-2, count);
+            }
+        }
+        L.setfield(-2, "errors");
+    } else {
+        const json_str = try luau.Analysis.AstJsonEncoder.toJson(allocator, @ptrCast(@alignCast(parseResult.root)));
+        defer allocator.free(json_str);
+
+        var root = try json.parse(allocator, json_str);
+        defer root.deinit();
+
+        L.createtable(0, 3);
+        try SerdeJson.decodeValue(L, root.value, false);
+        L.setfield(-2, "root");
+
+        L.Zsetfield(-1, "lines", @as(f64, @floatFromInt(parseResult.lines)));
+
+        {
+            L.createtable(@truncate(@as(isize, @intCast(parseResult.commentLocations.size()))), 0);
+            var iter = parseResult.commentLocations.iterator();
+            var count: i32 = 1;
+            while (iter.next()) |loc| : (count += 1) {
+                const loc_str = try std.fmt.bufPrint(static_loc_buf[0..], "{d},{d} - {d},{d}", .{
+                    loc.location.begin.line,
+                    loc.location.begin.column,
+                    loc.location.end.line,
+                    loc.location.end.column,
+                });
+                L.Zpushvalue(.{
+                    .type = @tagName(loc.type),
+                    .location = loc_str,
+                });
+                L.rawseti(-2, count);
+            }
+        }
+        L.setfield(-2, "commentLocations");
+
+        {
+            L.createtable(@truncate(@as(isize, @intCast(parseResult.hotcomments.size()))), 0);
+            var iter = parseResult.hotcomments.iterator();
+            var count: i32 = 1;
+            while (iter.next()) |hc| : (count += 1) {
+                const loc_str = try std.fmt.bufPrint(static_loc_buf[0..], "{d},{d} - {d},{d}", .{
+                    hc.location.begin.line,
+                    hc.location.begin.column,
+                    hc.location.end.line,
+                    hc.location.end.column,
+                });
+                L.Zpushvalue(.{
+                    .header = hc.header,
+                    .content = hc.content.slice(),
+                    .location = loc_str,
+                });
+                L.rawseti(-2, count);
+            }
+        }
+        L.setfield(-2, "hotcomments");
+    }
+
+    return 1;
+}
+
+fn lua_parseExpr(L: *VM.lua.State) !i32 {
+    const allocator = luau.getallocator(L);
+
+    const source = try L.Zcheckvalue([]const u8, 1, null);
+
+    const lallocator = luau.Ast.Allocator.init();
+    defer lallocator.deinit();
+
+    const astNameTable = luau.Ast.Lexer.AstNameTable.init(lallocator);
+    defer astNameTable.deinit();
+
+    const parseResult = luau.Ast.Parser.parseExpr(source, astNameTable, lallocator, .{
+        .captureComments = true,
+        .allowDeclarationSyntax = false,
+        .storeCstData = true, // doesn't do anything with AstJsonEncoder
+    });
+    defer parseResult.deinit();
+
+    var static_loc_buf: [256]u8 = undefined;
+    if (!parseResult.errors.empty()) {
+        L.createtable(0, 1);
+        {
+            L.createtable(@truncate(@as(isize, @intCast(parseResult.errors.size()))), 0);
+            var iter = parseResult.errors.iterator();
+            var count: i32 = 1;
+            while (iter.next()) |err| : (count += 1) {
+                const loc_str = try std.fmt.bufPrint(static_loc_buf[0..], "{d},{d} - {d},{d}", .{
+                    err.value.location.begin.line,
+                    err.value.location.begin.column,
+                    err.value.location.end.line,
+                    err.value.location.end.column,
+                });
+                L.Zpushvalue(.{
+                    .message = err.value.message.slice(),
+                    .location = loc_str,
+                });
+                L.rawseti(-2, count);
+            }
+        }
+        L.setfield(-2, "errors");
+    } else {
+        const json_str = try luau.Analysis.AstJsonEncoder.toJson(allocator, @ptrCast(@alignCast(parseResult.expr)));
+        defer allocator.free(json_str);
+
+        var root = try json.parse(allocator, json_str);
+        defer root.deinit();
+
+        L.createtable(0, 3);
+        try SerdeJson.decodeValue(L, root.value, false);
+        L.setfield(-2, "root");
+
+        L.Zsetfield(-1, "lines", @as(f64, @floatFromInt(parseResult.lines)));
+
+        {
+            L.createtable(@truncate(@as(isize, @intCast(parseResult.commentLocations.size()))), 0);
+            var iter = parseResult.commentLocations.iterator();
+            var count: i32 = 1;
+            while (iter.next()) |loc| : (count += 1) {
+                const loc_str = try std.fmt.bufPrint(static_loc_buf[0..], "{d},{d} - {d},{d}", .{
+                    loc.location.begin.line,
+                    loc.location.begin.column,
+                    loc.location.end.line,
+                    loc.location.end.column,
+                });
+                L.Zpushvalue(.{
+                    .type = @tagName(loc.type),
+                    .location = loc_str,
+                });
+                L.rawseti(-2, count);
+            }
+        }
+        L.setfield(-2, "commentLocations");
+
+        {
+            L.createtable(@truncate(@as(isize, @intCast(parseResult.hotcomments.size()))), 0);
+            var iter = parseResult.hotcomments.iterator();
+            var count: i32 = 1;
+            while (iter.next()) |hc| : (count += 1) {
+                const loc_str = try std.fmt.bufPrint(static_loc_buf[0..], "{d},{d} - {d},{d}", .{
+                    hc.location.begin.line,
+                    hc.location.begin.column,
+                    hc.location.end.line,
+                    hc.location.end.column,
+                });
+                L.Zpushvalue(.{
+                    .header = hc.header,
+                    .content = hc.content.slice(),
+                    .location = loc_str,
+                });
+                L.rawseti(-2, count);
+            }
+        }
+        L.setfield(-2, "hotcomments");
+    }
+
+    return 1;
+}
+
 pub fn loadLib(L: *VM.lua.State) void {
     L.Zpushvalue(.{
         .compile = lua_compile,
         .load = lua_load,
+        .parse = lua_parse,
+        .parseExpr = lua_parseExpr,
     });
     L.setreadonly(-1, true);
     luaHelper.registerModule(L, LIB_NAME);

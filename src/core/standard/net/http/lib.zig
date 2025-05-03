@@ -5,10 +5,10 @@ const builtin = @import("builtin");
 const VM = luau.VM;
 
 pub fn load(L: *VM.lua.State) void {
-    @import("../httpserver.zig").lua_load(L);
+    @import("server/lib.zig").lua_load(L);
     @import("../websocket.zig").lua_load(L);
     L.Zpushvalue(.{
-        .serve = @import("../httpserver.zig").lua_serve,
+        .serve = @import("server/lib.zig").lua_serve,
         .request = @import("client.zig").lua_request,
         .websocket = @import("../websocket.zig").lua_websocket,
     });

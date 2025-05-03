@@ -8,6 +8,7 @@ return {
     SocketClosedError = {
         ["SocketClosed"] = true,
         ["Canceled"] = true,
+        ["ConnectionResetByPeer"] = true,
         --- usually from recv operations
         --- client closed connection
         ["EOF"] = true,

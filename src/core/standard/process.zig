@@ -15,6 +15,7 @@ const ProcessChild = @import("../objects/process//Child.zig");
 
 const luaHelper = @import("../utils/luahelper.zig");
 const sysfd = @import("../utils/sysfd.zig");
+const EnumMap = @import("../utils/enum_map.zig");
 const MethodMap = @import("../utils/method_map.zig");
 
 const VM = luau.VM;
@@ -99,6 +100,7 @@ const ProcessChildOptions = struct {
     env: ?process.EnvMap = null,
     joined: ?[]const u8 = null,
     argArray: std.ArrayList([]const u8),
+    stdio: enum { inherit, pipe, ignore } = .pipe,
 
     pub fn init(L: *VM.lua.State) !ProcessChildOptions {
         const cmd = try L.Zcheckvalue([:0]const u8, 1, null);
@@ -109,7 +111,7 @@ const ProcessChildOptions = struct {
         var shell: ?[]const u8 = null;
         var shell_inline: ?[]const u8 = "-c";
 
-        var childOptions = ProcessChildOptions{
+        var childOptions: ProcessChildOptions = .{
             .argArray = std.ArrayList([]const u8).init(allocator),
         };
         errdefer childOptions.argArray.deinit();
@@ -132,26 +134,49 @@ const ProcessChildOptions = struct {
             }
             L.pop(1);
 
-            const shellType = L.getfield(3, "shell");
-            if (!shellType.isnoneornil()) {
-                if (shellType == .String) {
+            switch (L.getfield(3, "stdio")) {
+                .None, .Nil => {},
+                .String => {
+                    const stdioOption = L.tostring(-1) orelse unreachable;
+                    if (std.mem.eql(u8, stdioOption, "inherit")) {
+                        childOptions.stdio = .inherit;
+                    } else if (std.mem.eql(u8, stdioOption, "pipe")) {
+                        childOptions.stdio = .pipe;
+                    } else if (std.mem.eql(u8, stdioOption, "ignore")) {
+                        childOptions.stdio = .ignore;
+                    } else return L.Zerrorf("Invalid stdio option (inherit/pipe/ignore expected, got {s})", .{stdioOption});
+                },
+                else => return L.Zerrorf("Invalid stdio option (string expected, got {s})", .{VM.lapi.typename(L.typeOf(-1))}),
+            }
+            L.pop(1);
+
+            switch (L.getfield(3, "shell")) {
+                .None, .Nil => {},
+                .String => blk: {
                     const shellOption = L.tostring(-1) orelse unreachable;
 
-                    // TODO: prob should switch to static string map
-                    if (std.mem.eql(u8, shellOption, "sh") or std.mem.eql(u8, shellOption, "/bin/sh")) {
-                        shell = "/bin/sh";
-                    } else if (std.mem.eql(u8, shellOption, "bash")) {
-                        shell = "bash";
-                    } else if (std.mem.eql(u8, shellOption, "powershell") or std.mem.eql(u8, shellOption, "ps")) {
-                        shell = "powershell";
-                    } else if (std.mem.eql(u8, shellOption, "cmd")) {
-                        shell = "cmd";
-                        shell_inline = "/c";
-                    } else {
+                    switch (std.StaticStringMap(enum { shell, bash, powershell, cmd }).initComptime(.{
+                        .{ "sh", .shell },
+                        .{ "/bin/sh", .shell },
+                        .{ "bash", .bash },
+                        .{ "powershell", .powershell },
+                        .{ "ps", .powershell },
+                        .{ "cmd", .cmd },
+                    }).get(shellOption) orelse {
                         shell = shellOption;
                         shell_inline = null;
+                        break :blk;
+                    }) {
+                        .shell => shell = "/bin/sh",
+                        .bash => shell = "bash",
+                        .powershell => shell = "powershell",
+                        .cmd => {
+                            shell = "cmd";
+                            shell_inline = "/c";
+                        },
                     }
-                } else if (shellType == .Boolean) {
+                },
+                .Boolean => {
                     if (L.toboolean(-1)) {
                         switch (native_os) {
                             .windows => shell = "powershell",
@@ -159,7 +184,8 @@ const ProcessChildOptions = struct {
                             else => shell = "/bin/sh",
                         }
                     }
-                } else return L.Zerrorf("Invalid shell (string or boolean expected, got {s})", .{VM.lapi.typename(shellType)});
+                },
+                else => |t| return L.Zerrorf("Invalid shell (string or boolean expected, got {s})", .{VM.lapi.typename(t)}),
             }
             L.pop(1);
         }
@@ -196,7 +222,7 @@ const ProcessAsyncRunContext = struct {
     completion: xev.Completion,
     ref: Scheduler.ThreadRef,
     proc: xev.Process,
-    poller: std.io.Poller(ProcessAsyncRunContext.PollEnum),
+    poller: ?std.io.Poller(ProcessAsyncRunContext.PollEnum),
 
     stdout: ?std.fs.File,
     stderr: ?std.fs.File,
@@ -215,13 +241,14 @@ const ProcessAsyncRunContext = struct {
         const self = ud orelse unreachable;
         const L = self.ref.value;
 
-        _ = self.poller.poll() catch {};
+        if (self.poller) |*poller|
+            _ = poller.poll() catch {};
 
         const scheduler = Scheduler.getScheduler(L);
         defer scheduler.completeAsync(self);
         defer self.ref.deref();
         defer self.proc.deinit();
-        defer self.poller.deinit();
+        defer if (self.poller) |*poller| poller.deinit();
         defer {
             if (self.stdout) |stdout|
                 stdout.close();
@@ -240,17 +267,24 @@ const ProcessAsyncRunContext = struct {
             },
         };
 
-        const stdout_fifo = self.poller.fifo(.stdout);
-        const stdout = stdout_fifo.readableSliceOfLen(@min(stdout_fifo.count, luaHelper.MAX_LUAU_SIZE));
-        const stderr_fifo = self.poller.fifo(.stderr);
-        const stderr = stderr_fifo.readableSliceOfLen(@min(stderr_fifo.count, luaHelper.MAX_LUAU_SIZE));
+        if (self.poller) |*poller| {
+            const stdout_fifo = poller.fifo(.stdout);
+            const stdout = stdout_fifo.readableSliceOfLen(@min(stdout_fifo.count, luaHelper.MAX_LUAU_SIZE));
+            const stderr_fifo = poller.fifo(.stderr);
+            const stderr = stderr_fifo.readableSliceOfLen(@min(stderr_fifo.count, luaHelper.MAX_LUAU_SIZE));
 
-        L.Zpushvalue(.{
-            .code = code,
-            .ok = code == 0,
-            .stdout = stdout,
-            .stderr = stderr,
-        });
+            L.Zpushvalue(.{
+                .code = code,
+                .ok = code == 0,
+                .stdout = stdout,
+                .stderr = stderr,
+            });
+        } else {
+            L.Zpushvalue(.{
+                .code = code,
+                .ok = code == 0,
+            });
+        }
 
         _ = Scheduler.resumeState(L, null, 1) catch {};
 
@@ -268,9 +302,17 @@ fn process_run(L: *VM.lua.State) !i32 {
     defer options.deinit();
 
     var child = process.Child.init(options.argArray.items, allocator);
-    child.stdin_behavior = .Ignore;
-    child.stdout_behavior = .Pipe;
-    child.stderr_behavior = .Pipe;
+    child.stdin_behavior = if (options.stdio == .inherit) .Inherit else .Ignore;
+    child.stdout_behavior = switch (options.stdio) {
+        .inherit => .Inherit,
+        .pipe => .Pipe,
+        .ignore => .Ignore,
+    };
+    child.stderr_behavior = switch (options.stdio) {
+        .inherit => .Inherit,
+        .pipe => .Pipe,
+        .ignore => .Ignore,
+    };
     child.cwd = options.cwd;
     child.env_map = if (options.env) |env|
         &env
@@ -282,10 +324,10 @@ fn process_run(L: *VM.lua.State) !i32 {
     try child.waitForSpawn();
     errdefer _ = child.kill() catch {};
 
-    const poller = std.io.poll(allocator, ProcessAsyncRunContext.PollEnum, .{
+    const poller = if (options.stdio == .pipe) std.io.poll(allocator, ProcessAsyncRunContext.PollEnum, .{
         .stdout = child.stdout.?,
         .stderr = child.stderr.?,
-    });
+    }) else null;
 
     var proc = try xev.Process.init(child.id);
     errdefer proc.deinit();
@@ -514,31 +556,15 @@ fn process_onsignal(L: *VM.lua.State) !i32 {
     return 0;
 }
 
-fn lib__newindex(L: *VM.lua.State) !i32 {
-    try L.Zchecktype(1, .Table);
-    const index = L.Lcheckstring(2);
-    const process_lib = VM.lua.upvalueindex(1);
-
-    if (std.mem.eql(u8, index, "cwd")) {
-        const allocator = luau.getallocator(L);
-
-        const value = try L.Zcheckvalue([:0]const u8, 3, null);
-        const dir = try std.fs.cwd().openDir(value, .{});
-        const path = try dir.realpathAlloc(allocator, ".");
-        defer allocator.free(path);
-
-        try dir.setAsCwd();
-
-        L.pushlstring(path);
-        L.setfield(process_lib, "cwd");
-    } else return L.Zerrorf("Cannot change field ({s})", .{index});
-
-    return 0;
+fn process_getCwd(L: *VM.lua.State) !i32 {
+    const allocator = luau.getallocator(L);
+    const path = try std.fs.cwd().realpathAlloc(allocator, ".");
+    defer allocator.free(path);
+    L.pushlstring(path);
+    return 1;
 }
 
 pub fn loadLib(L: *VM.lua.State, args: []const []const u8) !void {
-    const allocator = luau.getallocator(L);
-
     L.createtable(0, 10);
 
     L.Zsetfield(-1, "arch", @tagName(builtin.cpu.arch));
@@ -553,34 +579,12 @@ pub fn loadLib(L: *VM.lua.State, args: []const []const u8) !void {
     L.setfield(-2, "env");
     L.Zsetfieldfn(-1, "loadEnv", process_loadEnv);
 
-    {
-        const path = try std.fs.cwd().realpathAlloc(allocator, "./");
-        defer allocator.free(path);
-        L.Zsetfield(-1, "cwd", path);
-    }
+    L.Zsetfieldfn(-1, "getCwd", process_getCwd);
 
     L.Zsetfieldfn(-1, "exit", process_exit);
     L.Zsetfieldfn(-1, "run", process_run);
     L.Zsetfieldfn(-1, "create", process_create);
     L.Zsetfieldfn(-1, "onSignal", process_onsignal);
-
-    L.createtable(0, 0);
-    {
-        L.createtable(0, 3);
-
-        L.pushvalue(-3);
-        L.setfield(-2, luau.Metamethods.index); // metatable.__index
-
-        L.pushvalue(-3);
-        L.pushcclosure(VM.zapi.toCFn(lib__newindex), luau.Metamethods.newindex, 1);
-        L.setfield(-2, luau.Metamethods.newindex); // metatable.__newindex
-
-        L.Zsetfield(-1, luau.Metamethods.metatable, "Metatable is locked");
-
-        _ = L.setmetatable(-2);
-    }
-
-    L.remove(-2);
 
     L.setreadonly(-1, true);
 

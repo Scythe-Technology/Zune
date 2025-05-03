@@ -24,6 +24,9 @@ export type Parser = {
 local function as_u32(str: string): number
     return buffer.readu32(buffer.fromstring(str), 0);
 end
+local function as_u16(str: string): number
+    return buffer.readu16(buffer.fromstring(str), 0);
+end
 
 local HTTP = as_u32("HTTP");
 local GET_ = as_u32("GET ");
@@ -38,13 +41,14 @@ local ONS_ = as_u32("ONS ");
 local V1P0 = as_u32("/1.0");
 local V1P1 = as_u32("/1.1");
 
+local RETURN_LINE = as_u16("\r\n");
+
 local function canRead(self: Parser, amount: number): boolean
     return self.pos + amount <= self.size;
 end
 
 local function isReturnLine(self: Parser, buf: buffer): boolean
-    return buffer.readu8(buf, self.pos) == 0x0d -- '\r'
-    and buffer.readu8(buf, self.pos + 1) == 0x0a; -- '\n'
+    return buffer.readu16(buf, self.pos) == RETURN_LINE -- '\r\n'
 end
 
 local MethodParsers = {
@@ -192,11 +196,13 @@ local function parseProtocol(self: Parser, buf: buffer): ()
     self.pos += 2;
 end
 
-local function isAllowedHeaderValue(value: number): boolean
-    return (value == 0x09) or -- \t
-        (value == 0x20) or -- ' '
-        (value >= 0x21 and value <= 0x7E) -- '!'...'~'
+local VALID_HEADER_VALUE = {};
+VALID_HEADER_VALUE[0x09] = true; -- \t
+VALID_HEADER_VALUE[0x20] = true; -- ' '
+for i = 0x21, 0x7E do
+    VALID_HEADER_VALUE[i] = true; -- '!'...'~'
 end
+
 local function skipWhitespace(buf: buffer, size: number, pos: number): number
     while (pos < size and buffer.readu8(buf, pos) == 0x20) do
         pos += 1;
@@ -239,7 +245,7 @@ local function parseHeaders(self: Parser, buf: buffer, maxHeaders: number): ()
                 local value_pos = nil;
                 for j = trim_pos, size - 1 do
                     local b2 = buffer.readu8(buf, j);
-                    if (isAllowedHeaderValue(b2)) then
+                    if (VALID_HEADER_VALUE[b2]) then
                         continue;
                     end
                     if (b2 ~= 0x0d) then -- '\r'
@@ -332,6 +338,23 @@ local function parseBody(self: Parser, buf: buffer, maxBodySize: number): ()
     end
 end
 
+local function canKeepAlive(self: Parser): boolean
+    if (not self.headers) then
+        return false;
+    end
+    local connection = self.headers["connection"];
+    if (not connection) then
+        return true;
+    end
+    if (connection == "close") then
+        return false;
+    end
+    if (self.protocol == "HTTP/1.0") then
+        return false;
+    end
+    return true;
+end
+
 local function newParser(): Parser
     return {
         pos = 0,
@@ -379,6 +402,7 @@ request.parseUri = parseUri;
 request.parseProtocol = parseProtocol;
 request.parseHeaders = parseHeaders;
 request.parseBody = parseBody;
+request.canKeepAlive = canKeepAlive;
 request.newParser = newParser;
 request.withLeftover = withLeftover;
 request.resetParser = resetParser;

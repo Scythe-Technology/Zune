@@ -6,6 +6,8 @@ const builtin = @import("builtin");
 const Engine = @import("engine.zig");
 const Zune = @import("../../zune.zig");
 
+const Lists = @import("../utils/lists.zig");
+
 const VM = luau.VM;
 
 pub var SCHEDULERS = std.ArrayList(*Scheduler).init(Zune.DEFAULT_ALLOCATOR);
@@ -70,7 +72,7 @@ pub const ThreadRef = struct {
     }
 };
 
-const SleepingThread = struct {
+pub const SleepingThread = struct {
     from: ?*VM.lua.State,
     thread: ThreadRef,
     wake: f64,
@@ -79,10 +81,17 @@ const SleepingThread = struct {
     waited: bool,
 };
 
-const DeferredThread = struct {
+pub const DeferredThread = struct {
     from: ?*VM.lua.State,
     thread: ThreadRef,
     args: i32,
+    node: LinkedList.Node,
+
+    pub const LinkedList = Lists.DoublyLinkedList;
+
+    pub inline fn fromNode(node: *LinkedList.Node) *DeferredThread {
+        return @fieldParentPtr("node", node);
+    }
 };
 
 const Scheduler = @This();
@@ -129,11 +138,11 @@ const Synchronization = struct {
     notified: bool = false,
     waiting: bool = false,
 
-    pub const LinkedList = std.DoublyLinkedList(void);
+    pub const LinkedList = Lists.DoublyLinkedList;
 
     pub fn Node(comptime T: type) type {
         return struct {
-            node: Synchronization.LinkedList.Node,
+            node: LinkedList.Node,
             callback: *const fn (ud: *anyopaque) void,
             free: *const fn (ud: *anyopaque, allocator: std.mem.Allocator) void,
             data: T,
@@ -206,13 +215,12 @@ fn SleepOrder(_: void, a: SleepingThread, b: SleepingThread) std.math.Order {
 }
 
 const SleepingQueue = std.PriorityQueue(SleepingThread, void, SleepOrder);
-const DeferredLinkedList = std.DoublyLinkedList(DeferredThread);
 pub const CompletionLinkedList = std.DoublyLinkedList(xev.Dynamic.Completion);
 
-state: *VM.lua.State,
+global: *VM.lua.State,
 allocator: std.mem.Allocator,
 sleeping: SleepingQueue,
-deferred: DeferredLinkedList = .{},
+deferred: DeferredThread.LinkedList = .{},
 tasks: std.ArrayListUnmanaged(TaskObject) = .empty,
 awaits: std.ArrayListUnmanaged(AwaitingObject) = .empty,
 timer: xev.Dynamic.Timer,
@@ -228,7 +236,7 @@ sync: Synchronization,
 
 frame: FrameKind = .None,
 
-pub fn init(allocator: std.mem.Allocator, state: *VM.lua.State) !Scheduler {
+pub fn init(allocator: std.mem.Allocator, L: *VM.lua.State) !Scheduler {
     const thread_pool = try allocator.create(xev.ThreadPool);
     errdefer allocator.destroy(thread_pool);
     thread_pool.* = xev.ThreadPool.init(.{});
@@ -241,7 +249,7 @@ pub fn init(allocator: std.mem.Allocator, state: *VM.lua.State) !Scheduler {
         .timer = try xev.Dynamic.Timer.init(),
         .@"async" = try xev.Dynamic.Async.init(),
         .thread_pool = thread_pool,
-        .state = state,
+        .global = L,
         .allocator = allocator,
         .sleeping = SleepingQueue.init(allocator, {}),
         .sync = .init(),
@@ -254,15 +262,14 @@ pub fn spawnThread(self: *Scheduler, thread: *VM.lua.State, from: ?*VM.lua.State
 }
 
 pub fn deferThread(self: *Scheduler, thread: *VM.lua.State, from: ?*VM.lua.State, args: i32) void {
-    const ptr = self.allocator.create(DeferredLinkedList.Node) catch |err| std.debug.panic("Error: {}\n", .{err});
+    const ptr = self.allocator.create(DeferredThread) catch |err| std.debug.panic("Error: {}\n", .{err});
     ptr.* = .{
-        .data = .{
-            .from = from,
-            .thread = ThreadRef.init(thread),
-            .args = args,
-        },
+        .from = from,
+        .thread = ThreadRef.init(thread),
+        .args = args,
+        .node = .{},
     };
-    self.deferred.append(ptr);
+    self.deferred.append(&ptr.node);
 }
 
 pub fn sleepThread(
@@ -310,26 +317,13 @@ pub fn addTask(self: *Scheduler, comptime T: type, data: *T, L: *VM.lua.State, c
 pub fn awaitResult(
     self: *Scheduler,
     comptime T: type,
-    data: T,
+    data: *T,
     L: *VM.lua.State,
     comptime handlerFn: *const fn (ctx: *T, L: *VM.lua.State, scheduler: *Scheduler) void,
     comptime dtorFn: ?*const fn (ctx: *T, L: *VM.lua.State, scheduler: *Scheduler) void,
     priority: ?AwaitTaskPriority,
-) ?*T {
-    const allocator = luau.getallocator(L);
-
-    const ptr = allocator.create(T) catch |err| std.debug.panic("Error: {}\n", .{err});
-
-    ptr.* = data;
-
-    const status = L.status();
-    if (status != .Yield) {
-        defer allocator.destroy(ptr);
-        handlerFn(ptr, L, self);
-        if (dtorFn) |dtor|
-            dtor(ptr, L, self);
-        return null;
-    }
+) void {
+    std.debug.assert(L.status() == .Yield); // Thread must be yielded
 
     const resumeFn = struct {
         fn inner(ctx: *anyopaque, l: *VM.lua.State, scheduler: *Scheduler) void {
@@ -342,33 +336,37 @@ pub fn awaitResult(
             if (dtorFn) |dtor| {
                 @call(.always_inline, dtor, .{ @as(*T, @alignCast(@ptrCast(ctx))), l, scheduler });
             }
-            luau.getallocator(l).destroy(@as(*T, @alignCast(@ptrCast(ctx))));
         }
     }.inner;
 
     self.awaits.append(self.allocator, .{
-        .data = @ptrCast(ptr),
+        .data = @ptrCast(data),
         .state = ThreadRef.init(L),
         .resumeFn = resumeFn,
         .virtualDtor = virtualDtor,
         .priority = priority orelse .User,
     }) catch |err| std.debug.panic("Error: {}\n", .{err});
-
-    return ptr;
 }
 
 pub fn awaitCall(
     self: *Scheduler,
     comptime T: type,
-    data: T,
+    data: *T,
     L: *VM.lua.State,
+    from: ?*VM.lua.State,
     args: i32,
     comptime handlerFn: *const fn (ctx: *T, L: *VM.lua.State, scheduler: *Scheduler) void,
     comptime dtorFn: ?*const fn (ctx: *T, L: *VM.lua.State, scheduler: *Scheduler) void,
-    from: ?*VM.lua.State,
-) !?*T {
-    _ = try resumeState(L, from, args);
-    return awaitResult(self, T, data, L, handlerFn, dtorFn, .User);
+) void {
+    switch (resumeState(L, from, args) catch .ErrErr) {
+        .Yield => awaitResult(self, T, data, L, handlerFn, dtorFn, .User),
+        else => {
+            handlerFn(data, L, self);
+            if (dtorFn) |dtor| {
+                dtor(data, L, self);
+            }
+        },
+    }
 }
 
 pub fn completeAsync(
@@ -441,7 +439,7 @@ pub fn createSync(self: *Scheduler, comptime T: type, callback: fn (*T) void) !*
     const Node = Synchronization.Node(T);
     const ptr = try self.allocator.create(Node);
     ptr.* = .{
-        .node = .{ .data = undefined },
+        .node = .{},
         .callback = struct {
             fn inner(ud: *anyopaque) void {
                 const node: *Node = @alignCast(@ptrCast(ud));
@@ -510,11 +508,11 @@ pub fn cancelThread(self: *Scheduler, thread: *VM.lua.State) void {
     }
     var next_node = self.deferred.first;
     while (next_node) |node| {
-        const deferred = node.data;
+        const deferred = DeferredThread.fromNode(node);
         if (deferred.thread.value == thread) {
-            node.data.thread.deref();
+            defer self.allocator.destroy(deferred);
+            deferred.thread.deref();
             self.deferred.remove(node);
-            self.allocator.destroy(node);
             break;
         }
         next_node = node.next;
@@ -548,6 +546,26 @@ pub fn XevNoopCallback(err: type, action: xev.CallbackAction) fn (
     }.inner;
 }
 
+pub fn XevNoopWatcherCallback(watcher: type, err: type, action: xev.CallbackAction) fn (
+    _: ?*void,
+    _: *xev.Dynamic.Loop,
+    _: *xev.Dynamic.Completion,
+    _: watcher,
+    _: err,
+) xev.CallbackAction {
+    return struct {
+        fn inner(
+            _: ?*void,
+            _: *xev.Dynamic.Loop,
+            _: *xev.Dynamic.Completion,
+            _: watcher,
+            _: err,
+        ) xev.CallbackAction {
+            return action;
+        }
+    }.inner;
+}
+
 pub fn run(self: *Scheduler, comptime mode: Zune.RunMode) void {
     if (self.running) {
         std.debug.print("Warning: Scheduler is already running, this may lead to unexpected behavior.\n", .{});
@@ -561,7 +579,7 @@ pub fn run(self: *Scheduler, comptime mode: Zune.RunMode) void {
         if (!self.hasPendingWork())
             break;
         const now = VM.lperf.clock();
-        const sleep_time: ?u64 = if (self.tasks.items.len > 0 or self.deferred.len > 0)
+        const sleep_time: ?u64 = if (self.tasks.items.len > 0)
             // TODO: change `tasks` design to go on the event loop stack.
             0
         else if (self.sleeping.peek()) |lowest|
@@ -647,11 +665,11 @@ pub fn run(self: *Scheduler, comptime mode: Zune.RunMode) void {
         if (self.deferred.len > 0) {
             self.frame = .Deferred;
             while (self.deferred.popFirst()) |node| {
-                const deferred = node.data;
-                defer self.allocator.destroy(node);
+                const deferred = DeferredThread.fromNode(node);
+                defer self.allocator.destroy(deferred);
                 const thread = deferred.thread.value;
                 const status = thread.status();
-                defer node.data.thread.deref();
+                defer deferred.thread.deref();
                 if (status != .Ok and status != .Yield)
                     continue;
                 _ = resumeState(
@@ -680,7 +698,7 @@ pub fn run(self: *Scheduler, comptime mode: Zune.RunMode) void {
         }
         self.frame = .None;
         if (comptime mode == .Test)
-            _ = self.state.gc(.Collect, 0);
+            _ = self.global.gc(.Collect, 0);
     }
     self.running = false;
 }

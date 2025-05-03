@@ -286,8 +286,12 @@ fn promptOpBreak(L: *VM.lua.State, allocator: std.mem.Allocator, break_args: []c
             const line = std.fmt.parseInt(i32, line_str, 10) catch |err| {
                 return printResult("Line Parse Error: {}\n", .{err});
             };
-            const file_path = try dir.realpathAlloc(allocator, file_str);
+            const dir_path = try dir.realpathAlloc(allocator, ".");
+            defer allocator.free(dir_path);
+
+            const file_path = try std.fs.path.relative(allocator, dir_path, file_str);
             defer allocator.free(file_path);
+
             if (k == .remove) {
                 if (removeBreakpoint(L, file_path, line)) {
                     if (DEBUG.output == .Readable)
@@ -1061,18 +1065,22 @@ pub fn prompt(L: *VM.lua.State, comptime kind: BreakKind, debug_info: ?*VM.lua.c
                             break :out;
                         }
                         defer L.pop(1);
-                        if (L.getfield(-1, "path") != .String) {
+                        var source: ?[]const u8 = null;
+                        var ar: VM.lua.Debug = .{ .ssbuf = undefined };
+                        if (L.getinfo(1, "sn", &ar)) {
+                            source = ar.source;
+                        }
+                        if (source == null or !std.mem.startsWith(u8, source.?, "@")) {
                             if (DEBUG.output == .Readable)
-                                printResult("file info invalid.\n", .{})
+                                printResult("file info not available.\n", .{})
                             else
                                 printResult("null\n", .{});
                             break :out;
                         }
-                        const path = L.tostring(-1).?;
                         if (DEBUG.output == .Readable)
-                            printResult("current file: {s}\n", .{path})
+                            printResult("current file: {s}\n", .{source.?[1..]})
                         else
-                            printResult("\"{s}\"\n", .{path});
+                            printResult("\"{s}\"\n", .{source.?[1..]});
                     },
                     .trace => {
                         const args = std.mem.trimLeft(u8, rest, " ");

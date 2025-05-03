@@ -223,6 +223,8 @@ const LuaDatabase = struct {
     }
 
     pub fn transactionResumedDtor(ctx: *Transaction, L: *VM.lua.State, _: *Scheduler) void {
+        const allocator = luau.getallocator(L);
+        defer allocator.destroy(ctx);
         if (ctx.state_ref) |ref|
             L.unref(ref);
     }
@@ -270,12 +272,15 @@ const LuaDatabase = struct {
         };
 
         if (status == .Yield) {
-            if (scheduler.awaitResult(Transaction, .{
+            const allocator = luau.getallocator(L);
+            const data = try allocator.create(Transaction);
+            data.* = .{
                 .ptr = ptr,
-                .state = L,
+                .state = ML,
                 .state_ref = ref,
-            }, ML, transactionResumed, transactionResumedDtor, .User)) |_|
-                return L.yield(0);
+            };
+            scheduler.awaitResult(Transaction, data, ML, transactionResumed, transactionResumedDtor, .User);
+            return L.yield(0);
         } else {
             L.unref(ref);
             ptr.db.exec("COMMIT", &.{}) catch |err| switch (err) {

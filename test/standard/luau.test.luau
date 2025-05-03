@@ -204,3 +204,171 @@ describe("Load", function()
         expect(func()).toBe("Hello!");
     end)
 end)
+
+describe("Parse", function()
+    test("Basic", function()
+        local input = [[
+            local a = 1 -- hello
+        ]];
+        local result = luau.parse(input);
+        expect(result).toBe(expect.similar({
+            root = {
+                location = "0,0 - 1,8",
+                type = "AstStatBlock",
+                hasEnd = true,
+                body = {
+                    {
+                        location = "0,12 - 0,23",
+                        type = "AstStatLocal",
+                        values = {
+                            {
+                                location = "0,22 - 0,23",
+                                type = "AstExprConstantNumber",
+                                value = 1,
+                            }
+                        },
+                        vars = {
+                            {
+                                location = "0,18 - 0,19",
+                                type = "AstLocal",
+                                name = "a",
+                            }
+                        },
+                    }
+                }
+            },
+            lines = 2,
+            commentLocations = {
+                {
+                    location = "0,24 - 0,32",
+                    type = "Comment",
+                },
+            },
+            hotcomments = {},
+        }));
+    end)
+
+    test("Hot Comments", function()
+        local input = [[
+--!native
+--!unsafe
+-- space
+--!unknown
+        ]];
+        local result = luau.parse(input);
+        expect(result).toBe(expect.similar({
+            root = {
+                location = "0,0 - 4,8",
+                type = "AstStatBlock",
+                hasEnd = true,
+                body = {},
+            },
+            lines = 5,
+            commentLocations = {
+                {
+                    location = "0,0 - 0,9",
+                    type = "Comment",
+                },
+                {
+                    location = "1,0 - 1,9",
+                    type = "Comment",
+                },
+                {
+                    location = "2,0 - 2,8",
+                    type = "Comment",
+                },
+                {
+                    location = "3,0 - 3,10",
+                    type = "Comment",
+                }
+            },
+            hotcomments = {
+                {
+                    header = true,
+                    location = "0,0 - 0,9",
+                    content = "native",
+                },
+                {
+                    header = true,
+                    location = "1,0 - 1,9",
+                    content = "unsafe",
+                },
+                {
+                    header = true,
+                    location = "3,0 - 3,10",
+                    content = "unknown",
+                }
+            },
+        }));
+    end)
+
+    test("Error", function()
+        local input = [[
+            `interp`
+        ]];
+        local result = luau.parse(input);
+        expect(result).toBe(expect.similar({
+            errors = {
+                {
+                    message = "Expected identifier when parsing expression, got `interp`",
+                    location = "0,12 - 0,20",
+                }
+            },
+        }));
+    end)
+end)
+
+describe("ParseExpr", function()
+    test("Basic", function()
+        local input = [[`interp`]];
+        local result = luau.parseExpr(input);
+        expect(result).toBe(expect.similar({
+            root = {
+                location = "0,0 - 0,8",
+                type = "AstExprConstantString",
+                value = "interp",
+            },
+            lines = 1,
+            commentLocations = {},
+            hotcomments = {},
+        }));
+    end)
+
+    test("ExprBinary", function()
+        local input = [[1 * 2]];
+        local result = luau.parseExpr(input);
+        expect(result).toBe(expect.similar({
+            root = {
+                location = "0,0 - 0,5",
+                type = "AstExprBinary",
+                left = {
+                    location = "0,0 - 0,1",
+                    type = "AstExprConstantNumber",
+                    value = 1,
+                },
+                right = {
+                    location = "0,4 - 0,5",
+                    type = "AstExprConstantNumber",
+                    value = 2,
+                },
+                op = "Mul",
+            },
+            lines = 1,
+            commentLocations = {},
+            hotcomments = {},
+        }));
+    end)
+
+    test("Error", function()
+        local input = [[local a = 0]];
+        local result = luau.parseExpr(input);
+        expect(result).toBe(expect.similar({
+            errors = {
+                {
+                    message = "Expected identifier when parsing expression, got 'local'",
+                    location = "0,0 - 0,5",
+                }
+            },
+        }));
+    end)
+end)

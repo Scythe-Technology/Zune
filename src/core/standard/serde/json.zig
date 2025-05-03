@@ -237,6 +237,7 @@ pub fn LuaEncoder(comptime json_kind: JsonKind) fn (L: *VM.lua.State) anyerror!i
 }
 
 fn decodeArray(L: *VM.lua.State, array: *std.ArrayList(json.JsonValue), preserve_null: bool) !void {
+    L.rawcheckstack(2);
     L.createtable(@intCast(array.items.len), 0);
 
     for (array.items, 1..) |item, i| {
@@ -246,6 +247,7 @@ fn decodeArray(L: *VM.lua.State, array: *std.ArrayList(json.JsonValue), preserve
 }
 
 fn decodeObject(L: *VM.lua.State, object: *std.StringArrayHashMap(json.JsonValue), preserve_null: bool) !void {
+    L.rawcheckstack(3);
     L.createtable(0, @intCast(object.count()));
 
     var iter = object.iterator();
@@ -256,7 +258,7 @@ fn decodeObject(L: *VM.lua.State, object: *std.StringArrayHashMap(json.JsonValue
     }
 }
 
-fn decodeValue(L: *VM.lua.State, jsonValue: json.JsonValue, preserve_null: bool) anyerror!void {
+pub fn decodeValue(L: *VM.lua.State, jsonValue: json.JsonValue, preserve_null: bool) anyerror!void {
     switch (jsonValue) {
         .nil => if (preserve_null) {
             _ = L.getfield(VM.lua.REGISTRYINDEX, "_SERDE_JSON_NULL");

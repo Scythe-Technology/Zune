@@ -1,10 +1,6 @@
 const std = @import("std");
 const luau = @import("luau");
 
-const file = @import("file.zig");
-
-const Parser = @import("../utils/parser.zig");
-
 const VM = luau.VM;
 
 pub var MAX_DEPTH: u8 = 4;
@@ -59,6 +55,17 @@ fn fmt_write_metamethod__tostring(L: *VM.lua.State, writer: anytype, idx: i32) !
     return false;
 }
 
+fn isPlainText(slice: []const u8) bool {
+    for (0..slice.len) |i| {
+        switch (slice[i]) {
+            'A'...'Z', 'a'...'z', '_' => {},
+            '0'...'9' => if (i == 0) return false,
+            else => return false,
+        }
+    }
+    return true;
+}
+
 pub fn fmt_print_value(
     L: *VM.lua.State,
     writer: anytype,
@@ -92,7 +99,7 @@ pub fn fmt_print_value(
             .String => {
                 const s = L.tostring(idx) orelse unreachable;
                 if (asKey) {
-                    if (Parser.isPlainText(s)) try writer.print("{s}", .{s}) else {
+                    if (isPlainText(s)) try writer.print("{s}", .{s}) else {
                         if (USE_COLOR)
                             try writer.print("\x1b[2m[\x1b[0m\x1b[32m\"{s}\"\x1b[0m\x1b[2m]\x1b[0m", .{
                                 s,

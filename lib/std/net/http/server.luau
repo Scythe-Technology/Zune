@@ -45,11 +45,10 @@ export type ServeOptions = {
     --- - Default: `60`
     clientTimeout: number?,
     --- The configuration for keep-alive connections.
-    --- - If `nil`, keep-alive is disabled.
-    --- - Default: `nil`
     keepAlive: {
+        --- - Default: `true`
+        enabled: boolean?,
         timeout: number,
-        maxRequests: number,
     }?,
     --- The function to handle requests.
     request: (request: Request) ->  string | Response,
@@ -146,7 +145,7 @@ local function listenHttpClient(
     socket: NetworkSocket,
     maxBodySize: number,
     clientTimeout: number,
-    keepAlive: {timeout: number, maxRequests: number},
+    keepAlive: {enabled: boolean?, timeout: number},
     callback_request: (request: Request) -> string | Response,
     connection: LinkedList.Node<NetworkSocket>
 ): ()
@@ -156,10 +155,14 @@ local function listenHttpClient(
     while socket:isOpen() do
         local open_timeout: thread;
         if (requests > 0) then
-            if (requests >= keepAlive.maxRequests) then
-                break;
+            if (not keepAlive.enabled) then
+                break; -- end request
             end
-            open_timeout = task.delay(keepAlive.timeout, closeClientTimedoutAsync, socket);
+            if (keepAlive.timeout > 0) then
+                open_timeout = task.delay(keepAlive.timeout, closeClientTimedoutAsync, socket);
+            else
+                open_timeout = task.delay(clientTimeout, closeClientTimedoutAsync, socket);
+            end
         else
             open_timeout = task.delay(clientTimeout, closeClientTimedoutAsync, socket);
         end
@@ -167,7 +170,9 @@ local function listenHttpClient(
             break; -- too much client data
         end
         local stream_ok, data = pcall(socket.recv, socket, 8192);
-        task.cancel(open_timeout);
+        if (open_timeout) then
+            task.cancel(open_timeout);
+        end
         if (not stream_ok) then
             local err = data::any;
             if (SocketUtils.SocketClosedError[err]) then
@@ -179,6 +184,17 @@ local function listenHttpClient(
         local data_len = buffer.len(data);
         if (data_len == 0) then
             break; -- closed/disconnected
+        end
+        if (true) then
+            sendMessage(
+                socket,
+                Response.from({
+                    statusCode = 200,
+                    statusReason = "OK",
+                    body = "Hello World",
+                })
+            );
+            continue;
         end
         request_header_read += data_len;
         local buf = Request.withLeftover(parser, data);
@@ -312,6 +328,9 @@ local function listenHttpClient(
                     })
             );
         end
+        if (not Request.canKeepAlive(parser)) then
+            break;
+        end
     end
     waitForMessages(socket);
     SocketUtils.close(socket);
@@ -328,7 +347,7 @@ local function startServer(
     maxBodySize: number,
     maxConnections: number,
     clientTimeout: number,
-    keepAlive: {timeout: number, maxRequests: number},
+    keepAlive: {enabled: boolean?, timeout: number},
     callback_request: (request: Request) -> string | Response
 ): ()
     local socket = server.socket;
@@ -380,9 +399,7 @@ function server.serve(opts: ServeOptions): Server
     local clientTimeout = opts.clientTimeout or 60;
     local maxConnections = opts.maxConnections or 1024;
     -- local websocket_handlers = opts.websocket or {};
-    local keepAlive = opts.keepAlive;
-    local keepAliveTimeout = if (keepAlive) then keepAlive.timeout else 0;
-    local keepAliveMaxRequests = if (keepAlive) then keepAlive.maxRequests else 0;
+    local keepAlive = opts.keepAlive or { enabled = true, timeout = 0 };
 
     local callback_request = opts.request;
 
@@ -394,9 +411,12 @@ function server.serve(opts: ServeOptions): Server
     assert(type(clientTimeout) == "number", "Expected clientTimeout to be a number");
     assert(type(maxConnections) == "number", "Expected maxConnections to be a number");
     -- assert(type(websocket_handlers) == "table", "Expected websocket to be a table");
-    assert(type(keepAlive) == "table" or keepAlive == nil, "Expected keepAlive to be a table");
+    assert(type(keepAlive) == "table", "Expected keepAlive to be a table");
+
+    local keepAliveTimeout = keepAlive.timeout;
+    local keepAliveEnabled = keepAlive.enabled or true;
     assert(type(keepAliveTimeout) == "number", "Expected keepAlive.timeout to be a number");
-    assert(type(keepAliveMaxRequests) == "number", "Expected keepAlive.maxRequests to be a number");
+    assert(type(keepAliveEnabled) == "boolean", "Expected keepAlive.enabled to be a boolean");
 
     assert(type(callback_request) == "function", "Expected request to be a function");
 
@@ -414,7 +434,7 @@ function server.serve(opts: ServeOptions): Server
     end
 
     socket:bindIp(address, port);
-    socket:listen();
+    socket:listen(maxBacklog);
 
     local self: Server = {
         waiting = false,
@@ -431,8 +451,8 @@ function server.serve(opts: ServeOptions): Server
         maxConnections,
         clientTimeout,
         {
+            enabled = keepAliveEnabled,
             timeout = keepAliveTimeout,
-            maxRequests = keepAliveMaxRequests,
         },
         callback_request
     );

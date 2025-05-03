@@ -54,20 +54,10 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         .mode = .Run,
     });
 
-    const path = try std.fs.cwd().realpathAlloc(allocator, ".");
-    defer allocator.free(path);
-
-    const virtual_path = try std.fs.path.join(allocator, &.{ path, "REPL" });
-    defer allocator.free(virtual_path);
-
     Engine.setLuaFileContext(L, .{
-        .path = virtual_path,
-        .name = "REPL",
         .source = "",
         .main = true,
     });
-
-    Zune.resolvers_require.load_require(L);
 
     L.setsafeenv(VM.lua.GLOBALSINDEX, true);
 

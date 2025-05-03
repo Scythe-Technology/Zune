@@ -3,8 +3,6 @@ const xev = @import("xev").Dynamic;
 const luau = @import("luau");
 const builtin = @import("builtin");
 
-const Common = @import("../common.zig");
-
 const Scheduler = @import("../../../runtime/scheduler.zig");
 const Response = @import("../http/response.zig");
 const WebSocket = @import("../http/websocket.zig");
@@ -193,7 +191,7 @@ pub fn lua_request(L: *VM.lua.State) !i32 {
     var req = try std.http.Client.open(&self.client, method, uri, .{
         .redirect_behavior = redirectBehavior orelse @enumFromInt(3),
         .extra_headers = headers orelse &.{},
-        .keep_alive = true,
+        .keep_alive = false,
         .server_header_buffer = server_header_buffer,
         .headers = .{
             .user_agent = .{ .override = ZUNE_CLIENT_HEADER },

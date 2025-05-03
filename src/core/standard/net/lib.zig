@@ -10,9 +10,6 @@ const luaHelper = @import("../../utils/luahelper.zig");
 
 const Socket = @import("../../objects/network/Socket.zig");
 
-const UDP = @import("udp.zig");
-const TCP = @import("tcp.zig");
-
 pub const LIB_NAME = "net";
 pub fn PlatformSupported() bool {
     return switch (comptime builtin.os.tag) {
@@ -76,19 +73,7 @@ fn ImportConstants(L: *VM.lua.State, namespace: anytype, comptime name: [:0]cons
 }
 
 pub fn loadLib(L: *VM.lua.State) void {
-    UDP.lua_load(L);
-    TCP.lua_load(L);
-
-    L.createtable(0, 11);
-
-    L.Zsetfieldfn(-1, "udpSocket", UDP.lua_udpsocket);
-    L.Zsetfieldfn(-1, "tcpConnect", TCP.lua_tcp_client);
-    L.Zsetfieldfn(-1, "tcpHost", TCP.lua_tcp_server);
-
-    {
-        @import("http/lib.zig").load(L);
-        L.setfield(-2, "http");
-    }
+    L.createtable(0, 8);
 
     L.Zsetfieldfn(-1, "createSocket", lua_createSocket);
     L.Zsetfieldfn(-1, "getAddressList", lua_getAddressList);
@@ -98,6 +83,11 @@ pub fn loadLib(L: *VM.lua.State) void {
     ImportConstants(L, std.posix.IPPROTO, "IPPROTO");
     ImportConstants(L, std.posix.SO, "SOCKOPT");
     ImportConstants(L, std.posix.SOL, "SOCKOPTLV");
+
+    {
+        @import("http/lib.zig").load(L);
+        L.setfield(-2, "http");
+    }
 
     L.setreadonly(-1, true);
 
@@ -115,7 +105,7 @@ test "net" {
     const TestRunner = @import("../../utils/testrunner.zig");
 
     const testResult = try TestRunner.runTest(
-        TestRunner.newTestFile("standard/net.test.luau"),
+        TestRunner.newTestFile("standard/net/init.test.luau"),
         &.{},
         .{},
     );
