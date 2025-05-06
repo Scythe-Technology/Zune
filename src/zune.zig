@@ -61,9 +61,9 @@ const ConstantConfig = struct {
     loadStd: ?bool = null,
 };
 
-pub fn loadConfiguration(comptime config: ConstantConfig) void {
+pub fn loadConfiguration(comptime config: ConstantConfig, dir: std.fs.Dir) void {
     const allocator = DEFAULT_ALLOCATOR;
-    const config_content = std.fs.cwd().readFileAlloc(allocator, "zune.toml", std.math.maxInt(usize)) catch |err| switch (err) {
+    const config_content = dir.readFileAlloc(allocator, "zune.toml", std.math.maxInt(usize)) catch |err| switch (err) {
         error.FileNotFound => return,
         else => return std.debug.print("Failed to read zune.toml: {}\n", .{err}),
     };
@@ -77,10 +77,10 @@ pub fn loadConfiguration(comptime config: ConstantConfig) void {
     if (toml.checkOptionTable(zconfig, "runtime")) |runtime_config| {
         if (toml.checkOptionString(runtime_config, "cwd")) |path| {
             if (comptime builtin.target.os.tag != .wasi) {
-                const dir = std.fs.cwd().openDir(path, .{}) catch |err| {
+                const cwd = dir.openDir(path, .{}) catch |err| {
                     std.debug.panic("[zune.toml] Failed to open cwd (\"{s}\"): {}\n", .{ path, err });
                 };
-                dir.setAsCwd() catch |err| {
+                cwd.setAsCwd() catch |err| {
                     std.debug.panic("[zune.toml] Failed to set cwd to (\"{s}\"): {}\n", .{ path, err });
                 };
             }

@@ -73,12 +73,12 @@ describe("FFI", function()
     end
     describe("dlopen", function()
         test("Sample Library (No Decls)", function()
-            local lib = ffi.dlopen(`./zig-out/{ffi.prefix}sample.{static_suffix}`, {});
+            local lib = ffi.dlopen(`./zig-out/lib/{ffi.prefix}sample.{static_suffix}`, {});
             expect(lib).toBe(expect.type("userdata"));
         end);
         test("Fail", function()
             expect(function()
-                ffi.dlopen(`./zig-out/{ffi.prefix}invalid.{static_suffix}`, {});
+                ffi.dlopen(`./zig-out/lib/{ffi.prefix}invalid.{static_suffix}`, {});
             end).toThrow("FileNotFound");
         end);
     end)
@@ -511,7 +511,7 @@ describe("FFI", function()
             returns = ffi.types.void,
             args = {ffi.types.pointer},
         };
-        local lib = ffi.dlopen(`./zig-out/{ffi.prefix}sample.{static_suffix}`, {
+        local lib = ffi.dlopen(`./zig-out/lib/{ffi.prefix}sample.{static_suffix}`, {
             blank = blank_defintion,
             add = add_defintion,
             add_ptr = add_ptr_defintion,

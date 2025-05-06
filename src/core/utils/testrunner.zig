@@ -34,10 +34,6 @@ pub fn runTest(comptime testFile: TestFile, args: []const []const u8, comptime o
         else => {},
     }
 
-    Zune.loadConfiguration(.{
-        .loadStd = false,
-    });
-
     var L = try luau.init(&allocator);
     defer L.deinit();
 
@@ -68,6 +64,10 @@ pub fn runTest(comptime testFile: TestFile, args: []const []const u8, comptime o
     const dir_path = std.fs.path.dirname(testFile.path) orelse unreachable;
     var dir = try cwd.openDir(dir_path, .{});
     defer dir.close();
+
+    Zune.loadConfiguration(.{
+        .loadStd = false,
+    }, dir);
 
     try Zune.loadLuaurc(Zune.DEFAULT_ALLOCATOR, cwd, dir_path);
     try Engine.prepAsync(L, &scheduler, .{

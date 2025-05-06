@@ -19,7 +19,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         return;
     }
 
-    Zune.loadConfiguration(.{});
+    Zune.loadConfiguration(.{}, std.fs.cwd());
 
     const dir = std.fs.cwd();
     const module = args[0];

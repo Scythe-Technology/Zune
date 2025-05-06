@@ -22,7 +22,7 @@ test("Generic", function()
         close = false,
     };
 
-    server = tcp.hostAsync({
+    server = tcp.host({
         address = "127.0.0.1",
         port = 8088,
         reuseAddress = true,
@@ -46,7 +46,7 @@ test("Generic", function()
     end)
     expect(server.stopped).toBe(false);
 
-    client = tcp.connectAsync({
+    client = tcp.connect({
         address = "127.0.0.1",
         port = 8088,
         open = function(socket)
@@ -116,7 +116,7 @@ test("Double Client Socket", function()
         close = false,
     };
 
-    server = tcp.hostAsync({
+    server = tcp.host({
         address = "127.0.0.1",
         port = 8088,
         reuseAddress = true,
@@ -140,7 +140,7 @@ test("Double Client Socket", function()
     end)
     expect(server.stopped).toBe(false);
 
-    client1 = tcp.connectAsync({
+    client1 = tcp.connect({
         address = "127.0.0.1",
         port = 8088,
         open = function(socket)
@@ -162,7 +162,7 @@ test("Double Client Socket", function()
     end)
     expect(client1.stopped).toBe(false);
 
-    client2 = tcp.connectAsync({
+    client2 = tcp.connect({
         address = "127.0.0.1",
         port = 8088,
         open = function(socket)

@@ -91,6 +91,7 @@ pub const HTTP_505 = StaticResponse(.{
 });
 
 completion: xev.Completion,
+close_completion: xev.Completion,
 cancel_completion: xev.Completion,
 server: *Server,
 socket: xev.TCP,
@@ -189,7 +190,7 @@ pub fn close(self: *Self) void {
     self.state.stage = .closing;
     self.socket.close(
         &self.server.scheduler.loop,
-        &self.completion,
+        &self.close_completion,
         Self,
         self,
         onClose,

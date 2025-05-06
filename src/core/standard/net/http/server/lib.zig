@@ -123,6 +123,7 @@ pub fn onAccept(
     client.* = .{
         .socket = client_socket,
         .completion = .init(),
+        .close_completion = .init(),
         .cancel_completion = .init(),
         .parser = .init(allocator, self.state.max_header_count),
         .server = self,
@@ -526,12 +527,4 @@ pub fn lua_load(L: *VM.lua.State) void {
     });
     L.setreadonly(-1, true);
     L.pop(1);
-
-    // _ = L.Znewmetatable(LuaMeta.WEBSOCKET_META, .{
-    //     .__index = LuaMeta.websocket__index,
-    //     .__namecall = LuaMeta.websocket__namecall,
-    //     .__metatable = "Metatable is locked",
-    // });
-    // L.setreadonly(-1, true);
-    // L.pop(1);
 }
