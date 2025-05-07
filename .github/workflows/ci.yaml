@@ -69,10 +69,9 @@ jobs:
             name: macOs Arm64
             target: aarch64-macos
             artifact: zune-${{ needs.prep.outputs.version }}-macos-aarch64
-          - os: ubuntu-latest
+          - os: ubuntu-24.04-arm
             name: Linux Arm64
             target: aarch64-linux
-            qemu-platform: arm64
             artifact: zune-${{ needs.prep.outputs.version }}-linux-aarch64
           - os: ubuntu-latest
             name: Linux Risc-v64
