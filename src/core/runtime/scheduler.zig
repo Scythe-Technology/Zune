@@ -191,9 +191,22 @@ const Synchronization = struct {
     }
 };
 
+const Pool = struct {
+    io: *xev.ThreadPool,
+    general: *xev.ThreadPool,
+
+    pub fn free(self: *Pool, allocator: std.mem.Allocator) void {
+        defer allocator.destroy(self.general);
+        defer allocator.destroy(self.io);
+        self.io.deinit();
+        self.general.deinit();
+    }
+};
+
 const FrameKind = enum {
     None,
     EventLoop,
+    Synchronize,
     Task,
     Sleeping,
     Deferred,
@@ -226,8 +239,9 @@ awaits: std.ArrayListUnmanaged(AwaitingObject) = .empty,
 timer: xev.Dynamic.Timer,
 loop: xev.Dynamic.Loop,
 @"async": xev.Dynamic.Async,
-thread_pool: *xev.ThreadPool,
+pools: Pool,
 async_tasks: usize = 0,
+now_clock: f64 = 0,
 
 running: bool = false,
 threadId: std.Thread.Id = 0,
@@ -237,18 +251,26 @@ sync: Synchronization,
 frame: FrameKind = .None,
 
 pub fn init(allocator: std.mem.Allocator, L: *VM.lua.State) !Scheduler {
-    const thread_pool = try allocator.create(xev.ThreadPool);
-    errdefer allocator.destroy(thread_pool);
-    thread_pool.* = xev.ThreadPool.init(.{});
+    const max_threads = std.Thread.getCpuCount() catch 1;
+    const io_pool = try allocator.create(xev.ThreadPool);
+    errdefer allocator.destroy(io_pool);
+    const general_pool = try allocator.create(xev.ThreadPool);
+    errdefer allocator.destroy(general_pool);
+
+    io_pool.* = .init(max_threads);
+    general_pool.* = .init(max_threads);
 
     return .{
         .loop = try xev.Dynamic.Loop.init(.{
             .entries = 4096,
-            .thread_pool = thread_pool,
+            .thread_pool = io_pool,
         }),
         .timer = try xev.Dynamic.Timer.init(),
         .@"async" = try xev.Dynamic.Async.init(),
-        .thread_pool = thread_pool,
+        .pools = .{
+            .io = io_pool,
+            .general = general_pool,
+        },
         .global = L,
         .allocator = allocator,
         .sleeping = SleepingQueue.init(allocator, {}),
@@ -566,59 +588,27 @@ pub fn XevNoopWatcherCallback(watcher: type, err: type, action: xev.CallbackActi
     }.inner;
 }
 
-pub fn run(self: *Scheduler, comptime mode: Zune.RunMode) void {
-    if (self.running) {
-        std.debug.print("Warning: Scheduler is already running, this may lead to unexpected behavior.\n", .{});
-        return;
-    }
-    self.threadId = std.Thread.getCurrentId();
-    self.running = true;
-    var timer_completion: xev.Dynamic.Completion = .init();
-    var timer_cancel_completion: xev.Dynamic.Completion = .init();
-    while (true) {
-        if (!self.hasPendingWork())
-            break;
-        const now = VM.lperf.clock();
-        const sleep_time: ?u64 = if (self.tasks.items.len > 0)
-            // TODO: change `tasks` design to go on the event loop stack.
-            0
-        else if (self.sleeping.peek()) |lowest|
-            @intFromFloat(@max(lowest.wake - now, 0) * std.time.ms_per_s)
-        else
-            null;
-        if (sleep_time) |time|
-            self.timer.reset(
-                &self.loop,
-                &timer_completion,
-                &timer_cancel_completion,
-                time,
-                void,
-                null,
-                XevNoopCallback(xev.Dynamic.Timer.RunError!void, .disarm),
-            );
-        {
-            self.frame = .EventLoop;
-            self.loop.run(.once) catch |err| {
-                std.debug.print("EventLoop Error: {}\n", .{err});
-            };
+inline fn processFrame(self: *Scheduler, comptime frame: FrameKind) void {
+    self.frame = frame;
+    switch (frame) {
+        .EventLoop => self.loop.run(.once) catch |err| {
+            std.debug.print("EventLoop Error: {}\n", .{err});
+        },
+        .Synchronize => {
+            self.sync.mutex.lock();
+            defer self.sync.mutex.unlock();
 
-            if (self.sync.completed.len > 0) {
-                self.sync.mutex.lock();
-                defer self.sync.mutex.unlock();
+            self.sync.notified = false;
 
-                self.sync.notified = false;
+            const SyncNode = Synchronization.Node(void);
 
-                const SyncNode = Synchronization.Node(void);
-
-                while (self.sync.completed.popFirst()) |node| {
-                    const sync: *SyncNode = @fieldParentPtr("node", node);
-                    defer sync.free(sync, self.allocator);
-                    sync.callback(sync);
-                }
+            while (self.sync.completed.popFirst()) |node| {
+                const sync: *SyncNode = @fieldParentPtr("node", node);
+                defer sync.free(sync, self.allocator);
+                sync.callback(sync);
             }
-        }
-        if (self.tasks.items.len > 0) {
-            self.frame = .Task;
+        },
+        .Task => {
             var i = self.tasks.items.len;
             while (i > 0) {
                 i -= 1;
@@ -634,9 +624,9 @@ pub fn run(self: *Scheduler, comptime mode: Zune.RunMode) void {
                     },
                 }
             }
-        }
-        if (self.sleeping.items.len > 0) {
-            self.frame = .Sleeping;
+        },
+        .Sleeping => {
+            const now = self.now_clock;
             while (self.sleeping.peek()) |current| {
                 if (current.wake <= now) {
                     var slept = self.sleeping.remove();
@@ -661,26 +651,22 @@ pub fn run(self: *Scheduler, comptime mode: Zune.RunMode) void {
                     ) catch {};
                 } else break;
             }
-        }
-        if (self.deferred.len > 0) {
-            self.frame = .Deferred;
-            while (self.deferred.popFirst()) |node| {
-                const deferred = DeferredThread.fromNode(node);
-                defer self.allocator.destroy(deferred);
-                const thread = deferred.thread.value;
-                const status = thread.status();
-                defer deferred.thread.deref();
-                if (status != .Ok and status != .Yield)
-                    continue;
-                _ = resumeState(
-                    thread,
-                    deferred.from,
-                    deferred.args,
-                ) catch {};
-            }
-        }
-        if (self.awaits.items.len > 0) {
-            self.frame = .Awaiting;
+        },
+        .Deferred => while (self.deferred.popFirst()) |node| {
+            const deferred = DeferredThread.fromNode(node);
+            defer self.allocator.destroy(deferred);
+            const thread = deferred.thread.value;
+            const status = thread.status();
+            defer deferred.thread.deref();
+            if (status != .Ok and status != .Yield)
+                continue;
+            _ = resumeState(
+                thread,
+                deferred.from,
+                deferred.args,
+            ) catch {};
+        },
+        .Awaiting => {
             var i = self.awaits.items.len;
             while (i > 0) {
                 i -= 1;
@@ -695,6 +681,55 @@ pub fn run(self: *Scheduler, comptime mode: Zune.RunMode) void {
                     awaiting.virtualDtor(data, state, self);
                 }
             }
+        },
+        else => unreachable,
+    }
+}
+
+pub fn run(self: *Scheduler, comptime mode: Zune.RunMode) void {
+    if (self.running) {
+        std.debug.print("Warning: Scheduler is already running, this may lead to unexpected behavior.\n", .{});
+        return;
+    }
+    self.threadId = std.Thread.getCurrentId();
+    self.running = true;
+    var timer_completion: xev.Dynamic.Completion = .init();
+    var timer_cancel_completion: xev.Dynamic.Completion = .init();
+    while (true) {
+        if (!self.hasPendingWork())
+            break;
+        const now = VM.lperf.clock();
+        self.now_clock = now;
+        const sleep_time: ?u64 = if (self.tasks.items.len > 0)
+            // TODO: change `tasks` design to go on the event loop stack.
+            0
+        else if (self.sleeping.peek()) |lowest|
+            @intFromFloat(@max(lowest.wake - now, 0) * std.time.ms_per_s)
+        else
+            null;
+        if (sleep_time) |time|
+            self.timer.reset(
+                &self.loop,
+                &timer_completion,
+                &timer_cancel_completion,
+                time,
+                void,
+                null,
+                XevNoopCallback(xev.Dynamic.Timer.RunError!void, .disarm),
+            );
+        self.processFrame(.EventLoop);
+        if (self.sync.completed.len > 0)
+            self.processFrame(.Synchronize);
+        if (self.tasks.items.len > 0)
+            self.processFrame(.Task);
+        if (self.sleeping.items.len > 0)
+            self.processFrame(.Sleeping);
+        if (self.awaits.items.len > 0)
+            self.processFrame(.Awaiting);
+        while (self.deferred.len > 0) {
+            self.processFrame(.Deferred);
+            if (self.awaits.items.len > 0)
+                self.processFrame(.Awaiting);
         }
         self.frame = .None;
         if (comptime mode == .Test)
@@ -715,9 +750,7 @@ pub fn deinit(self: *Scheduler) void {
     self.timer.deinit();
     self.loop.deinit();
     self.@"async".deinit();
-    self.thread_pool.shutdown();
-    self.thread_pool.deinit();
-    self.allocator.destroy(self.thread_pool);
+    self.pools.free(self.allocator);
 }
 
 pub fn getScheduler(L: anytype) *Scheduler {

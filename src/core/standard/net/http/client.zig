@@ -216,7 +216,7 @@ pub fn lua_request(L: *VM.lua.State) !i32 {
 
     scheduler.asyncWaitForSync(self);
 
-    scheduler.thread_pool.schedule(.from(&self.task));
+    scheduler.pools.general.schedule(&self.task);
 
     return L.yield(0);
 }

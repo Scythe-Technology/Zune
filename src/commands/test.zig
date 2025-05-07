@@ -112,7 +112,11 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     Engine.runAsync(ML, &scheduler, .{ .cleanUp = true }) catch {};
 
-    _ = Zune.corelib.testing.finish_testing(L, start);
+    const reuslt = Zune.corelib.testing.finish_testing(L, start);
+
+    if (reuslt.failed > 0) {
+        std.process.exit(1);
+    }
 }
 
 pub const Command = command.Command{ .name = "test", .execute = Execute };
