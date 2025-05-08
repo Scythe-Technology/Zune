@@ -19,7 +19,8 @@ const TAG_FFI_DATATYPE = tagged.Tags.get("FFI_DATATYPE").?;
 pub const LIB_NAME = "ffi";
 pub fn PlatformSupported() bool {
     return switch (comptime builtin.os.tag) {
-        .linux, .macos, .windows => true,
+        .linux, .macos => true,
+        .windows => !builtin.cpu.arch.isAARCH64(),
         else => false,
     };
 }
