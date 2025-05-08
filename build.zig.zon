@@ -40,8 +40,8 @@
             .hash = "zstd-1.5.6-2-Z4uSumxDAAD3I2iBy6Re33wxHF5cyb_85JP5SJ71Dc0G",
         },
         .tinycc = .{
-            .url = "https://codeload.github.com/Scythe-Technology/zig-tinycc/tar.gz/51765861fd235493a7419a1e070102712024ebf1",
-            .hash = "tinycc-0.0.1-T6dU82t3AQDiZLySKzUQMnY5AULuB_di2x_-rhneTrmO",
+            .url = "https://codeload.github.com/Scythe-Technology/zig-tinycc/tar.gz/955e657880e9a315c009912894e1820a088bf77a",
+            .hash = "tinycc-0.0.2-T6dU8wTGAABMV6-NUV1PSpAUO2MUp3IcC0IGOh3H9sjP",
         },
         .libxev = .{
             .url = "https://codeload.github.com/Scythe-Technology/libxev/tar.gz/679d93ec0aa54fcc08c8c4c9e93a8c118c9f92bd",

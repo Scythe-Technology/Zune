@@ -670,11 +670,9 @@ const FunctionSymbol = struct {
 const CompiledSymbol = struct {
     type: FunctionSymbol,
     state: *tinycc.TCCState,
-    block: tinycc.DynMem,
 
     pub fn free(self: CompiledSymbol, allocator: std.mem.Allocator) void {
         allocator.free(self.type.args);
-        self.block.free();
         self.state.deinit();
     }
 };
@@ -757,18 +755,16 @@ fn compileCallableFunction(returns: DataType, args: []const DataType) !CallableF
     try source.append('\n');
     try generateSourceFromSymbol(&source, returns, args);
 
-    const block = state.compileStringOnceAlloc(allocator, source.items) catch |err| {
+    state.compileStringOnce(allocator, source.items) catch |err| {
         std.debug.print("Internal FFI Error: {}\n", .{err});
         return error.CompilationError;
     };
-    errdefer block.free();
 
     _ = state.get_symbol("call_fn_ffi") orelse return error.BadCompilation;
 
     return .{
         .sym = .{
             .state = state,
-            .block = block,
             .type = .{
                 .returns = returns,
                 .args = try allocator.dupe(DataType, args),
@@ -1740,7 +1736,7 @@ fn lua_closure(L: *VM.lua.State) !i32 {
     _ = state.add_symbol("external_ptr", @ptrCast(@alignCast(call_ptr)));
     _ = state.add_symbol("external_call", @ptrCast(@alignCast(&ffi_closure_inner)));
 
-    const block = state.compileStringOnceAlloc(allocator, source.items) catch |err| {
+    state.compileStringOnce(allocator, source.items) catch |err| {
         std.debug.print("Internal FFI Error: {}\n", .{err});
         return error.CompilationError;
     };
@@ -1756,7 +1752,6 @@ fn lua_closure(L: *VM.lua.State) !i32 {
         .callinfo = call_ptr,
         .sym = .{
             .state = state,
-            .block = block,
             .type = .{
                 .returns = symbol_returns,
                 .args = symbol_args,
