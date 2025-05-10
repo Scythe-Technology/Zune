@@ -19,7 +19,8 @@ const TAG_FFI_DATATYPE = tagged.Tags.get("FFI_DATATYPE").?;
 pub const LIB_NAME = "ffi";
 pub fn PlatformSupported() bool {
     return switch (comptime builtin.os.tag) {
-        .linux, .macos => true,
+        .macos => true,
+        .linux => !builtin.cpu.arch.isAARCH64(),
         .windows => !builtin.cpu.arch.isAARCH64(),
         else => false,
     };
@@ -177,8 +178,8 @@ pub fn makeStruct(allocator: std.mem.Allocator, fields: []const DataType) !struc
 
 const LuaPointer = struct {
     ptr: ?*anyopaque,
-    allocator: std.mem.Allocator,
     size: ?usize = null,
+    alignment: ?std.mem.Alignment = null,
     local_ref: ?i32 = null,
     destroyed: bool,
     retained: bool = false,
@@ -203,7 +204,6 @@ const LuaPointer = struct {
 
         ptr.* = .{
             .ptr = @ptrFromInt(std.mem.bytesToValue(usize, buf[0..@sizeOf(usize)])),
-            .allocator = luau.getallocator(L),
             .destroyed = false,
             .type = .Static,
             .data = .{},
@@ -212,18 +212,24 @@ const LuaPointer = struct {
         return 1;
     }
 
-    pub fn allocBlockPtr(L: *VM.lua.State, size: usize) !*LuaPointer {
+    pub fn allocBlockPtr(L: *VM.lua.State, size: usize, alignment: std.mem.Alignment) !*LuaPointer {
         const allocator = luau.getallocator(L);
 
-        const mem = try allocator.alloc(u8, size);
-        @memset(mem, 0);
+        const mem: [*]u8 = blk: {
+            if (size > 0) {
+                const bytes = allocator.rawAlloc(size, alignment, @returnAddress()) orelse return std.mem.Allocator.Error.OutOfMemory;
+                @memset(bytes[0..size], 0);
+                break :blk bytes;
+            }
+            break :blk &[0]u8{};
+        };
 
         const ptr = L.newuserdatataggedwithmetatable(LuaPointer, TAG_FFI_POINTER);
 
         ptr.* = .{
-            .ptr = @ptrCast(@alignCast(mem.ptr)),
-            .allocator = allocator,
-            .size = mem.len,
+            .ptr = @ptrCast(@alignCast(mem)),
+            .size = size,
+            .alignment = alignment,
             .destroyed = false,
             .type = .Allocated,
             .data = .{},
@@ -239,7 +245,6 @@ const LuaPointer = struct {
 
         ptr.* = .{
             .ptr = staticPtr,
-            .allocator = luau.getallocator(L),
             .destroyed = false,
             .type = .Static,
             .data = .{},
@@ -262,7 +267,7 @@ const LuaPointer = struct {
 
         ptr.* = .{
             .ptr = @ptrCast(@alignCast(mem)),
-            .allocator = allocator,
+            .alignment = .@"8",
             .destroyed = false,
             .type = .Allocated,
             .data = .{},
@@ -531,6 +536,48 @@ const LuaPointer = struct {
         return 0;
     }
 
+    pub fn lua_getSize(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
+        if (ptr.destroyed or ptr.ptr == null)
+            return 0;
+        if (ptr.size) |size|
+            L.pushnumber(@floatFromInt(size))
+        else
+            L.pushnil();
+        return 1;
+    }
+
+    pub fn lua_setAlignment(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
+        if (ptr.destroyed or ptr.ptr == null)
+            return L.Zerror("NoAddressAvailable");
+        const alignment = L.Lchecknumber(2);
+        if (alignment < 0)
+            return L.Zerror("Alignment cannot be negative");
+
+        const length: usize = @intFromFloat(alignment);
+
+        switch (ptr.type) {
+            .Allocated => return L.Zerror("Alignment is already known"),
+            .Static => {
+                if (ptr.alignment) |_|
+                    return L.Zerror("Alignment is already set");
+            },
+        }
+
+        ptr.alignment = .fromByteUnits(length);
+
+        return 0;
+    }
+
+    pub fn lua_getAlignment(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
+        if (ptr.destroyed or ptr.ptr == null)
+            return 0;
+        if (ptr.alignment) |alignment|
+            L.pushnumber(@floatFromInt(alignment.toByteUnits()))
+        else
+            L.pushnil();
+        return 1;
+    }
+
     pub fn lua_span(ptr: *LuaPointer, L: *VM.lua.State) !i32 {
         if (ptr.destroyed or ptr.ptr == null)
             return 0;
@@ -580,6 +627,9 @@ const LuaPointer = struct {
         .{ "writePtr", GenerateWriteLuaMethod(*anyopaque) },
         .{ "isNull", lua_isNull },
         .{ "setSize", lua_setSize },
+        .{ "getSize", lua_getSize },
+        .{ "setAlignment", lua_setAlignment },
+        .{ "getAlignment", lua_getAlignment },
         .{ "span", lua_span },
     });
 
@@ -620,20 +670,23 @@ const LuaPointer = struct {
     }
 
     pub fn __dtor(L: *VM.lua.State, ptr: *LuaPointer) void {
-        _ = L;
-        if (!ptr.destroyed) {
-            switch (ptr.type) {
-                .Allocated => {
-                    if (!ptr.retained) {
-                        ptr.destroyed = true;
-                        if (ptr.size) |size|
-                            ptr.allocator.free(@as([*]u8, @ptrCast(@alignCast(ptr.ptr)))[0..size])
-                        else
-                            ptr.allocator.destroy(@as(**anyopaque, @ptrCast(@alignCast(ptr.ptr))));
-                    }
-                },
-                .Static => {},
-            }
+        if (ptr.destroyed)
+            return;
+        switch (ptr.type) {
+            .Allocated => {
+                if (ptr.retained)
+                    return;
+                if ((ptr.size orelse 1) == 0)
+                    return;
+                const allocator = luau.getallocator(L);
+                ptr.destroyed = true;
+                allocator.rawFree(
+                    @as([*]u8, @ptrCast(@alignCast(ptr.ptr)))[0 .. ptr.size orelse 8],
+                    ptr.alignment orelse .@"1",
+                    @returnAddress(),
+                );
+            },
+            .Static => {},
         }
     }
 };
@@ -2031,8 +2084,20 @@ fn lua_tagName(L: *VM.lua.State) !i32 {
 }
 
 fn lua_alloc(L: *VM.lua.State) !i32 {
-    const len: usize = @intFromFloat(L.Lchecknumber(1));
-    _ = try LuaPointer.allocBlockPtr(L, len);
+    const len = L.Lchecknumber(1);
+    const alignment = L.Loptnumber(2, 1);
+    if (alignment <= 0)
+        return L.Zerror("Invalid alignment");
+    _ = try LuaPointer.allocBlockPtr(L, @intFromFloat(len), .fromByteUnits(@intFromFloat(alignment)));
+    return 1;
+}
+
+fn lua_getLuaState(L: *VM.lua.State) !i32 {
+    if (try L.Zcheckvalue(?bool, 1, null) orelse false) {
+        _ = try LuaPointer.newStaticPtr(L, @ptrCast(L.mainthread()), false);
+        return 1;
+    }
+    _ = try LuaPointer.newStaticPtr(L, @ptrCast(L), false);
     return 1;
 }
 
@@ -2047,15 +2112,23 @@ fn lua_free(L: *VM.lua.State) !i32 {
         switch (ptr.type) {
             .Allocated => {
                 ptr.destroyed = true;
-                if (ptr.size) |size|
-                    allocator.free(@as([*]u8, @ptrCast(@alignCast(ptr.ptr)))[0..size])
-                else
-                    allocator.destroy(@as(**anyopaque, @ptrCast(@alignCast(ptr.ptr))));
+                if ((ptr.size orelse 1) == 0)
+                    return 0;
+                allocator.rawFree(
+                    @as([*]u8, @ptrCast(@alignCast(ptr.ptr)))[0 .. ptr.size orelse 8],
+                    ptr.alignment orelse .@"1",
+                    @returnAddress(),
+                );
             },
             .Static => {
+                ptr.destroyed = true;
                 if (ptr.size) |size| {
                     if (size > 0)
-                        allocator.free(@as([*]u8, @ptrCast(@alignCast(ptr.ptr)))[0..size]);
+                        allocator.rawFree(
+                            @as([*]u8, @ptrCast(@alignCast(ptr.ptr)))[0..size],
+                            ptr.alignment orelse .@"8",
+                            @returnAddress(),
+                        );
                 }
             },
         }
@@ -2087,7 +2160,7 @@ fn lua_dupe(L: *VM.lua.State) !i32 {
     switch (L.typeOf(1)) {
         .Buffer => {
             const buf = L.tobuffer(1) orelse unreachable;
-            const ptr = try LuaPointer.allocBlockPtr(L, buf.len);
+            const ptr = try LuaPointer.allocBlockPtr(L, buf.len, .@"1");
             @memcpy(
                 @as([*]u8, @ptrCast(@alignCast(ptr.ptr)))[0..buf.len],
                 buf,
@@ -2098,7 +2171,7 @@ fn lua_dupe(L: *VM.lua.State) !i32 {
             if (ptr.destroyed or ptr.ptr == null)
                 return error.NoAddressAvailable;
             const len = ptr.size orelse return L.Zerror("Unknown sized pointer");
-            const dup_ptr = try LuaPointer.allocBlockPtr(L, len);
+            const dup_ptr = try LuaPointer.allocBlockPtr(L, len, ptr.alignment orelse .@"1");
             dup_ptr.data = ptr.data;
             @memcpy(
                 @as([*]u8, @ptrCast(@alignCast(dup_ptr.ptr)))[0..len],
@@ -2152,6 +2225,8 @@ pub fn loadLib(L: *VM.lua.State) void {
 
     L.Zsetfieldfn(-1, "getRef", LuaPointer.getRef);
     L.Zsetfieldfn(-1, "createPtr", LuaPointer.ptrFromBuffer);
+
+    L.Zsetfieldfn(-1, "getLuaState", lua_getLuaState);
 
     L.createtable(0, @intCast(@typeInfo(DataTypes.Types).@"struct".decls.len));
     inline for (@typeInfo(DataTypes.Types).@"struct".decls, 0..) |decl, i| {

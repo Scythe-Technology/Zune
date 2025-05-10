@@ -7,6 +7,11 @@ local test = testing.test;
 local expect = testing.expect;
 local describe = testing.describe;
 
+if (not ffi) then
+    warn("Skipping 'FFI' tests (Not Supported)");
+    return;
+end
+
 expect(ffi).toBe(
     expect.similar({
         dlopen = expect.type("function"),
@@ -15,6 +20,7 @@ expect(ffi).toBe(
         fn = expect.type("function"),
         createPtr = expect.type("function"),
         getRef = expect.type("function"),
+        getLuaState = expect.type("function"),
         alloc = expect.type("function"),
         free = expect.type("function"),
         copy = expect.type("function"),
@@ -1044,5 +1050,14 @@ describe("FFI", function()
                 end).toThrow("PointerTagMismatch");
             end)
         end)
+    end)
+
+    test("Lua State", function()
+        local L = ffi.getLuaState();
+        local L2 = ffi.getLuaState();
+        local GL = ffi.getLuaState(true);
+
+        expect(L == L2).toBe(true);
+        expect(L == GL).toBe(false);
     end)
 end)

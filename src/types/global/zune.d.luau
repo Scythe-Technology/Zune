@@ -2022,6 +2022,9 @@ export type FFIPointer = {
     writePtr: (self: FFIPointer, offset: number, value: FFIPointer) -> (),
     isNull: (self: FFIPointer) -> boolean,
     setSize: (self: FFIPointer, size: number) -> (),
+    getSize: (self: FFIPointer) -> number,
+    setAlignment: (self: FFIPointer, alignment: number) -> (),
+    getAlignment: (self: FFIPointer) -> number,
     span: (self: FFIPointer, offset: number?) -> buffer,
 }
 
@@ -2049,7 +2052,9 @@ type FFILib = {
     createPtr: (src: buffer) -> FFIPointer,
     getRef: (src: FFIPointer) -> FFIPointer,
 
-    alloc: (size: number) -> FFIPointer,
+    getLuaState: (mainthread: boolean?) -> FFIPointer,
+
+    alloc: (size: number, alignment: number?) -> FFIPointer,
     free: (src: FFIPointer) -> (),
     dupe: (src: buffer | FFIPointer) -> FFIPointer,
     len: (src: buffer | FFIPointer) -> number?,
