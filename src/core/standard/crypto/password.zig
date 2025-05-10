@@ -11,11 +11,11 @@ const AlgorithmUnion = union(enum) {
     bcrypt: void,
 };
 
-const DEFAULT_ALGO: AlgorithmUnion = .{ .argon2 = .argon2d };
+const DEFAULT_ALGO: AlgorithmUnion = .{ .argon2 = .argon2id };
 const AlgorithmMap = std.StaticStringMap(AlgorithmUnion).initComptime(.{
-    .{ "argon2d", DEFAULT_ALGO },
+    .{ "argon2d", AlgorithmUnion{ .argon2 = .argon2d } },
     .{ "argon2i", AlgorithmUnion{ .argon2 = .argon2i } },
-    .{ "argon2id", AlgorithmUnion{ .argon2 = .argon2id } },
+    .{ "argon2id", DEFAULT_ALGO },
     .{ "bcrypt", .bcrypt },
 });
 
