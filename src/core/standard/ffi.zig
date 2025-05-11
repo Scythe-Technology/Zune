@@ -2126,7 +2126,7 @@ fn lua_free(L: *VM.lua.State) !i32 {
                     if (size > 0)
                         allocator.rawFree(
                             @as([*]u8, @ptrCast(@alignCast(ptr.ptr)))[0..size],
-                            ptr.alignment orelse .@"8",
+                            ptr.alignment orelse .@"1",
                             @returnAddress(),
                         );
                 }
