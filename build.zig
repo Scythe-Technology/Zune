@@ -221,12 +221,9 @@ pub fn build(b: *std.Build) !void {
 
     sample_dylib.step.dependOn(prebuild_step);
 
-    const sample_dylib_path = try std.fs.path.resolve(b.allocator, &[_][]const u8{ "../test/standard/ffi/zig-out/", sample_dylib.out_lib_filename });
-    defer b.allocator.free(sample_dylib_path);
-
-    const install_sample_dylib = b.addInstallArtifact(sample_dylib, .{});
-    const install_test_sample_dylib = b.addInstallFile(install_sample_dylib.artifact.getEmittedBin(), sample_dylib_path);
-    install_test_sample_dylib.step.dependOn(&install_sample_dylib.step);
+    const install_sample_dylib = b.addInstallArtifact(sample_dylib, .{
+        .dest_dir = .{ .override = .lib },
+    });
 
     const exe_unit_tests = b.addTest(.{
         .root_source_file = b.path("src/main.zig"),
@@ -255,7 +252,7 @@ pub fn build(b: *std.Build) !void {
     exe_unit_tests.root_module.addImport("sqlite", dep_sqlite.module("z-sqlite"));
     exe_unit_tests.root_module.addImport("tinycc", dep_tinycc.module("tinycc"));
 
-    exe_unit_tests.step.dependOn(&install_test_sample_dylib.step);
+    exe_unit_tests.step.dependOn(&install_sample_dylib.step);
 
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
 
