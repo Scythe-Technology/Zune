@@ -29,7 +29,7 @@ describe("Require", function()
             expect(res).toBe(`RedundantFileExtension`);
         end)
 
-        local SEP = if (zune.process.os == "windows") then "\\" else "/";
+        local SEP = "/";
         test("Name Conflict", function()
             local ok, res = pcall(require, "./generated/duplicate");
             expect(ok).toBeFalsy();
