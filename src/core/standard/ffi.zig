@@ -36,7 +36,7 @@ var CACHED_C_COMPILATON = std.StringHashMap(*CallableFunction).init(Zune.DEFAULT
 pub const DataType = struct {
     size: usize,
     alignment: u29,
-    kind: TypeKind,
+    kind: Kind,
 
     pub const Types = enum {
         void,
@@ -88,9 +88,27 @@ pub const DataType = struct {
                 .@"struct" => return "struct",
             }
         }
+
+        pub fn size(self: Types) usize {
+            return switch (self) {
+                .void => 0,
+                .i8 => @sizeOf(i8),
+                .i16 => @sizeOf(i16),
+                .i32 => @sizeOf(i32),
+                .i64 => @sizeOf(i64),
+                .u8 => @sizeOf(u8),
+                .u16 => @sizeOf(u16),
+                .u32 => @sizeOf(u32),
+                .u64 => @sizeOf(u64),
+                .f32 => @sizeOf(f32),
+                .f64 => @sizeOf(f64),
+                .pointer => @sizeOf(usize),
+                .@"struct" => 0,
+            };
+        }
     };
 
-    pub const TypeKind = union(Types) {
+    pub const Kind = union(Types) {
         void: void,
         i8: void,
         i16: void,
@@ -103,7 +121,10 @@ pub const DataType = struct {
         f32: void,
         f64: void,
         pointer: LuaPointer.Info,
-        @"struct": void,
+        @"struct": struct {
+            fields: [12]u8 = std.mem.zeroes([12]u8),
+            field_len: u8 = 0,
+        },
     };
 };
 
@@ -133,9 +154,9 @@ pub const DataTypes = struct {
         &Types.type_float, &Types.type_double, &Types.type_pointer,
     };
 
-    pub fn generateCTypeName(datatype: DataType, writer: anytype, id: usize, comptime pointer: bool) !void {
+    pub fn generateCTypeName(kind: DataType.Types, writer: anytype, id: usize, comptime pointer: bool) !void {
         const suffix = if (pointer) "*" else "";
-        switch (datatype.kind) {
+        switch (kind) {
             .void => try writer.writeAll("void" ++ suffix),
             .i8 => try writer.writeAll("char" ++ suffix),
             .i16 => try writer.writeAll("short" ++ suffix),
@@ -161,6 +182,7 @@ pub fn makeStruct(allocator: std.mem.Allocator, fields: []const DataType) !struc
     var offset: usize = 0;
     var alignment: u29 = 1;
     var offsets = try allocator.alloc(usize, fields.len);
+
     errdefer allocator.free(offsets);
     for (fields, 0..) |field, i| {
         alignment = @max(alignment, field.alignment);
@@ -169,10 +191,37 @@ pub fn makeStruct(allocator: std.mem.Allocator, fields: []const DataType) !struc
         offset += field.size;
     }
     const size = alignForward(offset, alignment);
+    var count: u8 = 0;
+    var inherit: [12]u8 = std.mem.zeroes([12]u8);
+    if (size <= 16) {
+        for (fields) |field| {
+            if (count >= 12)
+                break;
+            switch (field.kind) {
+                .@"struct" => |info| {
+                    if (count + info.field_len > 12)
+                        break;
+                    for (0..info.field_len) |j| {
+                        inherit[count] = info.fields[j];
+                        count += 1;
+                    }
+                },
+                else => {
+                    inherit[count] = @intFromEnum(field.kind) + 1;
+                    count += 1;
+                },
+            }
+        }
+    }
     return .{ .{
         .size = size,
         .alignment = alignment,
-        .kind = .@"struct",
+        .kind = .{
+            .@"struct" = .{
+                .fields = inherit,
+                .field_len = count,
+            },
+        },
     }, offsets };
 }
 
@@ -732,7 +781,7 @@ const CompiledSymbol = struct {
 };
 
 const CallableFunction = struct {
-    pointers: usize,
+    pointers: ?[]*allowzero anyopaque,
     references: usize,
     sym: CompiledSymbol,
 
@@ -745,6 +794,8 @@ const CallableFunction = struct {
             _ = CACHED_C_COMPILATON.fetchRemove(hash);
             allocator.free(hash);
         }
+        if (self.pointers) |ptrs|
+            allocator.free(ptrs);
         allocator.destroy(self);
     }
 
@@ -759,7 +810,7 @@ const CallableFunction = struct {
     }
 
     pub fn getSymbol(self: *CallableFunction) *const anyopaque {
-        return self.sym.state.get_symbol("call_fn_ffi").?; // checked at compilation
+        return self.sym.state.get_symbol("symbol_call").?; // checked at compilation
     }
 };
 
@@ -779,6 +830,14 @@ fn hashFunctionSignature(out: *[Hash.digest_length]u8, returns: DataType, args: 
     std.mem.writeInt(usize, buffer[5..size_len], returns.size, .little);
     hash.update(&buffer);
 
+    switch (returns.kind) {
+        .@"struct" => |info| {
+            hash.update(&info.fields);
+            hash.update(&[_]u8{info.field_len});
+        },
+        else => {},
+    }
+
     for (args) |arg| {
         switch (arg.kind) {
             inline else => |_, T| std.mem.writeInt(u8, buffer[0..1], @intFromEnum(T), .little),
@@ -789,6 +848,14 @@ fn hashFunctionSignature(out: *[Hash.digest_length]u8, returns: DataType, args: 
             std.mem.writeInt(u32, buffer[1..5], 0, .little);
         std.mem.writeInt(usize, buffer[5..size_len], arg.size, .little);
         hash.update(&buffer);
+
+        switch (arg.kind) {
+            .@"struct" => |info| {
+                hash.update(&info.fields);
+                hash.update(&[_]u8{info.field_len});
+            },
+            else => {},
+        }
     }
     hash.final(out);
 }
@@ -804,7 +871,15 @@ fn compileCallableFunction(returns: DataType, args: []const DataType) !CallableF
     var source = std.ArrayList(u8).init(allocator);
     defer source.deinit();
 
-    const pointers = try dynamicLoadImport(&source, state, returns, args);
+    const pointer_count = try dynamicLoadImport(&source, state, returns, args);
+
+    const pointers: ?[]*allowzero anyopaque = if (pointer_count > 0) try allocator.alloc(*allowzero anyopaque, pointer_count) else null;
+    errdefer if (pointers) |arr| allocator.free(arr);
+
+    if (pointer_count > 0) {
+        try generateExported(&source, "arg_pointers[]", "void*", &.{});
+        _ = state.add_symbol("arg_pointers", @ptrCast(@alignCast(pointers.?.ptr)));
+    }
 
     try source.append('\n');
     try generateSourceFromSymbol(&source, returns, args);
@@ -814,7 +889,7 @@ fn compileCallableFunction(returns: DataType, args: []const DataType) !CallableF
         return error.CompilationError;
     };
 
-    _ = state.get_symbol("call_fn_ffi") orelse return error.BadCompilation;
+    _ = state.get_symbol("symbol_call") orelse return error.BadCompilation;
 
     return .{
         .sym = .{
@@ -1281,27 +1356,55 @@ fn generateTypeFromSymbol(source: *std.ArrayList(u8), symbol: DataType, order: u
         if (symbol.kind == .@"struct")
             try writer.print("struct anon_ret" ++ if (pointer) "*" else "", .{})
         else
-            try DataTypes.generateCTypeName(symbol, writer, 0, pointer);
+            try DataTypes.generateCTypeName(symbol.kind, writer, 0, pointer);
     } else {
-        try DataTypes.generateCTypeName(symbol, writer, order - 1, pointer);
+        try DataTypes.generateCTypeName(symbol.kind, writer, order - 1, pointer);
     }
+}
+
+fn generateStructTypeFromSymbol(writer: anytype, symbol: DataType, order: usize) !void {
+    std.debug.assert(symbol.kind == .@"struct");
+    const struct_info = symbol.kind.@"struct";
+    try writer.print("struct __attribute__((aligned({d}))) ", .{symbol.alignment});
+    if (order == 0)
+        try writer.print("anon_ret {{ ", .{})
+    else
+        try writer.print("anon_{d} {{ ", .{order - 1});
+
+    var filled: usize = 0;
+    if (struct_info.field_len > 0) {
+        var count: u8 = 0;
+        for (struct_info.fields[0..struct_info.field_len]) |field_kind| {
+            if (field_kind == 0)
+                continue;
+            defer count += 1;
+            const kind: DataType.Types = @enumFromInt(field_kind - 1);
+            try DataTypes.generateCTypeName(kind, writer, 0, false);
+            try writer.print(" _{d}; ", .{count});
+            filled += kind.size();
+        }
+    }
+    if (filled < symbol.size) {
+        try writer.print("unsigned char _[{d}]; ", .{symbol.size - filled});
+    }
+    try writer.print("}};\n", .{});
 }
 
 fn generateTypesFromSymbol(source: *std.ArrayList(u8), symbol_returns: DataType, symbol_args: []const DataType) !void {
     const writer = source.writer();
     if (symbol_returns.kind == .@"struct")
-        try writer.print("struct anon_ret {{ unsigned char _[{d}]; }};\n", .{symbol_returns.size});
+        try generateStructTypeFromSymbol(writer, symbol_returns, 0);
 
     for (symbol_args, 0..) |arg, i| {
         if (arg.kind != .@"struct")
             continue;
 
-        try writer.print("struct anon_{d} {{ unsigned char _[{d}]; }};\n", .{ i, arg.size });
+        try generateStructTypeFromSymbol(writer, arg, i + 1);
     }
 
     try source.appendSlice("typedef ");
     try generateTypeFromSymbol(source, symbol_returns, 0, false);
-    try source.appendSlice(" (*Fn)(");
+    try source.appendSlice(" (Fn)(");
     for (symbol_args, 0..) |arg, i| {
         if (i != 0)
             try source.appendSlice(", ");
@@ -1316,7 +1419,7 @@ fn generateSourceFromSymbol(source: *std.ArrayList(u8), symbol_returns: DataType
 
     try generateTypesFromSymbol(source, symbol_returns, symbol_args);
 
-    try source.appendSlice("void call_fn_ffi(void* L, Fn fn, void** pointers) {\n  ");
+    try source.appendSlice("void symbol_call(void* L, Fn* fn) {\n  ");
     if (symbol_returns.size > 0) {
         try generateTypeFromSymbol(source, symbol_returns, 0, false);
         try source.appendSlice(" ret = ");
@@ -1333,13 +1436,13 @@ fn generateSourceFromSymbol(source: *std.ArrayList(u8), symbol_returns: DataType
                     defer order += 1;
                     try writer.print("\n    (", .{});
                     try generateTypeFromSymbol(source, arg, i + 1, false);
-                    try writer.print(")pointers[{d}]", .{order});
+                    try writer.print(")arg_pointers[{d}]", .{order});
                 },
                 .@"struct" => {
                     defer order += 1;
                     try writer.print("\n    *((", .{});
                     try generateTypeFromSymbol(source, arg, i + 1, true);
-                    try writer.print(")pointers[{d}])", .{order});
+                    try writer.print(")arg_pointers[{d}])", .{order});
                 },
                 inline else => |_, T| try writer.print("\n    lua_ffi_check{s}(L, {d})", .{ @tagName(T), i + 1 }),
             }
@@ -1499,19 +1602,8 @@ fn lua_dlopen(L: *VM.lua.State) !i32 {
         const code = try fetchCallableFunction(value.returns, value.args);
         errdefer code.unref();
 
-        const pointers = code.pointers;
-
-        // Allocate space for the pointers
-        const ffi_pointers: ?[]*allowzero anyopaque = if (pointers > 0) try allocator.alloc(*allowzero anyopaque, pointers) else null;
-        errdefer if (ffi_pointers) |arr| allocator.free(arr);
-
-        // Zig owned string to prevent GC from Lua owned strings
         L.pushlstring(key);
-
-        const data = L.newuserdatadtor(FFIFunction, FFIFunction.__dtor);
-        data.* = .{
-            .allocator = allocator,
-            .pointers = ffi_pointers,
+        L.newuserdatadtor(FFIFunction, FFIFunction.__dtor).* = .{
             .lib = ptr,
             .callable = @ptrCast(@alignCast(code.getSymbol())),
             .code = code,
@@ -1838,15 +1930,13 @@ fn lua_closure(L: *VM.lua.State) !i32 {
 }
 
 const FFIFunction = struct {
-    allocator: std.mem.Allocator,
     code: *CallableFunction,
     ptr: *const anyopaque,
-    pointers: ?[]*allowzero anyopaque,
     lib: ?*LuaHandle = null,
 
     callable: FFICallable,
 
-    pub const FFICallable = *const fn (lua_State: *anyopaque, fnPtr: *const anyopaque, pointers: ?[*]*allowzero anyopaque) callconv(.c) void;
+    pub const FFICallable = *align(8) const fn (lua_State: *anyopaque, fnPtr: *const anyopaque) callconv(.c) void;
 
     pub fn fn_inner(L: *VM.lua.State) !i32 {
         const allocator = luau.getallocator(L);
@@ -1864,7 +1954,7 @@ const FFIFunction = struct {
         var arena: ?std.heap.ArenaAllocator = null;
         defer if (arena) |a| a.deinit();
 
-        const pointers = self.pointers;
+        const pointers = self.code.pointers;
         if (pointers) |ptrs| {
             arena = std.heap.ArenaAllocator.init(allocator);
             const arena_allocator = arena.?.allocator();
@@ -1903,9 +1993,9 @@ const FFIFunction = struct {
                         if (L.typeOf(idx) != .Buffer)
                             return error.InvalidArgType;
                         const buf = L.tobuffer(idx).?;
-                        const mem: []u8 = try arena_allocator.alloc(u8, arg.size);
-                        if (buf.len != mem.len)
+                        if (buf.len != arg.size)
                             return error.InvalidStructSize;
+                        const mem: []u8 = @alignCast((arena_allocator.rawAlloc(arg.size, .fromByteUnits(arg.alignment), @returnAddress()) orelse return error.OutOfMemory)[0..arg.size]);
                         @memcpy(mem, buf);
                         ptrs[order] = @ptrCast(@alignCast(mem.ptr));
                     },
@@ -1914,11 +2004,10 @@ const FFIFunction = struct {
             }
         }
 
-        callable(
-            @ptrCast(@alignCast(L)),
+        @call(.never_tail, callable, .{
+            @as(*anyopaque, @ptrCast(@alignCast(L))),
             self.ptr,
-            if (pointers) |ptrs| @ptrCast(@alignCast(ptrs.ptr)) else null,
-        );
+        });
 
         const returns = self.code.sym.type.returns;
         if (returns.size > 0) {
@@ -1932,11 +2021,6 @@ const FFIFunction = struct {
     }
 
     pub fn __dtor(self: *FFIFunction) void {
-        const allocator = self.allocator;
-
-        if (self.pointers) |ptrs|
-            allocator.free(ptrs);
-
         self.code.unref();
     }
 };
@@ -1990,17 +2074,10 @@ fn lua_fn(L: *VM.lua.State) !i32 {
 
     const code = try fetchCallableFunction(symbol_returns, args.items);
     errdefer code.unref();
-    const pointers = code.pointers;
-
-    // Allocate space for the pointers
-    const ffi_pointers: ?[]*allowzero anyopaque = if (pointers > 0) try allocator.alloc(*allowzero anyopaque, pointers) else null;
-    errdefer if (ffi_pointers) |arr| allocator.free(arr);
 
     const data = L.newuserdatadtor(FFIFunction, FFIFunction.__dtor);
 
     data.* = .{
-        .allocator = allocator,
-        .pointers = ffi_pointers,
         .callable = @ptrCast(@alignCast(code.getSymbol())),
         .code = code,
         .ptr = ptr,

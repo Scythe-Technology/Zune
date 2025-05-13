@@ -469,6 +469,23 @@ describe("FFI", function()
             { y = ffi.types.i32 },
         });
 
+        local foo2_struct = ffi.struct({
+            { x = ffi.types.double },
+            { y = ffi.types.double },
+        });
+
+        local foo3_struct = ffi.struct({
+            { x = ffi.types.double },
+        });
+
+        local foo2e_struct = ffi.struct({
+            { second = foo2_struct },
+        });
+
+        local foo2ec_struct = ffi.struct({
+            { first = foo2e_struct },
+        });
+
         local blank_defintion = {
             returns = ffi.types.void,
             args = {},
@@ -476,6 +493,10 @@ describe("FFI", function()
         local add_defintion = {
             returns = ffi.types.i32,
             args = {ffi.types.i32, ffi.types.i32},
+        };
+        local add_float_defintion = {
+            returns = ffi.types.double,
+            args = {ffi.types.double, ffi.types.double},
         };
         local add_ptr_defintion: FFIFunctionDef = {
             returns = ffi.types.void,
@@ -501,6 +522,18 @@ describe("FFI", function()
             returns = ffi.types.u8,
             args = {foo_struct},
         };
+        local check_struct2_defintion = {
+            returns = ffi.types.u8,
+            args = {foo2_struct},
+        };
+        local check_struct2ec_defintion = {
+            returns = ffi.types.u8,
+            args = {foo2ec_struct},
+        };
+        local check_struct3_defintion = {
+            returns = ffi.types.u8,
+            args = {foo3_struct},
+        };
         local check_nullptr_defintion = {
             returns = ffi.types.u8,
             args = {ffi.types.pointer},
@@ -516,6 +549,7 @@ describe("FFI", function()
         local lib = ffi.dlopen(`./zig-out/lib/{ffi.prefix}sample.{static_suffix}`, {
             blank = blank_defintion,
             add = add_defintion,
+            add_float = add_float_defintion,
             add_ptr = add_ptr_defintion,
             add_ptr_ptr = add_ptr_ptr_defintion,
             fire_callback = fire_callback_defintion,
@@ -523,6 +557,8 @@ describe("FFI", function()
 
             check_string = check_string_defintion,
             check_struct = check_struct_defintion,
+            check_struct2 = check_struct2_defintion,
+            check_struct3 = check_struct3_defintion,
             check_nullptr = check_nullptr_defintion,
 
             new_i32 = new_i32_defintion,
@@ -551,6 +587,20 @@ describe("FFI", function()
                 local add = ffi.fn(add_defintion, lib:getSymbol("add"));
                 expect(add(1, 2)).toBe(3);
                 expect(add(a, b)).toBe(6);
+            end)
+        end)
+
+        describe("Symbol<f64 add_float(f64 f64)>", function()
+            local a = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2);
+            local b = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 4);
+            test("Library Fn", function()
+                expect(lib.add_float(1, 2)).toBe(3);
+                expect(lib.add_float(a, b)).toBe(6);
+            end)
+            test("Dynamic Fn", function()
+                local add_float = ffi.fn(add_float_defintion, lib:getSymbol("add_float"));
+                expect(add_float(1, 2)).toBe(3);
+                expect(add_float(a, b)).toBe(6);
             end)
         end)
 
@@ -818,6 +868,216 @@ describe("FFI", function()
                     };
         
                     expect(check_struct(buf)).toBe(0);
+                end
+            end)
+        end)
+
+        describe("Symbol<void check_struct2(Foo2)>", function()
+            test("Library Fn", function()
+                do
+                    local buf = foo2_struct:new {
+                        x = 1.1,
+                        y = 2.2,
+                    };
+
+                    expect(lib.check_struct2(buf)).toBe(1);
+                end
+    
+                do
+                    local buf = foo2_struct:new {
+                        x = 2.2,
+                        y = 2.2,
+                    };
+        
+                    expect(lib.check_struct2(buf)).toBe(0);
+                end
+    
+                do
+                    local buf = foo2_struct:new {
+                        x = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 1.1),
+                        y = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2.2),
+                    };
+    
+                    expect(lib.check_struct2(buf)).toBe(1);
+                end
+    
+                do
+                    local buf = foo2_struct:new {
+                        x = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2.2),
+                        y = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2.2),
+                    };
+        
+                    expect(lib.check_struct2(buf)).toBe(0);
+                end
+            end)
+            test("Dynamic Fn", function()
+                local check_struct2 = ffi.fn(check_struct2_defintion, lib:getSymbol("check_struct2"));
+
+                do
+                    local buf = foo2_struct:new {
+                        x = 1.1,
+                        y = 2.2,
+                    };
+    
+                    expect(check_struct2(buf)).toBe(1);
+                end
+    
+                do
+                    local buf = foo2_struct:new {
+                        x = 2.2,
+                        y = 2.2,
+                    };
+        
+                    expect(check_struct2(buf)).toBe(0);
+                end
+    
+                do
+                    local buf = foo2_struct:new {
+                        x = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 1.1),
+                        y = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2.2),
+                    };
+    
+                    expect(check_struct2(buf)).toBe(1);
+                end
+    
+                do
+                    local buf = foo2_struct:new {
+                        x = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2.2),
+                        y = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2.2),
+                    };
+        
+                    expect(check_struct2(buf)).toBe(0);
+                end
+            end)
+        end)
+
+        describe("Symbol<void check_struct2ec(Foo2ec)>", function()
+            test("Dynamic Fn", function()
+                local check_struct2ec = ffi.fn(check_struct2ec_defintion, lib:getSymbol("check_struct2"));
+
+                do
+                    local buf = foo2ec_struct:new {
+                        first = foo2e_struct:new {
+                            second = foo2_struct:new {
+                                x = 1.1,
+                                y = 2.2,
+                            },
+                        }
+                    };
+    
+                    expect(check_struct2ec(buf)).toBe(1);
+                end
+    
+                do
+                    local buf = foo2ec_struct:new {
+                        first = foo2e_struct:new {
+                            second = foo2_struct:new {
+                                x = 2.2,
+                                y = 2.2,
+                            },
+                        }
+                    };
+        
+                    expect(check_struct2ec(buf)).toBe(0);
+                end
+    
+                do
+                    local buf = foo2ec_struct:new {
+                        first = foo2e_struct:new {
+                            second = foo2_struct:new {
+                                x = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 1.1),
+                                y = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2.2),
+                            },
+                        }
+                    };
+    
+                    expect(check_struct2ec(buf)).toBe(1);
+                end
+    
+                do
+                    local buf = foo2ec_struct:new {
+                        first = foo2e_struct:new {
+                            second = foo2_struct:new {
+                                x = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2.2),
+                                y = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2.2),
+                            },
+                        }
+                    };
+        
+                    expect(check_struct2ec(buf)).toBe(0);
+                end
+            end)
+        end)
+
+        describe("Symbol<void check_struct3(Foo3)>", function()
+            test("Library Fn", function()
+                do
+                    local buf = foo3_struct:new {
+                        x = 1.1,
+                    };
+    
+                    expect(lib.check_struct3(buf)).toBe(1);
+                end
+    
+                do
+                    local buf = foo3_struct:new {
+                        x = 2.2,
+                    };
+        
+                    expect(lib.check_struct3(buf)).toBe(0);
+                end
+    
+                do
+                    local buf = foo3_struct:new {
+                        x = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 1.1),
+                        y = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2.2),
+                    };
+    
+                    expect(lib.check_struct3(buf)).toBe(1);
+                end
+    
+                do
+                    local buf = foo3_struct:new {
+                        x = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2.2),
+                        y = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2.2),
+                    };
+        
+                    expect(lib.check_struct3(buf)).toBe(0);
+                end
+            end)
+            test("Dynamic Fn", function()
+                local check_struct3 = ffi.fn(check_struct3_defintion, lib:getSymbol("check_struct3"));
+
+                do
+                    local buf = foo3_struct:new {
+                        x = 1.1,
+                    };
+    
+                    expect(check_struct3(buf)).toBe(1);
+                end
+    
+                do
+                    local buf = foo3_struct:new {
+                        x = 2.2,
+                    };
+        
+                    expect(check_struct3(buf)).toBe(0);
+                end
+    
+                do
+                    local buf = foo3_struct:new {
+                        x = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 1.1),
+                    };
+    
+                    expect(check_struct3(buf)).toBe(1);
+                end
+    
+                do
+                    local buf = foo3_struct:new {
+                        x = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2.2),
+                    };
+        
+                    expect(check_struct3(buf)).toBe(0);
                 end
             end)
         end)

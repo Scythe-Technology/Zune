@@ -8,6 +8,10 @@ export fn add(a: i32, b: i32) i32 {
     return a + b;
 }
 
+export fn add_float(a: f64, b: f64) f64 {
+    return a + b;
+}
+
 export fn add_ptr(a_ptr: *i32, b: i32) void {
     a_ptr.* += b;
 }
@@ -43,6 +47,23 @@ const Foo = extern struct {
 
 export fn check_struct(foo: Foo) bool {
     return foo.x == 1 and foo.y == 2;
+}
+
+const Foo2 = extern struct {
+    x: f64,
+    y: f64,
+};
+
+export fn check_struct2(foo: Foo2) bool {
+    return foo.x == 1.1 and foo.y == 2.2;
+}
+
+const Foo3 = extern struct {
+    x: f64,
+};
+
+export fn check_struct3(foo: Foo3) bool {
+    return foo.x == 1.1;
 }
 
 export fn new_i32() *i32 {
