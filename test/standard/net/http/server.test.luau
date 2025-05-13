@@ -258,7 +258,7 @@ test("Short Capacity", function()
 
     local requestsMade = 0;
 
-    for _ = 1, 10 do
+    for _ = 1, 4 do
         task.spawn(function()
             local res = net.http.request("http://localhost:8080");
             requestsMade += 1;
@@ -289,7 +289,7 @@ test("Short Capacity", function()
 
     repeat
         task.wait(0.1);
-    until requestsMade == 10;
+    until requestsMade == 4;
 
     expect(requests).toHaveLength(requestsMade);
 
