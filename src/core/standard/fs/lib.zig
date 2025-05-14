@@ -472,6 +472,35 @@ fn lua_createFile(L: *VM.lua.State) !i32 {
     return 1;
 }
 
+fn lua_getExePath(L: *VM.lua.State) !i32 {
+    switch (comptime builtin.os.tag) {
+        .macos, .driverkit, .ios, .tvos, .visionos, .watchos => {}, // Darwin
+        .freebsd, .openbsd, .netbsd, .dragonfly => {}, // BSD
+        .solaris, .illumos => {}, // Solaris
+        .haiku => {},
+        .windows, .linux => {},
+        else => return error.UnsupportedPlatform,
+    }
+
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const path = try std.fs.selfExePath(&buf);
+    L.pushlstring(path);
+    return 1;
+}
+
+fn lua_realPath(L: *VM.lua.State) !i32 {
+    switch (comptime builtin.os.tag) {
+        .macos, .ios, .tvos, .visionos, .watchos => {},
+        .windows, .linux => {},
+        else => return error.UnsupportedPlatform,
+    }
+    const path = L.Lcheckstring(1);
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const real_path = try std.fs.realpath(path, &buf);
+    L.pushlstring(real_path);
+    return 1;
+}
+
 fn lua_watch(L: *VM.lua.State) !i32 {
     switch (comptime builtin.os.tag) {
         .windows, .linux, .macos => {},
@@ -515,6 +544,94 @@ fn lua_watch(L: *VM.lua.State) !i32 {
     return 1;
 }
 
+const Path = struct {
+    pub fn lua_join(L: *VM.lua.State) !i32 {
+        const allocator = luau.getallocator(L);
+        const top = L.gettop();
+        if (top == 0)
+            return 0;
+        var paths: std.ArrayListUnmanaged([]const u8) = try .initCapacity(allocator, @min(16, top));
+        defer paths.deinit(allocator);
+        for (0..top) |i| {
+            const path = try L.Zcheckvalue([:0]const u8, @intCast(i + 1), null);
+            try paths.append(allocator, path);
+        }
+
+        const resolved = try fs.path.join(allocator, paths.items);
+        defer allocator.free(resolved);
+
+        L.pushlstring(resolved);
+
+        return 1;
+    }
+
+    pub fn lua_relative(L: *VM.lua.State) !i32 {
+        const allocator = luau.getallocator(L);
+        const from = try L.Zcheckvalue([:0]const u8, 1, null);
+        const to = try L.Zcheckvalue([:0]const u8, 2, null);
+
+        const resolved = try fs.path.relative(allocator, from, to);
+        defer allocator.free(resolved);
+
+        L.pushlstring(resolved);
+
+        return 1;
+    }
+
+    pub fn lua_resolve(L: *VM.lua.State) !i32 {
+        const allocator = luau.getallocator(L);
+        const top = L.gettop();
+        if (top == 0)
+            return 0;
+        var paths: std.ArrayListUnmanaged([]const u8) = try .initCapacity(allocator, @min(16, top));
+        defer paths.deinit(allocator);
+        for (0..top) |i| {
+            const path = try L.Zcheckvalue([:0]const u8, @intCast(i + 1), null);
+            try paths.append(allocator, path);
+        }
+
+        const resolved = try fs.path.resolve(allocator, paths.items);
+        defer allocator.free(resolved);
+
+        L.pushlstring(resolved);
+
+        return 1;
+    }
+
+    pub fn lua_dirname(L: *VM.lua.State) !i32 {
+        const path = try L.Zcheckvalue([:0]const u8, 1, null);
+        if (fs.path.dirname(path)) |dirname|
+            L.pushlstring(dirname)
+        else
+            L.pushnil();
+        return 1;
+    }
+
+    pub fn lua_basename(L: *VM.lua.State) !i32 {
+        const path = try L.Zcheckvalue([:0]const u8, 1, null);
+        L.pushlstring(fs.path.basename(path));
+        return 1;
+    }
+
+    pub fn lua_stem(L: *VM.lua.State) !i32 {
+        const path = try L.Zcheckvalue([:0]const u8, 1, null);
+        L.pushlstring(fs.path.stem(path));
+        return 1;
+    }
+
+    pub fn lua_extension(L: *VM.lua.State) !i32 {
+        const path = try L.Zcheckvalue([:0]const u8, 1, null);
+        L.pushlstring(fs.path.extension(path));
+        return 1;
+    }
+
+    pub fn lua_isAbsolute(L: *VM.lua.State) !i32 {
+        const path = try L.Zcheckvalue([:0]const u8, 1, null);
+        L.pushboolean(fs.path.isAbsolute(path));
+        return 1;
+    }
+};
+
 pub fn loadLib(L: *VM.lua.State) void {
     {
         _ = L.Znewmetatable(@typeName(LuaWatch), .{
@@ -542,8 +659,24 @@ pub fn loadLib(L: *VM.lua.State) void {
         .move = lua_move,
         .copy = lua_copy,
         .symlink = lua_symlink,
+        .getExePath = lua_getExePath,
+        .realPath = lua_realPath,
         .watch = lua_watch,
     });
+
+    L.Zpushvalue(.{
+        .join = Path.lua_join,
+        .relative = Path.lua_relative,
+        .resolve = Path.lua_resolve,
+        .dirname = Path.lua_dirname,
+        .basename = Path.lua_basename,
+        .stem = Path.lua_stem,
+        .extension = Path.lua_extension,
+        .isAbsolute = Path.lua_isAbsolute,
+    });
+    L.setreadonly(-1, true);
+    L.setfield(-2, "path");
+
     L.setreadonly(-1, true);
 
     luaHelper.registerModule(L, LIB_NAME);

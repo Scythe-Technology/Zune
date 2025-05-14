@@ -311,7 +311,21 @@ type FileSystemLib = {
     ]]
     symlink: (from: string, to: string) -> (),
 
+    getExePath: () -> string,
+    realPath: (path: string) -> string,
+
     watch: (path: string, callback: (path: string, events: {"created" | "modified" | "moved" | "renamed" | "deleted" | "metadata"}) -> ()) -> FileWatcher,
+
+    path: {
+        join: (...string) -> string,
+        relative: (from: string, to: string) -> string,
+        resolve: (...string) -> string,
+        dirname: (path: string) -> string?,
+        basename: (path: string, ext: string?) -> string,
+        stem: (path: string) -> string,
+        extension: (path: string) -> string,
+        isAbsolute: (path: string) -> boolean,
+    },
 }
 --[======[ FileSystem ]======]--
 

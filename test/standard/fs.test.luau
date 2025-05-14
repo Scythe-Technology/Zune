@@ -484,6 +484,120 @@ describe("File Object/Handle", function()
     fs.removeFile(path("sample.txt"));
 end)
 
+describe("Path", function()
+    local SEP = if (zune.process.os == "windows") then "\\" else "/";
+    test("getExePath", function()
+        local result = fs.getExePath();
+        expect(result).toBe(expect.any("string"));
+        expect(#result).toBeGreaterThan(0);
+    end)
+    test("realPath", function()
+        local result = fs.realPath(".");
+        expect(result).toBe(expect.any("string"));
+        expect(#result).toBeGreaterThan(0);
+    end)
+    test("join", function()
+        do
+            local result = fs.path.join("foo", "bar", "luau");
+            expect(result).toBe(expect.any("string"));
+            expect(result).toBe(`foo{SEP}bar{SEP}luau`);
+        end
+        do
+            local result = fs.path.join("foo", "bar", "..", "luau");
+            expect(result).toBe(expect.any("string"));
+            expect(result).toBe(`foo{SEP}bar{SEP}..{SEP}luau`);
+        end
+    end)
+    test("relative", function()
+        do
+            local result = fs.path.relative("foo/bar/luau", "foo");
+            expect(result).toBe(expect.any("string"));
+            expect(result).toBe(`..{SEP}..`);
+        end
+        do
+            local result = fs.path.relative("foo", "foo/bar/luau");
+            expect(result).toBe(expect.any("string"));
+            expect(result).toBe(`bar{SEP}luau`);
+        end
+    end)
+    test("resolve", function()
+        do
+            local result = fs.path.resolve("foo", "bar", "luau");
+            expect(result).toBe(expect.any("string"));
+            expect(result).toBe(`foo{SEP}bar{SEP}luau`);
+        end
+        do
+            local result = fs.path.resolve("foo", "bar", "..", "luau");
+            expect(result).toBe(expect.any("string"));
+            expect(result).toBe(`foo{SEP}luau`);
+        end
+    end)
+    test("dirname", function()
+        do
+            local result = fs.path.dirname("foo/bar/luau");
+            expect(result).toBe(expect.any("string"));
+            expect(result).toBe("foo/bar");
+        end
+        do
+            local result = fs.path.dirname("foo/bar/luau.txt");
+            expect(result).toBe(expect.any("string"));
+            expect(result).toBe("foo/bar");
+        end
+        do
+            local result = fs.path.dirname("foo");
+            expect(result).toBe(nil);
+        end
+    end)
+    test("basename", function()
+        do
+            local result = fs.path.basename("foo/bar/luau");
+            expect(result).toBe(expect.any("string"));
+            expect(result).toBe("luau");
+        end
+        do
+            local result = fs.path.basename("foo/bar/luau.txt");
+            expect(result).toBe(expect.any("string"));
+            expect(result).toBe("luau.txt");
+        end
+    end)
+    test("stem", function()
+        do
+            local result = fs.path.stem("foo/bar/luau");
+            expect(result).toBe(expect.any("string"));
+            expect(result).toBe("luau");
+        end
+        do
+            local result = fs.path.stem("foo/bar/luau.txt");
+            expect(result).toBe(expect.any("string"));
+            expect(result).toBe("luau");
+        end
+    end)
+    test("extension", function()
+        do
+            local result = fs.path.extension("foo/bar/luau");
+            expect(result).toBe(expect.any("string"));
+            expect(result).toBe("");
+        end
+        do
+            local result = fs.path.extension("foo/bar/luau.txt");
+            expect(result).toBe(expect.any("string"));
+            expect(result).toBe(".txt");
+        end
+    end)
+    test("isAbsolute", function()
+        do
+            local result = fs.path.isAbsolute(fs.realPath("."));
+            expect(result).toBe(expect.any("boolean"));
+            expect(result).toBe(true);
+        end
+        do
+            local result = fs.path.isAbsolute(`foo{SEP}bar{SEP}luau`);
+            expect(result).toBe(expect.any("boolean"));
+            expect(result).toBe(false);
+        end
+    end)
+end)
+
 test("Watch", function()
     if (process.os == "macos") then
         warn("Skipping 'Watch' test on macOS.");
