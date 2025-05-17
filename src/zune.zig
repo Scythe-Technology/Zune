@@ -230,7 +230,6 @@ fn loadEnv(allocator: std.mem.Allocator) !void {
         defer allocator.free(exe_dir);
         break :path try std.fs.path.resolve(allocator, &.{ exe_dir, "lib/std" });
     };
-    try resolvers_require.ALIASES.put("std", path);
     try EnvironmentMap.put("ZUNE_STD_PATH", path);
 }
 

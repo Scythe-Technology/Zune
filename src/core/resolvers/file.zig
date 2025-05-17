@@ -92,8 +92,6 @@ const LuaFileType = enum {
 pub const POSSIBLE_EXTENSIONS = [_][]const u8{
     ".luau",
     ".lua",
-    "/init.luau",
-    "/init.lua",
 };
 
 pub fn getLuaFileType(path: []const u8) ?LuaFileType {

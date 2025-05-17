@@ -43,8 +43,8 @@ describe("HashObject", function()
     end)
 end)
 
-require("./hash.test");
-require("./hmac.test");
-require("./password.test");
-require("./random.test");
-require("./aes.test");
+require("@self/hash.test");
+require("@self/hmac.test");
+require("@self/password.test");
+require("@self/random.test");
+require("@self/aes.test");
