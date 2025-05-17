@@ -1,5 +1,5 @@
 const std = @import("std");
-const aio = @import("aio");
+const xev = @import("xev").Dynamic;
 const luau = @import("luau");
 const builtin = @import("builtin");
 
@@ -22,19 +22,34 @@ const OpenError = error{ InvalidMode, BadExclusive };
 
 pub const LIB_NAME = "fs";
 
-fn fs_readFileAsync(L: *VM.lua.State) !i32 {
+fn lua_readFileAsync(L: *VM.lua.State) !i32 {
     const path = L.Lcheckstring(1);
     const useBuffer = L.Loptboolean(2, false);
 
-    const file = try fs.cwd().openFile(path, .{
-        .mode = .read_only,
-    });
+    const file: fs.File = switch (comptime builtin.os.tag) {
+        .windows => try @import("../../utils/os/windows.zig").OpenFile(fs.cwd(), path, .{
+            .accessMode = std.os.windows.GENERIC_READ,
+            .creationDisposition = std.os.windows.OPEN_EXISTING,
+        }),
+        else => try fs.cwd().openFile(path, .{
+            .mode = .read_only,
+        }),
+    };
     errdefer file.close();
 
-    return File.ReadAsyncContext.queue(L, file, useBuffer, 1024, luaHelper.MAX_LUAU_SIZE, true);
+    return File.AsyncReadContext.queue(
+        L,
+        file,
+        useBuffer,
+        1024,
+        luaHelper.MAX_LUAU_SIZE,
+        true,
+        .File,
+        null,
+    );
 }
 
-fn fs_readFileSync(L: *VM.lua.State) !i32 {
+fn lua_readFileSync(L: *VM.lua.State) !i32 {
     const allocator = luau.getallocator(L);
     const path = L.Lcheckstring(1);
     const useBuffer = L.Loptboolean(2, false);
@@ -49,7 +64,7 @@ fn fs_readFileSync(L: *VM.lua.State) !i32 {
     return 1;
 }
 
-fn fs_readDir(L: *VM.lua.State) !i32 {
+fn lua_readDir(L: *VM.lua.State) !i32 {
     const path = L.Lcheckstring(1);
     var dir = try fs.cwd().openDir(path, fs.Dir.OpenDirOptions{
         .iterate = true,
@@ -67,19 +82,25 @@ fn fs_readDir(L: *VM.lua.State) !i32 {
     return 1;
 }
 
-fn fs_writeFileAsync(L: *VM.lua.State) !i32 {
+fn lua_writeFileAsync(L: *VM.lua.State) !i32 {
     const path = L.Lcheckstring(1);
-    const data = if (L.isbuffer(2)) L.Lcheckbuffer(2) else L.Lcheckstring(2);
+    const data = try L.Zcheckvalue([]const u8, 2, null);
 
-    const file = try fs.cwd().createFile(path, .{});
+    const file: fs.File = switch (comptime builtin.os.tag) {
+        .windows => try @import("../../utils/os/windows.zig").OpenFile(fs.cwd(), path, .{
+            .accessMode = std.os.windows.GENERIC_READ | std.os.windows.GENERIC_WRITE,
+            .creationDisposition = std.os.windows.OPEN_ALWAYS,
+        }),
+        else => try fs.cwd().createFile(path, .{}),
+    };
     errdefer file.close();
 
-    return File.WriteAsyncContext.queue(L, file, data, true, 0);
+    return File.AsyncWriteContext.queue(L, file, data, true, 0, .File, null);
 }
 
-fn fs_writeFileSync(L: *VM.lua.State) !i32 {
+fn lua_writeFileSync(L: *VM.lua.State) !i32 {
     const path = L.Lcheckstring(1);
-    const data = if (L.isbuffer(2)) L.Lcheckbuffer(2) else L.Lcheckstring(2);
+    const data = try L.Zcheckvalue([]const u8, 2, null);
     try fs.cwd().writeFile(fs.Dir.WriteFileOptions{
         .sub_path = path,
         .data = data,
@@ -87,7 +108,7 @@ fn fs_writeFileSync(L: *VM.lua.State) !i32 {
     return 0;
 }
 
-fn fs_writeDir(L: *VM.lua.State) !i32 {
+fn lua_writeDir(L: *VM.lua.State) !i32 {
     const path = L.Lcheckstring(1);
     const recursive = L.Loptboolean(2, false);
     const cwd = std.fs.cwd();
@@ -98,13 +119,13 @@ fn fs_writeDir(L: *VM.lua.State) !i32 {
     return 0;
 }
 
-fn fs_removeFile(L: *VM.lua.State) !i32 {
+fn lua_removeFile(L: *VM.lua.State) !i32 {
     const path = L.Lcheckstring(1);
     try fs.cwd().deleteFile(path);
     return 0;
 }
 
-fn fs_removeDir(L: *VM.lua.State) !i32 {
+fn lua_removeDir(L: *VM.lua.State) !i32 {
     const path = L.Lcheckstring(1);
     const recursive = L.Loptboolean(2, false);
     const cwd = std.fs.cwd();
@@ -132,13 +153,7 @@ fn internal_isFile(srcDir: fs.Dir, path: []const u8) bool {
     return stat.kind == .file;
 }
 
-fn fs_isFile(L: *VM.lua.State) i32 {
-    const path = L.Lcheckstring(1);
-    L.pushboolean(internal_isFile(fs.cwd(), path));
-    return 1;
-}
-
-fn fs_isDir(L: *VM.lua.State) i32 {
+fn lua_isDir(L: *VM.lua.State) i32 {
     const path = L.Lcheckstring(1);
     L.pushboolean(internal_isDir(fs.cwd(), path));
     return 1;
@@ -149,34 +164,24 @@ fn internal_lossyfloat_time(n: i128) f64 {
 }
 
 fn internal_metadata_table(L: *VM.lua.State, metadata: fs.File.Metadata, isSymlink: bool) void {
-    L.newtable();
-    L.Zsetfield(-1, "createdAt", internal_lossyfloat_time(metadata.created() orelse 0));
-    L.Zsetfield(-1, "modifiedAt", internal_lossyfloat_time(metadata.modified()));
-    L.Zsetfield(-1, "accessedAt", internal_lossyfloat_time(metadata.accessed()));
-    L.Zsetfield(-1, "symlink", isSymlink);
-    L.Zsetfield(-1, "size", metadata.size());
-    switch (metadata.kind()) {
-        .file => L.Zsetfieldc(-1, "kind", "file"),
-        .directory => L.Zsetfieldc(-1, "kind", "dir"),
-        .sym_link => L.Zsetfieldc(-1, "kind", "symlink"),
-        .door => L.Zsetfieldc(-1, "kind", "door"),
-        .character_device => L.Zsetfieldc(-1, "kind", "character_device"),
-        .unix_domain_socket => L.Zsetfieldc(-1, "kind", "unix_domain_socket"),
-        .block_device => L.Zsetfieldc(-1, "kind", "block_device"),
-        .event_port => L.Zsetfieldc(-1, "kind", "event_port"),
-        .named_pipe => L.Zsetfieldc(-1, "kind", "named_pipe"),
-        .whiteout => L.Zsetfieldc(-1, "kind", "whiteout"),
-        .unknown => L.Zsetfieldc(-1, "kind", "unknown"),
-    }
-
-    L.newtable();
-    const perms = metadata.permissions();
-    L.Zsetfield(-1, "readOnly", perms.readOnly());
-
-    L.setfield(-2, "permissions");
+    L.Zpushvalue(.{
+        .createdAt = internal_lossyfloat_time(metadata.created() orelse 0),
+        .modifiedAt = internal_lossyfloat_time(metadata.modified()),
+        .accessedAt = internal_lossyfloat_time(metadata.accessed()),
+        .symlink = isSymlink,
+        .size = metadata.size(),
+        .kind = @tagName(metadata.kind()),
+        .permissions = .{
+            .readOnly = metadata.permissions().readOnly(),
+        },
+    });
 }
 
-fn fs_metadata(L: *VM.lua.State) !i32 {
+fn lua_metadata(L: *VM.lua.State) !i32 {
+    switch (comptime builtin.os.tag) {
+        .windows, .linux, .macos => {},
+        else => return error.UnsupportedPlatform,
+    }
     const path = L.Lcheckstring(1);
     const allocator = luau.getallocator(L);
     const buf = try allocator.alloc(u8, 4096);
@@ -186,31 +191,33 @@ fn fs_metadata(L: *VM.lua.State) !i32 {
         var dir = try cwd.openDir(path, fs.Dir.OpenDirOptions{});
         defer dir.close();
         const metadata = try dir.metadata();
-        var isLink = true;
-        _ = cwd.readLink(path, buf) catch |err| switch (err) {
-            else => {
-                isLink = false;
-            },
-        };
+        var isLink = builtin.os.tag != .windows;
+        if (builtin.os.tag != .windows)
+            _ = cwd.readLink(path, buf) catch |err| switch (err) {
+                else => {
+                    isLink = false;
+                },
+            };
         internal_metadata_table(L, metadata, isLink);
-    } else if (internal_isFile(cwd, path)) {
+    } else {
         var file = try cwd.openFile(path, fs.File.OpenFlags{
             .mode = .read_only,
         });
         defer file.close();
         const metadata = try file.metadata();
-        var isLink = true;
-        _ = cwd.readLink(path, buf) catch |err| switch (err) {
-            else => {
-                isLink = false;
-            },
-        };
+        var isLink = builtin.os.tag != .windows;
+        if (builtin.os.tag != .windows)
+            _ = cwd.readLink(path, buf) catch |err| switch (err) {
+                else => {
+                    isLink = false;
+                },
+            };
         internal_metadata_table(L, metadata, isLink);
-    } else return std.fs.File.OpenError.FileNotFound;
+    }
     return 1;
 }
 
-fn fs_move(L: *VM.lua.State) !i32 {
+fn lua_move(L: *VM.lua.State) !i32 {
     const fromPath = L.Lcheckstring(1);
     const toPath = L.Lcheckstring(2);
     const overwrite = L.Loptboolean(3, false);
@@ -229,16 +236,16 @@ fn copyDir(fromDir: fs.Dir, toDir: fs.Dir, overwrite: bool) !void {
         .file => {
             if (overwrite == false and internal_isFile(toDir, entry.name))
                 return error.PathAlreadyExists;
-            try fromDir.copyFile(entry.name, toDir, entry.name, fs.Dir.CopyFileOptions{});
+            try fromDir.copyFile(entry.name, toDir, entry.name, .{});
         },
         .directory => {
             toDir.makeDir(entry.name) catch |err| switch (err) {
                 error.PathAlreadyExists => {},
                 else => return err,
             };
-            var toEntryDir = try toDir.openDir(entry.name, fs.Dir.OpenDirOptions{ .access_sub_paths = true, .iterate = true, .no_follow = true });
+            var toEntryDir = try toDir.openDir(entry.name, .{ .access_sub_paths = true, .iterate = true, .no_follow = true });
             defer toEntryDir.close();
-            var fromEntryDir = try fromDir.openDir(entry.name, fs.Dir.OpenDirOptions{ .access_sub_paths = true, .iterate = true, .no_follow = true });
+            var fromEntryDir = try fromDir.openDir(entry.name, .{ .access_sub_paths = true, .iterate = true, .no_follow = true });
             defer fromEntryDir.close();
             try copyDir(fromEntryDir, toEntryDir, overwrite);
         },
@@ -246,17 +253,12 @@ fn copyDir(fromDir: fs.Dir, toDir: fs.Dir, overwrite: bool) !void {
     };
 }
 
-fn fs_copy(L: *VM.lua.State) !i32 {
+fn lua_copy(L: *VM.lua.State) !i32 {
     const fromPath = L.Lcheckstring(1);
     const toPath = L.Lcheckstring(2);
     const override = L.Loptboolean(3, false);
     const cwd = std.fs.cwd();
-    if (internal_isFile(cwd, fromPath)) {
-        if (override == false and internal_isFile(cwd, toPath))
-            return std.fs.Dir.MakeError.PathAlreadyExists;
-
-        cwd.copyFile(fromPath, cwd, toPath, fs.Dir.CopyFileOptions{}) catch return UnhandledError.UnknownError;
-    } else {
+    if (internal_isDir(cwd, fromPath)) {
         var fromDir = try cwd.openDir(fromPath, fs.Dir.OpenDirOptions{
             .iterate = true,
             .access_sub_paths = true,
@@ -278,78 +280,67 @@ fn fs_copy(L: *VM.lua.State) !i32 {
         });
         defer toDir.close();
         try copyDir(fromDir, toDir, override);
+    } else {
+        if (override == false and internal_isFile(cwd, toPath))
+            return std.fs.Dir.MakeError.PathAlreadyExists;
+
+        try cwd.copyFile(fromPath, cwd, toPath, fs.Dir.CopyFileOptions{});
     }
     return 0;
 }
 
-fn fs_symlink(L: *VM.lua.State) !i32 {
-    if (builtin.os.tag == .windows)
-        return HardwareError.NotSupported;
-
+fn lua_symlink(L: *VM.lua.State) !i32 {
     const fromPath = L.Lcheckstring(1);
     const toPath = L.Lcheckstring(2);
     const cwd = std.fs.cwd();
-
-    const isDir = internal_isDir(cwd, fromPath);
-    if (!isDir and !internal_isFile(cwd, fromPath))
-        return error.FileNotFound;
 
     const allocator = luau.getallocator(L);
 
     const fullPath = try cwd.realpathAlloc(allocator, fromPath);
     defer allocator.free(fullPath);
 
-    try cwd.symLink(fullPath, toPath, fs.Dir.SymLinkFlags{ .is_directory = isDir });
+    try cwd.symLink(fullPath, toPath, .{
+        // only this applies to windows
+        .is_directory = if (comptime builtin.os.tag == .windows)
+            internal_isDir(cwd, fromPath)
+        else
+            false,
+    });
 
     return 0;
 }
 
-pub fn prepRefType(comptime luaType: VM.lua.Type, L: *VM.lua.State, ref: i32) bool {
-    if (L.rawgeti(VM.lua.REGISTRYINDEX, ref) == luaType) {
-        return true;
-    }
-    L.pop(1);
-    return false;
-}
-
-const WatchObject = struct {
+const LuaWatch = struct {
     instance: Watch.FileSystemWatcher,
     active: bool = true,
-    callback: ?i32,
+    callback: luaHelper.Ref(void),
+    ref: luaHelper.Ref(void),
 
-    pub const Lua = struct {
-        ptr: ?*WatchObject,
-    };
-};
-
-const LuaWatch = struct {
-    pub const META = "fs_watch_instance";
-
-    pub fn __index(L: *VM.lua.State) i32 {
-        L.Lchecktype(1, .Userdata);
+    pub fn __index(L: *VM.lua.State) !i32 {
+        try L.Zchecktype(1, .Userdata);
         return 0;
     }
 
     pub fn __namecall(L: *VM.lua.State) !i32 {
-        L.Lchecktype(1, .Userdata);
-        const obj = L.touserdata(WatchObject.Lua, 1) orelse unreachable;
+        try L.Zchecktype(1, .Userdata);
+        const obj = L.touserdata(LuaWatch, 1) orelse unreachable;
 
         const namecall = L.namecallstr() orelse return 0;
 
         // TODO: prob should switch to static string map
         if (std.mem.eql(u8, namecall, "stop")) {
-            if (obj.ptr) |ptr|
-                ptr.active = false;
-            obj.ptr = null;
+            obj.active = false;
         } else return L.Zerrorf("Unknown method: {s}", .{namecall});
         return 0;
     }
 
-    pub fn update(ctx: *WatchObject, L: *VM.lua.State, _: *Scheduler) Scheduler.TaskResult {
-        if (!ctx.active) return .Stop;
+    pub fn update(ctx: *LuaWatch, L: *VM.lua.State, _: *Scheduler) Scheduler.TaskResult {
+        if (!ctx.active)
+            return .Stop;
         const watch = &ctx.instance;
 
-        const callback = ctx.callback orelse return .Stop;
+        if (ctx.callback.ref == null)
+            return .Stop;
 
         if (watch.next() catch |err| {
             std.debug.print("LuaWatch error: {}\n", .{err});
@@ -357,41 +348,44 @@ const LuaWatch = struct {
         }) |info| {
             defer info.deinit();
             for (info.list.items) |item| {
-                if (prepRefType(.Function, L, callback)) {
+                if (ctx.callback.push(L)) {
+                    if (L.typeOf(-1) != .Function) {
+                        L.pop(1); // drop callback
+                        return .Stop;
+                    }
                     const thread = L.newthread();
                     L.xpush(thread, -2); // push: function
                     thread.pushlstring(item.name);
-                    thread.newtable();
-                    var i: i32 = 1;
+                    var count: u32 = 0;
+                    var values: [6][]const u8 = undefined;
                     if (item.event.created) {
-                        thread.pushstring("created");
-                        thread.rawseti(-2, i);
-                        i += 1;
+                        values[count] = "created";
+                        count += 1;
                     }
                     if (item.event.modify) {
-                        thread.pushstring("modified");
-                        thread.rawseti(-2, i);
-                        i += 1;
+                        values[count] = "modified";
+                        count += 1;
                     }
                     if (item.event.delete) {
-                        thread.pushstring("deleted");
-                        thread.rawseti(-2, i);
-                        i += 1;
+                        values[count] = "deleted";
+                        count += 1;
                     }
                     if (item.event.rename) {
-                        thread.pushstring("renamed");
-                        thread.rawseti(-2, i);
-                        i += 1;
+                        values[count] = "renamed";
+                        count += 1;
                     }
                     if (item.event.metadata) {
-                        thread.pushstring("metadata");
-                        thread.rawseti(-2, i);
-                        i += 1;
+                        values[count] = "metadata";
+                        count += 1;
                     }
                     if (item.event.move_from or item.event.move_to) {
-                        thread.pushstring("moved");
-                        thread.rawseti(-2, i);
-                        i += 1;
+                        values[count] = "moved";
+                        count += 1;
+                    }
+                    thread.createtable(@intCast(count), 0);
+                    for (values[0..count], 1..) |value, i| {
+                        thread.pushlstring(value);
+                        thread.rawseti(-2, @intCast(i));
                     }
                     L.pop(2); // drop thread, function
 
@@ -403,84 +397,118 @@ const LuaWatch = struct {
         return .Continue;
     }
 
-    pub fn dtor(ctx: *WatchObject, L: *VM.lua.State, _: *Scheduler) void {
-        const allocator = luau.getallocator(L);
-
-        defer allocator.destroy(ctx);
-
+    pub fn dtor(ctx: *LuaWatch, L: *VM.lua.State, _: *Scheduler) void {
+        ctx.callback.deref(L);
+        ctx.ref.deref(L);
         ctx.instance.deinit();
-        if (ctx.callback) |ref|
-            L.unref(ref);
     }
 };
 
-fn fs_openFile(L: *VM.lua.State) !i32 {
+fn lua_openFile(L: *VM.lua.State) !i32 {
     const path = L.Lcheckstring(1);
 
     var mode: fs.File.OpenMode = .read_write;
 
-    const optsType = L.typeOf(2);
-    if (!optsType.isnoneornil()) {
-        L.Lchecktype(2, .Table);
-        const modeType = L.getfield(2, "mode");
-        if (!modeType.isnoneornil()) {
-            if (modeType != .String) return OpenError.InvalidMode;
-            const modeStr = L.tostring(-1) orelse unreachable;
-
-            const has_read = std.mem.indexOfScalar(u8, modeStr, 'r');
-            const has_write = std.mem.indexOfScalar(u8, modeStr, 'w');
-
-            if (has_read != null and has_write != null) {
-                mode = .read_write;
-            } else if (has_read != null) {
-                mode = .read_only;
-            } else if (has_write != null) {
-                mode = .write_only;
-            } else return OpenError.InvalidMode;
-        }
-        L.pop(1);
+    const Options = struct {
+        mode: ?[:0]const u8 = null,
+    };
+    const opts: Options = try L.Zcheckvalue(?Options, 2, null) orelse .{};
+    if (opts.mode) |m| {
+        const has_read = std.mem.indexOfScalar(u8, m, 'r');
+        const has_write = std.mem.indexOfScalar(u8, m, 'w');
+        if (has_read != null and has_write != null) {
+            mode = .read_write;
+        } else if (has_read != null) {
+            mode = .read_only;
+        } else if (has_write != null) {
+            mode = .write_only;
+        } else return OpenError.InvalidMode;
     }
 
-    const file = try fs.cwd().openFile(path, .{
-        .mode = mode,
-    });
+    const file: fs.File = switch (comptime builtin.os.tag) {
+        .windows => try @import("../../utils/os/windows.zig").OpenFile(fs.cwd(), path, .{
+            .accessMode = switch (mode) {
+                .read_only => std.os.windows.GENERIC_READ,
+                .read_write => std.os.windows.GENERIC_READ | std.os.windows.GENERIC_WRITE,
+                .write_only => std.os.windows.GENERIC_WRITE,
+            },
+            .creationDisposition = std.os.windows.OPEN_EXISTING,
+        }),
+        else => try fs.cwd().openFile(path, .{
+            .mode = mode,
+        }),
+    };
 
-    File.pushFile(L, file, .File);
+    try File.push(L, file, .File, switch (mode) {
+        .read_only => .readable(.seek_close),
+        .read_write => .readwrite(.seek_close),
+        .write_only => .writable(.seek_close),
+    });
 
     return 1;
 }
 
-fn fs_createFile(L: *VM.lua.State) !i32 {
+fn lua_createFile(L: *VM.lua.State) !i32 {
     const path = L.Lcheckstring(1);
 
-    var exclusive = false;
+    const Options = struct {
+        exclusive: bool = false,
+    };
+    const opts: Options = try L.Zcheckvalue(?Options, 2, null) orelse .{};
 
-    const optsType = L.typeOf(2);
-    if (!optsType.isnoneornil()) {
-        L.Lchecktype(2, .Table);
-        const modeType = L.getfield(2, "exclusive");
-        if (!modeType.isnoneornil()) {
-            if (modeType != .Boolean)
-                return OpenError.BadExclusive;
-            exclusive = L.toboolean(-1);
-        }
-        L.pop(1);
-    }
+    const file: fs.File = switch (comptime builtin.os.tag) {
+        .windows => try @import("../../utils/os/windows.zig").OpenFile(fs.cwd(), path, .{
+            .accessMode = std.os.windows.GENERIC_READ | std.os.windows.GENERIC_WRITE,
+            .creationDisposition = if (opts.exclusive) std.os.windows.CREATE_NEW else std.os.windows.CREATE_ALWAYS,
+        }),
+        else => try fs.cwd().createFile(path, .{
+            .read = true,
+            .exclusive = opts.exclusive,
+        }),
+    };
 
-    const file = try fs.cwd().createFile(path, .{
-        .read = true,
-        .exclusive = exclusive,
-    });
-
-    File.pushFile(L, file, .File);
+    try File.push(L, file, .File, .readwrite(.seek_close));
 
     return 1;
 }
 
-fn fs_watch(L: *VM.lua.State) !i32 {
+fn lua_getExePath(L: *VM.lua.State) !i32 {
+    switch (comptime builtin.os.tag) {
+        .macos, .driverkit, .ios, .tvos, .visionos, .watchos => {}, // Darwin
+        .freebsd, .openbsd, .netbsd, .dragonfly => {}, // BSD
+        .solaris, .illumos => {}, // Solaris
+        .haiku => {},
+        .windows, .linux => {},
+        else => return error.UnsupportedPlatform,
+    }
+
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const path = try std.fs.selfExePath(&buf);
+    L.pushlstring(path);
+    return 1;
+}
+
+fn lua_realPath(L: *VM.lua.State) !i32 {
+    switch (comptime builtin.os.tag) {
+        .macos, .ios, .tvos, .visionos, .watchos => {},
+        .windows, .linux => {},
+        else => return error.UnsupportedPlatform,
+    }
+    const path = L.Lcheckstring(1);
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const real_path = try std.fs.realpath(path, &buf);
+    L.pushlstring(real_path);
+    return 1;
+}
+
+fn lua_watch(L: *VM.lua.State) !i32 {
+    switch (comptime builtin.os.tag) {
+        .windows, .linux, .macos => {},
+        else => return error.UnsupportedPlatform,
+    }
     const scheduler = Scheduler.getScheduler(L);
     const path = L.Lcheckstring(1);
-    L.Lchecktype(2, .Function);
+    try L.Zchecktype(2, .Function);
 
     const allocator = luau.getallocator(L);
 
@@ -497,68 +525,160 @@ fn fs_watch(L: *VM.lua.State) !i32 {
     errdefer watch.deinit();
     try watch.start();
 
-    const data = try allocator.create(WatchObject);
-    errdefer allocator.destroy(data);
+    const ptr = L.newuserdata(LuaWatch);
 
-    const luaObj = L.newuserdata(WatchObject.Lua);
-    luaObj.ptr = data;
-
-    if (L.Lgetmetatable(LuaWatch.META) == .Table)
+    if (L.Lgetmetatable(@typeName(LuaWatch)) == .Table)
         _ = L.setmetatable(-2)
     else
         std.debug.panic("InternalError (Watch Metatable not initialized)", .{});
 
-    data.* = .{
+    ptr.* = .{
         .instance = watch,
         .active = true,
-        .callback = ref,
+        .callback = .{ .ref = .{ .registry = ref }, .value = undefined },
+        .ref = .init(L, -1, undefined),
     };
 
-    scheduler.addTask(WatchObject, data, L, LuaWatch.update, LuaWatch.dtor);
+    scheduler.addTask(LuaWatch, ptr, L, LuaWatch.update, LuaWatch.dtor);
 
     return 1;
 }
 
+const Path = struct {
+    pub fn lua_join(L: *VM.lua.State) !i32 {
+        const allocator = luau.getallocator(L);
+        const top = L.gettop();
+        if (top == 0)
+            return 0;
+        var paths: std.ArrayListUnmanaged([]const u8) = try .initCapacity(allocator, @min(16, top));
+        defer paths.deinit(allocator);
+        for (0..top) |i| {
+            const path = try L.Zcheckvalue([:0]const u8, @intCast(i + 1), null);
+            try paths.append(allocator, path);
+        }
+
+        const resolved = try fs.path.join(allocator, paths.items);
+        defer allocator.free(resolved);
+
+        L.pushlstring(resolved);
+
+        return 1;
+    }
+
+    pub fn lua_relative(L: *VM.lua.State) !i32 {
+        const allocator = luau.getallocator(L);
+        const from = try L.Zcheckvalue([:0]const u8, 1, null);
+        const to = try L.Zcheckvalue([:0]const u8, 2, null);
+
+        const resolved = try fs.path.relative(allocator, from, to);
+        defer allocator.free(resolved);
+
+        L.pushlstring(resolved);
+
+        return 1;
+    }
+
+    pub fn lua_resolve(L: *VM.lua.State) !i32 {
+        const allocator = luau.getallocator(L);
+        const top = L.gettop();
+        if (top == 0)
+            return 0;
+        var paths: std.ArrayListUnmanaged([]const u8) = try .initCapacity(allocator, @min(16, top));
+        defer paths.deinit(allocator);
+        for (0..top) |i| {
+            const path = try L.Zcheckvalue([:0]const u8, @intCast(i + 1), null);
+            try paths.append(allocator, path);
+        }
+
+        const resolved = try fs.path.resolve(allocator, paths.items);
+        defer allocator.free(resolved);
+
+        L.pushlstring(resolved);
+
+        return 1;
+    }
+
+    pub fn lua_dirname(L: *VM.lua.State) !i32 {
+        const path = try L.Zcheckvalue([:0]const u8, 1, null);
+        if (fs.path.dirname(path)) |dirname|
+            L.pushlstring(dirname)
+        else
+            L.pushnil();
+        return 1;
+    }
+
+    pub fn lua_basename(L: *VM.lua.State) !i32 {
+        const path = try L.Zcheckvalue([:0]const u8, 1, null);
+        L.pushlstring(fs.path.basename(path));
+        return 1;
+    }
+
+    pub fn lua_stem(L: *VM.lua.State) !i32 {
+        const path = try L.Zcheckvalue([:0]const u8, 1, null);
+        L.pushlstring(fs.path.stem(path));
+        return 1;
+    }
+
+    pub fn lua_extension(L: *VM.lua.State) !i32 {
+        const path = try L.Zcheckvalue([:0]const u8, 1, null);
+        L.pushlstring(fs.path.extension(path));
+        return 1;
+    }
+
+    pub fn lua_isAbsolute(L: *VM.lua.State) !i32 {
+        const path = try L.Zcheckvalue([:0]const u8, 1, null);
+        L.pushboolean(fs.path.isAbsolute(path));
+        return 1;
+    }
+};
+
 pub fn loadLib(L: *VM.lua.State) void {
     {
-        _ = L.Lnewmetatable(LuaWatch.META);
-
-        L.Zsetfieldc(-1, luau.Metamethods.index, LuaWatch.__index); // metatable.__index
-        L.Zsetfieldc(-1, luau.Metamethods.namecall, LuaWatch.__namecall); // metatable.__namecall
-
-        L.Zsetfieldc(-1, luau.Metamethods.metatable, "Metatable is locked");
+        _ = L.Znewmetatable(@typeName(LuaWatch), .{
+            .__index = LuaWatch.__index,
+            .__namecall = LuaWatch.__namecall,
+            .__metatable = "Metatable is locked",
+        });
+        L.setreadonly(-1, true);
         L.pop(1);
     }
-    L.newtable();
 
-    L.Zsetfieldc(-1, "createFile", fs_createFile);
-    L.Zsetfieldc(-1, "openFile", fs_openFile);
+    L.Zpushvalue(.{
+        .createFile = lua_createFile,
+        .openFile = lua_openFile,
+        .readFile = lua_readFileAsync,
+        .readFileSync = lua_readFileSync,
+        .readDir = lua_readDir,
+        .writeFile = lua_writeFileAsync,
+        .writeFileSync = lua_writeFileSync,
+        .writeDir = lua_writeDir,
+        .removeFile = lua_removeFile,
+        .removeDir = lua_removeDir,
+        .isDir = lua_isDir,
+        .metadata = lua_metadata,
+        .move = lua_move,
+        .copy = lua_copy,
+        .symlink = lua_symlink,
+        .getExePath = lua_getExePath,
+        .realPath = lua_realPath,
+        .watch = lua_watch,
+    });
 
-    L.Zsetfieldc(-1, "readFile", fs_readFileAsync);
-    L.Zsetfieldc(-1, "readFileSync", fs_readFileSync);
-    L.Zsetfieldc(-1, "readDir", fs_readDir);
-
-    L.Zsetfieldc(-1, "writeFile", fs_writeFileAsync);
-    L.Zsetfieldc(-1, "writeFileSync", fs_writeFileSync);
-    L.Zsetfieldc(-1, "writeDir", fs_writeDir);
-
-    L.Zsetfieldc(-1, "removeFile", fs_removeFile);
-    L.Zsetfieldc(-1, "removeDir", fs_removeDir);
-
-    L.Zsetfieldc(-1, "isFile", fs_isFile);
-    L.Zsetfieldc(-1, "isDir", fs_isDir);
-
-    L.Zsetfieldc(-1, "metadata", fs_metadata);
-
-    L.Zsetfieldc(-1, "move", fs_move);
-
-    L.Zsetfieldc(-1, "copy", fs_copy);
-
-    L.Zsetfieldc(-1, "symlink", fs_symlink);
-
-    L.Zsetfieldc(-1, "watch", fs_watch);
+    L.Zpushvalue(.{
+        .join = Path.lua_join,
+        .relative = Path.lua_relative,
+        .resolve = Path.lua_resolve,
+        .dirname = Path.lua_dirname,
+        .basename = Path.lua_basename,
+        .stem = Path.lua_stem,
+        .extension = Path.lua_extension,
+        .isAbsolute = Path.lua_isAbsolute,
+    });
+    L.setreadonly(-1, true);
+    L.setfield(-2, "path");
 
     L.setreadonly(-1, true);
+
     luaHelper.registerModule(L, LIB_NAME);
 }
 
@@ -566,10 +686,14 @@ test {
     _ = Watch;
 }
 
-test "Filesystem" {
+test "fs" {
     const TestRunner = @import("../../utils/testrunner.zig");
 
-    const testResult = try TestRunner.runTest(std.testing.allocator, @import("zune-test-files").@"fs.test", &.{}, true);
+    const testResult = try TestRunner.runTest(
+        TestRunner.newTestFile("standard/fs.test.luau"),
+        &.{},
+        .{},
+    );
 
     try std.testing.expect(testResult.failed == 0);
     try std.testing.expect(testResult.total > 0);

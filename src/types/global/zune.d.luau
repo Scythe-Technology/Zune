@@ -1,9 +1,8 @@
 --  https://github.com/JohnnyMorganz/luau-lsp/issues/271
 
 declare _FILE: {
-    name: string,
-    path: string,
     source: string,
+    main: boolean,
 }
 
 --[======[ FileSystem ]======]--
@@ -31,7 +30,7 @@ export type Metadata = {
     },
 }
 
-export type FileHandle = {
+declare class FileHandle
     --[[
         Reads the contents of a file.
 
@@ -41,32 +40,56 @@ export type FileHandle = {
     ]]
     read:
         & ((self: FileHandle, amount: number?, useBuffer: false?) -> string)
-        & ((self: FileHandle, amount: number?, useBuffer: true) -> buffer),
+        & ((self: FileHandle, amount: number?, useBuffer: true) -> buffer)
 
+    --[[
+        Reads the contents of a file.
+
+        *Optional: The amount of bytes to read, if nil, reads the whole till EOF or Luau limit.*
+
+        @param amount The amount of bytes to read.
+    ]]
+    readSync:
+        & ((self: FileHandle, amount: number?, useBuffer: false?) -> string)
+        & ((self: FileHandle, amount: number?, useBuffer: true) -> buffer)
 
     --[[
         Writes to a file.
 
         @param contents The contents to write to the file.
     ]]
-    write: (self: FileHandle, contents: buffer | string) -> (),
+    function write(self, contents: string | buffer): ()
+
+    --[[
+        Writes to a file.
+
+        @param contents The contents to write to the file.
+    ]]
+    function writeSync(self, contents: string | buffer): ()
 
     --[[
         Appends to a file.
 
         @param contents The contents to append to the file.
     ]]
-    append: (self: FileHandle, contents: buffer | string) -> (),
+    function append(self, contents: string | buffer): ()
+
+    --[[
+        Appends to a file.
+
+        @param contents The contents to append to the file.
+    ]]
+    function appendSync(self, contents: string | buffer): ()
 
     --[[
         Returns the size of the file. Based on current state of the file object.
     ]]
-    getSize: (self: FileHandle) -> number,
+    function getSize(self): number
 
     --[[
         Returns the current position of the file.
     ]]
-    getSeekPosition: (self: FileHandle) -> number,
+    function getSeekPosition(self): number
 
     --[[
         Seeks to a position in the file relative to the end.
@@ -75,7 +98,7 @@ export type FileHandle = {
 
         @param amount The amount of bytes to seek.
     ]]
-    seekFromEnd: (self: FileHandle, amount: number?) -> (),
+    function seekFromEnd(self, amount: number?): ()
 
     --[[
         Seeks to a position in the file absolute to the start.
@@ -84,7 +107,7 @@ export type FileHandle = {
 
         @param amount The amount of bytes to seek.
     ]]
-    seekTo: (self: FileHandle, amount: number?) -> (),
+    function seekTo(self, amount: number?): ()
 
     --[[
         Seeks to a position in the file relative to the current position.
@@ -95,7 +118,7 @@ export type FileHandle = {
 
         @param amount The amount of bytes to seek.
     ]]
-    seekBy: (self: FileHandle, amount: number?) -> (),
+    function seekBy(self, amount: number?): ()
 
     --[[
         Locks the file.
@@ -104,19 +127,19 @@ export type FileHandle = {
 
         @param lockMode The mode to lock the file.
     ]]
-    lock: (self: FileHandle, lockMode: ("shared" | "exclusive" | "none")?) -> boolean,
+    function lock(self, lockMode: ("shared" | "exclusive" | "none")?): boolean
 
     --[[
         Unlocks the file.
     ]]
-    unlock: (self: FileHandle) -> (),
+    function unlock(self): ()
 
     --[[
         Flushes the file. Writes the contents to the disk.
 
         Does not yield, **blocks** process.
     ]]
-    sync: (self: FileHandle) -> (),
+    function sync(self): ()
 
     --[[
         Returns whether the file is readonly.
@@ -127,13 +150,13 @@ export type FileHandle = {
     ]]
     readonly:
         & ((self: FileHandle) -> boolean)
-        & ((self: FileHandle, enabled: boolean) -> ()),
+        & ((self: FileHandle, enabled: boolean) -> ())
 
     --[[
         Closes the file. (Will flush the file)
     ]]
-    close: (self: FileHandle) -> (),
-}
+    function close(self): ()
+end
 
 export type FileWatcher = {
     --[[
@@ -216,7 +239,7 @@ type FileSystemLib = {
         @param contents The contents to write to the file.
         @return `FileWriteError` An error if the operation failed.
     ]]
-    writeFile: (path: string, contents: buffer | string) -> (),
+    writeFile: (path: string, contents: string | buffer) -> (),
 
     --[[
         Creates a directory.
@@ -251,14 +274,6 @@ type FileSystemLib = {
         @return `Metadata` Nil or The metadata of the file or directory
     ]]
     metadata: (path: string) -> Metadata?,
-
-    --[[
-        Checks if a file exists.
-
-        @param path The path to the file.
-        @return `boolean` Whether the file exists.
-    ]]
-    isFile: (path: string) -> boolean,
 
     --[[
         Checks if a directory exists.
@@ -296,7 +311,21 @@ type FileSystemLib = {
     ]]
     symlink: (from: string, to: string) -> (),
 
+    getExePath: () -> string,
+    realPath: (path: string) -> string,
+
     watch: (path: string, callback: (path: string, events: {"created" | "modified" | "moved" | "renamed" | "deleted" | "metadata"}) -> ()) -> FileWatcher,
+
+    path: {
+        join: (...string) -> string,
+        relative: (from: string, to: string) -> string,
+        resolve: (...string) -> string,
+        dirname: (path: string) -> string?,
+        basename: (path: string, ext: string?) -> string,
+        stem: (path: string) -> string,
+        extension: (path: string) -> string,
+        isAbsolute: (path: string) -> boolean,
+    },
 }
 --[======[ FileSystem ]======]--
 
@@ -424,7 +453,6 @@ export type ProcessOptions = {
 export type ProcessResult = {
 	ok: boolean,
 	code: number,
-	status: "Exited" | "Stopped" | "Signal" | "Unknown",
 }
 
 export type ProcessRunResult = ProcessResult & {
@@ -433,11 +461,12 @@ export type ProcessRunResult = ProcessResult & {
 }
 
 declare class ProcessChild
-    dead: boolean
+    stdin: FileHandle?
+    stdout: FileHandle?
+    stderr: FileHandle?
+
     --[[
         Waits for the process to exit. Calls system function.
-
-        Does not yield, **blocks** process.
 
         @return `ProcessResult`
     ]]
@@ -445,58 +474,9 @@ declare class ProcessChild
     --[[
         Kills process. Calls system function.
 
-        Does not yield, **blocks** process.
-
         @return `ProcessResult`
     ]]
     function kill(self): ProcessResult
-
-    --[[
-        Reads the output of the process. Stdout.
-
-        Optional size parameter to read a specific amount of bytes.
-        Nil to read all.
-
-        @param size The size of the output to read.
-        @return `string?`
-    ]]
-    function readOut(self, size: number?): string?
-    --[[
-        Reads the output of the process. Stdout.
-
-        Optional size parameter to read a specific amount of bytes.
-        Nil to read all.
-
-        @param size The size of the output to read.
-        @return `string?`
-    ]]
-    function readOutAsync(self, size: number?): string
-    --[[
-        Writes to the input of the process. Stdin.
-
-        @param data The data to write to the process.
-    ]]
-    function writeIn(self, data: string): ()
-    --[[
-        Reads the error output of the process. Stderr.
-
-        Optional size parameter to read a specific amount of bytes.
-        Nil to read all.
-
-        @param size The size of the output to read.
-        @return `string?`
-    ]]
-    function readErr(self, size: number?): string?
-    --[[
-        Reads the error output of the process. Stderr.
-
-        Optional size parameter to read a specific amount of bytes.
-        Nil to read all.
-
-        @param size The size of the output to read.
-        @return `string?`
-    ]]
-    function readErrAsync(self, size: number?): string?
 end
 
 type ProcessLib = {
@@ -509,11 +489,6 @@ type ProcessLib = {
         The architecture of the processor running.
     ]]
     arch: CPUArchitecture,
-
-    --[[
-        The current working directory of the process.
-    ]]
-    cwd: string,
 
     --[[
         The arguments passed to the process.
@@ -541,6 +516,11 @@ type ProcessLib = {
         @return `EnvironmentMap`
     ]]
     loadEnv: () -> { [string]: string },
+
+    --[[
+        Get current working directory of the process.
+    ]]
+    getCwd: () ->string,
 
     --[[
         Creates a new process.
@@ -689,6 +669,12 @@ type FunctionalCases = ExpectCases & {
         @param expected The expected error message.
     ]]
     toThrow: (expected: string?) -> (),
+    --[[
+        never
+
+        Flipped expectations.
+    ]]
+    never: FunctionalCases,
 }
 
 type ExpectHandler = {
@@ -881,7 +867,7 @@ type TaskLib = {
 --[======[ Task ]======]--
 
 --[======[ Network ]======]--
-declare class NetWebSocket
+declare class NetHttpWebSocket
     --[[
         Whether the websocket is connected.
     ]]
@@ -898,62 +884,43 @@ declare class NetWebSocket
     function close(self): ()
 end
 
-declare class NetUDPSocket
-    --[[
-        Port used
-    ]]
-    port: number
-    --[[
-        Whether the socket is active
-    ]]
-    stopped: boolean
-    --[[
-        Send a UDP datagram message to remote host.
-    ]]
-    function send(self, message: string | buffer, port: number, address: string): ()
-    --[[
-        Stops the Socket.
-    ]]
-    function stop(self): ()
-end
-
-declare class NetTCPConnection
-    --[[
-        Whether the socket is active
-    ]]
-    stopped: boolean
-    --[[
-        Send a message to remote host.
-    ]]
-    function send(self, message: string | buffer): ()
-    --[[
-        Stops the socket.
-    ]]
+declare class NetworkSocket
+    function isOpen(self): boolean
+    function send(self, data: string | buffer, offset: number?): number
+    function sendMsg(self, port: number, address: string, data: string | buffer, offset: number?): number
+    function recv(self, max_size: number?): buffer
+    function recvMsg(self, max_size: number?): (NetworkAddress, buffer)
+    function accept(self): NetworkSocket
+    function connect(self, address: string, port: number): ()
+    function listen(self, backlog: number?): ()
+    function bindIp(self, address: string, port: number): ()
+    function getName(self): NetworkAddress
+    function setOption(self, level: number, optname: number, value: boolean | string | buffer): ()
     function close(self): ()
 end
 
-declare class NetTCPServer
-    --[[
-        Whether the socket is active
-    ]]
-    stopped: boolean
-    --[[
-        Stops the socket.
-    ]]
-    function stop(self): ()
-end
-
-declare class NetServerHandle
-    --[[
-        Whether the socket is active
-    ]]
-    stopped: boolean
-
-    --[[
+declare class NetHttpServer
+     --[[
         Stops the server.
     ]]
     function stop(self): ()
+
+    --[[
+        The port the server is bound to.
+    ]]
+    function getPort(self): number
+
+    --[[
+        Checks if the server is running.
+    ]]
+    function isRunning(self): boolean
 end
+
+export type NetworkAddress = {
+    family: number,
+    port: number,
+    address: string,
+}
 
 export type ServerRequest = {
     method: string,
@@ -966,7 +933,7 @@ export type ServerRequest = {
 export type ServerResponse = {
     statusCode: number,
     headers: {[string]: string}?,
-    body: buffer | string,
+    body: string | buffer,
 }
 
 export type ServerWebSocketHandlers = {
@@ -982,19 +949,19 @@ export type ServerWebSocketHandlers = {
 
         *`WebSocket` class will keep the same reference per connection*.
     ]]
-    open: ((websocket: NetWebSocket) -> ())?,
+    open: ((websocket: NetHttpWebSocket) -> ())?,
     --[[
         A function event for when a websocket receives a message.
 
         *`WebSocket` class will keep the same reference per connection*.
     ]]
-    message: ((websocket: NetWebSocket, message: string) -> ())?,
+    message: ((websocket: NetHttpWebSocket, message: string) -> ())?,
     --[[
         A function event for when a websocket is closed.
 
         *`WebSocket` class will keep the same reference per connection*.
     ]]
-    close: ((websocket: NetWebSocket) -> ())?,
+    close: ((websocket: NetHttpWebSocket) -> ())?,
 }
 
 export type ServeOptions = {
@@ -1018,15 +985,35 @@ export type ServeOptions = {
     reuseAddress: boolean?,
 
     --[[
+        The amount of connections to backlog
+        - Default: `128`
+    ]]
+    backlog: number?,
+
+    --[[
         The maximum body size to accept.
         - Default: `4096`
     ]]
     maxBodySize: number?,
 
     --[[
+        The amount of seconds to wait before timing a client out.
+        - `0` for no timeout.
+        - Default: `60`
+    ]]
+    clientTimeout: number?,
+
+    --[[
+        The maximum number of connections to accept at a time.
+        - `0` for no limit.
+        - Default: `1024`
+    ]]
+    maxConnections: number?,
+
+    --[[
         The function to handle requests.
     ]]
-    request: (request: ServerRequest) -> buffer | string | ServerResponse,
+    request: (request: ServerRequest) -> string | buffer | ServerResponse,
 
     --[[
         Functions to handle websockets.
@@ -1047,16 +1034,16 @@ type BareRequestOptions = {
     headers: {[string]: string}?,
 
     --[[
-            Whether to follow redirects.
-            - Default: `true`
-        ]]
-        allowRedirects: boolean?,
+        Whether to follow redirects.
+        - Default: `true`
+    ]]
+    allowRedirects: boolean?,
 
-        --[[
-            The maximum body size to accept.
-            - Default: `2097152`
-        ]]
-        maxBodySize: number?,
+    --[[
+        The maximum body size to accept.
+        - Default: `2097152`
+    ]]
+    maxBodySize: number?,
 }
 
 type BodyRequestOptions = {
@@ -1083,133 +1070,238 @@ export type WebSocketOptions = {
     --[[
         WebSocket open event.
     ]]
-    open: ((socket: NetWebSocket) -> ())?,
+    open: ((socket: NetHttpWebSocket) -> ())?,
     --[[
         WebSocket close event.
     ]]
-    close: ((socket: NetWebSocket, close: number?) -> ())?,
+    close: ((socket: NetHttpWebSocket, close: number?) -> ())?,
     --[[
         WebSocket message event.
     ]]
-    message: ((socket: NetWebSocket, message: string) -> ())?,
+    message: ((socket: NetHttpWebSocket, message: string) -> ())?,
 }
 
-export type UDPSocketOptions = {
-    --[[
-        The port to bind to.
-
-        *Nil or None lets the system pick.*
-    ]]
-    port: number?,
-
-    --[[
-        The address to bind to.
-        - Default: `127.0.0.1`
-    ]]
-    address: string?,
-
-    --[[
-        Callback to handle UDP datagram
-    ]]
-    data: ((socket: NetUDPSocket, buffer: string, port: number, address: string) -> ())?,
+type NetworkAddressFamily = {
+    RDS: number,
+    ROSE: number,
+    BRIDGE: number,
+    PHONET: number,
+    SNA: number,
+    FILE: number,
+    MPLS: number,
+    ROUTE: number,
+    WANPIPE: number,
+    UNSPEC: number,
+    CAIF: number,
+    NETROM: number,
+    UNIX: number,
+    INET: number,
+    ATMSVC: number,
+    MAX: number,
+    NETLINK: number,
+    IUCV: number,
+    SMC: number,
+    INET6: number,
+    TIPC: number,
+    KEY: number,
+    QIPCRTR: number,
+    VSOCK: number,
+    IPX: number,
+    ASH: number,
+    IB: number,
+    PACKET: number,
+    KCM: number,
+    DECnet: number,
+    RXRPC: number,
+    NETBEUI: number,
+    NFC: number,
+    ALG: number,
+    IEEE802154: number,
+    ISDN: number,
+    XDP: number,
+    LOCAL: number,
+    BLUETOOTH: number,
+    CAN: number,
+    LLC: number,
+    APPLETALK: number,
+    PPPOX: number,
+    ATMPVC: number,
+    AX25: number,
+    ECONET: number,
+    IRDA: number,
+    SECURITY: number,
+    X25: number,
 }
 
-export type TCPClientOptions = {
-    --[[
-        The port to connect with.
-    ]]
-    port: number,
-
-    --[[
-        The address to bind to.
-    ]]
-    address: string,
-
-    --[[
-        Callbacks for open event.
-    ]]
-    open: ((socket: NetTCPConnection) -> ())?,
-    --[[
-        Callbacks for data event.
-    ]]
-    data: ((socket: NetTCPConnection, buffer: string) -> ())?,
-    --[[
-        Callbacks for close event.
-    ]]
-    close: ((socket: NetTCPConnection) -> ())?,
+type NetworkSocketFlags = {
+    DCCP: number,
+    RAW: number,
+    RDM: number,
+    DGRAM: number,
+    PACKET: number,
+    STREAM: number,
+    SEQPACKET: number,
+    CLOEXEC: number,
+    NONBLOCK: number,
 }
 
-export type TCPServerOptions = {
-    --[[
-        The port to bind to.
+type NetworkIPProtocols = {
+    COMP: number,
+    ICMP: number,
+    ESP: number,
+    IGMP: number,
+    TCP: number,
+    ICMPV6: number,
+    MTP: number,
+    GRE: number,
+    SCTP: number,
+    MAX: number,
+    NONE: number,
+    FRAGMENT: number,
+    IDP: number,
+    UDPLITE: number,
+    HOPOPTS: number,
+    MH: number,
+    BEETPH: number,
+    AH: number,
+    IPIP: number,
+    IPV6: number,
+    PIM: number,
+    DSTOPTS: number,
+    UDP: number,
+    DCCP: number,
+    RAW: number,
+    PUP: number,
+    MPLS: number,
+    ENCAP: number,
+    RSVP: number,
+    ROUTING: number,
+    EGP: number,
+    TP: number,
+    IP: number,
+}
 
-        *Nil or None lets the system pick.*
-    ]]
-    port: number?,
+type NetworkSocketOptionLevel = {
+    PPPOL2TP: number,
+    RDS: number,
+    TIPC: number,
+    ALG: number,
+    PNPIPE: number,
+    BLUETOOTH: number,
+    PACKET: number,
+    IPV6: number,
+    KCM: number,
+    RXRPC: number,
+    NETBEUI: number,
+    DECNET: number,
+    TLS: number,
+    ICMPV6: number,
+    RAW: number,
+    XDP: number,
+    SOCKET: number,
+    LLC: number,
+    NFC: number,
+    CAIF: number,
+    IUCV: number,
+    X25: number,
+    AAL: number,
+    NETLINK: number,
+    DCCP: number,
+    IRDA: number,
+    ATM: number,
+    IP: number,
+}
 
-    --[[
-        The address to bind to.
-
-        *Default: `127.0.0.1`*
-    ]]
-    address: string?,
-
-    --[[
-        Whether to reuse the address.
-        - Useful for multi-threaded servers.
-
-        Default: `false`
-    ]]
-    reuseAddress: boolean?,
-
-    --[[
-        Callback for open event.
-    ]]
-    open: ((socket: NetTCPConnection) -> ())?,
-    --[[
-        Callback for data event.
-    ]]
-    data: ((socket: NetTCPConnection, buffer: string) -> ())?,
-    --[[
-        Callback for close event.
-    ]]
-    close: ((socket: NetTCPConnection) -> ())?,
+type NetworkSocketOption = {
+    ATTACH_FILTER: number,
+    CNX_ADVICE: number,
+    PEERCRED: number,
+    LINGER: number,
+    DEBUG: number,
+    RXQ_OVFL: number,
+    SNDBUF: number,
+    DONTROUTE: number,
+    ZEROCOPY: number,
+    PASSCRED: number,
+    DETACH_REUSEPORT_BPF: number,
+    ATTACH_REUSEPORT_EBPF: number,
+    MEMINFO: number,
+    COOKIE: number,
+    SNDBUFFORCE: number,
+    PRIORITY: number,
+    BSDCOMPAT: number,
+    SNDTIMEO: number,
+    BINDTODEVICE: number,
+    OOBINLINE: number,
+    BPF_EXTENSIONS: number,
+    TIMESTAMP_NEW: number,
+    NO_CHECK: number,
+    WIFI_STATUS: number,
+    PEERGROUPS: number,
+    TYPE: number,
+    NOFCS: number,
+    DOMAIN: number,
+    TIMESTAMPNS_NEW: number,
+    SNDLOWAT: number,
+    KEEPALIVE: number,
+    PEEK_OFF: number,
+    PEERSEC: number,
+    PEERNAME: number,
+    RCVBUF: number,
+    REUSEPORT: number?,
+    INCOMING_NAPI_ID: number,
+    TIMESTAMPING_OLD: number,
+    RCVBUFFORCE: number,
+    REUSEADDR: number,
+    MAX_PACING_RATE: number,
+    MARK: number,
+    RCVTIMEO_NEW: number,
+    BUSY_POLL: number,
+    TIMESTAMPING_NEW: number,
+    BINDTOIFINDEX: number,
+    TXTIME: number,
+    SECURITY_ENCRYPTION_NETWORK: number,
+    LOCK_FILTER: number,
+    RCVLOWAT: number,
+    SECURITY_ENCRYPTION_TRANSPORT: number,
+    ATTACH_BPF: number,
+    INCOMING_CPU: number,
+    ERROR: number,
+    SELECT_ERR_QUEUE: number,
+    DETACH_BPF: number,
+    SNDTIMEO_NEW: number,
+    TIMESTAMPNS_OLD: number,
+    PASSSEC: number,
+    TIMESTAMP_OLD: number,
+    GET_FILTER: number,
+    DETACH_FILTER: number,
+    ATTACH_REUSEPORT_CBPF: number,
+    BROADCAST: number,
+    SECURITY_AUTHENTICATION: number,
+    PROTOCOL: number,
+    ACCEPTCONN: number,
+    RCVTIMEO: number,
 }
 
 type NetworkLib = {
-    --[[
-        Creates a UDP Socket.
+    ADDRF: NetworkAddressFamily,
+    SOCKF: NetworkSocketFlags,
+    SOCKOPT: NetworkSocketOption,
+    SOCKOPTLV: NetworkSocketOptionLevel,
+    IPPROTO: NetworkIPProtocols,
 
-        @param opts The options for the UDP Socket.
-        @return `UDPSocket`
-    ]]
-    udpSocket: (opts: UDPSocketOptions) -> NetUDPSocket,
-
-    --[[
-        Creates a TCP Client.
-
-        @param opts The options for the TCP Client.
-        @return `TCPClient`
-    ]]
-    tcpConnect: (opts: TCPClientOptions) -> NetTCPConnection,
-
-    --[[
-        Creates a TCP Server.
-
-        @param opts The options for the TCP Server.
-        @return `TCPServer`
-    ]]
-    tcpHost: (opts: TCPServerOptions) -> NetTCPServer,
+    createSocket: (address_family: number, flags: number, protocol: number) -> NetworkSocket,
+    getAddressList: (name: string, port: number) -> {NetworkAddress},
 
     http: {
         --[[
             Starts a server on the specified port.
 
             @param options The options for the server.
-            @return `string | ServerHandle` The error message, or the server handle.
+            @return `NetHttpServer` The server handle.
             @error `ServerStartError`
         ]]
-        serve: (options: ServeOptions) -> NetServerHandle,
+        serve: (options: ServeOptions) -> NetHttpServer,
 
         --[[
             Makes a request to the specified host.
@@ -1232,10 +1324,10 @@ type NetworkLib = {
 
             @param host The host to connect to.
             @param opts The options for the websocket.
-            @return `ClientWebSocket`
+            @return `NetHttpWebSocket`
             @error `WebSocketError`
         ]]
-        websocket: (host: string, opts: WebSocketOptions) -> NetWebSocket,
+        websocket: (host: string, opts: WebSocketOptions) -> NetHttpWebSocket,
     }
 }
 --[======[ Network ]======]--
@@ -1481,12 +1573,76 @@ type SerdeLib = {
 }
 --[======[ Serde ]======]--
 
---[======[ Stdio ]======]--
+--[======[ Io ]======]--
+declare class IoReadable
+    read:
+    & ((self: IoReadable, amount: number?, bytes: true?) -> buffer)
+    & ((self: IoReadable, amount: number?, bytes: false) -> string)
+
+    function readu8(self): number
+    function readu16(self): number
+    function readu32(self): number
+    function readi8(self): number
+    function readi16(self): number
+    function readi32(self): number
+    function readf32(self): number
+    function readf64(self): number
+end
+
+declare class IoWritable
+    function write(self, data: string | buffer): ()
+    function writeu8(self, value: number): ()
+    function writeu16(self, value: number): ()
+    function writeu32(self, value: number): ()
+    function writei8(self, value: number): ()
+    function writei16(self, value: number): ()
+    function writei32(self, value: number): ()
+    function writef32(self, value: number): ()
+    function writef64(self, value: number): ()
+end
+
+declare class BufferStream
+    read:
+        & ((self: BufferStream, amount: number?, bytes: true?) -> buffer?)
+        & ((self: BufferStream, amount: number?, bytes: false) -> string?)
+
+    function write(self, data: string | buffer): ()
+    function pos(self): number
+    function size(self): number
+    function seekTo(self, pos: number): ()
+    function seekBy(self, offset: number): ()
+    function canRead(self, amount: number?): ()
+    function writer(self): IoWritable
+    function reader(self): IoReadable
+end
+
+declare class BufferSink
+    --[[
+        Written length
+    ]]
+    len: boolean
+    closed: boolean
+
+    flush:
+        & ((self: BufferSink) -> buffer)
+        & ((self: BufferSink, true) -> buffer)
+        & ((self: BufferSink, false) -> string)
+
+    function write(self, data: string | buffer): ()
+    function writer(self): IoWritable
+    function close(self): ()
+end
+
 export type Terminal = {
     --[[
         Whether the terminal is a TTY.
     ]]
     isTTY: boolean,
+
+    --[[
+        Get current saved mode.
+    ]]
+    getCurrentMode: () -> "normal" | "raw",
 
     --[[
         Enable raw mode.
@@ -1496,7 +1652,7 @@ export type Terminal = {
 
         @return `boolean` Whether the mode was successfully changed.
     ]]
-    enableRawMode: (self: Terminal) -> boolean,
+    enableRawMode: () -> boolean,
 
     --[[
         Restore terminal mode.
@@ -1506,147 +1662,31 @@ export type Terminal = {
 
         @return `boolean` Whether the mode was successfully restored.
     ]]
-    restoreMode: (self: Terminal) -> boolean,
+    restoreMode: () -> boolean,
 
 
     --[[
         Get the terminal size.
 
         *Will return `nil` if the terminal is not TTY.*
-
         *Will **error** if there was an issue getting the terminal size.*
 
         @return `number` The width of the terminal.
         @return `number` The height of the terminal.
     ]]
-    getSize: (self: Terminal) -> (number, number),
+    getSize: () -> (number, number),
 }
 
-export type StdWriter = {
+type BufferSinkOptions = {
     --[[
-        Write text to the writer.
-
-        @param `text` The text to write.
+        The maximum size of the buffer.
+        - Default: `1073741824`
     ]]
-    write: (self: StdWriter, text: string | buffer) -> (),
+    limit: number?,
 }
 
-export type StdReader = {
-    --[[
-        Read text from the reader.
-
-        Optional `amount`, defaults to `1`.
-
-        @param amount The amount of characters to read.
-        @return `string`
-    ]]
-    read: (self: StdReader, amount: number?) -> string,
-    --[[
-        Read text from the reader.
-
-        Optional `amount`, defaults to `1`.
-
-        @param amount The amount of characters to read.
-        @return `string`
-    ]]
-    readAsync: (self: StdReader, amount: number?) -> string,
-}
-
-type ColorFunction = (color: "black" | "red" | "green" | "yellow" | "blue" | "magenta" | "cyan" | "white" | "bblack" | "bred" | "bgreen" | "byellow" | "bblue" | "bmagenta" | "bcyan" | "bwhite") -> string
-
-type StdioLib = {
+type IoLib = {
     MAX_READ: number,
-
-    --[[
-        Generates escape sequence to move the cursor.
-
-        @param action The action.
-        @return `string`
-    ]]
-    cursorMove:
-        & ((action: "home") -> string)
-        & ((action: "goto", line: number, column: number) -> string)
-        & ((action: "up" | "down" | "right" | "left", amount: number) -> string)
-        & ((action: "nextline", linesDown: number) -> string)
-        & ((action: "prevline", linesUp: number) -> string)
-        & ((action: "gotocol", column: number) -> string),
-
-    --[[
-        Generates escape sequence to erase text.
-
-        @param erase The erase action.
-        @return `string`
-    ]]
-    erase: ((erase: "endOf" | "startOf" | "entire" | "savedLines" | "endOfLine" | "startOfLine" | "entireLine") -> string),
-
-    --[[
-        Generates style.
-
-        @param action The action.
-        @return `string`
-    ]]
-    style: (style: "bold" | "dim" | "italic" | "underline" | "blinking" | "inverse" | "hidden" | "strikethrough") -> string,
-
-    --[[
-        Resets styles.
-
-        Optional style parameter to reset a specific style. Nil to reset all.
-
-        @param style The style to reset.
-        @return `string`
-    ]]
-    reset:
-        & (() -> string)
-        & ((style: "weight" | "italic" | "underline" | "blinking" | "inverse" | "hidden" | "strikethrough" | "color") -> string),
-
-    --[[
-        Generates color.
-
-        @param color The color.
-        @return `string`
-    ]]
-    color: ColorFunction,
-    --[[
-        Generates background color.
-
-        @param color The color.
-        @return `string`
-    ]]
-    bgcolor: ColorFunction,
-
-    --[[
-        Generates color.
-
-        @param code The color code.
-        @return `string`
-    ]]
-    color256: (code: number) -> string,
-    --[[
-        Generates background color.
-
-        @param code The color code.
-        @return `string`
-    ]]
-    bgcolor256: (code: number) -> string,
-
-    --[[
-        Generates true color.
-
-        @param r The red value.
-        @param g The green value.
-        @param b The blue value.
-        @return `string`
-    ]]
-    trueColor: (r: number, g: number, b: number) -> string,
-    --[[
-        Generates background true color.
-
-        @param r The red value.
-        @param g The green value.
-        @param b The blue value.
-        @return `string`
-    ]]
-    bgtrueColor: (r: number, g: number, b: number) -> string,
 
     --[[
         Formats input to a readable string.
@@ -1657,56 +1697,71 @@ type StdioLib = {
     format: (...any) -> string,
 
     --[[
+        Creates a buffer sink.
+
+        @param opts The options for the buffer sink.
+        @return `BufferSink`
+    ]]
+    createBufferSink: (opts: BufferSinkOptions?) -> BufferSink,
+
+    --[[
+        Creates a buffer stream with provided lua buffer.
+
+        @param buffer The lua buffer to use.
+        @return `BufferStream`
+    ]]
+    createFixedBufferStream: (buffer: buffer) -> BufferStream,
+
+    --[[
         Terminal.
     ]]
     terminal: Terminal,
     --[[
-        stdout writer.
+        stdout handle.
     ]]
-    stdout: StdWriter,
+    stdout: FileHandle,
     --[[
-        stderr writer.
+        stderr handle.
     ]]
-    stderr: StdWriter,
+    stderr: FileHandle,
     --[[
-        stdin reader.
+        stdin handle.
     ]]
-    stdin: StdReader,
+    stdin: FileHandle,
 }
---[======[ Stdio ]======]--
+--[======[ Io ]======]--
 
 --[======[ Crypto ]======]--
-type HashFn = (str: string) -> string
-type HmacFn = (str: string, key: string) -> string
+declare class CryptoHash
+    digest:
+        & ((self: CryptoHash) -> buffer)
+        & ((self: CryptoHash, encoding: "binary") -> buffer)
+        & ((self: CryptoHash, encoding: "hex" | "base64") -> string)
+    function update(self, value: string | buffer): ()
+    function copy(self): CryptoHash
+end
 
-type HashAlgorithms<F> = {
-    sha1: F,
-    md5: F,
-    blake3: F,
-    sha2: {
-        sha224: F,
-        sha256: F,
-        sha384: F,
-        sha512: F,
-    },
-    sha3: {
-        sha3_224: F,
-        sha3_256: F,
-        sha3_384: F,
-        sha3_512: F,
-    },
-    blake2: {
-        b128: F,
-        b160: F,
-        b256: F,
-        b384: F,
-        b512: F,
-        s128: F,
-        s160: F,
-        s224: F,
-        s256: F,
-    },
-}
+type HashAlgorithms =
+    | "sha1"
+    | "md5"
+    | "blake3"
+    | "sha224"
+    | "sha256"
+    | "sha384"
+    | "sha512"
+    | "sha3_224"
+    | "sha3_256"
+    | "sha3_384"
+    | "sha3_512"
+    | "blake2b128"
+    | "blake2b160"
+    | "blake2b256"
+    | "blake2b384"
+    | "blake2b512"
+    | "blake2s128"
+    | "blake2s160"
+    | "blake2s224"
+    | "blake2s256"
 
 type BcryptPasswordOptions = {
     --- Default: "argon2d"
@@ -1732,21 +1787,18 @@ type Argon2PasswordOptions = {
 
 type PasswordOptions = BcryptPasswordOptions | Argon2PasswordOptions
 
-type EncryptedAes = {
-    cipher: string,
-    tag: string,
+type EncryptedData = {
+    cipher: buffer,
+    tag: buffer,
+}
+
+type Aead = {
+    encrypt: (data: string | buffer, key: string | buffer, nonce: string | buffer, ad: (string | buffer)?) -> EncryptedData,
+    decrypt: (cipher: string | buffer, tag: string | buffer, key: string | buffer, nonce: string | buffer, ad: (string | buffer)?) -> string,
 }
 
 type CryptoLib = {
-    --[[
-        Hash functions
-    ]]
-    hash: HashAlgorithms<HashFn>,
-
-    --[[
-        HMAC functions
-    ]]
-    hmac: HashAlgorithms<HmacFn>,
+    createHash: (algorithm: HashAlgorithms, secret: string?) -> CryptoHash,
 
     --[[
         Password hashing function
@@ -1786,18 +1838,13 @@ type CryptoLib = {
         fill: (buffer: buffer, offset: number, length: number) -> (),
     },
 
-    --[[
-        AES encryption and decryption.
-    ]]
-    aes: {
-        aes128: {
-            encrypt: (data: string | buffer, key: string | buffer, nonce: string | buffer) -> EncryptedAes,
-            decrypt: (cipher: string | buffer, tag: string | buffer, key: string | buffer, nonce: string | buffer) -> string,
-        },
-        aes256: {
-            encrypt: (data: string | buffer, key: string | buffer, nonce: string | buffer) -> EncryptedAes,
-            decrypt: (cipher: string | buffer, tag: string | buffer, key: string | buffer, nonce: string | buffer) -> string,
-        },
+    aes_gcm: {
+        aes128: Aead,
+        aes256: Aead,
+    },
+    aes_ocb: {
+        aes128: Aead,
+        aes256: Aead,
     },
 }
 --[======[ Crypto ]======]--
@@ -1877,7 +1924,7 @@ type RegexLib = {
         @param pattern Pattern to use
         @param flags Flags to use
     ]]
-    new: (pattern: string, flags: string?) -> Regex,
+    create: (pattern: string, flags: string?) -> Regex,
 }
 --[======[ Regex ]======]--
 
@@ -1929,56 +1976,70 @@ type DatetimeLib = {
 --[======[ Datetime ]======]--
 
 --[======[ FFI ]======]--
-export type Library = {
-    close: (self: Library) -> (),
-    getSymbol: (self: Library, symbol: string) -> Pointer,
+export type FFILibrary = {
+    getSymbol: (self: FFILibrary, symbol: string) -> FFIPointer,
     [string]: (...any) -> any,
 }
 
-declare class Structure
+declare class FFIDataType
     function size(self): number
     function alignment(self): number
+end
+
+declare class FFIStructureType extends FFIDataType
     function offset(self, field: string): number
     function new(self, fields: {{ [string]: buffer | number }}): buffer
 end
 
-export type FunctionDefinition = {
-    returns: Structure | number,
-    args: { Structure | number }
+declare class FFIPointerType extends FFIDataType
+    function tag(self): number
+    function newTag(self, tag: string | buffer): FFIPointerType
+end
+
+type AnyDataType = FFIDataType | FFIStructureType | FFIPointerType
+
+export type FFIFunctionDef = {
+    returns: AnyDataType,
+    args: { AnyDataType }
 }
 
-export type Pointer = {
-    release: (self: Pointer) -> Pointer,
-    retain: (self: Pointer) -> Pointer,
-    drop: (self: Pointer) -> Pointer,
-    offset: (self: Pointer, offset: number) -> Pointer,
-    read: (self: Pointer, srcOffset: number, dest: buffer | Pointer, destOffset: number, count: number) -> buffer,
-    write: (self: Pointer, destOffset: number, src: buffer | Pointer, srcOffset: number, count: number) -> (),
-    readi8: (self: Pointer, offset: number?) -> number,
-    readu8: (self: Pointer, offset: number?) -> number,
-    readi16: (self: Pointer, offset: number?) -> number,
-    readu16: (self: Pointer, offset: number?) -> number,
-    readi32: (self: Pointer, offset: number?) -> number,
-    readu32: (self: Pointer, offset: number?) -> number,
-    readi64: (self: Pointer, offset: number?) -> buffer,
-    readu64: (self: Pointer, offset: number?) -> buffer,
-    readf32: (self: Pointer, offset: number?) -> number,
-    readf64: (self: Pointer, offset: number?) -> number,
-    readPtr: (self: Pointer, offset: number?) -> Pointer,
-    writei8: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writeu8: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writei16: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writeu16: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writei32: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writeu32: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writei64: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writeu64: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writef32: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writef64: (self: Pointer, offset: number, value: number | buffer | boolean) -> (),
-    writePtr: (self: Pointer, offset: number, value: Pointer) -> (),
-    isNull: (self: Pointer) -> boolean,
-    setSize: (self: Pointer, size: number) -> (),
-    span: (self: Pointer, offset: number?) -> buffer,
+export type FFIPointer = {
+    release: (self: FFIPointer) -> FFIPointer,
+    retain: (self: FFIPointer) -> FFIPointer,
+    setTag: (self: FFIPointer, tag: number) -> FFIPointer,
+    getTag: (self: FFIPointer) -> number,
+    drop: (self: FFIPointer) -> FFIPointer,
+    offset: (self: FFIPointer, offset: number) -> FFIPointer,
+    read: (self: FFIPointer, srcOffset: number, dest: buffer | FFIPointer, destOffset: number, count: number) -> buffer,
+    write: (self: FFIPointer, destOffset: number, src: buffer | FFIPointer, srcOffset: number, count: number) -> (),
+    readi8: (self: FFIPointer, offset: number?) -> number,
+    readu8: (self: FFIPointer, offset: number?) -> number,
+    readi16: (self: FFIPointer, offset: number?) -> number,
+    readu16: (self: FFIPointer, offset: number?) -> number,
+    readi32: (self: FFIPointer, offset: number?) -> number,
+    readu32: (self: FFIPointer, offset: number?) -> number,
+    readi64: (self: FFIPointer, offset: number?) -> buffer,
+    readu64: (self: FFIPointer, offset: number?) -> buffer,
+    readf32: (self: FFIPointer, offset: number?) -> number,
+    readf64: (self: FFIPointer, offset: number?) -> number,
+    readPtr: (self: FFIPointer, offset: number?) -> FFIPointer,
+    writei8: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writeu8: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writei16: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writeu16: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writei32: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writeu32: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writei64: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writeu64: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writef32: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writef64: (self: FFIPointer, offset: number, value: number | buffer | boolean) -> (),
+    writePtr: (self: FFIPointer, offset: number, value: FFIPointer) -> (),
+    isNull: (self: FFIPointer) -> boolean,
+    setSize: (self: FFIPointer, size: number) -> (),
+    getSize: (self: FFIPointer) -> number,
+    setAlignment: (self: FFIPointer, alignment: number) -> (),
+    getAlignment: (self: FFIPointer) -> number,
+    span: (self: FFIPointer, offset: number?) -> buffer,
 }
 
 type FFILib = {
@@ -1988,36 +2049,37 @@ type FFILib = {
     suffix: string,
 
     types: {
-        void: number,
-        i8: number,
-        u8: number,
-        i16: number,
-        u16: number,
-        i32: number,
-        u32: number,
-        i64: number,
-        u64: number,
-        float: number,
-        double: number,
-        pointer: number,
+        void: FFIDataType,
+        i8: FFIDataType,
+        u8: FFIDataType,
+        i16: FFIDataType,
+        u16: FFIDataType,
+        i32: FFIDataType,
+        u32: FFIDataType,
+        i64: FFIDataType,
+        u64: FFIDataType,
+        float: FFIDataType,
+        double: FFIDataType,
+        pointer: FFIPointerType,
     },
 
-    sizeOf: (type: Structure | number) -> number,
-    alignOf: (type: Structure | number) -> number,
+    createPtr: (src: buffer) -> FFIPointer,
+    getRef: (src: FFIPointer) -> FFIPointer,
 
-    createPtr: (src: buffer) -> Pointer,
-    getRef: (src: Pointer) -> Pointer,
+    getLuaState: (mainthread: boolean?) -> FFIPointer,
 
-    alloc: (size: number) -> Pointer,
-    free: (src: Pointer) -> (),
-    dupe: (src: buffer | Pointer) -> Pointer,
-    len: (src: buffer | Pointer) -> number?,
-    copy: (dest: buffer | Pointer, destOffset: number, src: buffer | Pointer, srcOffset: number, count: number) -> (),
+    alloc: (size: number, alignment: number?) -> FFIPointer,
+    free: (src: FFIPointer) -> (),
+    dupe: (src: buffer | FFIPointer) -> FFIPointer,
+    len: (src: buffer | FFIPointer) -> number?,
+    copy: (dest: buffer | FFIPointer, destOffset: number, src: buffer | FFIPointer, srcOffset: number, count: number) -> (),
 
-    struct: (fields: {{ [string]: Structure | number }}) -> Structure,
-    fn: (definition: FunctionDefinition, srcPtr: Pointer) -> ((...any) -> any),
-    closure: (definition: FunctionDefinition, handler: (...any) -> any) -> Pointer,
-    dlopen: (path: string, { [string]: FunctionDefinition }) -> Library,
+    tagName: (tag: number) -> string,
+
+    struct: (fields: {{ [string]: AnyDataType }}) -> FFIStructureType,
+    fn: (definition: FFIFunctionDef, srcPtr: FFIPointer) -> ((...any) -> any),
+    closure: (definition: FFIFunctionDef, handler: (...any) -> any) -> FFIPointer,
+    dlopen: (path: string, { [string]: FFIFunctionDef }) -> FFILibrary,
 }
 --[======[ FFI ]======]--
 
@@ -2037,8 +2099,7 @@ declare class SQLite3Statement
 end
 
 declare class SQLite3Database
-    transaction: <T...>(self: SQLite3Database, callback: (T...) -> (), kind: ("deferred" | "immediate" | "exclusive")?) -> ((T...) -> ())
-
+    function transaction(self, callback: (...any) -> (), kind: ("deferred" | "immediate" | "exclusive")?): ((...any) -> ())
     function query(self, query: string): SQLite3Statement
     function exec(self, query: string, args: SQLite3Values?): ()
     function close(self): ()
@@ -2066,7 +2127,7 @@ declare zune: {
     net: NetworkLib,
     luau: LuauLib,
     serde: SerdeLib,
-    stdio: StdioLib,
+    io: IoLib,
     crypto: CryptoLib,
     regex: RegexLib,
     datetime: DatetimeLib,

@@ -302,9 +302,8 @@ fn safeStatusCast(int: u10) ?std.http.Status {
     };
 }
 
-pub fn pushToStack(self: *Self, L: *VM.lua.State, customBody: ?[]const u8) !void {
-    L.newtable();
-    errdefer L.pop(1);
+pub fn pushToStack(self: *Self, L: *VM.lua.State, customBody: ?[]const u8) void {
+    L.createtable(0, 2);
 
     L.Zsetfield(-1, "ok", self.statusCode >= 200 and self.statusCode < 300);
     L.Zsetfield(-1, "statusCode", self.statusCode);
@@ -317,8 +316,7 @@ pub fn pushToStack(self: *Self, L: *VM.lua.State, customBody: ?[]const u8) !void
     }
 
     if (self.headers) |headers| {
-        L.newtable();
-        errdefer L.pop(1);
+        L.createtable(@intCast(headers.len), 0);
         for (headers) |header| {
             L.pushlstring(header.key);
             L.pushlstring(header.value);

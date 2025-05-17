@@ -16,7 +16,7 @@ jobs:
       - name: Setup Zig
         uses: mlugg/setup-zig@v1
         with:
-          version: 0.14.0-dev.2540+f857bf72e
+          version: 0.14.0
           use-cache: false
 
       - name: Get Zune Version
@@ -36,7 +36,7 @@ jobs:
           - name: Linux Arm64
             target: aarch64-linux-gnu
             artifact: zune-${{ needs.prep.outputs.version }}-linux-aarch64
-          - name: Linux RISCV64
+          - name: Linux Risc-v64
             target: riscv64-linux
             artifact: zune-${{ needs.prep.outputs.version }}-linux-riscv64
           - name: Windows x86_64
@@ -64,17 +64,16 @@ jobs:
     - name: Setup Zig
       uses: mlugg/setup-zig@v1
       with:
-        version: 0.14.0-dev.2540+f857bf72e
+        version: 0.14.0
         use-cache: false
 
     - name: Build
       run: zig build -Doptimize=ReleaseFast -Dtarget=${{ matrix.target }}
 
-    - name: Pack Artifact
-      run: cd ./zig-out/bin && zip ../../${{ matrix.artifact }}.zip ./zune${{ matrix.ext }}
-
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.artifact }}
-        path: ${{ matrix.artifact }}.zip
+        path: |
+          ./zig-out/bin/zune${{ matrix.ext }}
+          ./zig-out/bin/lib/**/*.luau

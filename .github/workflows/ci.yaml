@@ -3,9 +3,9 @@ name: CI
 on:
   workflow_dispatch:
   pull_request:
+  push:
     branches:
       - master
-  push:
 
 jobs:
   fmt:
@@ -18,7 +18,7 @@ jobs:
     - name: Setup Zig
       uses: mlugg/setup-zig@v1
       with:
-        version: 0.14.0-dev.2540+f857bf72e
+        version: 0.14.0
         use-cache: false
 
     - name: Run fmt
@@ -36,7 +36,7 @@ jobs:
       - name: Setup Zig
         uses: mlugg/setup-zig@v1
         with:
-          version: 0.14.0-dev.2540+f857bf72e
+          version: 0.14.0
           use-cache: false
 
       - name: Get Zune Version
@@ -67,10 +67,9 @@ jobs:
             name: macOs Arm64
             target: aarch64-macos
             artifact: zune-${{ needs.prep.outputs.version }}-macos-aarch64
-          - os: ubuntu-latest
+          - os: ubuntu-22.04-arm
             name: Linux Arm64
             target: aarch64-linux
-            qemu-platform: arm64
             artifact: zune-${{ needs.prep.outputs.version }}-linux-aarch64
           - os: ubuntu-latest
             name: Linux Risc-v64
@@ -88,7 +87,7 @@ jobs:
     - name: Setup Zig
       uses: mlugg/setup-zig@v1
       with:
-        version: 0.14.0-dev.2540+f857bf72e
+        version: 0.14.0
         use-cache: false
 
     - name: Setup QEMU
@@ -106,4 +105,6 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.artifact }}
-        path: ./zig-out/bin/zune${{ matrix.ext }}
+        path: |
+          ./zig-out/bin/zune${{ matrix.ext }}
+          ./zig-out/bin/lib/**/*.luau

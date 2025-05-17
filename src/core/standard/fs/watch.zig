@@ -284,34 +284,39 @@ pub const FileSystemWatcher = struct {
     dir: std.fs.Dir,
     path: []const u8,
 
-    linux: if (builtin.os.tag == .linux) LinuxAttributes else void,
-    darwin: if (builtin.os.tag == .macos) DarwinAttributes else void,
-    windows: if (builtin.os.tag == .windows) WindowsAttributes else void,
+    backend: union(enum) {
+        linux: LinuxAttributes,
+        darwin: DarwinAttributes,
+        windows: WindowsAttributes,
+    },
 
     pub fn init(allocator: std.mem.Allocator, dir: std.fs.Dir, pathname: []const u8) FileSystemWatcher {
         return FileSystemWatcher{
             .allocator = allocator,
             .dir = dir,
             .path = pathname,
-            .linux = if (builtin.os.tag == .linux) .{},
-            .darwin = if (builtin.os.tag == .macos) .{},
-            .windows = if (builtin.os.tag == .windows) .{},
+            .backend = switch (comptime builtin.os.tag) {
+                .ios, .macos, .tvos, .visionos, .watchos => .{ .darwin = .{} },
+                .windows => .{ .windows = .{} },
+                .linux => .{ .linux = .{} },
+                else => @compileError("Unsupported platform"),
+            },
         };
     }
 
     pub fn start(self: *FileSystemWatcher) !void {
-        switch (builtin.os.tag) {
+        switch (comptime builtin.os.tag) {
             .linux => try self.startLinux(),
-            .macos => try self.startDarwin(),
+            .ios, .macos, .tvos, .visionos, .watchos => try self.startDarwin(),
             .windows => try self.startWindows(),
             else => return error.UnsupportedPlatform,
         }
     }
 
     pub fn next(self: *FileSystemWatcher) !?WatchInfo {
-        switch (builtin.os.tag) {
+        switch (comptime builtin.os.tag) {
             .linux => return self.nextLinux(),
-            .macos => return self.nextDarwin(),
+            .ios, .macos, .tvos, .visionos, .watchos => return self.nextDarwin(),
             .windows => return self.nextWindows(),
             else => return error.UnsupportedPlatform,
         }
@@ -321,8 +326,8 @@ pub const FileSystemWatcher = struct {
         if (comptime builtin.os.tag != .linux)
             @compileError("Cannot call nextLinux on non-Linux platforms");
 
-        const fd = self.linux.fd orelse return error.WatcherNotStarted;
-        const nums = try std.posix.poll(&self.linux.fds, 0);
+        const fd = self.backend.linux.fd orelse return error.WatcherNotStarted;
+        const nums = try std.posix.poll(&self.backend.linux.fds, 0);
         if (nums == 0)
             return null;
         if (nums < 0)
@@ -363,13 +368,13 @@ pub const FileSystemWatcher = struct {
     }
 
     fn nextDarwin(self: *FileSystemWatcher) !?WatchInfo {
-        if (comptime builtin.os.tag != .macos)
+        if (comptime !builtin.os.tag.isDarwin())
             @compileError("Cannot call nextDarwin on non-Darwin platforms");
 
-        const fd = self.darwin.fd orelse return error.WatcherNotStarted;
-        const map = self.darwin.map orelse return error.WatcherNotStarted;
-        const names = self.darwin.names orelse return error.WatcherNotStarted;
-        const files = self.darwin.files orelse return error.WatcherNotStarted;
+        const fd = self.backend.darwin.fd orelse return error.WatcherNotStarted;
+        const map = self.backend.darwin.map orelse return error.WatcherNotStarted;
+        const names = self.backend.darwin.names orelse return error.WatcherNotStarted;
+        const files = self.backend.darwin.files orelse return error.WatcherNotStarted;
 
         var list_arr: [128]DarwinAttributes.kevent = std.mem.zeroes([128]DarwinAttributes.kevent);
         var list = &list_arr;
@@ -406,7 +411,7 @@ pub const FileSystemWatcher = struct {
                     if (root)
                         continue;
                     root = true;
-                    const scandiff = try self.darwin.scanDirectory();
+                    const scandiff = try self.backend.darwin.scanDirectory();
                     defer self.allocator.free(scandiff);
                     defer for (scandiff) |change| self.allocator.free(change.name);
                     for (scandiff) |change| {
@@ -447,12 +452,12 @@ pub const FileSystemWatcher = struct {
         if (comptime builtin.os.tag != .windows)
             @compileError("Cannot call nextWindows on non-Windows platforms");
 
-        const iocp = self.windows.iocp orelse return error.WatcherNotStarted;
-        if (!self.windows.active)
+        const iocp = self.backend.windows.iocp orelse return error.WatcherNotStarted;
+        if (!self.backend.windows.active)
             return error.WatcherNotActive;
 
-        if (!self.windows.monitoring)
-            try self.windows.monitor();
+        if (!self.backend.windows.monitoring)
+            try self.backend.windows.monitor();
 
         var nbytes: std.os.windows.DWORD = 0;
         var key: std.os.windows.ULONG_PTR = 0;
@@ -466,13 +471,13 @@ pub const FileSystemWatcher = struct {
             }
         }
 
-        self.windows.monitoring = false;
+        self.backend.windows.monitoring = false;
 
         if (overlapped) |ptr| {
-            if (ptr != &self.windows.overlapped)
+            if (ptr != &self.backend.windows.overlapped)
                 return null;
             if (nbytes == 0) {
-                self.windows.active = false;
+                self.backend.windows.active = false;
                 return error.Shutdown;
             }
             var watchInfo: WatchInfo = .{
@@ -484,8 +489,8 @@ pub const FileSystemWatcher = struct {
             var n = true;
             var offset: usize = 0;
             while (n) {
-                const info: *std.os.windows.FILE_NOTIFY_INFORMATION = @alignCast(@ptrCast(self.windows.buf[offset..].ptr));
-                const name_ptr: [*]u16 = @alignCast(@ptrCast(self.windows.buf[offset + @sizeOf(std.os.windows.FILE_NOTIFY_INFORMATION) ..]));
+                const info: *std.os.windows.FILE_NOTIFY_INFORMATION = @alignCast(@ptrCast(self.backend.windows.buf[offset..].ptr));
+                const name_ptr: [*]u16 = @alignCast(@ptrCast(self.backend.windows.buf[offset + @sizeOf(std.os.windows.FILE_NOTIFY_INFORMATION) ..].ptr));
                 const filename: []u16 = name_ptr[0 .. info.FileNameLength / @sizeOf(u16)];
 
                 const name = try std.unicode.utf16LeToUtf8Alloc(self.allocator, filename);
@@ -532,8 +537,8 @@ pub const FileSystemWatcher = struct {
         if (wd < 0)
             return error.InotifyAddWatchFailed;
 
-        self.linux.fd = fd;
-        self.linux.fds[0] = std.posix.pollfd{
+        self.backend.linux.fd = fd;
+        self.backend.linux.fds[0] = std.posix.pollfd{
             .fd = fd,
             .events = std.posix.POLL.IN | std.posix.POLL.ERR,
             .revents = 0,
@@ -570,13 +575,13 @@ pub const FileSystemWatcher = struct {
             .fflags = std.c.NOTE.DELETE | std.c.NOTE.WRITE | std.c.NOTE.RENAME | std.c.NOTE.EXTEND | std.c.NOTE.ATTRIB,
         });
 
-        self.darwin.files = files;
-        self.darwin.names = names;
-        self.darwin.map = map;
-        self.darwin.fd = fd;
-        self.darwin.dir = dir;
+        self.backend.darwin.files = files;
+        self.backend.darwin.names = names;
+        self.backend.darwin.map = map;
+        self.backend.darwin.fd = fd;
+        self.backend.darwin.dir = dir;
 
-        self.allocator.free(try self.darwin.scanDirectory());
+        self.allocator.free(try self.backend.darwin.scanDirectory());
     }
 
     fn startWindows(self: *FileSystemWatcher) !void {
@@ -624,16 +629,16 @@ pub const FileSystemWatcher = struct {
         const iocp = try std.os.windows.CreateIoCompletionPort(handle, null, 0, 1);
         errdefer _ = std.os.windows.CloseHandle(iocp);
 
-        self.windows.handle = handle;
-        self.windows.iocp = iocp;
+        self.backend.windows.handle = handle;
+        self.backend.windows.iocp = iocp;
 
-        try self.windows.monitor();
+        try self.backend.windows.monitor();
     }
 
     pub fn deinit(self: *FileSystemWatcher) void {
-        switch (builtin.os.tag) {
-            .linux => self.linux.deinit(),
-            .macos => self.darwin.deinit(self.allocator),
+        switch (comptime builtin.os.tag) {
+            .linux => self.backend.linux.deinit(),
+            .ios, .macos, .tvos, .visionos, .watchos => self.backend.darwin.deinit(self.allocator),
             else => {},
         }
     }

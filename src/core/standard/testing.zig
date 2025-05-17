@@ -17,6 +17,8 @@ const VM = luau.VM;
 
 pub const LIB_NAME = "testing";
 
+pub var REF_LEAK_CHECK = false;
+
 fn testing_debug(L: *VM.lua.State) i32 {
     const str = L.Lcheckstring(1);
     std.debug.print("{s}\n", .{str});
@@ -54,6 +56,8 @@ fn stepCheckLeakedReferences(L: *VM.lua.State) void {
 }
 
 fn testing_checkLeakedReferences(L: *VM.lua.State) !i32 {
+    if (!REF_LEAK_CHECK)
+        return 0;
     const scope = L.Lcheckstring(1);
     const allocator = luau.getallocator(L);
 
@@ -75,7 +79,7 @@ fn testing_checkLeakedReferences(L: *VM.lua.State) !i32 {
         const scope_copy = try allocator.dupe(u8, scope);
 
         var buf = std.ArrayList(u8).init(allocator);
-        try formatter.fmt_write_idx(allocator, L, buf.writer(), -1, formatter.MAX_DEPTH);
+        try formatter.fmt_write_idx(allocator, L, buf.writer(), @intCast(L.gettop()), formatter.MAX_DEPTH);
 
         try REF_LEAKED_SOURCE.put(store_index, .{ .scope = scope_copy, .value = try buf.toOwnedSlice() });
     }
@@ -92,27 +96,27 @@ fn testing_droptasks(L: *VM.lua.State) i32 {
         if (awaiting.priority == .Internal)
             continue;
         _ = scheduler.awaits.orderedRemove(awaitsSize);
-        awaiting.virtualDtor(awaiting.data, Scheduler.stateFromPair(awaiting.state), scheduler);
+        awaiting.virtualDtor(awaiting.data, awaiting.state.value, scheduler);
     }
 
     var tasksSize = scheduler.tasks.items.len;
     while (tasksSize > 0) {
         tasksSize -= 1;
         const task = scheduler.tasks.swapRemove(tasksSize);
-        task.virtualDtor(task.data, Scheduler.stateFromPair(task.state), scheduler);
+        task.virtualDtor(task.data, task.state.value, scheduler);
     }
 
     var sleepingSize = scheduler.sleeping.items.len;
     while (sleepingSize > 0) {
         sleepingSize -= 1;
-        const slept = scheduler.sleeping.remove();
-        Scheduler.derefThread(slept.thread);
+        var slept = scheduler.sleeping.remove();
+        slept.thread.deref();
     }
 
     while (scheduler.deferred.pop()) |node| {
-        const deferred = node.data;
-        defer scheduler.allocator.destroy(node);
-        Scheduler.derefThread(deferred.thread);
+        const deferred = Scheduler.DeferredThread.fromNode(node);
+        defer scheduler.allocator.destroy(deferred);
+        deferred.thread.deref();
     }
 
     return 0;
@@ -164,6 +168,8 @@ pub fn finish_testing(L: *VM.lua.State, rawstart: f64) TestResult {
     else
         0;
     L.pop(1);
+
+    _ = L.gc(.Collect, 0);
 
     stepCheckLeakedReferences(L);
 
@@ -223,13 +229,13 @@ pub fn loadLib(L: *VM.lua.State, enabled: bool) void {
         ML.Lsandboxthread();
 
         if (L.getfield(VM.lua.GLOBALSINDEX, "_testing_stdOut") == .Boolean and !L.toboolean(-1)) {
-            ML.Zsetfieldc(VM.lua.GLOBALSINDEX, "print", empty);
-        } else ML.Zsetfieldc(VM.lua.GLOBALSINDEX, "print", testing_debug);
+            ML.Zsetfieldfn(VM.lua.GLOBALSINDEX, "print", empty);
+        } else ML.Zsetfieldfn(VM.lua.GLOBALSINDEX, "print", testing_debug);
         L.pop(1);
-        ML.Zsetfieldc(VM.lua.GLOBALSINDEX, "declare_safeEnv", testing_declareSafeEnv);
-        ML.Zsetfieldc(VM.lua.GLOBALSINDEX, "stepcheck_references", testing_checkLeakedReferences);
-        ML.Zsetfieldc(VM.lua.GLOBALSINDEX, "scheduler_droptasks", testing_droptasks);
-        ML.Zsetfieldc(VM.lua.GLOBALSINDEX, "_FILE", false);
+        ML.Zsetfieldfn(VM.lua.GLOBALSINDEX, "declare_safeEnv", testing_declareSafeEnv);
+        ML.Zsetfieldfn(VM.lua.GLOBALSINDEX, "stepcheck_references", testing_checkLeakedReferences);
+        ML.Zsetfieldfn(VM.lua.GLOBALSINDEX, "scheduler_droptasks", testing_droptasks);
+        ML.Zsetfield(VM.lua.GLOBALSINDEX, "_FILE", false);
 
         const bytecode_buf = allocator.alloc(u8, test_lib_size) catch |err| std.debug.panic("Unable to allocate space for testing framework: {}", .{err});
         defer allocator.free(bytecode_buf);
@@ -249,11 +255,11 @@ pub fn loadLib(L: *VM.lua.State, enabled: bool) void {
 
         L.remove(-2);
     } else {
-        L.newtable();
-        L.Zsetfieldc(-1, "running", false);
-        L.Zsetfieldc(-1, "describe", empty);
-        L.Zsetfieldc(-1, "test", empty);
-        L.Zsetfieldc(-1, "expect", empty);
+        L.createtable(0, 4);
+        L.Zsetfield(-1, "running", false);
+        L.Zsetfieldfn(-1, "describe", empty);
+        L.Zsetfieldfn(-1, "test", empty);
+        L.Zsetfieldfn(-1, "expect", empty);
         L.setreadonly(-1, true);
     }
 
@@ -263,7 +269,11 @@ pub fn loadLib(L: *VM.lua.State, enabled: bool) void {
 test "Test" {
     const TestRunner = @import("../utils/testrunner.zig");
 
-    const testResult = try TestRunner.runTest(std.testing.allocator, @import("zune-test-files").@"testing.test", &.{}, false);
+    const testResult = try TestRunner.runTest(
+        TestRunner.newTestFile("standard/testing.test.luau"),
+        &.{},
+        .{ .std_out = false },
+    );
 
     try std.testing.expect(testResult.failed == 3);
     try std.testing.expect(testResult.total == 11);

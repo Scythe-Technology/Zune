@@ -29,29 +29,29 @@ describe("Require", function()
             expect(res).toBe(`RedundantFileExtension`);
         end)
 
-        local SEP = if (zune.process.os == "windows") then "\\" else "/";
+        local SEP = "/";
         test("Name Conflict", function()
             local ok, res = pcall(require, "./generated/duplicate");
             expect(ok).toBeFalsy();
-            expect(res).toBe(`module name conflicted.\n\n- generated{SEP}duplicate.luau\n- generated{SEP}duplicate.lua`);
+            expect(res).toBe(`module name conflicted.\n\n- ./generated{SEP}duplicate.luau\n- ./generated{SEP}duplicate.lua`);
         end)
 
         test("Name Conflict #2", function()
             local ok, res = pcall(require, "./generated/duplicate2");
             expect(ok).toBeFalsy();
-            expect(res).toBe(`module name conflicted.\n\n- generated{SEP}duplicate2.luau\n- generated{SEP}duplicate2.lua\n- generated{SEP}duplicate2{SEP}init.luau`);
+            expect(res).toBe(`module name conflicted.\n\n- ./generated{SEP}duplicate2.luau\n- ./generated{SEP}duplicate2.lua\n- ./generated{SEP}duplicate2{SEP}init.luau`);
         end)
 
         test("Unknown File", function()
             local ok, res = pcall(require, "./samples/simpleLib2");
             expect(ok).toBeFalsy();
-            expect(res).toBe("FileNotFound");
+            expect(res:match("%w+")).toBe("FileNotFound");
         end)
 
         test("Unknown File #2", function()
             local ok, res = pcall(require, "./simpleLib");
             expect(ok).toBeFalsy();
-            expect(res).toBe("FileNotFound");
+            expect(res:match("%w+")).toBe("FileNotFound");
         end)
 
         test("Unknown Alias", function()
@@ -65,7 +65,7 @@ end)
 describe("Require Many Value", function()
     test("Validating Require Context", function()
         expect(_FILE).never.toBeNil();
-        expect(_FILE.name:find("require%.test%.luau")).never.toBeNil();
+        expect(debug.info(1, "s"):find("require%.test%.luau")).never.toBeNil();
     end)
     
     test("Require Buffer", function()

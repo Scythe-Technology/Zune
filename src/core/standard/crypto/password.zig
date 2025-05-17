@@ -1,8 +1,6 @@
 const std = @import("std");
 const luau = @import("luau");
 
-const common = @import("common.zig");
-
 const VM = luau.VM;
 
 const argon2 = std.crypto.pwhash.argon2;
@@ -13,17 +11,17 @@ const AlgorithmUnion = union(enum) {
     bcrypt: void,
 };
 
-const DEFAULT_ALGO: AlgorithmUnion = .{ .argon2 = .argon2d };
+const DEFAULT_ALGO: AlgorithmUnion = .{ .argon2 = .argon2id };
 const AlgorithmMap = std.StaticStringMap(AlgorithmUnion).initComptime(.{
-    .{ "argon2d", DEFAULT_ALGO },
+    .{ "argon2d", AlgorithmUnion{ .argon2 = .argon2d } },
     .{ "argon2i", AlgorithmUnion{ .argon2 = .argon2i } },
-    .{ "argon2id", AlgorithmUnion{ .argon2 = .argon2id } },
+    .{ "argon2id", DEFAULT_ALGO },
     .{ "bcrypt", .bcrypt },
 });
 
 pub fn lua_hash(L: *VM.lua.State) !i32 {
     const allocator = luau.getallocator(L);
-    const password = L.Lcheckstring(1);
+    const password = try L.Zcheckvalue([]const u8, 1, null);
 
     var algorithm = DEFAULT_ALGO;
     var cost: u32 = 65536;
@@ -32,48 +30,28 @@ pub fn lua_hash(L: *VM.lua.State) !i32 {
 
     switch (L.typeOf(2)) {
         .Table => {
-            switch (L.getfield(2, "algorithm")) {
-                .String => algorithm = AlgorithmMap.get(L.tolstring(-1) orelse unreachable) orelse return L.Zerror("Invalid Algorithm"),
-                .None, .Nil => {},
-                else => return L.Zerror("Invalid `algorithm` (String expected)"),
-            }
+            _ = L.getfield(2, "algorithm");
+            if (try L.Zcheckfield(?[:0]const u8, 2, "algorithm")) |option|
+                algorithm = AlgorithmMap.get(option) orelse return L.Zerror("invalid algorithm kind");
             L.pop(1);
             switch (algorithm) {
                 .argon2 => {
-                    switch (L.getfield(2, "memoryCost")) {
-                        .Number => cost = L.tounsigned(-1) orelse unreachable,
-                        .None, .Nil => {},
-                        else => return L.Zerror("Invalid 'memoryCost' (Number expected)"),
-                    }
-                    switch (L.getfield(2, "timeCost")) {
-                        .Number => cost2 = L.tounsigned(-1) orelse unreachable,
-                        .None, .Nil => {},
-                        else => return L.Zerror("Invalid 'timeCost' (Number expected)"),
-                    }
-                    switch (L.getfield(2, "threads")) {
-                        .Number => threads = @truncate(L.tounsigned(-1) orelse unreachable),
-                        .None, .Nil => {},
-                        else => return L.Zerror("Invalid 'threads' (Number expected)"),
-                    }
+                    cost = try L.Zcheckfield(?u32, 2, "memoryCost") orelse cost;
+                    cost2 = try L.Zcheckfield(?u32, 2, "timeCost") orelse cost2;
+                    threads = try L.Zcheckfield(?u24, 2, "threads") orelse threads;
                     L.pop(3);
                 },
                 .bcrypt => {
                     cost = 4;
-                    switch (L.getfield(2, "cost")) {
-                        .Number => {
-                            cost = L.tounsigned(-1) orelse unreachable;
-                            if (cost < 4 or cost > 31)
-                                return L.Zerror("Invalid 'cost' (Must be between 4 to 31)");
-                        },
-                        .None, .Nil => {},
-                        else => return L.Zerror("Invalid 'cost' (Number expected)"),
-                    }
+                    cost = try L.Zcheckfield(?u32, 2, "cost") orelse cost;
+                    if (cost < 4 or cost > 31)
+                        return L.Zerror("invalid cost (Must be between 4 to 31)");
                     L.pop(1);
                 },
             }
         },
         .None, .Nil => {},
-        else => L.Lchecktype(2, .Table),
+        else => try L.Zchecktype(2, .Table),
     }
 
     var buf: [128]u8 = undefined;
@@ -89,7 +67,7 @@ pub fn lua_hash(L: *VM.lua.State) !i32 {
         .bcrypt => {
             const hash = try bcrypt.strHash(password, .{
                 .allocator = allocator,
-                .params = .{ .rounds_log = @intCast(cost) },
+                .params = .{ .rounds_log = @intCast(cost), .silently_truncate_password = false },
                 .encoding = .phc,
             }, &buf);
             L.pushlstring(hash);
@@ -102,8 +80,8 @@ const TAG_BCRYPT: u32 = @bitCast([4]u8{ '$', 'b', 'c', 'r' });
 
 pub fn lua_verify(L: *VM.lua.State) !i32 {
     const allocator = luau.getallocator(L);
-    const password = L.Lcheckstring(1);
-    const hash = L.Lcheckstring(2);
+    const password = try L.Zcheckvalue([]const u8, 1, null);
+    const hash = try L.Zcheckvalue([]const u8, 2, null);
 
     if (hash.len < 8)
         return L.Zerror("InvalidHash (Must be PHC encoded)");
@@ -112,7 +90,10 @@ pub fn lua_verify(L: *VM.lua.State) !i32 {
         L.pushboolean(if (bcrypt.strVerify(
             hash,
             password,
-            .{ .allocator = allocator },
+            .{
+                .allocator = allocator,
+                .silently_truncate_password = false,
+            },
         )) true else |_| false)
     else
         L.pushboolean(if (argon2.strVerify(

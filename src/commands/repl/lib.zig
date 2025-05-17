@@ -43,37 +43,25 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var L = try luau.init(&allocator);
     defer L.deinit();
 
-    var scheduler = Scheduler.init(allocator, L);
+    var scheduler = try Scheduler.init(allocator, L);
     defer scheduler.deinit();
 
     try Scheduler.SCHEDULERS.append(&scheduler);
 
-    try Engine.prepAsync(L, &scheduler, .{
-        .args = args,
-    }, .{
-        .mode = .Run,
-    });
-
-    const path = try std.fs.cwd().realpathAlloc(allocator, ".");
-    defer allocator.free(path);
-
-    const virtual_path = try std.fs.path.join(allocator, &.{ path, "REPL" });
-    defer allocator.free(virtual_path);
+    try Engine.prepAsync(L, &scheduler);
+    try Zune.openZune(L, args, .{ .mode = .Run });
 
     Engine.setLuaFileContext(L, .{
-        .path = virtual_path,
-        .name = "REPL",
         .source = "",
+        .main = true,
     });
-
-    Zune.resolvers_require.load_require(L);
 
     L.setsafeenv(VM.lua.GLOBALSINDEX, true);
 
     var stdin = std.io.getStdIn();
     var in_reader = stdin.reader();
 
-    const terminal = &(Zune.corelib.stdio.TERMINAL orelse std.debug.panic("Terminal not initialized", .{}));
+    const terminal = &(Zune.corelib.io.TERMINAL orelse std.debug.panic("Terminal not initialized", .{}));
     errdefer terminal.restoreSettings() catch {};
     errdefer terminal.restoreOutputMode() catch {};
 

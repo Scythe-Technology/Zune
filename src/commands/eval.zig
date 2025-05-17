@@ -18,16 +18,9 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         return;
     }
 
-    Zune.loadConfiguration();
+    Zune.loadConfiguration(.{}, std.fs.cwd());
 
-    const dir = std.fs.cwd();
     const fileContent = args[0];
-
-    const path: []const u8 = try dir.realpathAlloc(allocator, ".");
-    defer allocator.free(path);
-
-    const virtual_path = try std.fs.path.join(allocator, &.{ path, "EVAL" });
-    defer allocator.free(virtual_path);
 
     if (fileContent.len == 0) {
         std.debug.print("Eval is empty\n", .{});
@@ -36,16 +29,14 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     var L = try luau.init(&allocator);
     defer L.deinit();
-    var scheduler = Scheduler.init(allocator, L);
+    var scheduler = try Scheduler.init(allocator, L);
     defer scheduler.deinit();
 
     try Scheduler.SCHEDULERS.append(&scheduler);
 
-    try Engine.prepAsync(L, &scheduler, .{
-        .args = args,
-    }, .{
-        .mode = .Run,
-    });
+    try Zune.loadLuaurc(Zune.DEFAULT_ALLOCATOR, std.fs.cwd(), null);
+    try Engine.prepAsync(L, &scheduler);
+    try Zune.openZune(L, args, .{ .mode = .Run });
 
     L.setsafeenv(VM.lua.GLOBALSINDEX, true);
 
@@ -53,20 +44,14 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     ML.Lsandboxthread();
 
-    Zune.resolvers_require.load_require(ML);
-
     Engine.setLuaFileContext(ML, .{
-        .path = virtual_path,
-        .name = "EVAL",
         .source = fileContent,
+        .main = true,
     });
 
     ML.setsafeenv(VM.lua.GLOBALSINDEX, true);
 
-    const sourceNameZ = try std.mem.joinZ(allocator, "", &.{ "@", virtual_path });
-    defer allocator.free(sourceNameZ);
-
-    Engine.loadModule(ML, sourceNameZ, fileContent, null) catch |err| switch (err) {
+    Engine.loadModule(ML, "@EVAL", fileContent, null) catch |err| switch (err) {
         error.Syntax => {
             std.debug.print("SyntaxError: {s}\n", .{ML.tostring(-1) orelse "UnknownError"});
             return;

@@ -4,20 +4,7 @@ const Zune = @import("zune.zig");
 
 const Commands = @import("commands/lib.zig");
 
-const CommandMap = Commands.initCommands(&.{
-    @import("commands/run.zig").Command,
-    @import("commands/test.zig").Command,
-    @import("commands/eval.zig").Command,
-    @import("commands/debug.zig").Command,
-    @import("commands/setup.zig").Command,
-    @import("commands/repl/lib.zig").Command,
-    @import("commands/init.zig").Command,
-
-    @import("commands/luau.zig").Command,
-    @import("commands/help.zig").Command,
-
-    @import("commands/version.zig").Command,
-});
+const CommandMap = Commands.CommandMap;
 
 pub fn start() !void {
     const args = try std.process.argsAlloc(Zune.DEFAULT_ALLOCATOR);

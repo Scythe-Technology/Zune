@@ -12,7 +12,7 @@ pub var DEBUG_LEVEL: u2 = 2;
 pub var OPTIMIZATION_LEVEL: u2 = 1;
 pub var CODEGEN: bool = true;
 pub var JIT_ENABLED: bool = true;
-pub var USE_DETAILED_ERROR: bool = false;
+pub var USE_DETAILED_ERROR: bool = true;
 
 pub const LuauCompileError = error{
     Syntax,
@@ -27,24 +27,41 @@ pub fn compileModule(allocator: std.mem.Allocator, content: []const u8, cOpts: ?
         .debug_level = DEBUG_LEVEL,
         .optimization_level = OPTIMIZATION_LEVEL,
     };
-    var luau_allocator = luau.Ast.Allocator.Allocator.init();
+    const luau_allocator = luau.Ast.Allocator.init();
     defer luau_allocator.deinit();
 
-    var astNameTable = luau.Ast.Lexer.AstNameTable.init(luau_allocator);
+    const astNameTable = luau.Ast.Lexer.AstNameTable.init(luau_allocator);
     defer astNameTable.deinit();
 
-    var parseResult = luau.Ast.Parser.parse(content, astNameTable, luau_allocator);
+    const parseResult = luau.Ast.Parser.parse(content, astNameTable, luau_allocator, .{});
     defer parseResult.deinit();
 
-    const hasNativeFunction = parseResult.hasNativeFunction();
+    const FunctionVisitor = struct {
+        const Ast = luau.Ast.Ast;
+        hasNativeFunction: bool = false,
+        pub fn visit(self: *@This(), _: *Ast.Node) bool {
+            return !self.hasNativeFunction; // fast exit
+        }
+        pub fn visitExprFunction(self: *@This(), node: *Ast.ExprFunction) bool {
+            node.body.visit(self);
 
-    return .{ hasNativeFunction, try luau.Compiler.Compiler.compileParseResult(allocator, parseResult, astNameTable, compileOptions) };
+            if (!self.hasNativeFunction and node.hasNativeAttribute())
+                self.hasNativeFunction = true;
+
+            return false;
+        }
+    };
+    var visitor: FunctionVisitor = .{};
+
+    parseResult.root.visit(&visitor);
+
+    return .{ visitor.hasNativeFunction, try luau.Compiler.Compiler.compileParseResult(allocator, parseResult, astNameTable, compileOptions) };
 }
 
 pub fn loadModule(L: *VM.lua.State, name: [:0]const u8, content: []const u8, cOpts: ?luau.CompileOptions) !void {
     const allocator = luau.getallocator(L);
     var script = content;
-    if (content.len >= 2 and content[0] == '#' and content[1] == '!') {
+    if (std.mem.startsWith(u8, content, "#!")) {
         const pos = std.mem.indexOf(u8, content, "\n") orelse content.len;
         script = content[pos..];
     }
@@ -62,9 +79,8 @@ pub fn loadModuleBytecode(L: *VM.lua.State, moduleName: [:0]const u8, bytecode: 
 }
 
 const FileContext = struct {
-    path: []const u8,
-    name: []const u8,
     source: []const u8,
+    main: bool = false,
 };
 
 const StackInfo = struct {
@@ -76,13 +92,14 @@ const StackInfo = struct {
 };
 
 pub fn setLuaFileContext(L: *VM.lua.State, ctx: FileContext) void {
-    L.newtable();
-    L.Zsetfield(-1, "name", ctx.name);
-    L.Zsetfield(-1, "path", ctx.path);
+    L.Zpushvalue(.{
+        .source = ctx.source,
+        .main = ctx.main,
+    });
 
     // TODO: Only include source when USE_DETAILED_ERROR is true or testing.
     // if (USE_DETAILED_ERROR)
-    L.Zsetfield(-1, "source", ctx.source);
+    // L.Zsetfield(-1, "source", ctx.source);
 
     L.setfield(VM.lua.GLOBALSINDEX, "_FILE");
 }
@@ -98,6 +115,155 @@ pub fn printPreviewError(padding: []u8, line: u32, comptime fmt: []const u8, arg
     std.debug.print("{s}~ \x1b[2mPreviewError: " ++ fmt ++ "\x1b[0m\n", .{padding} ++ args);
     @memset(padding, ' ');
     std.debug.print("{s}|\n", .{padding});
+}
+
+pub fn logDetailedDef(L: *VM.lua.State, idx: i32) !void {
+    const allocator = luau.getallocator(L);
+
+    std.debug.assert(idx < 0);
+    std.debug.assert(L.typeOf(idx) == .Function);
+
+    var stackInfo: ?StackInfo = null;
+    defer if (stackInfo) |info| {
+        if (info.name) |name|
+            allocator.free(name);
+        if (info.source) |source|
+            allocator.free(source);
+    };
+
+    var ar: VM.lua.Debug = .{ .ssbuf = undefined };
+    if (L.getinfo(idx, "sn", &ar)) {
+        var info: StackInfo = .{
+            .what = ar.what,
+        };
+        if (ar.name) |name|
+            info.name = try allocator.dupe(u8, name);
+        if (ar.linedefined) |line|
+            info.source_line = line;
+        if (ar.currentline) |line|
+            info.current_line = line;
+        info.source = try allocator.dupe(u8, ar.source.?);
+
+        stackInfo = info;
+    }
+
+    var err_msg: []const u8 = undefined;
+    var error_buf: ?[]const u8 = null;
+    defer if (error_buf) |buf| allocator.free(buf);
+    switch (L.typeOf(-1)) {
+        .String, .Number => err_msg = L.tostring(-1).?,
+        else => jmp: {
+            if (!L.checkstack(2)) {
+                err_msg = "StackOverflow";
+                break :jmp;
+            }
+            const TL = L.newthread();
+            defer L.pop(1); // drop: thread
+            defer TL.resetthread();
+            L.xpush(TL, -2);
+            error_buf = try allocator.dupe(u8, TL.Ztolstring(1) catch |e| str: {
+                switch (e) {
+                    error.BadReturnType => break :str TL.Ztolstringk(1),
+                    error.Runtime => break :str TL.Ztolstringk(1),
+                    else => std.debug.panic("{}\n", .{e}),
+                }
+                return;
+            });
+            err_msg = error_buf.?;
+        },
+    }
+
+    if (stackInfo != null and stackInfo.?.what == .lua and stackInfo.?.source_line != null) {
+        const info = stackInfo.?;
+        if (!L.checkstack(4)) {
+            std.debug.print("Failed to show detailed error: StackOverflow\n", .{});
+            std.debug.print("\x1b[32merror\x1b[0m: {s}\n", .{err_msg});
+            std.debug.print("{s}\n", .{L.debugtrace()});
+            return;
+        }
+
+        const source_line = info.source_line.?;
+        const padding = std.math.log10(source_line) + 1;
+
+        jmp: {
+            const source = info.source orelse break :jmp;
+            const currentline = info.current_line orelse break :jmp;
+            if (source.len < 1 or source[0] != '@')
+                break :jmp;
+            const strip = try std.fmt.allocPrint(allocator, "{s}:{d}: ", .{
+                source[1..],
+                currentline,
+            });
+            defer allocator.free(strip);
+
+            const pos = std.mem.indexOfPosLinear(u8, err_msg, 0, strip);
+            if (pos) |p|
+                err_msg = err_msg[p + strip.len ..];
+        }
+
+        std.debug.print("\x1b[31merror\x1b[0m: {s}\n", .{err_msg});
+
+        const padded_string = try allocator.alloc(u8, padding + 1);
+        defer allocator.free(padded_string);
+        @memset(padded_string, ' ');
+
+        if (info.source) |src| {
+            std.debug.print("\x1b[1;4m{s}:{d}\x1b[0m\n", .{
+                if (src.len > 1 and src[0] == '@') src[1..] else src,
+                source_line,
+            });
+
+            L.getfenv(idx);
+            defer L.pop(1); // drop: env
+            if (L.typeOf(-1) != .Table) {
+                return printPreviewError(padded_string, source_line, "Failed to get function environment", .{});
+            }
+            defer L.pop(1); // drop: _FILE
+            if (L.getfield(-1, "_FILE") != .Table) {
+                return printPreviewError(padded_string, source_line, "Failed to get file context", .{});
+            }
+            defer L.pop(1); // drop: source
+            if (L.getfield(-1, "source") != .String) {
+                return printPreviewError(padded_string, source_line, "Failed to get file source", .{});
+            }
+            const content = L.tostring(-1) orelse unreachable;
+
+            var stream = std.io.fixedBufferStream(content);
+            const reader = stream.reader();
+            if (source_line > 1) for (0..@intCast(source_line - 1)) |_| {
+                while (true) {
+                    if (reader.readByte() catch |e| {
+                        return printPreviewError(padded_string, source_line, "Failed to read line: {}", .{e});
+                    } == '\n') break;
+                }
+            };
+
+            const line_content = reader.readUntilDelimiterOrEofAlloc(allocator, '\n', std.math.maxInt(usize)) catch |e| {
+                return printPreviewError(padded_string, source_line, "Failed to read line: {}", .{e});
+            } orelse {
+                return printPreviewError(padded_string, source_line, "Failed to read line, ended too early", .{});
+            };
+            defer allocator.free(line_content);
+
+            std.debug.print("{s}|\n", .{padded_string});
+            _ = std.fmt.bufPrint(padded_string, "{d}", .{source_line}) catch |e| std.debug.panic("{}", .{e});
+            std.debug.print("{s}| {s}\n", .{ padded_string, line_content });
+            @memset(padded_string, ' ');
+            std.debug.print("{s}|\n", .{padded_string});
+        }
+    } else {
+        std.debug.print("\x1b[32merror\x1b[0m: {s}\n", .{err_msg});
+        std.debug.print("{s}\n", .{L.debugtrace()});
+        return;
+    }
+}
+
+pub fn logFnDef(L: *VM.lua.State, idx: i32) void {
+    if (L.typeOf(idx) != .Function) {
+        std.debug.print("logFnDef: Expected function\n", .{});
+        return;
+    }
+    logDetailedDef(L, idx) catch |e| std.debug.panic("{}", .{e});
 }
 
 pub fn logDetailedError(L: *VM.lua.State) !void {
@@ -129,28 +295,29 @@ pub fn logDetailedError(L: *VM.lua.State) !void {
         try list.append(info);
     }
 
-    var dynamic: bool = false;
     var err_msg: []const u8 = undefined;
-    defer if (dynamic) allocator.free(err_msg);
+    var error_buf: ?[]const u8 = null;
+    defer if (error_buf) |buf| allocator.free(buf);
     switch (L.typeOf(-1)) {
         .String, .Number => err_msg = L.tostring(-1).?,
-        else => {
-            const GL = L.mainthread();
-            if (!GL.checkstack(1))
-                @panic("Main StackOverflow");
-            const TL = GL.newthread();
-            defer GL.pop(1); // drop: thread
+        else => jmp: {
+            if (!L.checkstack(2)) {
+                err_msg = "StackOverflow";
+                break :jmp;
+            }
+            const TL = L.newthread();
+            defer L.pop(1); // drop: thread
             defer TL.resetthread();
-            L.xpush(TL, -1);
-            err_msg = try allocator.dupe(u8, TL.Ltolstring(1) catch |e| {
+            L.xpush(TL, -2);
+            error_buf = try allocator.dupe(u8, TL.Ztolstring(1) catch |e| str: {
                 switch (e) {
-                    error.BadReturnType => std.debug.print("\x1b[32merror\x1b[0m: __tostring: Expected 'string' got {s}\n", .{VM.lapi.typename(TL.typeOf(-1))}),
-                    error.Runtime => logError(TL, e, false),
+                    error.BadReturnType => break :str TL.Ztolstringk(1),
+                    error.Runtime => break :str TL.Ztolstringk(1),
                     else => std.debug.panic("{}\n", .{e}),
                 }
                 return;
             });
-            dynamic = true;
+            err_msg = error_buf.?;
         },
     }
 
@@ -179,7 +346,7 @@ pub fn logDetailedError(L: *VM.lua.State) !void {
         };
         const source = item.source orelse break :jmp;
         const currentline = item.current_line orelse break :jmp;
-        if (source.len < 1 and source[0] != '@')
+        if (source.len < 1 or source[0] != '@')
             break :jmp;
         const strip = try std.fmt.allocPrint(allocator, "{s}:{d}: ", .{
             source[1..],
@@ -212,10 +379,15 @@ pub fn logDetailedError(L: *VM.lua.State) !void {
     for (list.items, 0..) |info, lvl| {
         if (info.current_line == null)
             continue;
+        if (info.what != .lua)
+            continue;
         if (info.source) |src| blk: {
             const current_line = info.current_line.?;
 
-            std.debug.print("\x1b[1;4m{s}:{d}\x1b[0m\n", .{ if (src.len > 1) src[1..] else src, current_line });
+            std.debug.print("\x1b[1;4m{s}:{d}\x1b[0m\n", .{
+                if (src.len > 1 and src[0] == '@') src[1..] else src,
+                current_line,
+            });
 
             if (!L.getinfo(@intCast(lvl), "f", &ar)) {
                 printPreviewError(padded_string, current_line, "Failed to get function info", .{});
@@ -245,20 +417,17 @@ pub fn logDetailedError(L: *VM.lua.State) !void {
             var stream = std.io.fixedBufferStream(content);
             const reader = stream.reader();
             if (current_line > 1) for (0..@intCast(current_line - 1)) |_| {
-                const buf = reader.readUntilDelimiterOrEofAlloc(allocator, '\n', std.math.maxInt(usize)) catch |e| {
-                    printPreviewError(padded_string, current_line, "Failed to read line: {}", .{e});
-                    continue;
-                };
-                defer if (buf) |b| allocator.free(b);
-                if (buf == null) {
-                    printPreviewError(padded_string, current_line, "Failed to read line, ended too early", .{});
-                    break :blk;
+                while (true) {
+                    if (reader.readByte() catch |e| {
+                        printPreviewError(padded_string, current_line, "Failed to read line: {}", .{e});
+                        break :blk;
+                    } == '\n') break;
                 }
             };
 
             const line_content = reader.readUntilDelimiterOrEofAlloc(allocator, '\n', std.math.maxInt(usize)) catch |e| {
                 printPreviewError(padded_string, current_line, "Failed to read line: {}", .{e});
-                continue;
+                break :blk;
             } orelse {
                 printPreviewError(padded_string, current_line, "Failed to read line, ended too early", .{});
                 break :blk;
@@ -298,27 +467,23 @@ pub fn logError(L: *VM.lua.State, err: anyerror, forceDetailed: bool) void {
             } else {
                 switch (L.typeOf(-1)) {
                     .String, .Number => std.debug.print("{s}\n", .{L.tostring(-1).?}),
-                    else => {
-                        if (!L.checkstack(3)) // string + __tostring + call stack
-                            std.debug.print("BadErrorInfo/StackOverflow\n", .{})
-                        else jmp: {
-                            const GL = L.mainthread();
-                            if (!GL.checkstack(1))
-                                @panic("Main StackOverflow");
-                            const TL = GL.newthread();
-                            defer GL.pop(1); // drop: thread
-                            defer TL.resetthread();
-                            L.xpush(TL, -1);
-                            const str = TL.Ltolstring(1) catch |e| {
-                                switch (e) {
-                                    error.BadReturnType => std.debug.print("__tostring: Expected 'string' got {s}\n", .{VM.lapi.typename(TL.typeOf(-1))}),
-                                    error.Runtime => logError(TL, e, false),
-                                    else => std.debug.panic("{}\n", .{e}),
-                                }
-                                break :jmp;
-                            };
-                            std.debug.print("{s}\n", .{str});
+                    else => jmp: {
+                        if (!L.checkstack(2)) {
+                            std.debug.print("StackOverflow\n", .{});
                         }
+                        const TL = L.newthread();
+                        defer L.pop(1); // drop: thread
+                        defer TL.resetthread();
+                        L.xpush(TL, -2);
+                        const str = TL.Ztolstring(1) catch |e| str: {
+                            switch (e) {
+                                error.BadReturnType => break :str TL.Ztolstringk(1),
+                                error.Runtime => break :str TL.Ztolstringk(1),
+                                else => std.debug.panic("{}\n", .{e}),
+                            }
+                            break :jmp;
+                        };
+                        std.debug.print("{s}\n", .{str});
                     },
                 }
                 std.debug.print("{s}\n", .{L.debugtrace()});
@@ -340,69 +505,23 @@ pub fn checkStatus(L: *VM.lua.State) !VM.lua.Status {
     }
 }
 
-const PrepOptions = struct {
-    args: []const []const u8,
-};
-
-pub fn prep(L: *VM.lua.State, pOpts: PrepOptions, flags: Zune.Flags) !void {
+pub fn prep(L: *VM.lua.State) !void {
     if (luau.CodeGen.Supported() and JIT_ENABLED)
         luau.CodeGen.Create(L);
 
     L.Lopenlibs();
-    try Zune.openZune(L, pOpts.args, flags);
 }
 
-pub fn prepAsync(L: *VM.lua.State, sched: *Scheduler, pOpts: PrepOptions, flags: Zune.Flags) !void {
+pub fn prepAsync(L: *VM.lua.State, sched: *Scheduler) !void {
     const GL = L.mainthread();
 
     GL.setthreaddata(*Scheduler, sched);
 
-    try prep(L, pOpts, flags);
-}
-
-const LuaFileType = enum {
-    Lua,
-    Luau,
-};
-
-pub fn getLuaFileType(path: []const u8) ?LuaFileType {
-    if (path.len >= 4 and std.mem.eql(u8, path[path.len - 4 ..], ".lua"))
-        return .Lua;
-    if (path.len >= 5 and std.mem.eql(u8, path[path.len - 5 ..], ".luau"))
-        return .Luau;
-    return null;
-}
-
-pub fn findLuauFile(allocator: std.mem.Allocator, dir: std.fs.Dir, fileName: []const u8) !file.SearchResult([]const u8) {
-    const absPath = try dir.realpathAlloc(allocator, ".");
-    defer allocator.free(absPath);
-    return findLuauFileFromPath(allocator, absPath, fileName);
-}
-
-pub fn findLuauFileZ(allocator: std.mem.Allocator, dir: std.fs.Dir, fileName: []const u8) !file.SearchResult([:0]const u8) {
-    const absPath = try dir.realpathAlloc(allocator, ".");
-    defer allocator.free(absPath);
-    return findLuauFileFromPathZ(allocator, absPath, fileName);
-}
-
-pub fn findLuauFileFromPath(allocator: std.mem.Allocator, absPath: []const u8, fileName: []const u8) !file.SearchResult([]const u8) {
-    const absF = try std.fs.path.resolve(allocator, &.{ absPath, fileName });
-    defer allocator.free(absF);
-    if (getLuaFileType(fileName)) |_|
-        return error.RedundantFileExtension;
-    return try file.searchForExtensions(allocator, absF, &require.POSSIBLE_EXTENSIONS);
-}
-
-pub fn findLuauFileFromPathZ(allocator: std.mem.Allocator, absPath: []const u8, fileName: []const u8) !file.SearchResult([:0]const u8) {
-    const absF = try std.fs.path.resolve(allocator, &.{ absPath, fileName });
-    defer allocator.free(absF);
-    if (getLuaFileType(fileName)) |_|
-        return error.RedundantFileExtension;
-    return try file.searchForExtensionsZ(allocator, absF, &require.POSSIBLE_EXTENSIONS);
+    try prep(L);
 }
 
 pub fn stateCleanUp() void {
-    if (Zune.corelib.stdio.TERMINAL) |*terminal| {
+    if (Zune.corelib.io.TERMINAL) |*terminal| {
         if (terminal.stdout_istty and terminal.stdin_istty) {
             terminal.restoreSettings() catch std.debug.print("[Zune] Failed to restore terminal settings\n", .{});
             terminal.restoreOutputMode() catch std.debug.print("[Zune] Failed to restore terminal output mode\n", .{});

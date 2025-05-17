@@ -1,5 +1,6 @@
 const std = @import("std");
 const luau = @import("luau");
+const builtin = @import("builtin");
 
 const Zune = @import("../../zune.zig");
 
@@ -8,9 +9,6 @@ const Scheduler = @import("scheduler.zig");
 
 const debug = @import("../../commands/debug.zig");
 
-const Terminal = @import("../../commands/repl/Terminal.zig");
-
-const file = @import("../resolvers/file.zig");
 const formatter = @import("../resolvers/fmt.zig");
 
 const VM = luau.VM;
@@ -26,6 +24,8 @@ pub var BREAKPOINTS = std.StringHashMap(std.ArrayList(LuaBreakpoint)).init(Zune.
 
 const DEBUG_TAG = "\x1b[0m(dbg) ";
 const DEBUG_RESULT_TAG = "\x1b[0m(dbg): ";
+
+const NEW_LINE = if (builtin.os.tag == .windows) '\r' else '\n';
 
 pub fn addReference(allocator: std.mem.Allocator, L: *VM.lua.State, name: []const u8, id: i32) !void {
     const key = try allocator.dupe(u8, name);
@@ -286,8 +286,12 @@ fn promptOpBreak(L: *VM.lua.State, allocator: std.mem.Allocator, break_args: []c
             const line = std.fmt.parseInt(i32, line_str, 10) catch |err| {
                 return printResult("Line Parse Error: {}\n", .{err});
             };
-            const file_path = try dir.realpathAlloc(allocator, file_str);
+            const dir_path = try dir.realpathAlloc(allocator, ".");
+            defer allocator.free(dir_path);
+
+            const file_path = try std.fs.path.relative(allocator, dir_path, file_str);
             defer allocator.free(file_path);
+
             if (k == .remove) {
                 if (removeBreakpoint(L, file_path, line)) {
                     if (DEBUG.output == .Readable)
@@ -912,7 +916,7 @@ pub fn prompt(L: *VM.lua.State, comptime kind: BreakKind, debug_info: ?*VM.lua.c
     var stdin = std.io.getStdIn();
     var in_reader = stdin.reader();
 
-    const terminal = &(Zune.corelib.stdio.TERMINAL orelse std.debug.panic("Terminal not initialized", .{}));
+    const terminal = &(Zune.corelib.io.TERMINAL orelse std.debug.panic("Terminal not initialized", .{}));
     const history = debug.HISTORY orelse std.debug.panic("History not initialized", .{});
 
     var buffer = std.ArrayList(u8).init(allocator);
@@ -993,7 +997,7 @@ pub fn prompt(L: *VM.lua.State, comptime kind: BreakKind, debug_info: ?*VM.lua.c
                 },
                 else => {},
             }
-        } else if (byte == Terminal.NEW_LINE) {
+        } else if (byte == NEW_LINE) {
             std.debug.print("\n", .{});
             out: {
                 defer position = 0;
@@ -1061,18 +1065,22 @@ pub fn prompt(L: *VM.lua.State, comptime kind: BreakKind, debug_info: ?*VM.lua.c
                             break :out;
                         }
                         defer L.pop(1);
-                        if (L.getfield(-1, "path") != .String) {
+                        var source: ?[]const u8 = null;
+                        var ar: VM.lua.Debug = .{ .ssbuf = undefined };
+                        if (L.getinfo(1, "sn", &ar)) {
+                            source = ar.source;
+                        }
+                        if (source == null or !std.mem.startsWith(u8, source.?, "@")) {
                             if (DEBUG.output == .Readable)
-                                printResult("file info invalid.\n", .{})
+                                printResult("file info not available.\n", .{})
                             else
                                 printResult("null\n", .{});
                             break :out;
                         }
-                        const path = L.tostring(-1).?;
                         if (DEBUG.output == .Readable)
-                            printResult("current file: {s}\n", .{path})
+                            printResult("current file: {s}\n", .{source.?[1..]})
                         else
-                            printResult("\"{s}\"\n", .{path});
+                            printResult("\"{s}\"\n", .{source.?[1..]});
                     },
                     .trace => {
                         const args = std.mem.trimLeft(u8, rest, " ");
@@ -1226,7 +1234,7 @@ pub fn prompt(L: *VM.lua.State, comptime kind: BreakKind, debug_info: ?*VM.lua.c
                     },
                     .restart => {
                         // force a break, ignoring yield status
-                        L.tstatus = @intFromEnum(VM.lua.Status.Break);
+                        L.curr_status = @intFromEnum(VM.lua.Status.Break);
                         DEBUG.dead = true;
                         Scheduler.KillSchedulers();
                         return;
@@ -1350,7 +1358,7 @@ pub fn debugbreak(L: *VM.lua.State, ar: *VM.lua.c.lua_Debug) callconv(.C) void {
     };
 }
 
-pub fn luau_panic(L: *VM.lua.State, errcode: i32) callconv(.C) void {
+pub fn luau_panic(L: *VM.lua.State, errcode: i32) void {
     if (DEBUG.dead or !DEBUG.unhandled_exception)
         return;
     _ = errcode;

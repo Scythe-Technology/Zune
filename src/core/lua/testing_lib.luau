@@ -1,6 +1,6 @@
 --!strict
+local io = zune.io;
 local task = zune.task;
-local stdio = zune.stdio;
 
 local GLOBAL = getfenv();
 
@@ -40,17 +40,17 @@ local DEFER_QUEUE = {}::{()->()};
 local SCOPE_STACK = {}::{string};
 local TEST_STACK = {}::{string};
 
-local RESET = stdio.reset();
+local RESET = "\27[0m";
 
-local DIM = stdio.style("dim");
-local BOLD = stdio.style("bold");
-local UNDERLINE = stdio.style("underline");
+local DIM = "\27[2m";
+local BOLD = "\27[1m";
+local UNDERLINE = "\27[4m";
 
-local WHITE = stdio.color("white");
-local RED = stdio.color("red");
-local BLUE = stdio.color("blue");
-local GREEN = stdio.color("green");
-local YELLOW = stdio.color("yellow");
+local WHITE = "\27[37m";
+local RED = "\27[31m";
+local BLUE = "\27[34m";
+local GREEN = "\27[32m";
+local YELLOW = "\27[33m";
 
 function paddedNumber(line: number, longest: number, padding: string): string
     return `{line}{string.rep(padding, longest - #tostring(line))}`
@@ -123,7 +123,7 @@ local function runTest(fn: () -> (), info: TestInfo)
             thread = nil;
             local lastN = debug.info(1, "n");
             for i = 1, 30 do
-                local f, n, l, _ = debug.info(i + 1, "fnls");
+                local f, n, l, s = debug.info(i + 1, "fnls");
                 if (not f) then
                     break;
                 end
@@ -139,9 +139,11 @@ local function runTest(fn: () -> (), info: TestInfo)
                 if (type(file) ~= "table") then
                     continue;
                 end
+                local copy = table.clone(file);
+                copy.name = s;
                 table.insert(
                     stacktrace,
-                    writeStackTrace(file, ln::string, l, tostring(f))
+                    writeStackTrace(copy, ln::string, l, tostring(f))
                 );
             end
             err = e;
@@ -176,7 +178,21 @@ local function runTest(fn: () -> (), info: TestInfo)
     end
     table.clear(DEFER_QUEUE);
 
-    task.wait();
+    if (task.count() > 0 and ok) then
+        local rest = os.clock() + (timout - timeLength);
+        while true do
+            if (timout >= 0) then
+                if (os.clock() > rest) then
+                    break;
+                end
+            end
+            if (task.count() > 0) then
+                task.wait()
+            else
+                break;
+            end
+        end
+    end
 
     STEPCHECK_REFERENCES(` -- {scope}`);
 
@@ -220,14 +236,14 @@ local function runTest(fn: () -> (), info: TestInfo)
                 print(` {DIM}|    "Awaiting" - (Zune Backend > Zig),{RESET}`);
                 print(` {DIM}|      Active zune awaiting task, usually means there is a running task created by the zune backend.{RESET}`);
                 print(` {DIM}|      Caused by a the zune backend waiting for a response from luau{RESET}`);
-                print(` {DIM}|      For example, a active task waiting for a response from a zune server "@zcore/net" called in 'request'{RESET}`);
+                print(` {DIM}|      For example, an active task waiting for a response from a zune server "@zcore/net" called in 'request'{RESET}`);
                 table.insert(show, `Awaiting Tasks: {YELLOW}{w}{RESET}`);
             end
             if (t > 0) then
                 print(` {DIM}|    "Internal" - (Zune Backend > Zig){RESET}`);
                 print(` {DIM}|      Active zune core task, usually means there is a running task created by the zune backend.{RESET}`);
                 print(` {DIM}|      Caused by undisposed backend tasks.{RESET}`);
-                print(` {DIM}|      For example, a open zune server from "@zcore/net"{RESET}`);
+                print(` {DIM}|      For example, an open zune server from zune.net{RESET}`);
                 table.insert(show, `Internal Tasks: {YELLOW}{t}{RESET}`);
             end
             print(` {DIM}|`);
@@ -393,15 +409,10 @@ local function readable(value : any)
         end)
         return `{GREEN}"{safeValue}"{RESET}`;
     elseif (t ~= "table") then
-        return stdio.format(value);
+        return io.format(value);
     else
         return tostring(value);
     end
-end
-
-local function safePattern(str: string): string
-    local res, _ = str:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1");
-    return res;
 end
 
 local conditionals = {
@@ -456,12 +467,11 @@ local conditionals = {
     end,
     toThrow = function(self : ConditionState, expected : string?)
         assertExpect(false, type(self.received) == "function", "Expected %s to %sbe a function", readable(self.received), flipTag(self.flipped));
-        local src = debug.info(self.received, "s");
         local success, err = pcall(self.received);
         if (expected ~= nil) then
             assertExpect(false, type(err) == "string", "Expected error to be a string (got %s)", readable(err));
             assertExpect(false, not success, "Expected %s to %sthrow an error", readable(self.received), flipTag(self.flipped));
-            local stripped = err:match(`^{safePattern(src)}:%d+: (.+)$`);
+            local stripped = err:match(`^.+:%d+: (.+)$`);
             if (stripped) then
                 assertExpect(self.flipped, stripped == expected, "Got error %s expected to %sthrow %s", readable(stripped), flipTag(self.flipped), readable(expected));
             else
@@ -539,7 +549,7 @@ local expect = setmetatable({
             error(`expect.any expected string, got {type(typename)}`, 2);
         end
         return Conditional.new(typename, function(value)
-            local t = typeof(value);
+            local t = type(value);
             return t == typename, t, `value is supposed to %sbe of type {typename}, got {t}`;
         end)
     end,
@@ -548,7 +558,7 @@ local expect = setmetatable({
             error(`expect.type expected string, got {type(typename)}`, 2);
         end
         return Conditional.new(typename, function(value)
-            local t = typeof(value);
+            local t = type(value);
             return t == typename, t, `value is supposed to %sbe of type {typename}, got {t}`;
         end)
     end,

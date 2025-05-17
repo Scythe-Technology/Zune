@@ -15,7 +15,7 @@ pub fn lua_compress(L: *VM.lua.State) !i32 {
     var level: i32 = zstd.DEFAULT_COMPRESSION_LEVEL;
 
     if (!options.isnoneornil()) {
-        L.Lchecktype(2, .Table);
+        try L.Zchecktype(2, .Table);
         const levelType = L.getfield(2, "level");
         if (!levelType.isnoneornil()) {
             if (levelType != .Number)

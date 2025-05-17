@@ -20,6 +20,15 @@ local function path(dir: string)
     return `{TEMP_DIR}/{dir}`;
 end
 
+local function isFile(path: string): boolean
+    local ok, err = pcall(fs.openFile, path);
+    if (not ok) then
+        return false;
+    end
+    err:close();
+    return true;
+end
+
 describe("Binary", function()
     local binaryData = buffer.fromstring("Some binary\n");
     local binaryDataLarge = buffer.fromstring(string.rep("ABC\n", 600));
@@ -80,15 +89,6 @@ describe("Binary", function()
         end)
     end)
 
-    test("IsFile", function()
-        expect(fs.isFile(path("sample"))).toBeTruthy();
-        expect(fs.isDir(path("sample"))).toBeFalsy();
-        expect(fs.isFile(path("sample2"))).toBeTruthy();
-        expect(fs.isDir(path("sample2"))).toBeFalsy();
-        expect(fs.isFile(path("unknown/sample"))).toBeFalsy();
-        expect(fs.isFile(path("unknown/sample2"))).toBeFalsy();
-    end)
-
     test("RemoveFile", function()
         fs.removeFile(path("sample"));
         fs.removeFile(path("sample2"));
@@ -102,8 +102,8 @@ describe("Binary", function()
     end)
 end)
 
-assert(not fs.isFile(path("sample")), "File should be removed");
-assert(not fs.isFile(path("sample.txt")), "File should not exist");
+assert(not isFile(path("sample")), "File should be removed");
+assert(not isFile(path("sample.txt")), "File should not exist");
 
 describe("Text", function()
     local textData = "Some text\n";
@@ -166,12 +166,12 @@ describe("Text", function()
     end)
 
     test("IsFile", function()
-        expect(fs.isFile(path("sample.txt"))).toBeTruthy();
+        expect(isFile(path("sample.txt"))).toBeTruthy();
         expect(fs.isDir(path("sample.txt"))).toBeFalsy();
-        expect(fs.isFile(path("sample2.txt"))).toBeTruthy();
+        expect(isFile(path("sample2.txt"))).toBeTruthy();
         expect(fs.isDir(path("sample2.txt"))).toBeFalsy();
-        expect(fs.isFile(path("unknown/sample.txt"))).toBeFalsy();
-        expect(fs.isFile(path("unknown/sample2.txt"))).toBeFalsy();
+        expect(isFile(path("unknown/sample.txt"))).toBeFalsy();
+        expect(isFile(path("unknown/sample2.txt"))).toBeFalsy();
     end)
 
     test("RemoveFile", function()
@@ -220,7 +220,7 @@ describe("Dir", function()
 
     test("IsDir", function()
         expect(fs.isDir(path("foo"))).toBeTruthy();
-        expect(fs.isFile(path("foo"))).toBeFalsy();
+        expect(isFile(path("foo"))).toBeFalsy();
         expect(fs.isDir(path("unknown/foo"))).toBeFalsy();
     end)
 
@@ -249,7 +249,7 @@ test("Metadata", function()
         accessedAt = expect.any("number"),
         size = expect.any("number"),
         symlink = false,
-        kind = "dir",
+        kind = "directory",
         permissions = {
             readOnly = false,
         },
@@ -263,8 +263,8 @@ test("Move", function()
     fs.writeFile(path("metadata/sample2.txt"), "Some text sample number 2\n");
 
     fs.move(path("metadata/sample.txt"), path("sample.txt"));
-    expect(fs.isFile(path("sample.txt"))).toBeTruthy();
-    expect(fs.isFile(path("metadata/sample.txt"))).toBeFalsy();
+    expect(isFile(path("sample.txt"))).toBeTruthy();
+    expect(isFile(path("metadata/sample.txt"))).toBeFalsy();
 
     local resultRead = fs.readFile(path("sample.txt"));
     expect(resultRead).toBe("Some text sample\n");
@@ -272,11 +272,11 @@ test("Move", function()
     expect(function()
         fs.move(path("metadata/sample2.txt"), path("sample.txt"));
     end).toThrow("PathAlreadyExists");
-    expect(fs.isFile(path("sample.txt"))).toBeTruthy();
+    expect(isFile(path("sample.txt"))).toBeTruthy();
 
     fs.move(path("metadata/sample2.txt"), path("sample.txt"), true);
-    expect(fs.isFile(path("sample.txt"))).toBeTruthy();
-    expect(fs.isFile(path("metadata/sample2.txt"))).toBeFalsy();
+    expect(isFile(path("sample.txt"))).toBeTruthy();
+    expect(isFile(path("metadata/sample2.txt"))).toBeFalsy();
 
     local resultRead2 = fs.readFile(path("sample.txt"));
     expect(resultRead2).toBe("Some text sample number 2\n");
@@ -284,7 +284,7 @@ test("Move", function()
     fs.removeFile(path("sample.txt"));
     fs.removeDir(path("metadata"));
 
-    expect(fs.isFile(path("sample.txt"))).toBeFalsy();
+    expect(isFile(path("sample.txt"))).toBeFalsy();
     expect(fs.isDir(path("metadata"))).toBeFalsy();
 end)
 
@@ -294,36 +294,36 @@ test("Copy", function()
     fs.writeFile(path("metadata/sample2.txt"), "Some text sample number 2\n");
 
     fs.copy(path("metadata/sample.txt"), path("sample.txt"));
-    expect(fs.isFile(path("sample.txt"))).toBeTruthy();
-    expect(fs.isFile(path("metadata/sample.txt"))).toBeTruthy();
+    expect(isFile(path("sample.txt"))).toBeTruthy();
+    expect(isFile(path("metadata/sample.txt"))).toBeTruthy();
 
     expect(function()
         fs.copy(path("metadata/sample3.txt"), path("sample3"));
     end).toThrow("FileNotFound");
-    expect(fs.isFile(path("sample3"))).toBeFalsy();
+    expect(isFile(path("sample3"))).toBeFalsy();
 
     fs.copy(path("metadata"), path("metadata2"));
     expect(fs.isDir(path("metadata2"))).toBeTruthy();
-    expect(fs.isFile(path("metadata2/sample.txt"))).toBeTruthy();
-    expect(fs.isFile(path("metadata2/sample2.txt"))).toBeTruthy();
+    expect(isFile(path("metadata2/sample.txt"))).toBeTruthy();
+    expect(isFile(path("metadata2/sample2.txt"))).toBeTruthy();
 
     expect(function()
         fs.copy(path("metadata"), path("metadata2"));
     end).toThrow("PathAlreadyExists");
     expect(fs.isDir(path("metadata2"))).toBeTruthy();
-    expect(fs.isFile(path("metadata2/sample.txt"))).toBeTruthy();
-    expect(fs.isFile(path("metadata2/sample2.txt"))).toBeTruthy();
+    expect(isFile(path("metadata2/sample.txt"))).toBeTruthy();
+    expect(isFile(path("metadata2/sample2.txt"))).toBeTruthy();
 
     fs.copy(path("metadata"), path("metadata2"), true);
     expect(fs.isDir(path("metadata2"))).toBeTruthy();
-    expect(fs.isFile(path("metadata2/sample.txt"))).toBeTruthy();
-    expect(fs.isFile(path("metadata2/sample2.txt"))).toBeTruthy();
+    expect(isFile(path("metadata2/sample.txt"))).toBeTruthy();
+    expect(isFile(path("metadata2/sample2.txt"))).toBeTruthy();
 
     fs.removeFile(path("sample.txt"));
     fs.removeDir(path("metadata"), true);
     fs.removeDir(path("metadata2"), true);
 
-    expect(fs.isFile(path("sample.txt"))).toBeFalsy();
+    expect(isFile(path("sample.txt"))).toBeFalsy();
     expect(fs.isDir(path("metadata"))).toBeFalsy();
     expect(fs.isDir(path("metadata2"))).toBeFalsy();
 end)
@@ -335,8 +335,8 @@ test("Symlink", function()
         fs.writeFile(path("metadata/sample2.txt"), "Some text sample number 2\n");
 
         fs.symlink(path("metadata/sample.txt"), path("sample.txt"));
-        expect(fs.isFile(path("sample.txt"))).toBeTruthy();
-        expect(fs.isFile(path("metadata/sample.txt"))).toBeTruthy();
+        expect(isFile(path("sample.txt"))).toBeTruthy();
+        expect(isFile(path("metadata/sample.txt"))).toBeTruthy();
         local metadata = fs.metadata(path("sample.txt"));
         expect(metadata).toBe(expect.any("table"));
         expect(metadata).toBe(expect.similar({
@@ -354,12 +354,12 @@ test("Symlink", function()
         expect(function()
             fs.symlink(path("metadata/sample3.txt"), path("sample3"))
         end).toThrow("FileNotFound");
-        expect(fs.isFile(path("sample3"))).toBeFalsy();
+        expect(isFile(path("sample3"))).toBeFalsy();
 
         fs.symlink(path("metadata"), path("metadata2"));
         expect(fs.isDir(path("metadata2"))).toBeTruthy();
-        expect(fs.isFile(path("metadata2/sample.txt"))).toBeTruthy();
-        expect(fs.isFile(path("metadata2/sample2.txt"))).toBeTruthy();
+        expect(isFile(path("metadata2/sample.txt"))).toBeTruthy();
+        expect(isFile(path("metadata2/sample2.txt"))).toBeTruthy();
         local metadata2 = fs.metadata(path("metadata2"));
         expect(metadata2).toBe(expect.any("table"));
         expect(metadata2).toBe(expect.similar({
@@ -368,7 +368,7 @@ test("Symlink", function()
             accessedAt = expect.any("number"),
             size = expect.any("number"),
             symlink = true,
-            kind = "dir",
+            kind = "directory",
             permissions = {
                 readOnly = false,
             },
@@ -378,14 +378,14 @@ test("Symlink", function()
             fs.symlink(path("metadata"), path("metadata2"));
         end).toThrow("PathAlreadyExists");
         expect(fs.isDir(path("metadata2"))).toBeTruthy();
-        expect(fs.isFile(path("metadata2/sample.txt"))).toBeTruthy();
-        expect(fs.isFile(path("metadata2/sample2.txt"))).toBeTruthy();
+        expect(isFile(path("metadata2/sample.txt"))).toBeTruthy();
+        expect(isFile(path("metadata2/sample2.txt"))).toBeTruthy();
 
         fs.removeFile(path("sample.txt"));
         fs.removeDir(path("metadata"), true);
         fs.removeDir(path("metadata2"), true);
 
-        expect(fs.isFile(path("sample.txt"))).toBeFalsy();
+        expect(isFile(path("sample.txt"))).toBeFalsy();
         expect(fs.isDir(path("metadata"))).toBeFalsy();
         expect(fs.isDir(path("metadata2"))).toBeFalsy();
     end
@@ -464,7 +464,7 @@ describe("File Object/Handle", function()
         expect(function()
             result:read();
         end).toThrow();
-        
+
         result:close();
     end)
 
@@ -482,6 +482,120 @@ describe("File Object/Handle", function()
     end)
 
     fs.removeFile(path("sample.txt"));
+end)
+
+describe("Path", function()
+    local SEP = if (zune.process.os == "windows") then "\\" else "/";
+    test("getExePath", function()
+        local result = fs.getExePath();
+        expect(result).toBe(expect.any("string"));
+        expect(#result).toBeGreaterThan(0);
+    end)
+    test("realPath", function()
+        local result = fs.realPath(".");
+        expect(result).toBe(expect.any("string"));
+        expect(#result).toBeGreaterThan(0);
+    end)
+    test("join", function()
+        do
+            local result = fs.path.join("foo", "bar", "luau");
+            expect(result).toBe(expect.any("string"));
+            expect(result).toBe(`foo{SEP}bar{SEP}luau`);
+        end
+        do
+            local result = fs.path.join("foo", "bar", "..", "luau");
+            expect(result).toBe(expect.any("string"));
+            expect(result).toBe(`foo{SEP}bar{SEP}..{SEP}luau`);
+        end
+    end)
+    test("relative", function()
+        do
+            local result = fs.path.relative("foo/bar/luau", "foo");
+            expect(result).toBe(expect.any("string"));
+            expect(result).toBe(`..{SEP}..`);
+        end
+        do
+            local result = fs.path.relative("foo", "foo/bar/luau");
+            expect(result).toBe(expect.any("string"));
+            expect(result).toBe(`bar{SEP}luau`);
+        end
+    end)
+    test("resolve", function()
+        do
+            local result = fs.path.resolve("foo", "bar", "luau");
+            expect(result).toBe(expect.any("string"));
+            expect(result).toBe(`foo{SEP}bar{SEP}luau`);
+        end
+        do
+            local result = fs.path.resolve("foo", "bar", "..", "luau");
+            expect(result).toBe(expect.any("string"));
+            expect(result).toBe(`foo{SEP}luau`);
+        end
+    end)
+    test("dirname", function()
+        do
+            local result = fs.path.dirname("foo/bar/luau");
+            expect(result).toBe(expect.any("string"));
+            expect(result).toBe("foo/bar");
+        end
+        do
+            local result = fs.path.dirname("foo/bar/luau.txt");
+            expect(result).toBe(expect.any("string"));
+            expect(result).toBe("foo/bar");
+        end
+        do
+            local result = fs.path.dirname("foo");
+            expect(result).toBe(nil);
+        end
+    end)
+    test("basename", function()
+        do
+            local result = fs.path.basename("foo/bar/luau");
+            expect(result).toBe(expect.any("string"));
+            expect(result).toBe("luau");
+        end
+        do
+            local result = fs.path.basename("foo/bar/luau.txt");
+            expect(result).toBe(expect.any("string"));
+            expect(result).toBe("luau.txt");
+        end
+    end)
+    test("stem", function()
+        do
+            local result = fs.path.stem("foo/bar/luau");
+            expect(result).toBe(expect.any("string"));
+            expect(result).toBe("luau");
+        end
+        do
+            local result = fs.path.stem("foo/bar/luau.txt");
+            expect(result).toBe(expect.any("string"));
+            expect(result).toBe("luau");
+        end
+    end)
+    test("extension", function()
+        do
+            local result = fs.path.extension("foo/bar/luau");
+            expect(result).toBe(expect.any("string"));
+            expect(result).toBe("");
+        end
+        do
+            local result = fs.path.extension("foo/bar/luau.txt");
+            expect(result).toBe(expect.any("string"));
+            expect(result).toBe(".txt");
+        end
+    end)
+    test("isAbsolute", function()
+        do
+            local result = fs.path.isAbsolute(fs.realPath("."));
+            expect(result).toBe(expect.any("boolean"));
+            expect(result).toBe(true);
+        end
+        do
+            local result = fs.path.isAbsolute(`foo{SEP}bar{SEP}luau`);
+            expect(result).toBe(expect.any("boolean"));
+            expect(result).toBe(false);
+        end
+    end)
 end)
 
 test("Watch", function()

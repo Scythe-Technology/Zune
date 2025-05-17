@@ -1,5 +1,6 @@
 const std = @import("std");
 const luau = @import("luau");
+const builtin = @import("builtin");
 
 const VM = luau.VM;
 
@@ -9,7 +10,7 @@ var ticks: u64 = 0;
 var currentTicks: u64 = 0;
 
 var samples: u64 = 0;
-var frequency: u64 = 100;
+var frequency: u64 = 10000;
 
 var gcstats: [16]u64 = [_]u64{0} ** 16;
 
@@ -88,6 +89,8 @@ fn loop() void {
 }
 
 pub fn start(L: *VM.lua.State, freq: u64) !void {
+    if (comptime builtin.single_threaded)
+        return error.UnsupportedPlatform;
     const allocator = luau.getallocator(L);
 
     active = true;

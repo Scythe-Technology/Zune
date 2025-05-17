@@ -1,4 +1,5 @@
 const std = @import("std");
+const xev = @import("xev").Dynamic;
 const luau = @import("luau");
 const builtin = @import("builtin");
 
@@ -10,7 +11,7 @@ const Repl = @import("commands/repl/lib.zig");
 const Debug = @import("commands/debug.zig");
 
 pub fn main() !void {
-    switch (builtin.os.tag) {
+    switch (comptime builtin.os.tag) {
         .windows => {
             const handle = struct {
                 fn handler(dwCtrlType: std.os.windows.DWORD) callconv(std.os.windows.WINAPI) std.os.windows.BOOL {
@@ -24,7 +25,7 @@ pub fn main() !void {
         },
         .linux, .macos => {
             const handle = struct {
-                fn handler(_: c_int) callconv(.C) void {
+                fn handler(_: c_int) callconv(.c) void {
                     shutdown();
                 }
             }.handler;
@@ -36,6 +37,8 @@ pub fn main() !void {
         },
         else => {},
     }
+
+    try Zune.init();
 
     try Zune.cli.start();
 }

@@ -1,0 +1,6 @@
+[runtime.debug]
+detailedError = true
+
+# Disable std library to load from source
+[resolvers.require]
+loadStd = false

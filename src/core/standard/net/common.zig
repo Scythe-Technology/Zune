@@ -4,10 +4,6 @@ const builtin = @import("builtin");
 
 const VM = luau.VM;
 
-pub const HTTP_404 = "HTTP/1.1 404 Bad Request\r\n\r\n";
-pub const HTTP_413 = "HTTP/1.1 413 Payload Too Large\r\nContent-Type: text/plain\r\nContent-Length: 67\r\n\r\nThe content you provided exceeds the server's maximum allowed size.";
-pub const HTTP_500 = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\nContent-Length: 31\r\n\r\nAn error occurred on the server";
-
 pub const context = @import("../../utils/sysfd.zig").context;
 
 pub fn prepRefType(comptime luaType: VM.lua.Type, L: *VM.lua.State, ref: i32) bool {
@@ -24,7 +20,7 @@ pub const HeaderTypeError = error{
 };
 
 pub fn read_headers(L: *VM.lua.State, headers: *std.ArrayList(std.http.Header), idx: i32) !void {
-    L.Lchecktype(idx, .Table);
+    try L.Zchecktype(idx, .Table);
     L.pushvalue(idx);
     L.pushnil();
 

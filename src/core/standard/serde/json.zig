@@ -200,10 +200,10 @@ pub fn LuaEncoder(comptime json_kind: JsonKind) fn (L: *VM.lua.State) anyerror!i
 
             const config_type = L.typeOf(2);
             if (!config_type.isnoneornil()) {
-                L.Lchecktype(2, .Table);
+                try L.Zchecktype(2, .Table);
                 const indent_type = L.getfield(2, "prettyIndent");
                 if (!indent_type.isnoneornil()) {
-                    L.Lchecktype(-1, .Number);
+                    try L.Zchecktype(-1, .Number);
                     kind = switch (L.tointeger(-1) orelse unreachable) {
                         0 => json.JsonIndent.NO_LINE,
                         1 => json.JsonIndent.SPACES_2,
@@ -237,7 +237,8 @@ pub fn LuaEncoder(comptime json_kind: JsonKind) fn (L: *VM.lua.State) anyerror!i
 }
 
 fn decodeArray(L: *VM.lua.State, array: *std.ArrayList(json.JsonValue), preserve_null: bool) !void {
-    L.newtable();
+    L.rawcheckstack(2);
+    L.createtable(@intCast(array.items.len), 0);
 
     for (array.items, 1..) |item, i| {
         try decodeValue(L, item, preserve_null);
@@ -246,7 +247,8 @@ fn decodeArray(L: *VM.lua.State, array: *std.ArrayList(json.JsonValue), preserve
 }
 
 fn decodeObject(L: *VM.lua.State, object: *std.StringArrayHashMap(json.JsonValue), preserve_null: bool) !void {
-    L.newtable();
+    L.rawcheckstack(3);
+    L.createtable(0, @intCast(object.count()));
 
     var iter = object.iterator();
     while (iter.next()) |entry| {
@@ -256,7 +258,7 @@ fn decodeObject(L: *VM.lua.State, object: *std.StringArrayHashMap(json.JsonValue
     }
 }
 
-fn decodeValue(L: *VM.lua.State, jsonValue: json.JsonValue, preserve_null: bool) anyerror!void {
+pub fn decodeValue(L: *VM.lua.State, jsonValue: json.JsonValue, preserve_null: bool) anyerror!void {
     switch (jsonValue) {
         .nil => if (preserve_null) {
             _ = L.getfield(VM.lua.REGISTRYINDEX, "_SERDE_JSON_NULL");
@@ -283,10 +285,10 @@ pub fn LuaDecoder(comptime json_kind: JsonKind) fn (L: *VM.lua.State) anyerror!i
 
             const config_type = L.typeOf(2);
             if (!config_type.isnoneornil()) {
-                L.Lchecktype(2, .Table);
+                try L.Zchecktype(2, .Table);
                 const preserve_null_type = L.getfield(2, "preserveNull");
                 if (!preserve_null_type.isnoneornil()) {
-                    L.Lchecktype(-1, .Boolean);
+                    try L.Zchecktype(-1, .Boolean);
                     preserve_null = L.toboolean(-1);
                 }
                 L.pop(1);
@@ -308,20 +310,20 @@ pub fn LuaDecoder(comptime json_kind: JsonKind) fn (L: *VM.lua.State) anyerror!i
 }
 
 pub fn lua_setprops(L: *VM.lua.State) void {
-    L.newtable();
+    L.createtable(0, 1);
 
-    L.newtable();
+    L.createtable(0, 0);
 
     { // JsonNull Metatable
-        L.newtable();
-
-        L.Zsetfieldc(-1, luau.Metamethods.tostring, struct {
-            fn inner(l: *VM.lua.State) i32 {
-                l.pushstring("JsonValue.Null");
-                return 1;
-            }
-        }.inner);
-
+        L.Zpushvalue(.{
+            .__tostring = struct {
+                fn inner(l: *VM.lua.State) i32 {
+                    l.pushstring("JsonValue.Null");
+                    return 1;
+                }
+            }.inner,
+        });
+        L.setreadonly(-1, true);
         _ = L.setmetatable(-2);
     }
 
@@ -334,11 +336,12 @@ pub fn lua_setprops(L: *VM.lua.State) void {
     L.setfield(-2, "Null");
     L.setfield(-2, "Values");
 
-    L.newtable();
-    L.Zsetfieldc(-1, "None", 0);
-    L.Zsetfieldc(-1, "TwoSpaces", 1);
-    L.Zsetfieldc(-1, "FourSpaces", 2);
-    L.Zsetfieldc(-1, "Tabs", 3);
+    L.Zpushvalue(.{
+        .None = 0,
+        .TwoSpaces = 1,
+        .FourSpaces = 2,
+        .Tabs = 3,
+    });
     L.setreadonly(-1, true);
     L.setfield(-2, "Indents");
 

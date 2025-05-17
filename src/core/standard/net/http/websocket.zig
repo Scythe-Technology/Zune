@@ -40,7 +40,7 @@ pub fn acceptHashKey(allocator: std.mem.Allocator, key: []const u8) ![]u8 {
     return result;
 }
 
-pub const WebsocketHeader = packed struct {
+pub const WebsocketHeader = packed struct(u16) {
     len: u7,
     mask: bool,
     opcode: Opcode,
@@ -267,7 +267,7 @@ pub fn writeMessage(self: *Self, opcode: Opcode, message: []const u8) anyerror!u
 // Write a message packet with the given opcode and final flag
 pub fn writeSplitMessage(self: *Self, opcode: Opcode, final: bool, message: []const u8) anyerror!usize {
     return self.writeDataFrame(WebsocketDataFrame{
-        .header = WebsocketHeader{
+        .header = .{
             .final = final,
             .opcode = opcode,
             .mask = self.is_client,
@@ -284,6 +284,64 @@ pub fn writeDataFrame(self: *Self, dataframe: WebsocketDataFrame) anyerror!usize
         .vstream => |s| return writeDataFrameAny(dataframe, s.writer()),
         .piped => |s| return writeDataFrameAny(dataframe, s.stream_writer),
         .vpiped => |s| return writeDataFrameAny(dataframe, s.stream_writer),
+    }
+}
+
+pub fn calcWriteSize(len: usize, mask: bool) usize {
+    var size: usize = 2; // header
+
+    switch (len) {
+        0...126 => {}, // Included in header
+        127...0xFFFF => size += 2,
+        else => size += 8,
+    }
+
+    if (mask) {
+        size += 4; // mask
+    }
+
+    size += len;
+
+    return size;
+}
+
+pub fn writeDataFrameBuf(buf: []u8, dataframe: WebsocketDataFrame) !void {
+    if (!dataframe.isValid())
+        return error.InvalidMessage;
+
+    std.debug.assert(buf.len >= calcWriteSize(dataframe.data.len, dataframe.header.mask));
+
+    std.mem.writeInt(u16, buf[0..2], @as(u16, @bitCast(dataframe.header)), .big);
+    var pos: usize = 2;
+
+    // Write extended length if needed
+    const n = dataframe.data.len;
+    switch (n) {
+        0...126 => {}, // Included in header
+        127...0xFFFF => {
+            std.mem.writeInt(u16, buf[2..4], @as(u16, @intCast(n)), .big);
+            pos = 4;
+        },
+        else => {
+            std.mem.writeInt(u64, buf[2..10], n, .big);
+            pos = 10;
+        },
+    }
+
+    // TODO: Handle compression
+    if (dataframe.header.compressed) return error.InvalidMessage;
+
+    if (dataframe.header.mask) {
+        const mask = &dataframe.mask;
+        @memcpy(buf[pos .. pos + 4], mask);
+        pos += 4;
+
+        // Encode
+        for (dataframe.data, 0..) |c, i| {
+            buf[pos + i] = c ^ mask[i % 4];
+        }
+    } else {
+        @memcpy(buf[pos .. pos + n], dataframe.data);
     }
 }
 
@@ -342,15 +400,7 @@ pub fn read(self: *Self) !WebsocketDataFrame {
 pub fn readDataFrameInBuffer(
     self: *Self,
 ) !WebsocketDataFrame {
-    const header_bytes = self.header[0..2];
-    var header = std.mem.zeroes(WebsocketHeader);
-    header.final = header_bytes[0] & 0x80 == 0x80;
-    // header.rsv1 = header_bytes[0] & 0x40 == 0x40;
-    // header.rsv2 = header_bytes[0] & 0x20;
-    // header.rsv3 = header_bytes[0] & 0x10;
-    header.opcode = @as(Opcode, @enumFromInt(@as(u4, @truncate(header_bytes[0]))));
-    header.mask = header_bytes[1] & 0x80 == 0x80;
-    header.len = @as(u7, @truncate(header_bytes[1]));
+    const header: WebsocketHeader = @bitCast(std.mem.readInt(u16, self.header[0..2], .big));
 
     // Decode length
     var length: u64 = header.len;

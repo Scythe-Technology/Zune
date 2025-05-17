@@ -21,46 +21,18 @@ test("Context", function()
 	expect(process.arch).toBe(expect.any("string"));
 	expect(#process.arch).toBeGreaterThan(0);
 
-	expect(process.cwd).toBe(expect.any("string"));
-	expect(#process.cwd).toBeGreaterThan(0);
+	local cwd = process.getCwd();
+	expect(cwd).toBe(expect.any("string"));
+	expect(#cwd).toBeGreaterThan(0);
 
 	expect(function()
 		process.args = {};
-	end).toThrow("Cannot change field (args)");
+	end).toThrow("attempt to modify a readonly table");
 	
-	local current_cwd = process.cwd;
 	if (IS_WINDOWS) then
-		expect(current_cwd:sub(2, 3) == ":\\").toBeTruthy();
-		
-		process.cwd = `{current_cwd}/{TEMP_DIR}`;
-
-		expect(process.cwd).toBe(`{current_cwd}\\{TEMP_DIR:gsub("/", "\\")}`);
-		expect(process.cwd).never.toBe(current_cwd);
-		fs.writeFile("./test.txt", "Hello World")
-		expect(fs.isFile("./test.txt")).toBeTruthy();
-		expect(fs.readFile("./test.txt")).toBe("Hello World");
-		fs.removeFile("./test.txt");
-		expect(fs.isFile("./test.txt")).toBeFalsy();
-
-		process.cwd = current_cwd;
-
-		expect(process.cwd).toBe(current_cwd);
+		expect(cwd:sub(2, 3) == ":\\").toBeTruthy();
 	else
-		expect(current_cwd:sub(1, 1) == "/").toBeTruthy();
-		
-		process.cwd = `{current_cwd}/{TEMP_DIR}`;
-
-		expect(process.cwd).toBe(`{current_cwd}/{TEMP_DIR}`);
-		expect(process.cwd).never.toBe(current_cwd);
-		fs.writeFile("./test.txt", "Hello World")
-		expect(fs.isFile("./test.txt")).toBeTruthy();
-		expect(fs.readFile("./test.txt")).toBe("Hello World");
-		fs.removeFile("./test.txt")
-		expect(fs.isFile("./test.txt")).toBeFalsy();
-	
-		process.cwd = current_cwd;
-	
-		expect(process.cwd).toBe(current_cwd);
+		expect(cwd:sub(1, 1) == "/").toBeTruthy();
 	end
 end)
 
@@ -218,12 +190,10 @@ test("Arguments", function()
 	expect(result).toBe("Test");
 	expect(result2).toBe("someValue");
 
-	local successBad, resultBad = pcall(function()
+	local successGood = pcall(function()
 		process.args[1] = "Test!";
 	end)
-	expect(successBad).toBeFalsy();
-	expect(resultBad).toBe(expect.any("string"));
-	expect(resultBad:find("readonly")).toBeTruthy();
+	expect(successGood).toBeTruthy();
 end)
 
 describe("ChildProcess", function()
@@ -234,7 +204,6 @@ describe("ChildProcess", function()
 				ok = true,
 				code = 0,
 				stderr = "",
-				status = "Exited",
 				stdout = "some long message\n",
 			}));
 		end)
@@ -253,7 +222,6 @@ describe("ChildProcess", function()
 				ok = true,
 				code = 0,
 				stderr = "",
-				status = "Exited",
 				stdout = if IS_WINDOWS then "Test\r\n" else "Test\n",
 			}));
 		end)
@@ -273,7 +241,6 @@ describe("ChildProcess", function()
 					ok = true,
 					code = 0,
 					stderr = "",
-					status = "Exited",
 					stdout = "",
 				}));
 			end
@@ -285,7 +252,6 @@ describe("ChildProcess", function()
 					ok = false,
 					code = i,
 					stderr = "",
-					status = "Exited",
 					stdout = "",
 				}));
 			end
@@ -293,20 +259,32 @@ describe("ChildProcess", function()
 	end)
 
 	describe("Create", function()
+		test("Wait", function()
+			local result = process.create("exit", {"0"}, {
+				shell = true,
+			});
+			assert(result.stdin)
+			assert(result.stdout)
+			local status = result:wait();
+			expect(status).toBe(expect.any("table"));
+			expect(status).toBe(expect.similar({
+				ok = true,
+				code = 0,
+			}));
+		end)
 		test("Process Handle", function()
 			local result = process.create("cat");
-			result:writeIn("Hello World\n");
-			expect(result:readOutAsync(5)).toBe("Hello");
-			expect(result:readOutAsync()).toBe(" World\n");
+			assert(result.stdin)
+			assert(result.stdout)
+			result.stdin:write("Hello World\n");
+			expect(result.stdout:read(5)).toBe("Hello");
+			expect(result.stdout:read()).toBe(" World\n");
 
-			expect(result.dead).toBeFalsy();
 			local status = result:kill();
-			expect(result.dead).toBeTruthy();
 			expect(status).toBe(expect.any("table"));
 			expect(status).toBe(expect.similar({
 				ok = false,
 				code = if IS_WINDOWS then 1 else 15,
-				status = if IS_WINDOWS then "Exited" else "Signal",
 			}));
 		end)
 	end)

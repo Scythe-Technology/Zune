@@ -5,18 +5,24 @@ const luau = @import("luau");
 
 const VM = luau.VM;
 
-const Url = @import("url.zig");
-
 const Self = @This();
 
-const QueryKeyValue = struct {
-    key: []const u8,
-    value: ?[]const u8,
-};
+const Url = @import("url.zig");
 
-const HeaderKeyValue = struct {
-    key: []const u8,
-    value: []const u8,
+const Stream = std.net.Stream;
+const Address = std.net.Address;
+const Allocator = std.mem.Allocator;
+const ArenaAllocator = std.heap.ArenaAllocator;
+
+const Method = enum {
+    GET,
+    PUT,
+    POST,
+    HEAD,
+    PATCH,
+    DELETE,
+    OPTIONS,
+    CONNECT,
 };
 
 pub const Protocol = enum {
@@ -24,256 +30,504 @@ pub const Protocol = enum {
     HTTP11,
 };
 
-const ParseError = error{
-    InvalidRequest,
-    InvalidMethod,
-    InvalidProtocol,
-    UnsupportedProtocol,
-    InvalidHeader,
-    TooManyHeaders,
-    InvalidContentLength,
-    InvalidBody,
-    BodyTooLarge,
-    InvalidRequestTarget,
-    ConnectionClosed,
+/// converts ascii to unsigned int of appropriate size
+pub fn asUint(comptime string: anytype) @Type(std.builtin.Type{
+    .int = .{
+        .bits = @bitSizeOf(@TypeOf(string.*)) - 8, // (- 8) to exclude sentinel 0
+        .signedness = .unsigned,
+    },
+}) {
+    const byteLength = @bitSizeOf(@TypeOf(string.*)) / 8 - 1;
+    const expectedType = *const [byteLength:0]u8;
+    if (@TypeOf(string) != expectedType) {
+        @compileError("expected : " ++ @typeName(expectedType) ++ ", got: " ++ @typeName(@TypeOf(string)));
+    }
+
+    return @bitCast(@as(*const [byteLength]u8, string).*);
+}
+
+const QueryValue = struct {
+    key: []const u8,
+    value: ?[]const u8,
 };
 
-// this approach to matching method name comes from zhp
-const GET_ = @as(u32, @bitCast([4]u8{ 'G', 'E', 'T', ' ' }));
-const PUT_ = @as(u32, @bitCast([4]u8{ 'P', 'U', 'T', ' ' }));
-const POST = @as(u32, @bitCast([4]u8{ 'P', 'O', 'S', 'T' }));
-const HEAD = @as(u32, @bitCast([4]u8{ 'H', 'E', 'A', 'D' }));
-const PATC = @as(u32, @bitCast([4]u8{ 'P', 'A', 'T', 'C' }));
-const DELE = @as(u32, @bitCast([4]u8{ 'D', 'E', 'L', 'E' }));
-const ETE_ = @as(u32, @bitCast([4]u8{ 'E', 'T', 'E', ' ' }));
-const OPTI = @as(u32, @bitCast([4]u8{ 'O', 'P', 'T', 'I' }));
-const ONS_ = @as(u32, @bitCast([4]u8{ 'O', 'N', 'S', ' ' }));
-const HTTP = @as(u32, @bitCast([4]u8{ 'H', 'T', 'T', 'P' }));
-const V1P0 = @as(u32, @bitCast([4]u8{ '/', '1', '.', '0' }));
-const V1P1 = @as(u32, @bitCast([4]u8{ '/', '1', '.', '1' }));
+pub const Parser = struct {
+    arena: ArenaAllocator,
+    buf: ?[]const u8 = null,
+    left: ?[]const u8 = null,
+    pos: usize = 0,
 
-allocator: std.mem.Allocator,
-buffer: []u8,
-bufferLen: usize = 0,
-method: ?[]const u8 = null,
-url: ?Url = null,
-protocol: ?Protocol = null,
-headers: ?[]const HeaderKeyValue = null,
-query: ?[]const QueryKeyValue = null,
-body: ?[]const u8 = null,
-bodyAllocated: bool = false,
+    stage: enum { method, url, protocol, headers, body } = .method,
+    method: Method = .GET,
+    protocol: Protocol = .HTTP10,
+    headers: std.StringHashMapUnmanaged([]const u8),
+    body: ?union(enum) {
+        dynamic: []u8,
+        static: []const u8,
+    } = null,
+    url: ?[]const u8 = null,
 
-pub const Config = struct {
-    maxBodySize: usize = 4096,
-    maxHeaders: usize = 64,
-    maxQuery: usize = 64,
-};
+    max_body_size: usize = 1_048_576,
+    max_header_size: usize = 4096,
+    max_header_count: usize = 100,
 
-pub fn init(allocator: std.mem.Allocator, reader: std.io.AnyReader, config: Config) !Self {
-    var buffer: []u8 = try allocator.alloc(u8, 4096);
-    var self = Self{
-        .allocator = allocator,
-        .buffer = buffer,
-        .method = null,
-        .url = null,
-        .protocol = null,
-        .body = null,
-    };
-    errdefer self.deinit();
+    pub fn init(allocator: Allocator, max_header_count: u32) Parser {
+        var headers: std.StringHashMapUnmanaged([]const u8) = .empty;
+        headers.ensureTotalCapacity(allocator, max_header_count) catch |err| std.debug.panic("{}\n", .{err});
+        return .{
+            .arena = .init(allocator),
+            .headers = headers,
+            .max_header_count = max_header_count,
+        };
+    }
 
-    var pos: usize = 0;
+    pub fn reset(self: *Parser) void {
+        self.body = null;
+        self.buf = null;
+        self.url = null;
+        self.method = .GET;
+        if (self.left) |_| {
+            self.left = null;
+        }
+        if (!self.arena.reset(.retain_capacity)) {
+            _ = self.arena.reset(.free_all);
+        }
+        self.pos = 0;
+        self.stage = .method;
+        self.headers.clearRetainingCapacity();
+    }
 
-    const readLen = try reader.read(buffer[0..]);
-    if (readLen == 0) return ParseError.ConnectionClosed;
-    self.bufferLen = readLen;
+    pub fn deinit(self: *Parser) void {
+        self.arena.deinit();
+        self.headers.deinit(self.arena.child_allocator);
+    }
 
-    pos += try self.parseMethod(buffer[pos..readLen]);
-    pos += try self.parseUri(buffer[pos..readLen]);
-    try self.parseQuery(config.maxQuery);
-    pos += try self.parseProtocol(buffer[pos..readLen]);
-    pos += try self.parseHeaders(buffer[pos..readLen], config.maxHeaders);
+    pub fn canKeepAlive(self: *const Parser) bool {
+        return switch (self.protocol) {
+            .HTTP11 => {
+                if (self.headers.get("connection")) |conn| {
+                    return !std.mem.eql(u8, conn, "close");
+                }
+                return true;
+            },
+            .HTTP10 => {
+                // var iter = self.headers.iterator();
+                // std.debug.print("http 10\n", .{});
+                return false;
+            }, // TODO: support this in the cases where it can be
+        };
+    }
 
-    if (self.headers != null) {
-        if (self.getHeader("content-length")) |contentLengthHeader| {
-            const contentLength = atoi(contentLengthHeader.value) orelse return ParseError.InvalidContentLength;
-            if (contentLength > 0) {
-                if (contentLength > config.maxBodySize) return ParseError.BodyTooLarge;
-                pos += try self.parseBody(pos, contentLength, reader);
+    pub fn parse(self: *Parser, buf: []const u8) !bool {
+        if (buf.len == 0)
+            return false;
+
+        const allocator = self.arena.child_allocator;
+        const arena_allocator = self.arena.allocator();
+        var input = buf;
+        var allocated = false;
+        if (self.left) |left| {
+            input = try std.mem.concat(allocator, u8, &.{ left, buf });
+            defer allocator.free(left);
+            self.left = null;
+            allocated = true;
+        }
+        defer if (allocated) allocator.free(input);
+
+        const pos = self.pos;
+        self.pos = 0;
+
+        sw: switch (self.stage) {
+            .method => if (try self.parseMethod(input[self.pos..]))
+                continue :sw .url,
+            .url => if (try self.parseUrl(arena_allocator, input[self.pos..]))
+                continue :sw .protocol,
+            .protocol => if (try self.parseProtocol(input[self.pos..]))
+                continue :sw .headers,
+            .headers => if (try self.parseHeaders(arena_allocator, input[self.pos..], allocated))
+                return true,
+            .body => {
+                if (self.body) |b|
+                    switch (b) {
+                        .dynamic => |body| {
+                            if (self.pos > 0) {
+                                return false;
+                            }
+                            const remaining = body.len - pos;
+                            if (buf.len >= remaining) {
+                                @memcpy(body[pos..], buf[0..remaining]);
+                                self.pos = pos + buf.len;
+                                return true;
+                            } else {
+                                @memcpy(body[pos .. pos + buf.len], buf[0..]);
+                                self.pos = pos + buf.len;
+                                return false;
+                            }
+                        },
+                        else => {},
+                    };
+                return true;
+            },
+        }
+
+        const leftover = input[self.pos..];
+        if (leftover.len > 0)
+            self.left = try allocator.dupe(u8, leftover);
+
+        return false;
+    }
+
+    fn parseMethod(self: *Parser, buf: []const u8) !bool {
+        const buf_len = buf.len;
+
+        // Shortest method is only 3 characters (+1 trailing space), so
+        // this seems like it should be: if (buf_len < 4)
+        // But the longest method, OPTIONS, is 7 characters (+1 trailing space).
+        // Now even if we have a short method, like "GET ", we'll eventually expect
+        // a URL + protocol. The shorter valid line is: e.g. GET / HTTP/1.1
+        // If buf_len < 8, we _might_ have a method, but we still need more data
+        // and might as well break early.
+        // If buf_len > = 8, then we can safely parse any (valid) method without
+        // having to do any other bound-checking.
+        if (buf_len < 8) return false;
+
+        // this approach to matching method name comes from zhp
+        switch (@as(u32, @bitCast(buf[0..4].*))) {
+            asUint("GET ") => {
+                self.pos = 4;
+                self.method = .GET;
+            },
+            asUint("PUT ") => {
+                self.pos = 4;
+                self.method = .PUT;
+            },
+            asUint("POST") => {
+                if (buf[4] != ' ') return error.UnknownMethod;
+                self.pos = 5;
+                self.method = .POST;
+            },
+            asUint("HEAD") => {
+                if (buf[4] != ' ') return error.UnknownMethod;
+                self.pos = 5;
+                self.method = .HEAD;
+            },
+            asUint("PATC") => {
+                if (buf[4] != 'H' or buf[5] != ' ') return error.UnknownMethod;
+                self.pos = 6;
+                self.method = .PATCH;
+            },
+            asUint("DELE") => {
+                if (@as(u32, @bitCast(buf[3..7].*)) != asUint("ETE ")) return error.UnknownMethod;
+                self.pos = 7;
+                self.method = .DELETE;
+            },
+            asUint("OPTI") => {
+                if (@as(u32, @bitCast(buf[4..8].*)) != asUint("ONS ")) return error.UnknownMethod;
+                self.pos = 8;
+                self.method = .OPTIONS;
+            },
+            asUint("CONN") => {
+                if (@as(u32, @bitCast(buf[4..8].*)) != asUint("ECT ")) return error.UnknownMethod;
+                self.pos = 8;
+                self.method = .CONNECT;
+            },
+            else => return error.UnknownMethod,
+        }
+        return true;
+    }
+
+    fn parseUrl(self: *Parser, arena: Allocator, buf: []const u8) !bool {
+        self.stage = .url;
+        const buf_len = buf.len;
+        if (buf_len == 0) return false;
+
+        var len: usize = 0;
+        switch (buf[0]) {
+            '/' => {
+                const end_index = std.mem.indexOfScalarPos(u8, buf[1..buf_len], 0, ' ') orelse return false;
+                // +1 since we skipped the leading / in our indexOfScalar and +1 to consume the space
+                len = end_index + 2;
+                const url = buf[0 .. end_index + 1];
+                if (!Url.isValid(url)) return error.InvalidRequestTarget;
+                self.url = try arena.dupe(u8, url);
+            },
+            '*' => {
+                if (buf_len == 1) return false;
+                // Read never returns 0, so if we're here, buf.len >= 1
+                if (buf[1] != ' ') return error.InvalidRequestTarget;
+                len = 2;
+                self.url = "*";
+            },
+            // TODO: Support absolute-form target (e.g. http://....)
+            else => return error.InvalidRequestTarget,
+        }
+
+        self.pos += len;
+        return true;
+    }
+
+    fn parseProtocol(self: *Parser, buf: []const u8) !bool {
+        self.stage = .protocol;
+        if (buf.len < 10) return false;
+
+        if (@as(u32, @bitCast(buf[0..4].*)) != asUint("HTTP")) {
+            return error.UnknownProtocol;
+        }
+
+        self.protocol = switch (@as(u32, @bitCast(buf[4..8].*))) {
+            asUint("/1.1") => .HTTP11,
+            asUint("/1.0") => .HTTP10,
+            else => return error.UnsupportedProtocol,
+        };
+
+        if (buf[8] != '\r' or buf[9] != '\n') {
+            return error.UnknownProtocol;
+        }
+
+        self.pos += 10;
+        return true;
+    }
+
+    fn parseHeaders(self: *Parser, arena: Allocator, full: []const u8, allocated: bool) !bool {
+        self.stage = .headers;
+        var pos: usize = 0;
+        var buf = full;
+        const max_header_size = self.max_header_size;
+        line: while (buf.len > 0) {
+            for (buf, 0..) |bn, i| {
+                switch (bn) {
+                    'a'...'z', 'A'...'Z', '0'...'9', '-', '_' => {},
+                    ':' => {
+                        const value_start = i + 1; // skip the colon
+                        var value, const skip_len = trimLeadingSpaceCount(buf[value_start..]);
+                        for (value, 0..) |bv, j| {
+                            if (j + i > max_header_size)
+                                return error.HeaderTooBig;
+                            if (allowedHeaderValueByte[bv] == true) {
+                                continue;
+                            }
+
+                            // To keep ALLOWED_HEADER_VALUE small, we said \r
+                            // was illegal. I mean, it _is_ illegal in a header value
+                            // but it isn't part of the header value, it's (probably) the end of line
+                            if (bv != '\r') {
+                                return error.InvalidHeaderLine;
+                            }
+
+                            const next = j + 1;
+                            if (next == value.len) {
+                                // we don't have any more data, we can't tell
+                                self.pos += pos;
+                                return false;
+                            }
+
+                            if (value[next] != '\n') {
+                                // we have a \r followed by something that isn't
+                                // a \n. Can't be valid
+                                return error.InvalidHeaderLine;
+                            }
+
+                            // If we're here, it means our value had valid characters
+                            // up until the point of a newline (\r\n), which means
+                            // we have a valid value (and name)
+                            value = value[0..j];
+                            break;
+                        } else {
+                            // for loop reached the end without finding a \r
+                            // we need more data
+                            self.pos += pos;
+                            return false;
+                        }
+
+                        const name = buf[0..i];
+                        if (self.headers.size >= self.max_header_count)
+                            return error.TooManyHeaders;
+                        const name_copy = if (self.headers.getKey(name) == null) blk: {
+                            const alloc = try arena.dupe(u8, name);
+                            _ = std.ascii.lowerString(alloc, name);
+                            break :blk alloc;
+                        } else name;
+                        const value_copy = try arena.dupe(u8, value);
+                        errdefer self.allocator.free(value_copy);
+                        const res = self.headers.getOrPutAssumeCapacity(name_copy);
+                        if (res.found_existing) {
+                            arena.free(res.value_ptr.*);
+                            res.value_ptr.* = value_copy;
+                        } else res.value_ptr.* = value_copy;
+                        // +2 to skip the \r\n
+                        const next_line = value_start + skip_len + value.len + 2;
+                        pos += next_line;
+                        buf = buf[next_line..];
+                        continue :line;
+                    },
+                    '\r' => {
+                        if (i != 0) {
+                            // We're still parsing the header name, so a
+                            // \r should either be at the very start (to indicate the end of our headers)
+                            // or not be there at all
+                            return error.InvalidHeaderLine;
+                        }
+
+                        if (buf.len == 1) {
+                            // we don't have any more data, we need more data
+                            self.pos += pos;
+                            return false;
+                        }
+
+                        if (buf[1] == '\n') {
+                            // we have \r\n at the start of a line, we're done
+                            pos += 2;
+                            self.buf = full[pos..];
+                            self.pos += pos;
+                            return try self.prepareForBody(arena, allocated);
+                        }
+                        // we have a \r followed by something that isn't a \n, can't be right
+                        return error.InvalidHeaderLine;
+                    },
+                    else => return error.InvalidHeaderLine,
+                }
+            } else {
+                // didn't find a colon or blank line, we need more data
+                self.pos += pos;
+                return false;
             }
         }
+        self.pos += pos;
+        return false;
     }
 
-    return self;
-}
+    fn prepareForBody(self: *Parser, arena: Allocator, allocated: bool) !bool {
+        self.stage = .body;
+        const str = self.headers.get("content-length") orelse return true;
+        const cl = atoi(str) orelse return error.InvalidContentLength;
 
-fn atoi(str: []const u8) ?usize {
-    if (str.len == 0) return null;
+        if (cl == 0)
+            return true;
 
-    var n: usize = 0;
-    for (str) |b| {
-        if (b < '0' or b > '9') return null;
-        n = std.math.mul(usize, n, 10) catch return null;
-        n = std.math.add(usize, n, @intCast(b - '0')) catch return null;
-    }
-    return n;
-}
-
-pub fn getHeader(self: *Self, name: []const u8) ?HeaderKeyValue {
-    if (self.headers == null) return null;
-    scan: for (self.headers.?) |keyValue| {
-        // This is largely a reminder to myself that std.mem.eql isn't
-        // particularly fast. Here we at least avoid the 1 extra ptr
-        // equality check that std.mem.eql does, but we could do better
-        // TODO: monitor https://github.com/ziglang/zig/issues/8689
-        const key = keyValue.key;
-        if (key.len != name.len) continue;
-        for (key, name) |k, n| if (k != n) continue :scan;
-        return keyValue;
-    }
-    return null;
-}
-
-pub fn parseMethod(self: *Self, buf: []const u8) !usize {
-    switch (@as(u32, @bitCast(buf[0..4].*))) {
-        GET_ => {
-            self.method = buf[0..3];
-            return 4;
-        },
-        PUT_ => {
-            self.method = buf[0..3];
-            return 4;
-        },
-        POST => {
-            if (buf[4] != ' ') return ParseError.InvalidMethod;
-            self.method = buf[0..4];
-            return 5;
-        },
-        HEAD => {
-            if (buf[4] != ' ') return ParseError.InvalidMethod;
-            self.method = buf[0..4];
-            return 5;
-        },
-        PATC => {
-            if (buf[4] != 'H' or buf[5] != ' ') return ParseError.InvalidMethod;
-            self.method = buf[0..5];
-            return 6;
-        },
-        DELE => {
-            if (@as(u32, @bitCast(buf[3..7].*)) != ETE_) return ParseError.InvalidMethod;
-            self.method = buf[0..6];
-            return 7;
-        },
-        OPTI => {
-            if (@as(u32, @bitCast(buf[4..8].*)) != ONS_) return ParseError.InvalidMethod;
-            self.method = buf[0..7];
-            return 8;
-        },
-        else => return ParseError.InvalidMethod,
-    }
-}
-
-pub fn parseUri(self: *Self, buf: []const u8) !usize {
-    const buf_len = buf.len;
-    if (buf_len == 0) return error.InvalidRequestTarget;
-
-    var len: usize = 0;
-    var uri: []const u8 = undefined;
-    switch (buf[0]) {
-        '/' => {
-            const end_index = std.mem.indexOfScalarPos(u8, buf[1..buf_len], 0, ' ') orelse return ParseError.InvalidRequestTarget;
-            // +1 since we skipped the leading / in our indexOfScalar and +1 to consume the space
-            len = end_index + 2;
-            const url = buf[0 .. end_index + 1];
-            if (!Url.isValid(url)) return ParseError.InvalidRequestTarget;
-            uri = url;
-        },
-        '*' => {
-            if (buf_len == 1) return ParseError.InvalidRequestTarget;
-            // Read never returns 0, so if we're here, buf.len >= 1
-            if (buf[1] != ' ') return ParseError.InvalidRequestTarget;
-            len = 2;
-            uri = buf[0..1];
-        },
-        // TODO: Support absolute-form target (e.g. http://....)
-        else => return ParseError.InvalidRequestTarget,
-    }
-
-    self.url = Url.parse(uri);
-
-    return len;
-}
-
-fn parseQuery(self: *Self, maxQuery: usize) !void {
-    if (self.url == null) return;
-    const raw = self.url.?.query;
-    if (raw.len == 0) {
-        return;
-    }
-
-    const allocator = self.allocator;
-    var count: usize = 1;
-    for (raw) |b| {
-        if (b == '&') count += 1;
-        if (count > maxQuery) {
-            return;
+        if (cl > self.max_body_size) {
+            return error.BodyTooBig;
         }
-    }
 
-    var pos: usize = 0;
-    const list = try self.allocator.alloc(QueryKeyValue, count);
+        self.pos = 0;
+        const buf = self.buf.?;
+        const len = buf.len;
 
-    var it = std.mem.splitScalar(u8, raw, '&');
-    while (it.next()) |pair| {
-        if (std.mem.indexOfScalarPos(u8, pair, 0, '=')) |sep| {
-            list[pos] = .{
-                .key = try Url.unescape(allocator, pair[0..sep]),
-                .value = try Url.unescape(allocator, pair[sep + 1 ..]),
-            };
-            pos += 1;
+        // how much (if any) of the body we've already read
+        var read = len;
+
+        if (read > cl)
+            read = cl;
+
+        // how much of the body are we missing
+        const missing = cl - read;
+
+        if (missing == 0) {
+            // we've read the entire body into buf, point to that.
+            self.pos += cl;
+            if (allocated) {
+                self.body = .{ .dynamic = try arena.dupe(u8, buf[0..cl]) };
+            } else {
+                self.body = .{ .static = buf[0..cl] };
+            }
+            return true;
         } else {
-            list[pos] = .{
-                .key = try Url.unescape(allocator, pair),
-                .value = null,
-            };
-            pos += 1;
+            // We don't have the [full] body, and our static buffer is too small
+            const body_buf = try arena.alloc(u8, cl);
+            if (read > 0)
+                @memcpy(body_buf[0..read], buf[0..read]);
+            self.pos = read;
+            self.body = .{ .dynamic = body_buf };
         }
+        return false;
     }
 
-    self.query = list;
+    pub fn parseQuery(self: *Parser, query: []const u8, maxQuery: usize) ![]QueryValue {
+        const raw = query;
+        if (raw.len == 0) {
+            return &.{};
+        }
 
-    return;
-}
+        const allocator = self.arena.allocator();
+        var count: usize = 1;
+        for (raw) |b| {
+            if (b == '&') count += 1;
+            if (count > maxQuery) {
+                return error.MaxQueryExceeded;
+            }
+        }
 
-pub fn parseProtocol(self: *Self, buf: []u8) !usize {
-    const buf_len = buf.len;
-    if (buf_len < 10) return ParseError.InvalidProtocol;
+        var pos: usize = 0;
+        const list = try allocator.alloc(QueryValue, count);
 
-    if (@as(u32, @bitCast(buf[0..4].*)) != HTTP) {
-        return ParseError.InvalidProtocol;
+        var it = std.mem.splitScalar(u8, raw, '&');
+        while (it.next()) |pair| {
+            if (std.mem.indexOfScalarPos(u8, pair, 0, '=')) |sep| {
+                list[pos] = .{
+                    .key = try Url.unescape(allocator, pair[0..sep]),
+                    .value = try Url.unescape(allocator, pair[sep + 1 ..]),
+                };
+                pos += 1;
+            } else {
+                list[pos] = .{
+                    .key = try Url.unescape(allocator, pair),
+                    .value = null,
+                };
+                pos += 1;
+            }
+        }
+
+        return list;
     }
 
-    self.protocol = switch (@as(u32, @bitCast(buf[4..8].*))) {
-        V1P1 => Protocol.HTTP11,
-        V1P0 => Protocol.HTTP10,
-        else => return ParseError.UnsupportedProtocol,
-    };
+    pub fn push(self: *Parser, L: *VM.lua.State) !void {
+        L.createtable(0, 2);
 
-    if (buf[8] != '\r' or buf[9] != '\n') {
-        return ParseError.InvalidProtocol;
+        L.Zsetfield(-1, "method", @tagName(self.method));
+
+        if (self.url) |url| {
+            const parsed = Url.parse(url);
+            L.Zsetfield(-1, "path", parsed.path);
+            const queries = try self.parseQuery(parsed.query, 24);
+            if (queries.len > 0) {
+                L.createtable(0, @intCast(queries.len));
+                var order: i32 = 1;
+                for (queries) |query| {
+                    L.pushlstring(query.key);
+                    if (query.value) |value| {
+                        L.pushlstring(value);
+                        L.rawset(-3);
+                    } else {
+                        L.rawseti(-2, order);
+                        order += 1;
+                    }
+                }
+                L.setfield(-2, "query");
+            }
+        }
+
+        L.createtable(0, @intCast(self.headers.size));
+        var iter = self.headers.iterator();
+        while (iter.next()) |header| {
+            L.pushlstring(header.key_ptr.*);
+            L.pushlstring(header.value_ptr.*);
+            L.rawset(-3);
+        }
+        L.setfield(-2, "headers");
+
+        if (self.body) |body|
+            switch (body) {
+                inline else => |bytes| L.Zsetfield(-1, "body", bytes),
+            };
     }
+};
 
-    return 10;
-}
-
-inline fn allowedHeaderValueByte(c: u8) bool {
-    const mask = 0 | ((1 << (0x7f - 0x21)) - 1) << 0x21 | 1 << 0x20 | 1 << 0x09;
-
-    const mask1 = ~@as(u64, (mask & ((1 << 64) - 1)));
-    const mask2 = ~@as(u64, mask >> 64);
-
-    const shl = std.math.shl;
-    return ((shl(u64, 1, c) & mask1) | (shl(u64, 1, c -| 64) & mask2)) == 0;
-}
+const allowedHeaderValueByte = blk: {
+    var v = [_]bool{false} ** 256;
+    for ("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_ :;.,/\"'?!(){}[]@<>=-+*#$&`|~^%\t\\") |b| {
+        v[b] = true;
+    }
+    break :blk v;
+};
 
 inline fn trimLeadingSpaceCount(in: []const u8) struct { []const u8, usize } {
     if (in.len > 1 and in[0] == ' ') {
@@ -290,421 +544,383 @@ inline fn trimLeadingSpaceCount(in: []const u8) struct { []const u8, usize } {
     return .{ "", in.len };
 }
 
-fn parseHeaders(self: *Self, full: []u8, maxHeaders: usize) !usize {
-    if (full.len == 0) return 0;
-    if (full[0] == '\r' and full[1] == '\n') return 2;
+inline fn trimLeadingSpace(in: []const u8) []const u8 {
+    const out, _ = trimLeadingSpaceCount(in);
+    return out;
+}
 
-    var count: usize = 0;
-    for (full, 0..) |b, p| {
-        const next = p + 1;
-        const last = if (p > 0) p - 1 else 0;
-        if (next == full.len) break;
-        if (b == '\r' and full[next] == '\n') {
-            if (full[last] == '\n') break;
-            count += 1;
-            if (count > maxHeaders) return ParseError.TooManyHeaders;
+fn atoi(str: []const u8) ?usize {
+    if (str.len == 0) {
+        return null;
+    }
+
+    var n: usize = 0;
+    for (str) |b| {
+        if (b < '0' or b > '9') {
+            return null;
         }
+        n = std.math.mul(usize, n, 10) catch return null;
+        n = std.math.add(usize, n, @intCast(b - '0')) catch return null;
     }
-
-    if (count == 0) return 0;
-
-    const list = try self.allocator.alloc(HeaderKeyValue, count);
-    var listPos: usize = 0;
-
-    var buf = full;
-    var pos: usize = 0;
-    line: while (buf.len > 0) {
-        for (buf, 0..) |bn, i| {
-            switch (bn) {
-                'a'...'z', '0'...'9', '-', '_' => {},
-                'A'...'Z' => buf[i] = bn + 32, // lowercase
-                ':' => {
-                    const value_start = i + 1; // skip the colon
-                    var value, const skip_len = trimLeadingSpaceCount(buf[value_start..]);
-                    for (value, 0..) |bv, j| {
-                        if (allowedHeaderValueByte(bv) == true) {
-                            continue;
-                        }
-
-                        // To keep ALLOWED_HEADER_VALUE small, we said \r
-                        // was illegal. I mean, it _is_ illegal in a header value
-                        // but it isn't part of the header value, it's (probably) the end of line
-                        if (bv != '\r') return ParseError.InvalidHeader;
-                        const next = j + 1;
-                        if (next == value.len) return ParseError.InvalidHeader;
-                        if (value[next] != '\n') return ParseError.InvalidHeader;
-                        // If we're here, it means our value had valid characters
-                        // up until the point of a newline (\r\n), which means
-                        // we have a valid value (and name)
-
-                        value = value[0..j];
-                        break;
-                    } else {
-                        // for loop reached the end without finding a \r
-                        // we need more data
-                        return ParseError.InvalidHeader;
-                    }
-
-                    const name = buf[0..i];
-
-                    if (listPos >= count) return ParseError.TooManyHeaders; // Should not have happened? somehow it did.
-
-                    list[listPos] = .{
-                        .key = name,
-                        .value = value,
-                    };
-                    listPos += 1;
-
-                    // +2 to skip the \r\n
-                    const next_line = value_start + skip_len + value.len + 2;
-                    pos += next_line;
-                    buf = buf[next_line..];
-                    continue :line;
-                },
-                '\r' => {
-                    if (i != 0) return ParseError.InvalidHeader;
-                    if (buf.len == 1) return ParseError.InvalidHeader;
-                    if (buf[1] == '\n') {
-                        self.headers = list;
-                        return pos + 2;
-                    }
-                    // we have a \r followed by something that isn't a \n, can't be right
-                    return error.InvalidHeaderLine;
-                },
-                else => return error.InvalidHeaderLine,
-            }
-        } else {
-            // didn't find a colon or blank line, we need more data
-            return ParseError.InvalidHeader;
-        }
-    }
-
-    self.headers = list;
-
-    return pos;
+    return n;
 }
 
-pub fn parseBody(self: *Self, pos: usize, contentLength: usize, reader: std.io.AnyReader) !usize {
-    if (self.bufferLen - pos >= contentLength) {
-        self.body = self.buffer[pos .. pos + contentLength];
-        return contentLength;
+const testing = std.testing;
+
+test "atoi" {
+    var buf: [5]u8 = undefined;
+    for (0..99999) |i| {
+        const n = std.fmt.formatIntBuf(&buf, i, 10, .lower, .{});
+        try testing.expectEqual(i, atoi(buf[0..n]).?);
     }
-    const missing = contentLength - (self.bufferLen - pos);
-    if (missing == 0) {
-        self.body = self.buffer[pos .. pos + contentLength];
-        return 0;
-    }
-    var readLen: usize = 0;
-    if (missing < self.buffer.len - self.bufferLen) {
-        readLen = try reader.read(self.buffer[self.bufferLen..]);
-        self.body = self.buffer[pos .. pos + readLen];
-        if (readLen == 0) return ParseError.ConnectionClosed;
-    } else {
-        // reallocate buffer, increasing the size by the content length
-        self.bodyAllocated = true;
-        const bodyBuffer = try self.allocator.alloc(u8, contentLength);
-        const bufferChunk = self.buffer[pos..];
-        @memcpy(bodyBuffer[0..bufferChunk.len], bufferChunk);
-        if (self.allocator.resize(self.buffer, pos)) self.buffer = self.buffer[0..pos];
-        self.body = bodyBuffer;
-        readLen = try reader.read(bodyBuffer[bufferChunk.len..]);
-        if (readLen == 0) return ParseError.ConnectionClosed;
-    }
-    self.bufferLen += readLen;
-    return readLen;
+
+    try testing.expectEqual(null, atoi(""));
+    try testing.expectEqual(null, atoi("392a"));
+    try testing.expectEqual(null, atoi("b392"));
+    try testing.expectEqual(null, atoi("3c92"));
 }
 
-const UpgradeError = error{
-    MissingHeaders,
-    InvalidUpgrade,
-    InvalidConnection,
-    InvalidWebSocketVersion,
-};
-
-pub const UpgradeInfo = struct {
-    key: []const u8,
-    version: []const u8,
-    protocols: ?[]const u8,
-};
-
-pub fn canUpgradeWebSocket(self: *Self) !?UpgradeInfo {
-    if (self.headers) |headers| {
-        var upgrade = false;
-        var websocket = false;
-        var version: ?[]const u8 = null;
-        var key: ?[]const u8 = null;
-        var protocols: ?[]const u8 = null;
-        for (headers) |header| {
-            // TODO: prob should switch to static string map (performance improvement?)
-            if (std.mem.eql(u8, header.key, "upgrade")) {
-                websocket = std.ascii.eqlIgnoreCase(header.value, "websocket");
-            } else if (std.mem.eql(u8, header.key, "connection")) {
-                upgrade = std.ascii.eqlIgnoreCase(header.value, "upgrade");
-            } else if (std.mem.eql(u8, header.key, "sec-websocket-version")) {
-                version = header.value;
-            } else if (std.mem.eql(u8, header.key, "sec-websocket-key")) {
-                key = header.value;
-            } else if (std.mem.eql(u8, header.key, "sec-websocket-protocol")) {
-                protocols = header.value;
-            }
-        }
-        if (version == null and !upgrade and !websocket) return null; // not trying to connect as WebSocket
-        if (!upgrade) return UpgradeError.InvalidUpgrade;
-        if (!websocket) return UpgradeError.InvalidConnection;
-        if (version == null or !std.mem.eql(u8, version.?, "13")) return UpgradeError.InvalidWebSocketVersion;
-        if (key == null) return UpgradeError.MissingHeaders;
-        return .{
-            .key = key.?,
-            .version = version.?,
-            .protocols = protocols,
-        };
+test "allowedHeaderValueByte" {
+    var all = std.mem.zeroes([255]bool);
+    for ('a'..('z' + 1)) |b| all[b] = true;
+    for ('A'..('Z' + 1)) |b| all[b] = true;
+    for ('0'..('9' + 1)) |b| all[b] = true;
+    for ([_]u8{ '_', ' ', ',', ':', ';', '.', ',', '\\', '/', '"', '\'', '?', '!', '(', ')', '{', '}', '[', ']', '@', '<', '>', '=', '-', '+', '*', '#', '$', '&', '`', '|', '~', '^', '%', '\t' }) |b| {
+        all[b] = true;
     }
-    return null;
+    for (128..255) |b| all[b] = false;
+
+    for (all, 0..) |allowed, b| {
+        try testing.expectEqual(allowed, allowedHeaderValueByte[@intCast(b)]);
+    }
 }
 
-pub fn pushToStack(self: *Self, L: *VM.lua.State) !void {
-    L.newtable();
-    errdefer L.pop(1);
-
-    if (self.method) |method| {
-        L.Zsetfield(-1, "method", method);
-    }
-
-    if (self.url) |url| {
-        L.Zsetfield(-1, "path", url.path);
-    }
-
-    L.newtable();
-    if (self.query) |queries| {
-        errdefer L.pop(1);
-        var order: i32 = 1;
-        for (queries) |query| {
-            L.pushlstring(query.key);
-            if (query.value) |value| {
-                L.pushlstring(value);
-                L.rawset(-3);
-            } else {
-                L.rawseti(-2, order);
-                order += 1;
-            }
-        }
-    }
-    L.setfield(-2, "query");
-
-    L.newtable();
-    if (self.headers) |headers| {
-        errdefer L.pop(1);
-        for (headers) |header| {
-            L.pushlstring(header.key);
-            L.pushlstring(header.value);
-            L.rawset(-3);
-        }
-    }
-    L.setfield(-2, "headers");
-
-    if (self.body) |body|
-        L.Zsetfield(-1, "body", body);
-}
-
-pub fn deinit(self: *Self) void {
-    if (self.headers) |headers| self.allocator.free(headers);
-    if (self.query) |queries| {
-        for (queries) |query| {
-            self.allocator.free(query.key);
-            if (query.value) |value| self.allocator.free(value);
-        }
-        self.allocator.free(queries);
-    }
-    if (self.bodyAllocated) {
-        self.allocator.free(self.body.?);
-    }
-    self.allocator.free(self.buffer);
-}
-
-fn expectHeaderKeyValue(kv: HeaderKeyValue, key: []const u8, value: []const u8) !void {
-    try std.testing.expectEqualSlices(u8, key, kv.key);
-    try std.testing.expectEqualSlices(u8, value, kv.value);
-}
-
-fn expectQueryKeyValue(kv: QueryKeyValue, key: []const u8, value: ?[]const u8) !void {
-    try std.testing.expectEqualSlices(u8, key, kv.key);
-    if (value != null and kv.value == null or value == null and kv.value != null) return std.testing.expect(false);
-    if (value) |v| try std.testing.expectEqualSlices(u8, v, kv.value.?);
-}
-
-fn testFakeStream(buffer: []const u8) std.io.FixedBufferStream([]const u8) {
-    return std.io.FixedBufferStream([]const u8){
-        .buffer = buffer,
-        .pos = 0,
-    };
-}
-
-test "Parse Request (1)" {
+fn testParseProcedural(input: []const u8, max: u32) !Parser {
     const allocator = std.testing.allocator;
-    var stream = testFakeStream("GET / HTTP/1.1\r\n\r\n");
-    var request = try Self.init(allocator, stream.reader().any(), .{});
-    defer request.deinit();
+    var parser = Parser.init(allocator, max);
+    errdefer parser.deinit();
 
-    try std.testing.expect(request.method != null);
-    try std.testing.expect(request.url != null);
-    try std.testing.expect(request.query == null);
-    try std.testing.expect(request.protocol != null);
-    try std.testing.expect(request.headers == null);
-    try std.testing.expect(request.body == null);
-    try std.testing.expectEqualSlices(u8, "GET", request.method.?);
-    try std.testing.expectEqualSlices(u8, "/", request.url.?.path);
-    try std.testing.expectEqualSlices(u8, "/", request.url.?.raw);
-    try std.testing.expectEqual(Protocol.HTTP11, request.protocol.?);
+    var tiny_buf: [1]u8 = undefined;
+    for (input) |b| {
+        tiny_buf[0] = b;
+        if (try parser.parse(tiny_buf[0..1]))
+            return parser;
+    }
+
+    return error.Incomplete;
 }
 
-test "Parse Request (2)" {
+fn testParseFull(comptime input: []const u8, max: u32) !Parser {
     const allocator = std.testing.allocator;
-    var stream = testFakeStream("GET /info/book?id=9 HTTP/1.1\r\nHost: somehost.com\r\n\r\n");
-    var request = try Self.init(allocator, stream.reader().any(), .{});
-    defer request.deinit();
+    var parser = Parser.init(allocator, max);
+    errdefer parser.deinit();
 
-    try std.testing.expect(request.method != null);
-    try std.testing.expect(request.url != null);
-    try std.testing.expect(request.query != null);
-    try std.testing.expect(request.query.?.len == 1);
-    try std.testing.expect(request.protocol != null);
-    try std.testing.expect(request.headers != null);
-    try std.testing.expect(request.headers.?.len == 1);
-    try std.testing.expect(request.body == null);
+    if (try parser.parse(input)) {
+        return parser;
+    }
 
-    try expectQueryKeyValue(request.query.?[0], "id", "9");
-    try expectHeaderKeyValue(request.headers.?[0], "host", "somehost.com");
-
-    try std.testing.expectEqualSlices(u8, "GET", request.method.?);
-    try std.testing.expectEqualSlices(u8, "/info/book", request.url.?.path);
-    try std.testing.expectEqualSlices(u8, "/info/book?id=9", request.url.?.raw);
-    try std.testing.expectEqual(Protocol.HTTP11, request.protocol.?);
+    return error.Incomplete;
 }
 
-test "Parse Request (3)" {
-    const allocator = std.testing.allocator;
-    var stream = testFakeStream("GET /info/book HTTP/1.1\r\nTest: false\r\nHost: somehost.com\r\n\r\n");
-    var request = try Self.init(allocator, stream.reader().any(), .{});
-    defer request.deinit();
+test "parser: basic (procedural)" {
+    var parser = try testParseProcedural("GET / HTTP/1.1\r\n\r\n", 0);
+    defer parser.deinit();
 
-    try std.testing.expect(request.method != null);
-    try std.testing.expect(request.url != null);
-    try std.testing.expect(request.query == null);
-    try std.testing.expect(request.protocol != null);
-    try std.testing.expect(request.headers != null);
-    try std.testing.expect(request.headers.?.len == 2);
-    try std.testing.expect(request.body == null);
-
-    try expectHeaderKeyValue(request.headers.?[0], "test", "false");
-    try expectHeaderKeyValue(request.headers.?[1], "host", "somehost.com");
-
-    try std.testing.expectEqualSlices(u8, "GET", request.method.?);
-    try std.testing.expectEqualSlices(u8, "/info/book", request.url.?.path);
-    try std.testing.expectEqualSlices(u8, "/info/book", request.url.?.raw);
-    try std.testing.expectEqual(Protocol.HTTP11, request.protocol.?);
+    try testing.expectEqual(.GET, parser.method);
+    try testing.expectEqualStrings("/", parser.url.?);
+    try testing.expectEqual(.HTTP11, parser.protocol);
+    try testing.expectEqual(2, parser.pos);
+    try testing.expectEqual(0, parser.headers.size);
+    try testing.expectEqual(.body, parser.stage);
+    try testing.expect(parser.body == null);
+    try testing.expect(parser.buf != null);
+    try testing.expect(parser.left == null);
 }
 
-test "Parse Request (4)" {
-    const allocator = std.testing.allocator;
-    var stream = testFakeStream("POST /?id=2 HTTP/1.1\r\nContent-Length: 4\r\n\r\ntest");
-    var request = try Self.init(allocator, stream.reader().any(), .{});
-    defer request.deinit();
-
-    try std.testing.expect(request.method != null);
-    try std.testing.expect(request.url != null);
-    try std.testing.expect(request.query != null);
-    try std.testing.expect(request.query.?.len == 1);
-    try std.testing.expect(request.protocol != null);
-    try std.testing.expect(request.headers != null);
-    try std.testing.expect(request.headers.?.len == 1);
-    try std.testing.expect(request.body != null);
-
-    try expectQueryKeyValue(request.query.?[0], "id", "2");
-    try expectHeaderKeyValue(request.headers.?[0], "content-length", "4");
-
-    try std.testing.expectEqualSlices(u8, "POST", request.method.?);
-    try std.testing.expectEqualSlices(u8, "/", request.url.?.path);
-    try std.testing.expectEqualSlices(u8, "/?id=2", request.url.?.raw);
-    try std.testing.expectEqual(Protocol.HTTP11, request.protocol.?);
-    try std.testing.expectEqualSlices(u8, "test", request.body.?);
+test "parser: bad (procedural)" {
+    try testing.expectError(error.UnknownMethod, testParseProcedural("FOO / HTTP/1.1\r\n\r\n", 0));
+    try testing.expectError(error.UnknownProtocol, testParseProcedural("GET / HTTP/1.0__\r\n\r\n", 0));
+    try testing.expectError(error.UnsupportedProtocol, testParseProcedural("GET / HTTP/3.0\r\n\r\n", 0));
+    try testing.expectError(error.UnknownProtocol, testParseProcedural("GET /  HTTP/1.1\r\n\r\n", 0));
+    try testing.expectError(error.InvalidRequestTarget, testParseProcedural("GET  / HTTP/1.1\r\n\r\n", 0));
+    try testing.expectError(error.InvalidHeaderLine, testParseProcedural("GET / HTTP/1.1\r\n  ", 0));
 }
 
-test "Parse Request (5)" {
-    const allocator = std.testing.allocator;
-    var stream = testFakeStream("POST /?id=4&sort=false HTTP/1.1\r\nHeaders-Length: none\r\nContent-Length: 4\r\n\r\nsomelongtest");
-    var request = try Self.init(allocator, stream.reader().any(), .{});
-    defer request.deinit();
+test "parser: many headers (procedural)" {
+    var parser = try testParseProcedural("GET / HTTP/1.1\r\nHost: foo.bar\r\nAccept: text/html\r\nUser-Agent: curl/7.64.1\r\nAccept-Language: en-US,en;q=0.5\r\nAccept-Encoding: gzip, deflate\r\nConnection: keep-alive\r\nUpgrade-Insecure-Requests: 1\r\nCache-Control: max-age=0\r\n\r\n", 100);
+    defer parser.deinit();
 
-    const someHeader = request.getHeader("headers-length") orelse return std.testing.expect(false);
-    try std.testing.expectEqualSlices(u8, "headers-length", someHeader.key);
-    try std.testing.expectEqualSlices(u8, "none", someHeader.value);
-
-    const contentHeader = request.getHeader("content-length") orelse return std.testing.expect(false);
-    try std.testing.expectEqualSlices(u8, "content-length", contentHeader.key);
-    try std.testing.expectEqualSlices(u8, "4", contentHeader.value);
-
-    try std.testing.expect(request.method != null);
-    try std.testing.expect(request.url != null);
-    try std.testing.expect(request.query != null);
-    try std.testing.expect(request.query.?.len == 2);
-    try std.testing.expect(request.protocol != null);
-    try std.testing.expect(request.headers != null);
-    try std.testing.expect(request.headers.?.len == 2);
-    try std.testing.expect(request.body != null);
-
-    try expectQueryKeyValue(request.query.?[0], "id", "4");
-    try expectQueryKeyValue(request.query.?[1], "sort", "false");
-    try expectHeaderKeyValue(request.headers.?[0], "headers-length", "none");
-    try expectHeaderKeyValue(request.headers.?[1], "content-length", "4");
-
-    try std.testing.expectEqualSlices(u8, "POST", request.method.?);
-    try std.testing.expectEqualSlices(u8, "/", request.url.?.path);
-    try std.testing.expectEqualSlices(u8, "/?id=4&sort=false", request.url.?.raw);
-    try std.testing.expectEqual(Protocol.HTTP11, request.protocol.?);
-    try std.testing.expectEqualSlices(u8, "some", request.body.?);
+    try testing.expectEqual(.GET, parser.method);
+    try testing.expectEqualStrings("/", parser.url.?);
+    try testing.expectEqual(.HTTP11, parser.protocol);
+    try testing.expectEqual(2, parser.pos);
+    try testing.expectEqual(8, parser.headers.size);
+    try testing.expectEqual(.body, parser.stage);
+    try testing.expect(parser.body == null);
+    try testing.expect(parser.buf != null);
+    try testing.expect(parser.left == null);
 }
 
-test "Parse Request (6)" {
-    const allocator = std.testing.allocator;
-    const body = ("abc" ** 2000);
-    var stream = testFakeStream("POST / HTTP/1.1\r\nContent-Length: 6000\r\n\r\n" ++ body);
-    var request = try Self.init(allocator, stream.reader().any(), .{
-        .maxBodySize = 6000,
-    });
-    defer request.deinit();
-
-    try std.testing.expect(request.method != null);
-    try std.testing.expect(request.url != null);
-    try std.testing.expect(request.query == null);
-    try std.testing.expect(request.protocol != null);
-    try std.testing.expect(request.headers != null);
-    try std.testing.expect(request.headers.?.len == 1);
-    try std.testing.expect(request.body != null);
-
-    try expectHeaderKeyValue(request.headers.?[0], "content-length", "6000");
-
-    try std.testing.expectEqualSlices(u8, "POST", request.method.?);
-    try std.testing.expectEqualSlices(u8, "/", request.url.?.path);
-    try std.testing.expectEqualSlices(u8, "/", request.url.?.raw);
-    try std.testing.expectEqual(Protocol.HTTP11, request.protocol.?);
-    try std.testing.expectEqualSlices(u8, body, request.body.?);
+test "parser: too many headers (procedural)" {
+    try testing.expectEqual(error.TooManyHeaders, testParseProcedural("GET / HTTP/1.1\r\nHost: foo.bar\r\nAccept: text/html\r\nUser-Agent: curl/7.64.1\r\nAccept-Language: en-US,en;q=0.5", 1));
 }
 
-test "Parse Request Error" {
-    const allocator = std.testing.allocator;
-
-    var stream1 = testFakeStream("POST / HTTP/1.1\r\nContent-Length: 5\r\n\r\ntest");
-    try std.testing.expectError(ParseError.ConnectionClosed, Self.init(allocator, stream1.reader().any(), .{}));
-    var stream2 = testFakeStream("POST / HTTP/1.1\r\nContent-Length: \r\n\r\ntest");
-    try std.testing.expectError(ParseError.InvalidContentLength, Self.init(allocator, stream2.reader().any(), .{}));
-    var stream3 = testFakeStream("POST / HTTP/1.1\r\nContent-Length: 9999999999\r\n\r\nverylargebody");
-    try std.testing.expectError(ParseError.BodyTooLarge, Self.init(allocator, stream3.reader().any(), .{
-        .maxBodySize = 4,
-    }));
-    var stream4 = testFakeStream("POST / HTTP/1.1\r\nContent-Length: 6000\r\n\r\n" ++ ("abc" ** 2000));
-    try std.testing.expectError(ParseError.BodyTooLarge, Self.init(allocator, stream4.reader().any(), .{}));
+test "parser: large headers (procedural)" {
+    try testing.expectEqual(error.HeaderTooBig, testParseProcedural("GET / HTTP/1.1\r\nHost: " ++ ("foobar" ** 690), 100));
 }
 
-test {
-    _ = Url;
+test "parser: many kinds (procedural)" {
+    {
+        var parser = try testParseProcedural("GET / HTTP/1.1\r\n\r\n", 0);
+        defer parser.deinit();
+        try testing.expectEqual(.GET, parser.method);
+        try testing.expectEqualStrings("/", parser.url.?);
+        try testing.expectEqual(.HTTP11, parser.protocol);
+    }
+    {
+        var parser = try testParseProcedural("PUT / HTTP/1.1\r\n\r\n", 0);
+        defer parser.deinit();
+        try testing.expectEqual(.PUT, parser.method);
+        try testing.expectEqualStrings("/", parser.url.?);
+        try testing.expectEqual(.HTTP11, parser.protocol);
+    }
+    {
+        var parser = try testParseProcedural("POST / HTTP/1.1\r\n\r\n", 0);
+        defer parser.deinit();
+        try testing.expectEqual(.POST, parser.method);
+        try testing.expectEqualStrings("/", parser.url.?);
+        try testing.expectEqual(.HTTP11, parser.protocol);
+    }
+    {
+        var parser = try testParseProcedural("HEAD / HTTP/1.1\r\n\r\n", 0);
+        defer parser.deinit();
+        try testing.expectEqual(.HEAD, parser.method);
+        try testing.expectEqualStrings("/", parser.url.?);
+        try testing.expectEqual(.HTTP11, parser.protocol);
+    }
+    {
+        var parser = try testParseProcedural("PATCH / HTTP/1.1\r\n\r\n", 0);
+        defer parser.deinit();
+        try testing.expectEqual(.PATCH, parser.method);
+        try testing.expectEqualStrings("/", parser.url.?);
+        try testing.expectEqual(.HTTP11, parser.protocol);
+    }
+    {
+        var parser = try testParseProcedural("DELETE / HTTP/1.1\r\n\r\n", 0);
+        defer parser.deinit();
+        try testing.expectEqual(.DELETE, parser.method);
+        try testing.expectEqualStrings("/", parser.url.?);
+        try testing.expectEqual(.HTTP11, parser.protocol);
+    }
+    {
+        var parser = try testParseProcedural("OPTIONS / HTTP/1.1\r\n\r\n", 0);
+        defer parser.deinit();
+        try testing.expectEqual(.OPTIONS, parser.method);
+        try testing.expectEqualStrings("/", parser.url.?);
+        try testing.expectEqual(.HTTP11, parser.protocol);
+    }
+    {
+        var parser = try testParseProcedural("CONNECT / HTTP/1.1\r\n\r\n", 0);
+        defer parser.deinit();
+        try testing.expectEqual(.CONNECT, parser.method);
+        try testing.expectEqualStrings("/", parser.url.?);
+        try testing.expectEqual(.HTTP11, parser.protocol);
+    }
+}
+
+test "parser: url (procedural)" {
+    var parser = try testParseProcedural("GET /foo/bar/baz?a=b HTTP/1.1\r\n\r\n", 0);
+    defer parser.deinit();
+
+    try testing.expectEqual(.GET, parser.method);
+    try testing.expectEqualStrings("/foo/bar/baz?a=b", parser.url.?);
+    try testing.expectEqual(.HTTP11, parser.protocol);
+    try testing.expectEqual(2, parser.pos);
+    try testing.expectEqual(0, parser.headers.size);
+    try testing.expectEqual(.body, parser.stage);
+    try testing.expect(parser.body == null);
+    try testing.expect(parser.buf != null);
+    try testing.expect(parser.left == null);
+
+    const url = Url.parse(parser.url.?);
+    const query = try parser.parseQuery(url.query, 1);
+    try testing.expectEqual(1, query.len);
+    try testing.expectEqualStrings("a", query[0].key);
+    try testing.expectEqualStrings("b", query[0].value.?);
+}
+
+test "parser: bad url (procedural)" {
+    try testing.expectError(error.InvalidRequestTarget, testParseProcedural("GET . HTTP/1.1\r\n\r\n", 0));
+    try testing.expectError(error.InvalidRequestTarget, testParseProcedural("GET ** HTTP/1.1\r\n\r\n", 0));
+    try testing.expectError(error.InvalidRequestTarget, testParseProcedural("GET /" ++ [_]u8{0} ++ " HTTP/1.1\r\n\r\n", 0));
+}
+
+test "parser: body (procedural)" {
+    var parser = try testParseProcedural("GET / HTTP/1.1\r\nHost: foo.bar\r\nContent-Length: 5\r\n\r\nhello", 2);
+    defer parser.deinit();
+
+    try testing.expectEqual(.GET, parser.method);
+    try testing.expectEqualStrings("/", parser.url.?);
+    try testing.expectEqual(.HTTP11, parser.protocol);
+    try testing.expectEqual(5, parser.pos);
+    try testing.expectEqual(2, parser.headers.size);
+    try testing.expect(parser.body.? == .dynamic);
+    try testing.expectEqual(.body, parser.stage);
+    try testing.expectEqualStrings("hello", parser.body.?.dynamic);
+}
+
+test "parser: basic (full)" {
+    var parser = try testParseFull("GET / HTTP/1.1\r\n\r\n", 0);
+    defer parser.deinit();
+
+    try testing.expectEqual(.GET, parser.method);
+    try testing.expectEqualStrings("/", parser.url.?);
+    try testing.expectEqual(.HTTP11, parser.protocol);
+    try testing.expectEqual(18, parser.pos);
+    try testing.expectEqual(0, parser.headers.size);
+    try testing.expectEqual(.body, parser.stage);
+    try testing.expect(parser.body == null);
+    try testing.expect(parser.buf != null);
+    try testing.expect(parser.left == null);
+}
+
+test "parser: bad (full)" {
+    try testing.expectError(error.UnknownMethod, testParseFull("FOO / HTTP/1.1\r\n\r\n", 0));
+    try testing.expectError(error.UnknownProtocol, testParseFull("GET / HTTP/1.0__\r\n\r\n", 0));
+    try testing.expectError(error.UnsupportedProtocol, testParseFull("GET / HTTP/3.0\r\n\r\n", 0));
+    try testing.expectError(error.UnknownProtocol, testParseFull("GET /  HTTP/1.1\r\n\r\n", 0));
+    try testing.expectError(error.InvalidRequestTarget, testParseFull("GET  / HTTP/1.1\r\n\r\n", 0));
+    try testing.expectError(error.InvalidHeaderLine, testParseFull("GET / HTTP/1.1\r\n  ", 0));
+}
+
+test "parser: many headers (full)" {
+    var parser = try testParseFull("GET / HTTP/1.1\r\nHost: foo.bar\r\nAccept: text/html\r\nUser-Agent: curl/7.64.1\r\nAccept-Language: en-US,en;q=0.5\r\nAccept-Encoding: gzip, deflate\r\nConnection: keep-alive\r\nUpgrade-Insecure-Requests: 1\r\nCache-Control: max-age=0\r\n\r\n", 100);
+    defer parser.deinit();
+
+    try testing.expectEqual(.GET, parser.method);
+    try testing.expectEqualStrings("/", parser.url.?);
+    try testing.expectEqual(.HTTP11, parser.protocol);
+    try testing.expectEqual(222, parser.pos);
+    try testing.expectEqual(8, parser.headers.size);
+    try testing.expectEqual(.body, parser.stage);
+    try testing.expect(parser.body == null);
+    try testing.expect(parser.buf != null);
+    try testing.expect(parser.left == null);
+}
+
+test "parser: too many headers (full)" {
+    try testing.expectEqual(error.TooManyHeaders, testParseFull("GET / HTTP/1.1\r\nHost: foo.bar\r\nAccept: text/html\r\nUser-Agent: curl/7.64.1\r\nAccept-Language: en-US,en;q=0.5", 1));
+}
+
+test "parser: large headers (full)" {
+    try testing.expectEqual(error.HeaderTooBig, testParseFull("GET / HTTP/1.1\r\nHost: " ++ ("foobar" ** 690) ++ "\r\n\r\n", 100));
+}
+
+test "parser: many kinds (full)" {
+    {
+        var parser = try testParseFull("GET / HTTP/1.1\r\n\r\n", 0);
+        defer parser.deinit();
+
+        try testing.expectEqual(.GET, parser.method);
+        try testing.expectEqualStrings("/", parser.url.?);
+        try testing.expectEqual(.HTTP11, parser.protocol);
+    }
+    {
+        var parser = try testParseFull("PUT / HTTP/1.1\r\n\r\n", 0);
+        defer parser.deinit();
+
+        try testing.expectEqual(.PUT, parser.method);
+        try testing.expectEqualStrings("/", parser.url.?);
+        try testing.expectEqual(.HTTP11, parser.protocol);
+    }
+    {
+        var parser = try testParseFull("POST / HTTP/1.1\r\n\r\n", 0);
+        defer parser.deinit();
+
+        try testing.expectEqual(.POST, parser.method);
+        try testing.expectEqualStrings("/", parser.url.?);
+        try testing.expectEqual(.HTTP11, parser.protocol);
+    }
+    {
+        var parser = try testParseFull("HEAD / HTTP/1.1\r\n\r\n", 0);
+        defer parser.deinit();
+
+        try testing.expectEqual(.HEAD, parser.method);
+        try testing.expectEqualStrings("/", parser.url.?);
+        try testing.expectEqual(.HTTP11, parser.protocol);
+    }
+    {
+        var parser = try testParseFull("PATCH / HTTP/1.1\r\n\r\n", 0);
+        defer parser.deinit();
+
+        try testing.expectEqual(.PATCH, parser.method);
+        try testing.expectEqualStrings("/", parser.url.?);
+        try testing.expectEqual(.HTTP11, parser.protocol);
+    }
+    {
+        var parser = try testParseFull("DELETE / HTTP/1.1\r\n\r\n", 0);
+        defer parser.deinit();
+
+        try testing.expectEqual(.DELETE, parser.method);
+        try testing.expectEqualStrings("/", parser.url.?);
+        try testing.expectEqual(.HTTP11, parser.protocol);
+    }
+    {
+        var parser = try testParseFull("OPTIONS / HTTP/1.1\r\n\r\n", 0);
+        defer parser.deinit();
+
+        try testing.expectEqual(.OPTIONS, parser.method);
+        try testing.expectEqualStrings("/", parser.url.?);
+        try testing.expectEqual(.HTTP11, parser.protocol);
+    }
+    {
+        var parser = try testParseFull("CONNECT / HTTP/1.1\r\n\r\n", 0);
+        defer parser.deinit();
+
+        try testing.expectEqual(.CONNECT, parser.method);
+        try testing.expectEqualStrings("/", parser.url.?);
+        try testing.expectEqual(.HTTP11, parser.protocol);
+    }
+}
+
+test "parser: url (full)" {
+    var parser = try testParseFull("GET /foo/bar/baz?a=b HTTP/1.1\r\n\r\n", 0);
+    defer parser.deinit();
+
+    try testing.expectEqual(.GET, parser.method);
+    try testing.expectEqualStrings("/foo/bar/baz?a=b", parser.url.?);
+    try testing.expectEqual(.HTTP11, parser.protocol);
+    try testing.expectEqual(33, parser.pos);
+    try testing.expectEqual(0, parser.headers.size);
+    try testing.expectEqual(.body, parser.stage);
+    try testing.expect(parser.body == null);
+    try testing.expect(parser.buf != null);
+    try testing.expect(parser.left == null);
+
+    const url = Url.parse(parser.url.?);
+    const query = try parser.parseQuery(url.query, 1);
+    try testing.expectEqual(1, query.len);
+    try testing.expectEqualStrings("a", query[0].key);
+    try testing.expectEqualStrings("b", query[0].value.?);
+}
+
+test "parser: bad url (full)" {
+    try testing.expectError(error.InvalidRequestTarget, testParseFull("GET . HTTP/1.1\r\n\r\n", 0));
+    try testing.expectError(error.InvalidRequestTarget, testParseFull("GET ** HTTP/1.1\r\n\r\n", 0));
+    try testing.expectError(error.InvalidRequestTarget, testParseFull("GET /" ++ [_]u8{0} ++ " HTTP/1.1\r\n\r\n", 0));
+}
+
+test "parser: body (full)" {
+    const input = "GET / HTTP/1.1\r\nHost: foo.bar\r\nContent-Length: 5\r\n\r\nhello";
+    var parser = try testParseFull(input, 2);
+    defer parser.deinit();
+
+    try testing.expectEqual(.GET, parser.method);
+    try testing.expectEqualStrings("/", parser.url.?);
+    try testing.expectEqual(.HTTP11, parser.protocol);
+    try testing.expectEqual(5, parser.pos);
+    try testing.expectEqual(2, parser.headers.size);
+    try testing.expect(parser.body.? == .static);
+    try testing.expectEqual(.body, parser.stage);
+    try testing.expectEqualStrings("hello", parser.body.?.static);
 }

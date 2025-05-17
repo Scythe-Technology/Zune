@@ -24,7 +24,7 @@ end)
 describe("simpleLib", function()
 	test("Validating Context", function()
 		expect(_FILE).never.toBeNil();
-		expect(_FILE.name:find("simpleLib%.luau")).never.toBeNil();
+		expect(debug.info(1, "s"):find("simpleLib%.luau")).never.toBeNil();
 	end)
 end)
 

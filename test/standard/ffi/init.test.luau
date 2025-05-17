@@ -7,21 +7,26 @@ local test = testing.test;
 local expect = testing.expect;
 local describe = testing.describe;
 
+if (not ffi) then
+    warn("Skipping 'FFI' tests (Not Supported)");
+    return;
+end
+
 expect(ffi).toBe(
     expect.similar({
         dlopen = expect.type("function"),
         struct = expect.type("function"),
         closure = expect.type("function"),
         fn = expect.type("function"),
-        sizeOf = expect.type("function"),
-        alignOf = expect.type("function"),
         createPtr = expect.type("function"),
         getRef = expect.type("function"),
+        getLuaState = expect.type("function"),
         alloc = expect.type("function"),
         free = expect.type("function"),
         copy = expect.type("function"),
         len = expect.type("function"),
         dupe = expect.type("function"),
+        tagName = expect.type("function"),
         prefix = expect.type("string"),
         suffix = expect.type("string"),
         supported = expect.type("boolean"),
@@ -40,7 +45,7 @@ expect(ffi).toBe(
             pointer = expect.type("userdata"),
         }),
     })
-);
+)
 
 if (process.os == "windows") then
     expect(ffi.prefix).toBe("");
@@ -55,11 +60,7 @@ else
     error("Unsupported OS: " .. process.os);
 end
 
--- Workaround for Windows tests, test sample library
 local static_suffix = ffi.suffix;
-if (process.os == "windows") then
-    static_suffix = "lib";
-end
 
 local function testBufferOfValue(size: number, writer: (b: buffer, o: number, v: number) -> (), value: number): buffer
     local buf = buffer.create(size);
@@ -74,13 +75,12 @@ describe("FFI", function()
     end
     describe("dlopen", function()
         test("Sample Library (No Decls)", function()
-            local lib = ffi.dlopen(`./zig-out/{ffi.prefix}sample.{static_suffix}`, {});
+            local lib = ffi.dlopen(`./zig-out/lib/{ffi.prefix}sample.{static_suffix}`, {});
             expect(lib).toBe(expect.type("userdata"));
-            lib:close();
         end);
         test("Fail", function()
             expect(function()
-                ffi.dlopen(`./zig-out/{ffi.prefix}invalid.{static_suffix}`, {});
+                ffi.dlopen(`./zig-out/lib/{ffi.prefix}invalid.{static_suffix}`, {});
             end).toThrow("FileNotFound");
         end);
     end)
@@ -99,32 +99,32 @@ describe("FFI", function()
         end)
 
         test("Read Pointer", function()
-            local src = buffer.create(ffi.sizeOf(ffi.types.i32));
+            local src = buffer.create(ffi.types.i32:size());
             buffer.writei32(src, 0, 42);
 
             local mem = ffi.dupe(src);
             mem:release();
 
-            local dest = buffer.create(ffi.sizeOf(ffi.types.i32));
-            ffi.copy(dest, 0, mem, 0, ffi.sizeOf(ffi.types.i32));
+            local dest = buffer.create(ffi.types.i32:size());
+            ffi.copy(dest, 0, mem, 0, ffi.types.i32:size());
 
             expect(buffer.readi32(dest, 0)).toBe(42);
         end)
 
         test("Write Into Pointer", function()
-            local src = buffer.create(ffi.sizeOf(ffi.types.i32));
+            local src = buffer.create(ffi.types.i32:size());
             buffer.writei32(src, 0, 42);
 
-            local ptr = ffi.alloc(ffi.sizeOf(ffi.types.i32));
+            local ptr = ffi.alloc(ffi.types.i32:size());
             ptr:release();
 
-            ffi.copy(ptr, 0, src, 0, ffi.sizeOf(ffi.types.i32));
+            ffi.copy(ptr, 0, src, 0, ffi.types.i32:size());
 
             expect(ptr:readi32()).toBe(42);
         end)
 
         test("Read Casting From Pointer", function()
-            local src = buffer.create(ffi.sizeOf(ffi.types.i32));
+            local src = buffer.create(ffi.types.i32:size());
             buffer.writei32(src, 0, 42);
 
             local ptr = ffi.dupe(src);
@@ -134,7 +134,7 @@ describe("FFI", function()
         end)
 
         test("__eql Pointer", function()
-            local src = buffer.create(ffi.sizeOf(ffi.types.i32));
+            local src = buffer.create(ffi.types.i32:size());
             buffer.writei32(src, 0, 42);
 
             local mem = ffi.dupe(src);
@@ -146,18 +146,18 @@ describe("FFI", function()
 
             expect(mem:readi32()).toBe(42);
 
-            local null_ptr = ffi.createPtr(buffer.create(ffi.sizeOf(ffi.types.pointer)));
+            local null_ptr = ffi.createPtr(buffer.create(ffi.types.pointer:size()));
 
             expect(null_ptr:isNull()).toBe(true);
             expect(null_ptr == ptr).toBe(false);
         end)
 
         test("Size Of", function()
-            expect(ffi.sizeOf(ffi.types.i32)).toBe(4);
+            expect(ffi.types.i32:size()).toBe(4);
         end)
 
         test("Align Of", function()
-            expect(ffi.alignOf(ffi.types.i32)).toBe(4);
+            expect(ffi.types.i32:alignment()).toBe(4);
         end)
 
         test("Alloc", function()
@@ -194,7 +194,7 @@ describe("FFI", function()
         end)
 
         test("Static Offset", function()
-            local address = buffer.create(ffi.sizeOf(ffi.types.pointer));
+            local address = buffer.create(ffi.types.pointer:size());
             local base = ffi.createPtr(address);
             
             expect(base == ffi.createPtr(address)).toBe(true);
@@ -231,22 +231,22 @@ describe("FFI", function()
                 expect(ffi.fn(add_defintion, c_add_func)(-4, 4)).toBe(0);
 
                 do
-                    local a = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 1);
-                    local b = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 2);
+                    local a = testBufferOfValue(ffi.types.i32:size(), buffer.writei32, 1);
+                    local b = testBufferOfValue(ffi.types.i32:size(), buffer.writei32, 2);
                     expect(addfn(a, b)).toBe(3);
                     expect(ffi.fn(add_defintion, c_add_func)(a, b)).toBe(3);
                 end
                 
                 do
-                    local a = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 2);
-                    local b = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 3);
+                    local a = testBufferOfValue(ffi.types.i32:size(), buffer.writei32, 2);
+                    local b = testBufferOfValue(ffi.types.i32:size(), buffer.writei32, 3);
                     expect(addfn(a, b)).toBe(5);
                     expect(ffi.fn(add_defintion, c_add_func)(a, b)).toBe(5);
                 end
                 
                 do
-                    local a = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, -4);
-                    local b = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 4);
+                    local a = testBufferOfValue(ffi.types.i32:size(), buffer.writei32, -4);
+                    local b = testBufferOfValue(ffi.types.i32:size(), buffer.writei32, 4);
                     expect(addfn(a, b)).toBe(0);
                     expect(ffi.fn(add_defintion, c_add_func)(a, b)).toBe(0);
                 end
@@ -274,22 +274,22 @@ describe("FFI", function()
                 expect(ffi.fn(add_defintion, c_add_func)(-4.25, 4.25)).toBe(0);
                 
                 do
-                    local a = testBufferOfValue(ffi.sizeOf(ffi.types.double), buffer.writef64, 1.123);
-                    local b = testBufferOfValue(ffi.sizeOf(ffi.types.double), buffer.writef64, 2);
+                    local a = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 1.123);
+                    local b = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2);
                     expect(addfn(a, b)).toBe(3.123);
                     expect(ffi.fn(add_defintion, c_add_func)(a, b)).toBe(3.123);
                 end
 
                 do
-                    local a = testBufferOfValue(ffi.sizeOf(ffi.types.double), buffer.writef64, 2.25);
-                    local b = testBufferOfValue(ffi.sizeOf(ffi.types.double), buffer.writef64, 3.25);
+                    local a = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2.25);
+                    local b = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 3.25);
                     expect(addfn(a, b)).toBe(5.5);
                     expect(ffi.fn(add_defintion, c_add_func)(a, b)).toBe(5.5);
                 end
 
                 do
-                    local a = testBufferOfValue(ffi.sizeOf(ffi.types.double), buffer.writef64, -4.25);
-                    local b = testBufferOfValue(ffi.sizeOf(ffi.types.double), buffer.writef64, 4.25);
+                    local a = testBufferOfValue(ffi.types.double:size(), buffer.writef64, -4.25);
+                    local b = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 4.25);
                     expect(addfn(a, b)).toBe(0);
                     expect(ffi.fn(add_defintion, c_add_func)(a, b)).toBe(0);
                 end
@@ -337,8 +337,8 @@ describe("FFI", function()
 
             do
                 local buf = Foo_struct:new {
-                    x = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 1),
-                    y = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 2),
+                    x = testBufferOfValue(ffi.types.i32:size(), buffer.writei32, 1),
+                    y = testBufferOfValue(ffi.types.i32:size(), buffer.writei32, 2),
                 };
 
                 expect(buffer.len(buf)).toBe(Foo_struct:size());
@@ -349,8 +349,8 @@ describe("FFI", function()
 
             do
                 local buf = Foo_struct:new {
-                    x = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 2_147_483_647),
-                    y = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, -2_147_483_648),
+                    x = testBufferOfValue(ffi.types.i32:size(), buffer.writei32, 2_147_483_647),
+                    y = testBufferOfValue(ffi.types.i32:size(), buffer.writei32, -2_147_483_648),
                 };
 
                 expect(buffer.len(buf)).toBe(Foo_struct:size());
@@ -398,8 +398,8 @@ describe("FFI", function()
 
             do
                 local buf = Float_struct:new {
-                    x = testBufferOfValue(ffi.sizeOf(ffi.types.float), buffer.writef32, 3.4028234663852886e38),
-                    y = testBufferOfValue(ffi.sizeOf(ffi.types.double), buffer.writef64, 1.7976931348623158e308),
+                    x = testBufferOfValue(ffi.types.float:size(), buffer.writef32, 3.4028234663852886e38),
+                    y = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 1.7976931348623158e308),
                 };
 
                 expect(buffer.len(buf)).toBe(Float_struct:size());
@@ -410,8 +410,8 @@ describe("FFI", function()
 
             do
                 local buf = Float_struct:new {
-                    x = testBufferOfValue(ffi.sizeOf(ffi.types.float), buffer.writef32, -3.4028234663852886e38),
-                    y = testBufferOfValue(ffi.sizeOf(ffi.types.double), buffer.writef64, -1.7976931348623158e308),
+                    x = testBufferOfValue(ffi.types.float:size(), buffer.writef32, -3.4028234663852886e38),
+                    y = testBufferOfValue(ffi.types.double:size(), buffer.writef64, -1.7976931348623158e308),
                 };
 
                 expect(buffer.len(buf)).toBe(Float_struct:size());
@@ -450,7 +450,7 @@ describe("FFI", function()
                 ffi.struct({
                     { x = ffi.types.i32 },
                     { y = ffi.types.i32 },
-                    { [3] = ffi.types.i32 },
+                    { [3] = ffi.types.i32 } :: any,
                 });
             end).toThrow("InvalidFieldName");
             expect(function()
@@ -469,6 +469,23 @@ describe("FFI", function()
             { y = ffi.types.i32 },
         });
 
+        local foo2_struct = ffi.struct({
+            { x = ffi.types.double },
+            { y = ffi.types.double },
+        });
+
+        local foo3_struct = ffi.struct({
+            { x = ffi.types.double },
+        });
+
+        local foo2e_struct = ffi.struct({
+            { second = foo2_struct },
+        });
+
+        local foo2ec_struct = ffi.struct({
+            { first = foo2e_struct },
+        });
+
         local blank_defintion = {
             returns = ffi.types.void,
             args = {},
@@ -477,11 +494,15 @@ describe("FFI", function()
             returns = ffi.types.i32,
             args = {ffi.types.i32, ffi.types.i32},
         };
-        local add_ptr_defintion = {
+        local add_float_defintion = {
+            returns = ffi.types.double,
+            args = {ffi.types.double, ffi.types.double},
+        };
+        local add_ptr_defintion: FFIFunctionDef = {
             returns = ffi.types.void,
             args = {ffi.types.pointer, ffi.types.i32},
         };
-        local add_ptr_ptr_defintion = {
+        local add_ptr_ptr_defintion: FFIFunctionDef = {
             returns = ffi.types.void,
             args = {ffi.types.pointer, ffi.types.i32},
         };
@@ -501,6 +522,18 @@ describe("FFI", function()
             returns = ffi.types.u8,
             args = {foo_struct},
         };
+        local check_struct2_defintion = {
+            returns = ffi.types.u8,
+            args = {foo2_struct},
+        };
+        local check_struct2ec_defintion = {
+            returns = ffi.types.u8,
+            args = {foo2ec_struct},
+        };
+        local check_struct3_defintion = {
+            returns = ffi.types.u8,
+            args = {foo3_struct},
+        };
         local check_nullptr_defintion = {
             returns = ffi.types.u8,
             args = {ffi.types.pointer},
@@ -513,9 +546,10 @@ describe("FFI", function()
             returns = ffi.types.void,
             args = {ffi.types.pointer},
         };
-        local lib = ffi.dlopen(`./zig-out/{ffi.prefix}sample.{static_suffix}`, {
+        local lib = ffi.dlopen(`./zig-out/lib/{ffi.prefix}sample.{static_suffix}`, {
             blank = blank_defintion,
             add = add_defintion,
+            add_float = add_float_defintion,
             add_ptr = add_ptr_defintion,
             add_ptr_ptr = add_ptr_ptr_defintion,
             fire_callback = fire_callback_defintion,
@@ -523,6 +557,8 @@ describe("FFI", function()
 
             check_string = check_string_defintion,
             check_struct = check_struct_defintion,
+            check_struct2 = check_struct2_defintion,
+            check_struct3 = check_struct3_defintion,
             check_nullptr = check_nullptr_defintion,
 
             new_i32 = new_i32_defintion,
@@ -541,8 +577,8 @@ describe("FFI", function()
         end)
 
         describe("Symbol<i32 add(i32 i32)>", function()
-            local a = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 2);
-            local b = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 4);
+            local a = testBufferOfValue(ffi.types.i32:size(), buffer.writei32, 2);
+            local b = testBufferOfValue(ffi.types.i32:size(), buffer.writei32, 4);
             test("Library Fn", function()
                 expect(lib.add(1, 2)).toBe(3);
                 expect(lib.add(a, b)).toBe(6);
@@ -554,9 +590,23 @@ describe("FFI", function()
             end)
         end)
 
+        describe("Symbol<f64 add_float(f64 f64)>", function()
+            local a = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2);
+            local b = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 4);
+            test("Library Fn", function()
+                expect(lib.add_float(1, 2)).toBe(3);
+                expect(lib.add_float(a, b)).toBe(6);
+            end)
+            test("Dynamic Fn", function()
+                local add_float = ffi.fn(add_float_defintion, lib:getSymbol("add_float"));
+                expect(add_float(1, 2)).toBe(3);
+                expect(add_float(a, b)).toBe(6);
+            end)
+        end)
+
         describe("Symbol<void add_ptr(*i32, i32)>", function()
             test("Library Fn", function()
-                local out = ffi.alloc(ffi.sizeOf(ffi.types.i32)):release();
+                local out = ffi.alloc(ffi.types.i32:size()):release();
 
                 lib.add_ptr(out, 1);
                 
@@ -566,13 +616,13 @@ describe("FFI", function()
 
                 expect(out:readi32()).toBe(7);
 
-                lib.add_ptr(out, testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 6));
+                lib.add_ptr(out, testBufferOfValue(ffi.types.i32:size(), buffer.writei32, 6));
 
                 expect(out:readi32()).toBe(13);
             end)
             test("Dynamic Fn", function()
                 local add_ptr = ffi.fn(add_ptr_defintion, lib:getSymbol("add_ptr"));
-                local out = ffi.alloc(ffi.sizeOf(ffi.types.i32)):release();
+                local out = ffi.alloc(ffi.types.i32:size()):release();
 
                 add_ptr(out, 1);
                 
@@ -582,14 +632,14 @@ describe("FFI", function()
 
                 expect(out:readi32()).toBe(7);
 
-                add_ptr(out, testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 6));
+                add_ptr(out, testBufferOfValue(ffi.types.i32:size(), buffer.writei32, 6));
 
                 expect(out:readi32()).toBe(13);
             end)
         end)
         describe("Symbol<void add_ptr_ptr(**i32, i32)>", function()
             test("Library Fn", function()
-                local out = ffi.alloc(ffi.sizeOf(ffi.types.i32));
+                local out = ffi.alloc(ffi.types.i32:size());
                 out:release();
 
                 local ptr = ffi.getRef(out):release();
@@ -602,13 +652,13 @@ describe("FFI", function()
 
                 expect(out:readi32()).toBe(7);
 
-                lib.add_ptr_ptr(ptr, testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 6));
+                lib.add_ptr_ptr(ptr, testBufferOfValue(ffi.types.i32:size(), buffer.writei32, 6));
 
                 expect(out:readi32()).toBe(13);
             end)
             test("Dynamic Fn", function()
                 local add_ptr_ptr = ffi.fn(add_ptr_ptr_defintion, lib:getSymbol("add_ptr_ptr"));
-                local out = ffi.alloc(ffi.sizeOf(ffi.types.i32));
+                local out = ffi.alloc(ffi.types.i32:size());
                 out:release();
 
                 local ptr = ffi.getRef(out):release();
@@ -621,7 +671,7 @@ describe("FFI", function()
 
                 expect(out:readi32()).toBe(7);
 
-                add_ptr_ptr(ptr, testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 6));
+                add_ptr_ptr(ptr, testBufferOfValue(ffi.types.i32:size(), buffer.writei32, 6));
 
                 expect(out:readi32()).toBe(13);
             end)
@@ -765,8 +815,8 @@ describe("FFI", function()
     
                 do
                     local buf = foo_struct:new {
-                        x = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 1),
-                        y = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 2),
+                        x = testBufferOfValue(ffi.types.i32:size(), buffer.writei32, 1),
+                        y = testBufferOfValue(ffi.types.i32:size(), buffer.writei32, 2),
                     };
     
                     expect(lib.check_struct(buf)).toBe(1);
@@ -774,8 +824,8 @@ describe("FFI", function()
     
                 do
                     local buf = foo_struct:new {
-                        x = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 2),
-                        y = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 2),
+                        x = testBufferOfValue(ffi.types.i32:size(), buffer.writei32, 2),
+                        y = testBufferOfValue(ffi.types.i32:size(), buffer.writei32, 2),
                     };
         
                     expect(lib.check_struct(buf)).toBe(0);
@@ -804,8 +854,8 @@ describe("FFI", function()
     
                 do
                     local buf = foo_struct:new {
-                        x = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 1),
-                        y = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 2),
+                        x = testBufferOfValue(ffi.types.i32:size(), buffer.writei32, 1),
+                        y = testBufferOfValue(ffi.types.i32:size(), buffer.writei32, 2),
                     };
     
                     expect(check_struct(buf)).toBe(1);
@@ -813,11 +863,221 @@ describe("FFI", function()
     
                 do
                     local buf = foo_struct:new {
-                        x = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 2),
-                        y = testBufferOfValue(ffi.sizeOf(ffi.types.i32), buffer.writei32, 2),
+                        x = testBufferOfValue(ffi.types.i32:size(), buffer.writei32, 2),
+                        y = testBufferOfValue(ffi.types.i32:size(), buffer.writei32, 2),
                     };
         
                     expect(check_struct(buf)).toBe(0);
+                end
+            end)
+        end)
+
+        describe("Symbol<void check_struct2(Foo2)>", function()
+            test("Library Fn", function()
+                do
+                    local buf = foo2_struct:new {
+                        x = 1.1,
+                        y = 2.2,
+                    };
+
+                    expect(lib.check_struct2(buf)).toBe(1);
+                end
+    
+                do
+                    local buf = foo2_struct:new {
+                        x = 2.2,
+                        y = 2.2,
+                    };
+        
+                    expect(lib.check_struct2(buf)).toBe(0);
+                end
+    
+                do
+                    local buf = foo2_struct:new {
+                        x = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 1.1),
+                        y = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2.2),
+                    };
+    
+                    expect(lib.check_struct2(buf)).toBe(1);
+                end
+    
+                do
+                    local buf = foo2_struct:new {
+                        x = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2.2),
+                        y = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2.2),
+                    };
+        
+                    expect(lib.check_struct2(buf)).toBe(0);
+                end
+            end)
+            test("Dynamic Fn", function()
+                local check_struct2 = ffi.fn(check_struct2_defintion, lib:getSymbol("check_struct2"));
+
+                do
+                    local buf = foo2_struct:new {
+                        x = 1.1,
+                        y = 2.2,
+                    };
+    
+                    expect(check_struct2(buf)).toBe(1);
+                end
+    
+                do
+                    local buf = foo2_struct:new {
+                        x = 2.2,
+                        y = 2.2,
+                    };
+        
+                    expect(check_struct2(buf)).toBe(0);
+                end
+    
+                do
+                    local buf = foo2_struct:new {
+                        x = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 1.1),
+                        y = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2.2),
+                    };
+    
+                    expect(check_struct2(buf)).toBe(1);
+                end
+    
+                do
+                    local buf = foo2_struct:new {
+                        x = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2.2),
+                        y = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2.2),
+                    };
+        
+                    expect(check_struct2(buf)).toBe(0);
+                end
+            end)
+        end)
+
+        describe("Symbol<void check_struct2ec(Foo2ec)>", function()
+            test("Dynamic Fn", function()
+                local check_struct2ec = ffi.fn(check_struct2ec_defintion, lib:getSymbol("check_struct2"));
+
+                do
+                    local buf = foo2ec_struct:new {
+                        first = foo2e_struct:new {
+                            second = foo2_struct:new {
+                                x = 1.1,
+                                y = 2.2,
+                            },
+                        }
+                    };
+    
+                    expect(check_struct2ec(buf)).toBe(1);
+                end
+    
+                do
+                    local buf = foo2ec_struct:new {
+                        first = foo2e_struct:new {
+                            second = foo2_struct:new {
+                                x = 2.2,
+                                y = 2.2,
+                            },
+                        }
+                    };
+        
+                    expect(check_struct2ec(buf)).toBe(0);
+                end
+    
+                do
+                    local buf = foo2ec_struct:new {
+                        first = foo2e_struct:new {
+                            second = foo2_struct:new {
+                                x = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 1.1),
+                                y = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2.2),
+                            },
+                        }
+                    };
+    
+                    expect(check_struct2ec(buf)).toBe(1);
+                end
+    
+                do
+                    local buf = foo2ec_struct:new {
+                        first = foo2e_struct:new {
+                            second = foo2_struct:new {
+                                x = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2.2),
+                                y = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2.2),
+                            },
+                        }
+                    };
+        
+                    expect(check_struct2ec(buf)).toBe(0);
+                end
+            end)
+        end)
+
+        describe("Symbol<void check_struct3(Foo3)>", function()
+            test("Library Fn", function()
+                do
+                    local buf = foo3_struct:new {
+                        x = 1.1,
+                    };
+    
+                    expect(lib.check_struct3(buf)).toBe(1);
+                end
+    
+                do
+                    local buf = foo3_struct:new {
+                        x = 2.2,
+                    };
+        
+                    expect(lib.check_struct3(buf)).toBe(0);
+                end
+    
+                do
+                    local buf = foo3_struct:new {
+                        x = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 1.1),
+                        y = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2.2),
+                    };
+    
+                    expect(lib.check_struct3(buf)).toBe(1);
+                end
+    
+                do
+                    local buf = foo3_struct:new {
+                        x = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2.2),
+                        y = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2.2),
+                    };
+        
+                    expect(lib.check_struct3(buf)).toBe(0);
+                end
+            end)
+            test("Dynamic Fn", function()
+                local check_struct3 = ffi.fn(check_struct3_defintion, lib:getSymbol("check_struct3"));
+
+                do
+                    local buf = foo3_struct:new {
+                        x = 1.1,
+                    };
+    
+                    expect(check_struct3(buf)).toBe(1);
+                end
+    
+                do
+                    local buf = foo3_struct:new {
+                        x = 2.2,
+                    };
+        
+                    expect(check_struct3(buf)).toBe(0);
+                end
+    
+                do
+                    local buf = foo3_struct:new {
+                        x = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 1.1),
+                    };
+    
+                    expect(check_struct3(buf)).toBe(1);
+                end
+    
+                do
+                    local buf = foo3_struct:new {
+                        x = testBufferOfValue(ffi.types.double:size(), buffer.writef64, 2.2),
+                    };
+        
+                    expect(check_struct3(buf)).toBe(0);
                 end
             end)
         end)
@@ -826,7 +1086,7 @@ describe("FFI", function()
             test("Library Fn", function()
                 expect(lib.check_nullptr(nil)).toBe(1);
             
-                local null_ptr = ffi.createPtr(buffer.create(ffi.sizeOf(ffi.types.pointer)));
+                local null_ptr = ffi.createPtr(buffer.create(ffi.types.pointer:size()));
                 expect(lib.check_nullptr(null_ptr)).toBe(1);
 
                 local dummy_value = ffi.dupe(buffer.create(0));
@@ -840,7 +1100,7 @@ describe("FFI", function()
 
                 expect(check_nullptr(nil)).toBe(1);
             
-                local null_ptr = ffi.createPtr(buffer.create(ffi.sizeOf(ffi.types.pointer)));
+                local null_ptr = ffi.createPtr(buffer.create(ffi.types.pointer:size()));
                 expect(check_nullptr(null_ptr)).toBe(1);
 
                 local dummy_value = ffi.dupe(buffer.create(0));
@@ -856,14 +1116,14 @@ describe("FFI", function()
                 local ptr = nil;
                 test("Symbol<*i32 new_i32()>", function()
                     ptr = lib.new_i32();
-                    ptr:setSize(ffi.sizeOf(ffi.types.i32));
+                    ptr:setSize(ffi.types.i32:size());
                     expect(ptr).toBe(expect.type("userdata"));
 
                     expect(ptr:readi32()).toBe(123);
 
-                    local src = buffer.create(ffi.sizeOf(ffi.types.i32));
+                    local src = buffer.create(ffi.types.i32:size());
                     buffer.writei32(src, 0, 42);
-                    ffi.copy(ptr, 0, src, 0, ffi.sizeOf(ffi.types.i32));
+                    ffi.copy(ptr, 0, src, 0, ffi.types.i32:size());
 
                     expect(ptr:readi32()).toBe(42);
 
@@ -881,14 +1141,14 @@ describe("FFI", function()
                 local ptr = nil;
                 test("Symbol<*i32 new_i32()>", function()
                     ptr = ffi.fn(new_i32_defintion, lib:getSymbol("new_i32"))();
-                    ptr:setSize(ffi.sizeOf(ffi.types.i32));
+                    ptr:setSize(ffi.types.i32:size());
                     expect(ptr).toBe(expect.type("userdata"));
 
                     expect(ptr:readi32()).toBe(123);
 
-                    local src = buffer.create(ffi.sizeOf(ffi.types.i32));
+                    local src = buffer.create(ffi.types.i32:size());
                     buffer.writei32(src, 0, 42);
-                    ffi.copy(ptr, 0, src, 0, ffi.sizeOf(ffi.types.i32));
+                    ffi.copy(ptr, 0, src, 0, ffi.types.i32:size());
 
                     expect(ptr:readi32()).toBe(42);
 
@@ -918,7 +1178,7 @@ describe("FFI", function()
                 ffi.free(mem);
             end)
 
-            local block_address = buffer.create(ffi.sizeOf(ffi.types.pointer));
+            local block_address = buffer.create(ffi.types.pointer:size());
             test("Leaky Block, Unknown Transform", function()
                 local mem = ffi.alloc(24);
                 expect(mem).toBe(expect.type("userdata"));
@@ -940,7 +1200,7 @@ describe("FFI", function()
                 buffer.writei32(temp, 12, -10);
                 ffi.copy(mem, 0, temp, 0, 24);
 
-                ffi.copy(block_address, 0, ffi.getRef(mem):release(), 0, ffi.sizeOf(ffi.types.pointer));
+                ffi.copy(block_address, 0, ffi.getRef(mem):release(), 0, ffi.types.pointer:size());
 
                 mem:drop();
             end)
@@ -949,7 +1209,8 @@ describe("FFI", function()
                 local mem = ffi.createPtr(block_address);
                 expect(mem:isNull()).toBe(false);
                 expect(ffi.len(mem)).toBe(nil); -- unknown size
-
+                
+                mem:setAlignment(1);
                 mem:setSize(24);
 
                 expect(ffi.len(mem)).toBe(24);
@@ -973,6 +1234,87 @@ describe("FFI", function()
             end)
         end)
 
-        lib:close();
+        describe("Tagged Pointers", function()
+            local any_ptr = ffi.types.pointer;
+            local ctxA_ptr = ffi.types.pointer:newTag("ContextA");
+            local ctxB_ptr = ffi.types.pointer:newTag("ContextB");
+
+            expect(ffi.tagName(any_ptr:tag())).toBe(nil);
+            expect(ffi.tagName(ctxA_ptr:tag())).toBe("ContextA");
+            expect(ffi.tagName(ctxB_ptr:tag())).toBe("ContextB");
+
+            expect(any_ptr:tag()).toBe(0);
+            expect(ctxA_ptr:tag()).toBe(1);
+            expect(ctxB_ptr:tag()).toBe(2);
+
+            local any_check = ffi.fn({
+                returns = ffi.types.u8,
+                args = {any_ptr},
+            }, lib:getSymbol("check_nullptr"));
+
+            local ctxA_check = ffi.fn({
+                returns = ffi.types.u8,
+                args = {ctxA_ptr},
+            }, lib:getSymbol("check_nullptr"));
+
+            local ctxB_check = ffi.fn({
+                returns = ffi.types.u8,
+                args = {ctxB_ptr},
+            }, lib:getSymbol("check_nullptr"));
+
+            test("Null Pointer", function()
+                expect(any_check(nil)).toBe(1);
+                expect(ctxA_check(nil)).toBe(1);
+                expect(ctxB_check(nil)).toBe(1);
+            end)
+
+            test("Pointer tagged", function()
+                for i = 1, 10 do
+                    expect(ffi.dupe(buffer.create(0)):release():setTag(i):getTag()).toBe(i);
+                end
+            end)
+
+            test("Anonymous Tag", function()
+                for id = 20_000, 20_010 do
+                    expect(ffi.tagName(id)).toBe(nil);
+                end
+            end)
+
+            test("No Conflict", function()
+                expect(any_check(ffi.dupe(buffer.create(0)):release())).toBe(0);
+                expect(ctxA_check(ffi.dupe(buffer.create(0)):release():setTag(1))).toBe(0);
+                expect(ctxB_check(ffi.dupe(buffer.create(0)):release():setTag(2))).toBe(0);
+            end)
+
+            test("Conflict", function()
+                expect(function()
+                    any_check(ffi.dupe(buffer.create(0)):release():setTag(1));
+                end).toThrow("PointerTagMismatch");
+                expect(function()
+                    any_check(ffi.dupe(buffer.create(0)):release():setTag(2));
+                end).toThrow("PointerTagMismatch");
+                expect(function()
+                    ctxA_check(ffi.dupe(buffer.create(0)):release():setTag(2));
+                end).toThrow("PointerTagMismatch");
+                expect(function()
+                    ctxB_check(ffi.dupe(buffer.create(0)):release():setTag(1));
+                end).toThrow("PointerTagMismatch");
+                expect(function()
+                    ctxA_check(ffi.dupe(buffer.create(0)):release());
+                end).toThrow("PointerTagMismatch");
+                expect(function()
+                    ctxB_check(ffi.dupe(buffer.create(0)):release());
+                end).toThrow("PointerTagMismatch");
+            end)
+        end)
     end)
-end);
+
+    test("Lua State", function()
+        local L = ffi.getLuaState();
+        local L2 = ffi.getLuaState();
+        local GL = ffi.getLuaState(true);
+
+        expect(L == L2).toBe(true);
+        expect(L == GL).toBe(false);
+    end)
+end)
