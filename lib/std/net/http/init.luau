@@ -2,7 +2,7 @@
 --!native
 --!optimize 2
 
-local Server = require("./server");
+local Server = require("@self/server");
 
 export type ServerRequest = Server.Request;
 export type ServerResponse = Server.Response;

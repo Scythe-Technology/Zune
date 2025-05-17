@@ -171,6 +171,13 @@ pub fn loadConfiguration(comptime config: ConstantConfig, dir: std.fs.Dir) void 
 }
 
 pub fn loadLuaurc(allocator: std.mem.Allocator, dir: std.fs.Dir, path: ?[]const u8) anyerror!void {
+    // Patch solution
+    if (!IsEnvironmentMapLoaded) {
+        EnvironmentMap = std.process.getEnvMap(allocator) catch std.debug.panic("OutOfMemory", .{});
+        IsEnvironmentMapLoaded = true;
+    }
+
+    const HOME = EnvironmentMap.get("HOME") orelse EnvironmentMap.get("USERPROFILE") orelse std.debug.panic("Failed to setup, $HOME/$USERPROFILE variable not found", .{});
     const local_dir = if (path) |local_path|
         dir.openDir(local_path, .{
             .access_sub_paths = true,
@@ -230,7 +237,6 @@ fn loadEnv(allocator: std.mem.Allocator) !void {
         defer allocator.free(exe_dir);
         break :path try std.fs.path.resolve(allocator, &.{ exe_dir, "lib/std" });
     };
-    try resolvers_require.ALIASES.put("std", path);
     try EnvironmentMap.put("ZUNE_STD_PATH", path);
 }
 

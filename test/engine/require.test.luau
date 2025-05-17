@@ -29,17 +29,17 @@ describe("Require", function()
             expect(res).toBe(`RedundantFileExtension`);
         end)
 
-        local SEP = "/";
+        local SEP = if zune.process.os == "windows" then "\\" else "/"
         test("Name Conflict", function()
             local ok, res = pcall(require, "./generated/duplicate");
             expect(ok).toBeFalsy();
-            expect(res).toBe(`module name conflicted.\n\n- ./generated{SEP}duplicate.luau\n- ./generated{SEP}duplicate.lua`);
+            expect(res).toBe(`module name conflicted.\n\n- .{SEP}generated{SEP}duplicate.luau\n- .{SEP}generated{SEP}duplicate.lua`);
         end)
 
         test("Name Conflict #2", function()
             local ok, res = pcall(require, "./generated/duplicate2");
             expect(ok).toBeFalsy();
-            expect(res).toBe(`module name conflicted.\n\n- ./generated{SEP}duplicate2.luau\n- ./generated{SEP}duplicate2.lua\n- ./generated{SEP}duplicate2{SEP}init.luau`);
+            expect(res).toBe(`module name conflicted.\n\n- .{SEP}generated{SEP}duplicate2.luau\n- .{SEP}generated{SEP}duplicate2.lua`);
         end)
 
         test("Unknown File", function()
@@ -206,5 +206,35 @@ describe("Require with Context", function()
         local func = require("./generated/relative");
         expect(func).toBe(expect.type("function"));
         expect(func()).toBe(expect.type("buffer"));
+    end)
+end)
+
+describe("Amended Requires in Init Files", function()
+    test("Require Child", function()
+        local withinit = require("./module/withinit")
+        expect(withinit.child.t).toBe("child")
+    end)
+    
+    test("Require Sibling", function()
+        local withinit = require("./module/withinit")
+        expect(withinit.sibling).toBe(expect.similar({
+            foo = expect.type("function"),
+            bar = expect.type("function"),
+        }))
+    end)
+    
+    test("Require Parent Sibling", function()
+        local desc = require("./module/withinit/descendant")
+        expect(desc.parent_sibling).toBe(expect.similar({
+            foo = expect.type("function"),
+            bar = expect.type("function"),
+        }))
+    end)
+    
+    test("Bad Require", function()
+        local ok, err = pcall(require, "./module/withinit_bad")
+        expect(ok).toBeFalsy();
+        -- No alias error message will be printed in console
+        expect(err).toBe("requested module failed to load")
     end)
 end)

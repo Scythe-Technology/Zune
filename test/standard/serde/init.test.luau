@@ -59,11 +59,11 @@ expect(serde.zstd).toBe(expect.similar({
     decompress = expect.type("function"),
 }));
 
-require("./json.test");
-require("./json5.test");
-require("./toml.test");
-require("./yaml.test");
-require("./gzip.test");
-require("./zlib.test");
-require("./lz4.test");
-require("./zstd.test");
+require("@self/json.test");
+require("@self/json5.test");
+require("@self/toml.test");
+require("@self/yaml.test");
+require("@self/gzip.test");
+require("@self/zlib.test");
+require("@self/lz4.test");
+require("@self/zstd.test");

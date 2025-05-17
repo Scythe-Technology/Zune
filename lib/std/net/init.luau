@@ -2,8 +2,8 @@
 --!native
 --!optimize 2
 
-local udp = require("./udp");
-local tcp = require("./tcp");
+local udp = require("@self/udp");
+local tcp = require("@self/tcp");
 
 local net = {};
 

@@ -96,11 +96,14 @@ fn require_dtor(ctx: *RequireContext, _: *VM.lua.State, _: *Scheduler) void {
     allocator.free(queue.key_ptr.*);
 }
 
+const NonRegularPathSep = if (std.fs.path.sep == std.fs.path.sep_windows) std.fs.path.sep_posix else std.fs.path.sep_windows;
+const NonRegularPathSepStr = if (std.fs.path.sep_str == std.fs.path.sep_str_windows) std.fs.path.sep_str_posix else std.fs.path.sep_str_windows;
+
 pub fn zune_require(L: *VM.lua.State) !i32 {
     const allocator = luau.getallocator(L);
     const scheduler = Scheduler.getScheduler(L);
 
-    var source: ?[]const u8 = null;
+    var sourceConst: ?[]const u8 = null;
     var ar: VM.lua.Debug = .{ .ssbuf = undefined };
     {
         var level: i32 = 1;
@@ -111,7 +114,16 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
                 break;
         }
     }
-    source = ar.source;
+    sourceConst = ar.source;
+    var source: ?[]u8 = null;
+    defer if (source) |r| allocator.free(r);
+
+    // normalize source to use unix path seps
+    if (sourceConst != null) {
+        source = try allocator.alloc(u8, sourceConst.?.len);
+        @memcpy(source.?, sourceConst.?);
+        _ = std.mem.replace(u8, source.?, "\\", "/", source.?);
+    }
 
     const cwd = std.fs.cwd();
 
@@ -120,14 +132,36 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
     var outErr: ?[]const u8 = null;
     var moduleRelativePath: [:0]const u8 = undefined;
     var searchResult: ?file.SearchResult([:0]const u8) = null;
-    defer if (searchResult) |r| r.deinit();
     if (moduleName.len == 0)
         return L.Zerror("must have either \"@\", \"./\", or \"../\" prefix");
+
+    // a lot of `.?`. is there a better way to do this?
+    const isInit = blk: {
+        if (source == null) {
+            break :blk false;
+        }
+        const lastDelimIdxOpt = std.mem.lastIndexOfScalar(u8, source.?, '/');
+        if (lastDelimIdxOpt == null) {
+            break :blk false;
+        }
+        const lastDelimIdx = lastDelimIdxOpt.?;
+        const fileName = source.?[lastDelimIdx + 1 ..];
+        const dotDelimIdxOpt = std.mem.indexOfScalar(u8, fileName, '.');
+        if (dotDelimIdxOpt == null) {
+            break :blk false;
+        }
+        const dotDelimIdx = dotDelimIdxOpt.?;
+        const sourceName: ?[]const u8 = fileName[0..dotDelimIdx];
+        if (sourceName == null) {
+            break :blk false;
+        }
+        break :blk std.mem.eql(u8, sourceName.?, "init");
+    };
 
     var dir_path: []const u8 = "./";
     var opened_dir = false;
     var dir = blk: {
-        if (MODE == .RelativeToCwd or moduleName[0] == '@')
+        if (MODE == .RelativeToCwd or (moduleName[0] == '@' and !isInit))
             break :blk cwd;
         if (source) |s| jmp: {
             if (s.len <= 1 or s[0] != '@')
@@ -142,24 +176,60 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
     };
     defer if (opened_dir) dir.close();
 
-    var resolvedPath: ?[]const u8 = null;
-    defer if (resolvedPath) |path| allocator.free(path);
+    var resolvedPath: ?[]u8 = null;
 
     if (moduleName.len > 2 and moduleName[0] == '@') {
         const delimiter = std.mem.indexOfScalar(u8, moduleName, '/') orelse moduleName.len;
         const alias = moduleName[1..delimiter];
-        const path = ALIASES.get(alias) orelse return RequireError.NoAlias;
-        resolvedPath = if (moduleName.len - delimiter > 1)
-            try std.fs.path.join(allocator, &.{ path, moduleName[delimiter + 1 ..] })
-        else
-            try allocator.dupe(u8, path);
 
-        searchResult = try file.findLuauFileFromPathZ(allocator, dir, resolvedPath orelse unreachable);
+        if (isInit and std.mem.eql(u8, alias, "self")) {
+            const actualName = moduleName[delimiter + 1 ..];
+            resolvedPath = try std.mem.concat(allocator, u8, &.{ "./", actualName });
+        } else {
+            const path = ALIASES.get(alias) orelse return RequireError.NoAlias;
+            resolvedPath = if (moduleName.len - delimiter > 1)
+                try std.fs.path.join(allocator, &.{ path, moduleName[delimiter + 1 ..] })
+            else
+                try allocator.dupe(u8, path);
+        }
     } else {
-        if (!std.mem.startsWith(u8, moduleName, "./") and !std.mem.startsWith(u8, moduleName, "../"))
+        const is_sibling = std.mem.startsWith(u8, moduleName, "./");
+        const is_parent_sibling = std.mem.startsWith(u8, moduleName, "../");
+        if (!is_sibling and !is_parent_sibling)
             return L.Zerror("must have either \"@\", \"./\", or \"../\" prefix");
-        searchResult = try file.findLuauFileFromPathZ(allocator, dir, moduleName);
+
+        if (isInit) {
+            const delimiter = std.mem.indexOfScalar(u8, moduleName, '/') orelse moduleName.len;
+            const actualName = moduleName[delimiter + 1 ..];
+
+            if (is_sibling) {
+                resolvedPath = try std.fs.path.join(allocator, &.{ "..", actualName });
+            } else {
+                resolvedPath = try std.fs.path.join(allocator, &.{ "..", "..", actualName });
+            }
+        } else {
+            resolvedPath = try std.fs.path.join(allocator, &.{moduleName});
+        }
     }
+
+    std.mem.replaceScalar(u8, resolvedPath.?, NonRegularPathSep, std.fs.path.sep);
+    searchResult = try file.findLuauFileFromPathZ(allocator, dir, resolvedPath orelse unreachable);
+
+    if (resolvedPath != null and searchResult != null and searchResult.?.result == .none) {
+        const directoryInit = try std.fs.path.join(allocator, &.{ resolvedPath.?, "init" });
+        const initSearchResult = try file.findLuauFileFromPathZ(allocator, dir, directoryInit);
+        if (initSearchResult.result != .none) {
+            allocator.free(resolvedPath.?);
+            resolvedPath = directoryInit;
+            searchResult.?.deinit();
+            searchResult = initSearchResult;
+        } else {
+            allocator.free(directoryInit);
+            initSearchResult.deinit();
+        }
+    }
+    defer if (resolvedPath) |r| allocator.free(r);
+    defer if (searchResult) |r| r.deinit();
 
     switch (searchResult.?.result) {
         .exact => |e| moduleRelativePath = e,
@@ -175,6 +245,7 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
                 L.pushlstring(buf.items);
                 return error.RaiseLuauError;
             }
+
             moduleRelativePath = results[0];
         },
         .none => return L.Zerrorf("FileNotFound ({s})", .{resolvedPath orelse moduleName}),
