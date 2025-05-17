@@ -123,3 +123,35 @@ pub fn findLuauFileFromPathZ(allocator: std.mem.Allocator, dir: std.fs.Dir, file
         return error.RedundantFileExtension;
     return try searchForExtensionsZ(allocator, dir, fileName, &POSSIBLE_EXTENSIONS);
 }
+
+pub fn getHomeDir(envMap: std.process.EnvMap) ?[]const u8 {
+    return envMap.get("HOME") orelse envMap.get("USERPROFILE");
+}
+
+pub fn resolvePath(
+    allocator: std.mem.Allocator,
+    envMap: std.process.EnvMap,
+    path: []const u8,
+) ![]u8 {
+    if (path.len > 0 and path[0] == '~' and (path.len == 1 or path[1] == '/' or path[1] == '\\')) {
+        const homeDir = getHomeDir(envMap) orelse return error.HomeDirNotFound;
+        return try std.mem.join(allocator, std.fs.path.sep_str, &.{ homeDir, path[@min(path.len, 2)..] });
+    }
+    return try allocator.dupe(u8, path);
+}
+
+pub fn resolve(
+    allocator: std.mem.Allocator,
+    envMap: std.process.EnvMap,
+    paths: []const []const u8,
+) ![]u8 {
+    var resolvedPaths = try allocator.alloc([]u8, paths.len);
+    defer allocator.free(resolvedPaths);
+    defer for (resolvedPaths) |path| allocator.free(path);
+
+    for (paths, 0..) |path, i| {
+        resolvedPaths[i] = try resolvePath(allocator, envMap, path);
+    }
+
+    return try std.fs.path.resolve(allocator, resolvedPaths);
+}

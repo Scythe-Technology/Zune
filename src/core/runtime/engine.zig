@@ -505,24 +505,19 @@ pub fn checkStatus(L: *VM.lua.State) !VM.lua.Status {
     }
 }
 
-const PrepOptions = struct {
-    args: []const []const u8,
-};
-
-pub fn prep(L: *VM.lua.State, pOpts: PrepOptions, flags: Zune.Flags) !void {
+pub fn prep(L: *VM.lua.State) !void {
     if (luau.CodeGen.Supported() and JIT_ENABLED)
         luau.CodeGen.Create(L);
 
     L.Lopenlibs();
-    try Zune.openZune(L, pOpts.args, flags);
 }
 
-pub fn prepAsync(L: *VM.lua.State, sched: *Scheduler, pOpts: PrepOptions, flags: Zune.Flags) !void {
+pub fn prepAsync(L: *VM.lua.State, sched: *Scheduler) !void {
     const GL = L.mainthread();
 
     GL.setthreaddata(*Scheduler, sched);
 
-    try prep(L, pOpts, flags);
+    try prep(L);
 }
 
 pub fn stateCleanUp() void {

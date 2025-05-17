@@ -29,10 +29,7 @@ const TestOptions = struct {
 pub fn runTest(comptime testFile: TestFile, args: []const []const u8, comptime options: TestOptions) !Zune.corelib.testing.TestResult {
     const allocator = std.testing.allocator;
 
-    switch (comptime builtin.os.tag) {
-        .linux => try xev.Dynamic.detect(), // multiple backends
-        else => {},
-    }
+    try Zune.init();
 
     var L = try luau.init(&allocator);
     defer L.deinit();
@@ -70,11 +67,8 @@ pub fn runTest(comptime testFile: TestFile, args: []const []const u8, comptime o
     }, dir);
 
     try Zune.loadLuaurc(Zune.DEFAULT_ALLOCATOR, cwd, dir_path);
-    try Engine.prepAsync(L, &scheduler, .{
-        .args = args,
-    }, .{
-        .mode = .Test,
-    });
+    try Engine.prepAsync(L, &scheduler);
+    try Zune.openZune(L, args, .{ .mode = .Test });
 
     L.setsafeenv(VM.lua.GLOBALSINDEX, true);
 

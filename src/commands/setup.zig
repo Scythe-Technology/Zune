@@ -239,13 +239,12 @@ fn setup(editor: EditorKind, allocator: std.mem.Allocator, setupInfo: SetupInfo)
 
 const USAGE = "Usage: setup <nvim | zed | vscode | emacs>\n";
 fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
-    const envMap = try allocator.create(std.process.EnvMap);
-    envMap.* = try std.process.getEnvMap(allocator);
+    var envMap = try std.process.getEnvMap(allocator);
     defer envMap.deinit();
 
     const cwd = std.fs.cwd();
 
-    const HOME = envMap.get("HOME") orelse envMap.get("USERPROFILE") orelse std.debug.panic("Failed to setup, $HOME/$USERPROFILE variable not found", .{});
+    const HOME = file.getHomeDir(envMap) orelse std.debug.panic("Failed to setup, $HOME/$USERPROFILE variable not found", .{});
 
     const path = try std.fs.path.resolve(allocator, &.{ HOME, ".zune/typedefs" });
     defer allocator.free(path);

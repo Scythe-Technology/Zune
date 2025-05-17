@@ -155,9 +155,8 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         callbacks.*.debugprotectederror = Debugger.debugprotectederror;
 
         try Zune.loadLuaurc(allocator, std.fs.cwd(), null);
-        try Engine.prepAsync(L, &scheduler, .{
-            .args = run_args,
-        }, LOAD_FLAGS);
+        try Engine.prepAsync(L, &scheduler);
+        try Zune.openZune(L, run_args, LOAD_FLAGS);
 
         L.setsafeenv(VM.lua.GLOBALSINDEX, true);
 

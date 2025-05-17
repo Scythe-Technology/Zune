@@ -48,11 +48,8 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     try Scheduler.SCHEDULERS.append(&scheduler);
 
-    try Engine.prepAsync(L, &scheduler, .{
-        .args = args,
-    }, .{
-        .mode = .Run,
-    });
+    try Engine.prepAsync(L, &scheduler);
+    try Zune.openZune(L, args, .{ .mode = .Run });
 
     Engine.setLuaFileContext(L, .{
         .source = "",

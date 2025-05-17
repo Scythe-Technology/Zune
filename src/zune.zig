@@ -1,3 +1,4 @@
+const xev = @import("xev");
 const std = @import("std");
 const luau = @import("luau");
 const json = @import("json");
@@ -60,6 +61,19 @@ const FEATURES = struct {
 const ConstantConfig = struct {
     loadStd: ?bool = null,
 };
+
+pub var EnvironmentMap: std.process.EnvMap = undefined;
+
+pub fn init() !void {
+    const allocator = DEFAULT_ALLOCATOR;
+
+    EnvironmentMap = try std.process.getEnvMap(allocator);
+
+    switch (comptime builtin.os.tag) {
+        .linux => try xev.Dynamic.detect(), // multiple backends
+        else => {},
+    }
+}
 
 pub fn loadConfiguration(comptime config: ConstantConfig, dir: std.fs.Dir) void {
     const allocator = DEFAULT_ALLOCATOR;
@@ -191,7 +205,7 @@ pub fn loadLuaurc(allocator: std.mem.Allocator, dir: std.fs.Dir, path: ?[]const 
         };
         const keyCopy = try allocator.dupe(u8, key);
         errdefer allocator.free(keyCopy);
-        const valuePath = std.fs.path.resolve(allocator, &.{ path orelse "", valueStr }) catch |err| {
+        const valuePath = resolvers_file.resolve(allocator, EnvironmentMap, &.{ path orelse "", valueStr }) catch |err| {
             std.debug.print("Warning: .luaurc -> aliases '{s}' field must be a valid path: {}\n", .{ key, err });
             allocator.free(keyCopy);
             continue;
@@ -205,8 +219,6 @@ pub fn loadLuaurc(allocator: std.mem.Allocator, dir: std.fs.Dir, path: ?[]const 
         try loadLuaurc(allocator, dir, relative_path);
     }
 }
-
-pub var EnvironmentMap: std.process.EnvMap = undefined;
 
 fn loadEnv(allocator: std.mem.Allocator) !void {
     switch (comptime builtin.os.tag) {
@@ -224,10 +236,6 @@ fn loadEnv(allocator: std.mem.Allocator) !void {
 
 pub fn openZune(L: *VM.lua.State, args: []const []const u8, flags: Flags) !void {
     const allocator = DEFAULT_ALLOCATOR;
-
-    EnvironmentMap = std.process.getEnvMap(allocator) catch std.debug.panic("OutOfMemory", .{});
-
-    L.Lopenlibs();
 
     L.Zsetglobalfn("require", resolvers_require.zune_require);
 

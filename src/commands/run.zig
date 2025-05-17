@@ -127,9 +127,8 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
     try Scheduler.SCHEDULERS.append(&scheduler);
 
     try Zune.loadLuaurc(Zune.DEFAULT_ALLOCATOR, std.fs.cwd(), null);
-    try Engine.prepAsync(L, &scheduler, .{
-        .args = run_args,
-    }, LOAD_FLAGS);
+    try Engine.prepAsync(L, &scheduler);
+    try Zune.openZune(L, run_args, LOAD_FLAGS);
 
     L.setsafeenv(VM.lua.GLOBALSINDEX, true);
 

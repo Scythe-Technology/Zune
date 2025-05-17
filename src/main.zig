@@ -38,10 +38,7 @@ pub fn main() !void {
         else => {},
     }
 
-    switch (comptime builtin.os.tag) {
-        .linux => try xev.detect(), // multiple backends
-        else => {},
-    }
+    try Zune.init();
 
     try Zune.cli.start();
 }
