@@ -97,7 +97,6 @@ fn require_dtor(ctx: *RequireContext, _: *VM.lua.State, _: *Scheduler) void {
 }
 
 const NonRegularPathSep = if (std.fs.path.sep == std.fs.path.sep_windows) std.fs.path.sep_posix else std.fs.path.sep_windows;
-const NonRegularPathSepStr = if (std.fs.path.sep_str == std.fs.path.sep_str_windows) std.fs.path.sep_str_posix else std.fs.path.sep_str_windows;
 
 pub fn zune_require(L: *VM.lua.State) !i32 {
     const allocator = luau.getallocator(L);
@@ -120,8 +119,7 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
 
     // normalize source to use unix path seps
     if (sourceConst != null) {
-        source = try allocator.alloc(u8, sourceConst.?.len);
-        @memcpy(source.?, sourceConst.?);
+        source = try allocator.dupe(u8, sourceConst);
         _ = std.mem.replace(u8, source.?, "\\", "/", source.?);
     }
 
@@ -132,6 +130,7 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
     var outErr: ?[]const u8 = null;
     var moduleRelativePath: [:0]const u8 = undefined;
     var searchResult: ?file.SearchResult([:0]const u8) = null;
+    defer if (searchResult) |r| r.deinit();
     if (moduleName.len == 0)
         return L.Zerror("must have either \"@\", \"./\", or \"../\" prefix");
 
@@ -177,6 +176,7 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
     defer if (opened_dir) dir.close();
 
     var resolvedPath: ?[]u8 = null;
+    defer if (resolvedPath) |r| allocator.free(r);
 
     if (moduleName.len > 2 and moduleName[0] == '@') {
         const delimiter = std.mem.indexOfScalar(u8, moduleName, '/') orelse moduleName.len;
@@ -228,8 +228,6 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
             initSearchResult.deinit();
         }
     }
-    defer if (resolvedPath) |r| allocator.free(r);
-    defer if (searchResult) |r| r.deinit();
 
     switch (searchResult.?.result) {
         .exact => |e| moduleRelativePath = e,
