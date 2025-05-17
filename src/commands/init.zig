@@ -17,11 +17,6 @@ const INIT_CONFIG_FILE =
     \\optimizationLevel = 1
     \\nativeCodeGen = true
     \\
-    \\# Require settings for Zune
-    \\#  This affects the way Zune loads files.
-    \\[resolvers.require]
-    \\loadStd = true
-    \\
     \\# Formatter settings
     \\#  This affects the output of the formatter while printing.
     \\[resolvers.formatter]

@@ -58,10 +58,6 @@ const FEATURES = struct {
     pub var ffi = true;
 };
 
-const ConstantConfig = struct {
-    loadStd: ?bool = null,
-};
-
 pub var EnvironmentMap: std.process.EnvMap = undefined;
 
 pub fn init() !void {
@@ -75,7 +71,7 @@ pub fn init() !void {
     }
 }
 
-pub fn loadConfiguration(comptime config: ConstantConfig, dir: std.fs.Dir) void {
+pub fn loadConfiguration(dir: std.fs.Dir) void {
     const allocator = DEFAULT_ALLOCATOR;
     const config_content = dir.readFileAlloc(allocator, "zune.toml", std.math.maxInt(usize)) catch |err| switch (err) {
         error.FileNotFound => return,
@@ -151,9 +147,6 @@ pub fn loadConfiguration(comptime config: ConstantConfig, dir: std.fs.Dir) void 
                     std.debug.print("[zune.toml] 'Mode' must be 'RelativeToProject' or 'RelativeToFile'\n", .{});
                 }
             }
-            if (toml.checkOptionBool(require_config, "loadStd")) |enabled| {
-                STD_ENABLED = enabled;
-            }
         }
     }
 
@@ -165,9 +158,6 @@ pub fn loadConfiguration(comptime config: ConstantConfig, dir: std.fs.Dir) void 
             }
         }
     }
-
-    if (comptime config.loadStd) |enabled|
-        STD_ENABLED = enabled;
 }
 
 pub fn loadLuaurc(allocator: std.mem.Allocator, dir: std.fs.Dir, path: ?[]const u8) anyerror!void {
@@ -220,22 +210,7 @@ pub fn loadLuaurc(allocator: std.mem.Allocator, dir: std.fs.Dir, path: ?[]const 
     }
 }
 
-fn loadEnv(allocator: std.mem.Allocator) !void {
-    switch (comptime builtin.os.tag) {
-        .linux, .macos, .windows => {},
-        else => return,
-    }
-    const path = EnvironmentMap.get("ZUNE_STD_PATH") orelse path: {
-        const exe_dir = try std.fs.selfExeDirPathAlloc(allocator);
-        defer allocator.free(exe_dir);
-        break :path try std.fs.path.resolve(allocator, &.{ exe_dir, "lib/std" });
-    };
-    try EnvironmentMap.put("ZUNE_STD_PATH", path);
-}
-
 pub fn openZune(L: *VM.lua.State, args: []const []const u8, flags: Flags) !void {
-    const allocator = DEFAULT_ALLOCATOR;
-
     L.Zsetglobalfn("require", resolvers_require.zune_require);
 
     objects.load(L);
@@ -297,9 +272,6 @@ pub fn openZune(L: *VM.lua.State, args: []const []const u8, flags: Flags) !void 
 
         corelib.testing.loadLib(L, flags.mode == .Test);
     }
-
-    if (STD_ENABLED)
-        try loadEnv(allocator);
 }
 
 test "Zune" {

@@ -76,4 +76,3 @@ jobs:
         name: ${{ matrix.artifact }}
         path: |
           ./zig-out/bin/zune${{ matrix.ext }}
-          ./zig-out/bin/lib/**/*.luau

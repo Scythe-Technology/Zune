@@ -15,16 +15,3 @@ pub const datetime = @import("datetime/lib.zig");
 test {
     @import("std").testing.refAllDecls(@This());
 }
-
-test "@std" {
-    const std = @import("std");
-    const TestRunner = @import("../utils/testrunner.zig");
-
-    const testResult = try TestRunner.runTest(
-        TestRunner.newTestFile("lib/std.test.luau"),
-        &.{},
-        .{},
-    );
-
-    try std.testing.expect(testResult.failed == 0);
-}
