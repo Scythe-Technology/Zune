@@ -118,8 +118,8 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
     defer if (source) |r| allocator.free(r);
 
     // normalize source to use unix path seps
-    if (sourceConst != null) {
-        source = try allocator.dupe(u8, sourceConst);
+    if (sourceConst) |src| {
+        source = try allocator.dupe(u8, src);
         _ = std.mem.replace(u8, source.?, "\\", "/", source.?);
     }
 
