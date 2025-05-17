@@ -135,7 +135,7 @@ pub fn resolvePath(
 ) ![]u8 {
     if (path.len > 0 and path[0] == '~' and (path.len == 1 or path[1] == '/' or path[1] == '\\')) {
         const homeDir = getHomeDir(envMap) orelse return error.HomeDirNotFound;
-        return try std.mem.join(allocator, std.fs.path.sep_str, &.{ homeDir, path[@min(path.len, 2)..] });
+        return try fs.path.join(allocator, &.{ homeDir, path[@min(path.len, 2)..] });
     }
     return try allocator.dupe(u8, path);
 }
@@ -153,5 +153,5 @@ pub fn resolve(
         resolvedPaths[i] = try resolvePath(allocator, envMap, path);
     }
 
-    return try std.fs.path.resolve(allocator, resolvedPaths);
+    return try fs.path.resolve(allocator, resolvedPaths);
 }
