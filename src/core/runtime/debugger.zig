@@ -2,7 +2,7 @@ const std = @import("std");
 const luau = @import("luau");
 const builtin = @import("builtin");
 
-const Zune = @import("../../zune.zig");
+const Zune = @import("zune");
 
 const Engine = @import("engine.zig");
 const Scheduler = @import("scheduler.zig");

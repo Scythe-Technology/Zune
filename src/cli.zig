@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const Zune = @import("zune.zig");
+const Zune = @import("zune");
 
 const Commands = @import("commands/lib.zig");
 

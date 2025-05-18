@@ -7,6 +7,10 @@ local test = testing.test;
 local expect = testing.expect;
 local describe = testing.describe;
 
+local function warn(message: string)
+    print("\27[33m" .. message .. "\27[0m");
+end
+
 if (not ffi) then
     warn("Skipping 'FFI' tests (Not Supported)");
     return;
@@ -1116,6 +1120,7 @@ describe("FFI", function()
                 local ptr = nil;
                 test("Symbol<*i32 new_i32()>", function()
                     ptr = lib.new_i32();
+
                     ptr:setSize(ffi.types.i32:size());
                     expect(ptr).toBe(expect.type("userdata"));
 
