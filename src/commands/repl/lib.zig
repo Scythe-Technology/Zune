@@ -1,9 +1,10 @@
 const std = @import("std");
 const luau = @import("luau");
 
+const Zune = @import("zune");
+
 const command = @import("../lib.zig");
 
-const Zune = @import("../../zune.zig");
 const Engine = @import("../../core/runtime/engine.zig");
 const Scheduler = @import("../../core/runtime/scheduler.zig");
 

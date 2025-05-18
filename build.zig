@@ -108,6 +108,118 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const no_bin = b.option(bool, "no-bin", "skip emitting binary") orelse false;
+
+    const prebuild_step = b.step("prebuild", "Setup project for build");
+
+    try prebuild(b, prebuild_step);
+    const lib = b.addInstallDirectory(.{
+        .source_dir = b.path("lib"),
+        .install_dir = .bin,
+        .install_subdir = "lib",
+    });
+
+    var version = try getPackageVersion(b);
+    if (std.mem.indexOf(u8, version, "-dev")) |_| {
+        const hash = b.run(&.{ "git", "rev-parse", "--short", "HEAD" });
+        const trimmed = std.mem.trim(u8, hash, "\r\n ");
+        version = try std.mem.join(b.allocator, ".", &.{ version, trimmed });
+    }
+
+    const zune_info = b.addOptions();
+    zune_info.addOption([]const u8, "version", version);
+
+    const exe = b.addExecutable(.{
+        .name = "zune",
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+        .strip = switch (optimize) {
+            .Debug, .ReleaseSafe => null,
+            .ReleaseFast, .ReleaseSmall => true,
+        },
+    });
+
+    exe.step.dependOn(&lib.step);
+    exe.step.dependOn(prebuild_step);
+
+    buildZune(
+        b,
+        target,
+        optimize,
+        exe.root_module,
+        zune_info,
+    );
+
+    if (no_bin) {
+        b.getInstallStep().dependOn(&exe.step);
+    } else {
+        b.installArtifact(exe);
+    }
+
+    const run_cmd = b.addRunArtifact(exe);
+
+    run_cmd.step.dependOn(b.getInstallStep());
+
+    if (b.args) |args| run_cmd.addArgs(args);
+
+    const run_step = b.step("run", "Run the app");
+    run_step.dependOn(&run_cmd.step);
+
+    const sample_dylib = b.addSharedLibrary(.{
+        .name = "sample",
+        .root_source_file = b.path("test/standard/ffi/sample.zig"),
+        .link_libc = false,
+        .target = target,
+        .optimize = .ReleaseSafe,
+    });
+
+    sample_dylib.step.dependOn(prebuild_step);
+
+    const install_sample_dylib = b.addInstallArtifact(sample_dylib, .{
+        .dest_dir = .{ .override = .lib },
+    });
+
+    const exe_unit_tests = b.addTest(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+        .filters = b.args orelse &.{},
+        .test_runner = .{
+            .mode = .simple,
+            .path = b.path("test/runner.zig"),
+        },
+    });
+
+    exe_unit_tests.step.dependOn(prebuild_step);
+
+    buildZune(
+        b,
+        target,
+        optimize,
+        exe_unit_tests.root_module,
+        zune_info,
+    );
+
+    exe_unit_tests.step.dependOn(&install_sample_dylib.step);
+
+    const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
+
+    const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(&run_exe_unit_tests.step);
+
+    const version_step = b.step("version", "Get build version");
+
+    version_step.dependOn(&b.addSystemCommand(&.{ "echo", version }).step);
+}
+
+fn buildZune(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    module: *std.Build.Module,
+    zune_info: *std.Build.Step.Options,
+) void {
     const packed_optimize = switch (optimize) {
         .ReleaseFast => .ReleaseSmall,
         else => optimize,
@@ -147,119 +259,19 @@ pub fn build(b: *std.Build) !void {
     const mod_sqlite = dep_sqlite.module("z-sqlite");
     const mod_tinycc = dep_tinycc.module("tinycc");
 
-    const no_bin = b.option(bool, "no-bin", "skip emitting binary") orelse false;
+    module.addImport("zune", module);
 
-    const prebuild_step = b.step("prebuild", "Setup project for build");
+    module.addOptions("zune-info", zune_info);
 
-    try prebuild(b, prebuild_step);
-    const lib = b.addInstallDirectory(.{
-        .source_dir = b.path("lib"),
-        .install_dir = .bin,
-        .install_subdir = "lib",
-    });
-
-    var version = try getPackageVersion(b);
-    if (std.mem.indexOf(u8, version, "-dev")) |_| {
-        const hash = b.run(&.{ "git", "rev-parse", "--short", "HEAD" });
-        const trimmed = std.mem.trim(u8, hash, "\r\n ");
-        version = try std.mem.join(b.allocator, ".", &.{ version, trimmed });
-    }
-
-    const zune_info = b.addOptions();
-    zune_info.addOption([]const u8, "version", version);
-
-    const exe = b.addExecutable(.{
-        .name = "zune",
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
-        .strip = switch (optimize) {
-            .Debug, .ReleaseSafe => null,
-            .ReleaseFast, .ReleaseSmall => true,
-        },
-    });
-
-    exe.step.dependOn(&lib.step);
-    exe.step.dependOn(prebuild_step);
-
-    exe.root_module.addOptions("zune-info", zune_info);
-
-    exe.root_module.addImport("xev", mod_xev);
-    exe.root_module.addImport("yaml", mod_yaml);
-    exe.root_module.addImport("lz4", mod_lz4);
-    exe.root_module.addImport("zstd", mod_zstd);
-    exe.root_module.addImport("json", mod_json);
-    exe.root_module.addImport("luau", mod_luau);
-    exe.root_module.addImport("regex", mod_pcre2);
-    exe.root_module.addImport("datetime", mod_datetime);
-    exe.root_module.addImport("toml", mod_toml);
-    exe.root_module.addImport("sqlite", mod_sqlite);
-    exe.root_module.addImport("tinycc", mod_tinycc);
-
-    if (no_bin) {
-        b.getInstallStep().dependOn(&exe.step);
-    } else {
-        b.installArtifact(exe);
-    }
-
-    const run_cmd = b.addRunArtifact(exe);
-
-    run_cmd.step.dependOn(b.getInstallStep());
-
-    if (b.args) |args| run_cmd.addArgs(args);
-
-    const run_step = b.step("run", "Run the app");
-    run_step.dependOn(&run_cmd.step);
-
-    const sample_dylib = b.addSharedLibrary(.{
-        .name = "sample",
-        .root_source_file = b.path("test/standard/ffi/sample.zig"),
-        .link_libc = true,
-        .target = target,
-        .optimize = .ReleaseSmall,
-    });
-
-    sample_dylib.step.dependOn(prebuild_step);
-
-    const install_sample_dylib = b.addInstallArtifact(sample_dylib, .{
-        .dest_dir = .{ .override = .lib },
-    });
-
-    const exe_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
-        .filters = b.args orelse &.{},
-        .test_runner = .{
-            .mode = .simple,
-            .path = b.path("test/runner.zig"),
-        },
-    });
-
-    exe_unit_tests.step.dependOn(prebuild_step);
-
-    exe_unit_tests.root_module.addOptions("zune-info", zune_info);
-
-    exe_unit_tests.root_module.addImport("xev", dep_xev.module("xev"));
-    exe_unit_tests.root_module.addImport("yaml", dep_yaml.module("yaml"));
-    exe_unit_tests.root_module.addImport("lz4", dep_lz4.module("lz4"));
-    exe_unit_tests.root_module.addImport("zstd", dep_zstd.module("zig-zstd"));
-    exe_unit_tests.root_module.addImport("json", dep_json.module("json"));
-    exe_unit_tests.root_module.addImport("luau", dep_luau.module("luau"));
-    exe_unit_tests.root_module.addImport("regex", dep_pcre2.module("zpcre2"));
-    exe_unit_tests.root_module.addImport("datetime", dep_datetime.module("zdt"));
-    exe_unit_tests.root_module.addImport("toml", dep_toml.module("tomlz"));
-    exe_unit_tests.root_module.addImport("sqlite", dep_sqlite.module("z-sqlite"));
-    exe_unit_tests.root_module.addImport("tinycc", dep_tinycc.module("tinycc"));
-
-    exe_unit_tests.step.dependOn(&install_sample_dylib.step);
-
-    const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
-
-    const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_exe_unit_tests.step);
-
-    const version_step = b.step("version", "Get build version");
-
-    version_step.dependOn(&b.addSystemCommand(&.{ "echo", version }).step);
+    module.addImport("xev", mod_xev);
+    module.addImport("yaml", mod_yaml);
+    module.addImport("lz4", mod_lz4);
+    module.addImport("zstd", mod_zstd);
+    module.addImport("json", mod_json);
+    module.addImport("luau", mod_luau);
+    module.addImport("regex", mod_pcre2);
+    module.addImport("datetime", mod_datetime);
+    module.addImport("toml", mod_toml);
+    module.addImport("sqlite", mod_sqlite);
+    module.addImport("tinycc", mod_tinycc);
 }

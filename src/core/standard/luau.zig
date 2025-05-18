@@ -2,7 +2,7 @@ const std = @import("std");
 const luau = @import("luau");
 const json = @import("json");
 
-const Engine = @import("../runtime/engine.zig");
+const Zune = @import("zune");
 
 const luaHelper = @import("../utils/luahelper.zig");
 
@@ -16,8 +16,8 @@ fn lua_compile(L: *VM.lua.State) !i32 {
     const source = try L.Zcheckvalue([]const u8, 1, null);
 
     var compileOpts = luau.CompileOptions{
-        .debug_level = Engine.DEBUG_LEVEL,
-        .optimization_level = Engine.OPTIMIZATION_LEVEL,
+        .debug_level = Zune.STATE.DEBUG_LEVEL,
+        .optimization_level = Zune.STATE.OPTIMIZATION_LEVEL,
     };
 
     if (try L.Zcheckvalue(?struct {
@@ -96,7 +96,7 @@ fn lua_load(L: *VM.lua.State) !i32 {
         } else L.pop(1);
     }
 
-    if (useCodeGen and luau.CodeGen.Supported() and Engine.JIT_ENABLED)
+    if (useCodeGen and luau.CodeGen.Supported() and Zune.STATE.JIT_ENABLED)
         luau.CodeGen.Compile(L, -1);
 
     return 1;

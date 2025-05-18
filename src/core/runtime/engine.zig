@@ -1,18 +1,13 @@
 const std = @import("std");
 const luau = @import("luau");
 
-const Zune = @import("../../zune.zig");
+const Zune = @import("zune");
+
 const file = @import("../resolvers/file.zig");
 const require = @import("../resolvers/require.zig");
 const Scheduler = @import("../runtime/scheduler.zig");
 
 const VM = luau.VM;
-
-pub var DEBUG_LEVEL: u2 = 2;
-pub var OPTIMIZATION_LEVEL: u2 = 1;
-pub var CODEGEN: bool = true;
-pub var JIT_ENABLED: bool = true;
-pub var USE_DETAILED_ERROR: bool = true;
 
 pub const LuauCompileError = error{
     Syntax,
@@ -24,8 +19,8 @@ pub const LuauRunError = enum {
 
 pub fn compileModule(allocator: std.mem.Allocator, content: []const u8, cOpts: ?luau.CompileOptions) !struct { bool, []const u8 } {
     const compileOptions = cOpts orelse luau.CompileOptions{
-        .debug_level = DEBUG_LEVEL,
-        .optimization_level = OPTIMIZATION_LEVEL,
+        .debug_level = Zune.STATE.DEBUG_LEVEL,
+        .optimization_level = Zune.STATE.OPTIMIZATION_LEVEL,
     };
     const luau_allocator = luau.Ast.Allocator.init();
     defer luau_allocator.deinit();
@@ -74,7 +69,7 @@ pub fn loadModuleBytecode(L: *VM.lua.State, moduleName: [:0]const u8, bytecode: 
     L.load(moduleName, bytecode, 0) catch {
         return LuauCompileError.Syntax;
     };
-    if (luau.CodeGen.Supported() and CODEGEN and !nativeAttribute and JIT_ENABLED)
+    if (luau.CodeGen.Supported() and Zune.STATE.CODEGEN and !nativeAttribute and Zune.STATE.JIT_ENABLED)
         luau.CodeGen.Compile(L, -1);
 }
 
@@ -462,7 +457,7 @@ pub fn logDetailedError(L: *VM.lua.State) !void {
 pub fn logError(L: *VM.lua.State, err: anyerror, forceDetailed: bool) void {
     switch (err) {
         error.Runtime => {
-            if (USE_DETAILED_ERROR or forceDetailed) {
+            if (Zune.STATE.USE_DETAILED_ERROR or forceDetailed) {
                 logDetailedError(L) catch |e| std.debug.panic("{}", .{e});
             } else {
                 switch (L.typeOf(-1)) {
@@ -506,7 +501,7 @@ pub fn checkStatus(L: *VM.lua.State) !VM.lua.Status {
 }
 
 pub fn prep(L: *VM.lua.State) !void {
-    if (luau.CodeGen.Supported() and JIT_ENABLED)
+    if (luau.CodeGen.Supported() and Zune.STATE.JIT_ENABLED)
         luau.CodeGen.Create(L);
 
     L.Lopenlibs();

@@ -3,7 +3,8 @@ const tinycc = @import("tinycc");
 const luau = @import("luau");
 const builtin = @import("builtin");
 
-const Zune = @import("../../zune.zig");
+const Zune = @import("zune");
+
 const Engine = @import("../runtime/engine.zig");
 const Scheduler = @import("../runtime/scheduler.zig");
 

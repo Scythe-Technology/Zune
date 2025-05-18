@@ -7,6 +7,10 @@ local describe = testing.describe;
 local expect = testing.expect;
 local test = testing.test;
 
+local function warn(message: string)
+    print("\27[33m" .. message .. "\27[0m");
+end
+
 local _, version, _ = string.match(_VERSION, "(Zune) (%d+%.%d+%.%d+.*)+(%d+%.%d+)");
 assert(version and #version > 0, "No version");
 

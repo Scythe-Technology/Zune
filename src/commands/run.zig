@@ -1,9 +1,9 @@
 const std = @import("std");
 const luau = @import("luau");
 
-const command = @import("lib.zig");
+const Zune = @import("zune");
 
-const Zune = @import("../zune.zig");
+const command = @import("lib.zig");
 
 const Engine = @import("../core/runtime/engine.zig");
 const Profiler = @import("../core/runtime/profiler.zig");
@@ -56,7 +56,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
                     '2' => 2,
                     else => unreachable,
                 };
-                Engine.OPTIMIZATION_LEVEL = level;
+                Zune.STATE.OPTIMIZATION_LEVEL = level;
             } else {
                 std.debug.print("Flag: -O, Invalid Optimization level, usage: -O<N>\n", .{});
                 return;
@@ -69,17 +69,17 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
                     '2' => 2,
                     else => unreachable,
                 };
-                Engine.DEBUG_LEVEL = level;
+                Zune.STATE.DEBUG_LEVEL = level;
             } else {
                 std.debug.print("Flag: -g, Invalid Debug level, usage: -g<N>\n", .{});
                 return;
             }
         } else if (std.mem.eql(u8, flag, "--native")) {
-            Engine.CODEGEN = true;
+            Zune.STATE.CODEGEN = true;
         } else if (std.mem.eql(u8, flag, "--no-native")) {
-            Engine.CODEGEN = false;
+            Zune.STATE.CODEGEN = false;
         } else if (std.mem.eql(u8, flag, "--no-jit")) {
-            Engine.JIT_ENABLED = false;
+            Zune.STATE.JIT_ENABLED = false;
         } else if (std.mem.eql(u8, flag, "--limbo")) {
             LOAD_FLAGS.limbo = true;
         }

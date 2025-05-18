@@ -1,7 +1,8 @@
 const std = @import("std");
 const luau = @import("luau");
 
-const Zune = @import("../../zune.zig");
+const Zune = @import("zune");
+
 const Engine = @import("../runtime/engine.zig");
 const Scheduler = @import("../runtime/scheduler.zig");
 const Debugger = @import("../runtime/debugger.zig");
@@ -10,21 +11,10 @@ const file = @import("file.zig");
 
 const VM = luau.VM;
 
-pub var MODE: RequireMode = .RelativeToFile;
-
-pub var RUN_MODE: Zune.RunMode = .Run;
-
-const RequireMode = enum {
-    RelativeToFile,
-    RelativeToCwd,
-};
-
 const RequireError = error{
     ModuleNotFound,
     NoAlias,
 };
-
-pub var ALIASES: std.StringArrayHashMap([]const u8) = std.StringArrayHashMap([]const u8).init(Zune.DEFAULT_ALLOCATOR);
 
 const States = enum {
     Error,
@@ -160,7 +150,7 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
     var dir_path: []const u8 = "./";
     var opened_dir = false;
     var dir = blk: {
-        if (MODE == .RelativeToCwd or (moduleName[0] == '@' and !isInit))
+        if (Zune.STATE.REQUIRE_MODE == .RelativeToCwd or (moduleName[0] == '@' and !isInit))
             break :blk cwd;
         if (source) |s| jmp: {
             if (s.len <= 1 or s[0] != '@')
@@ -186,7 +176,7 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
             const actualName = moduleName[delimiter + 1 ..];
             resolvedPath = try std.mem.concat(allocator, u8, &.{ "./", actualName });
         } else {
-            const path = ALIASES.get(alias) orelse return RequireError.NoAlias;
+            const path = Zune.STATE.ALIASES.get(alias) orelse return RequireError.NoAlias;
             resolvedPath = if (moduleName.len - delimiter > 1)
                 try std.fs.path.join(allocator, &.{ path, moduleName[delimiter + 1 ..] })
             else
@@ -317,7 +307,7 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
             },
         };
 
-        switch (RUN_MODE) {
+        switch (Zune.STATE.RUN_MODE) {
             .Debug => {
                 const ref = ML.ref(-1) orelse unreachable;
                 try Debugger.addReference(allocator, ML, resolvedModuleRelativePathZ, ref);

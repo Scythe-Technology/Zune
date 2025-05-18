@@ -3,7 +3,8 @@ const xev = @import("xev").Dynamic;
 const luau = @import("luau");
 const builtin = @import("builtin");
 
-const Zune = @import("../../zune.zig");
+const Zune = @import("zune");
+
 const tagged = @import("../../tagged.zig");
 
 const Engine = @import("../runtime/engine.zig");
@@ -509,7 +510,7 @@ fn process_loadEnv(L: *VM.lua.State) !i32 {
     const allocator = luau.getallocator(L);
     L.newtable();
 
-    var iterator = Zune.EnvironmentMap.iterator();
+    var iterator = Zune.STATE.ENV_MAP.iterator();
     while (iterator.next()) |entry| {
         const zkey = try allocator.dupeZ(u8, entry.key_ptr.*);
         defer allocator.free(zkey);
@@ -517,7 +518,7 @@ fn process_loadEnv(L: *VM.lua.State) !i32 {
     }
 
     try loadEnvironment(L, allocator, ".env");
-    if (Zune.EnvironmentMap.get("LUAU_ENV")) |value| {
+    if (Zune.STATE.ENV_MAP.get("LUAU_ENV")) |value| {
         if (std.mem.eql(u8, value, "PRODUCTION")) {
             try loadEnvironment(L, allocator, ".env.production");
         } else if (std.mem.eql(u8, value, "DEVELOPMENT")) {

@@ -2,9 +2,9 @@ const std = @import("std");
 const luau = @import("luau");
 const builtin = @import("builtin");
 
-const command = @import("lib.zig");
+const Zune = @import("zune");
 
-const Zune = @import("../zune.zig");
+const command = @import("lib.zig");
 
 const Engine = @import("../core/runtime/engine.zig");
 const Scheduler = @import("../core/runtime/scheduler.zig");
@@ -81,7 +81,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
                     '2' => 2,
                     else => unreachable,
                 };
-                Engine.OPTIMIZATION_LEVEL = level;
+                Zune.STATE.OPTIMIZATION_LEVEL = level;
             } else {
                 std.debug.print("Flag: -O, Invalid Optimization level, usage: -O<N>\n", .{});
                 return;
@@ -93,11 +93,11 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         }
     };
 
-    Engine.DEBUG_LEVEL = 2;
-    Engine.CODEGEN = false;
-    Engine.JIT_ENABLED = false;
+    Zune.STATE.DEBUG_LEVEL = 2;
+    Zune.STATE.CODEGEN = false;
+    Zune.STATE.JIT_ENABLED = false;
 
-    Zune.resolvers_require.RUN_MODE = .Debug;
+    Zune.STATE.RUN_MODE = .Debug;
 
     const dir = std.fs.cwd();
     const module = run_args[0];

@@ -3,8 +3,9 @@ const xev = @import("xev");
 const luau = @import("luau");
 const builtin = @import("builtin");
 
+const Zune = @import("zune");
+
 const Engine = @import("engine.zig");
-const Zune = @import("../../zune.zig");
 
 const Lists = @import("../utils/lists.zig");
 
