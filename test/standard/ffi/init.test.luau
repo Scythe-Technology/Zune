@@ -1124,7 +1124,7 @@ describe("FFI", function()
                 local ptr = nil;
                 test("Symbol<*i32 new_i32()>", function()
                     ptr = lib.new_i32();
-                    print("new_i32");
+
                     ptr:setSize(ffi.types.i32:size());
                     expect(ptr).toBe(expect.type("userdata"));
 
