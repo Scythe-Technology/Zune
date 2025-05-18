@@ -64,11 +64,7 @@ else
     error("Unsupported OS: " .. process.os);
 end
 
--- Workaround for Windows tests, test sample library
 local static_suffix = ffi.suffix;
-if (process.os == "windows") then
-    -- static_suffix = "lib";
-end
 
 local function testBufferOfValue(size: number, writer: (b: buffer, o: number, v: number) -> (), value: number): buffer
     local buf = buffer.create(size);
