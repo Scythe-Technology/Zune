@@ -3,10 +3,14 @@ const xev = @import("xev").Dynamic;
 const luau = @import("luau");
 const builtin = @import("builtin");
 
-const Scheduler = @import("../../../runtime/scheduler.zig");
+const Zune = @import("zune");
+
+const Scheduler = Zune.Runtime.Scheduler;
+
+const LuaHelper = Zune.Utils.LuaHelper;
+
 const Response = @import("../http/response.zig");
 const WebSocket = @import("../http/websocket.zig");
-const luaHelper = @import("../../../utils/luahelper.zig");
 
 const zune_info = @import("zune-info");
 
@@ -100,7 +104,7 @@ const RequestAsyncContext = struct {
                 var responseBody = std.ArrayList(u8).init(allocator);
                 defer responseBody.deinit();
 
-                self.request.reader().readAllArrayList(&responseBody, luaHelper.MAX_LUAU_SIZE) catch |err| {
+                self.request.reader().readAllArrayList(&responseBody, LuaHelper.MAX_LUAU_SIZE) catch |err| {
                     L.pushstring(@errorName(err));
                     _ = Scheduler.resumeStateError(L, null) catch {};
                     return;

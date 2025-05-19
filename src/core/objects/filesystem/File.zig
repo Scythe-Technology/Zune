@@ -3,12 +3,15 @@ const xev = @import("xev").Dynamic;
 const luau = @import("luau");
 const builtin = @import("builtin");
 
-const tagged = @import("../../../tagged.zig");
-const MethodMap = @import("../../utils/method_map.zig");
-const luaHelper = @import("../../utils/luahelper.zig");
-const sysfd = @import("../../utils/sysfd.zig");
+const Zune = @import("zune");
 
-const Scheduler = @import("../../runtime/scheduler.zig");
+const Scheduler = Zune.Runtime.Scheduler;
+
+const LuaHelper = Zune.Utils.LuaHelper;
+const MethodMap = Zune.Utils.MethodMap;
+
+const tagged = @import("../../../tagged.zig");
+const sysfd = @import("../../utils/sysfd.zig");
 
 const VM = luau.VM;
 
@@ -85,7 +88,7 @@ pub const AsyncReadContext = struct {
         .data = .{},
     },
     ref: Scheduler.ThreadRef,
-    limit: usize = luaHelper.MAX_LUAU_SIZE,
+    limit: usize = LuaHelper.MAX_LUAU_SIZE,
     array: std.ArrayList(u8) = undefined,
     lua_type: VM.lua.Type = .String,
     buffer_len: usize = 0,
@@ -530,7 +533,7 @@ fn lua_seekBy(self: *File, L: *VM.lua.State) !i32 {
 }
 
 fn lua_read(self: *File, L: *VM.lua.State) !i32 {
-    const size = L.Loptunsigned(2, luaHelper.MAX_LUAU_SIZE);
+    const size = L.Loptunsigned(2, LuaHelper.MAX_LUAU_SIZE);
     if (!self.mode.canRead())
         return error.NotOpenForReading;
     return AsyncReadContext.queue(
@@ -549,7 +552,7 @@ fn lua_readSync(self: *File, L: *VM.lua.State) !i32 {
     if (!self.mode.canRead())
         return error.NotOpenForReading;
     const allocator = luau.getallocator(L);
-    const size = L.Loptunsigned(2, luaHelper.MAX_LUAU_SIZE);
+    const size = L.Loptunsigned(2, LuaHelper.MAX_LUAU_SIZE);
     const useBuffer = L.Loptboolean(3, false);
     switch (self.kind) {
         .File => {

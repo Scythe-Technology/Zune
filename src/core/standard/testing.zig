@@ -3,12 +3,12 @@ const luau = @import("luau");
 
 const Zune = @import("zune");
 
-const Engine = @import("../runtime/engine.zig");
-const Scheduler = @import("../runtime/scheduler.zig");
+const Engine = Zune.Runtime.Engine;
+const Scheduler = Zune.Runtime.Scheduler;
 
-const formatter = @import("../resolvers/fmt.zig");
+const Fmt = Zune.Resolvers.Fmt;
 
-const luaHelper = @import("../utils/luahelper.zig");
+const LuaHelper = Zune.Utils.LuaHelper;
 
 const test_lib_gz = @embedFile("../lua/testing_lib.luac.gz");
 const test_lib_size = @embedFile("../lua/testing_lib.luac").len;
@@ -79,7 +79,7 @@ fn testing_checkLeakedReferences(L: *VM.lua.State) !i32 {
         const scope_copy = try allocator.dupe(u8, scope);
 
         var buf = std.ArrayList(u8).init(allocator);
-        try formatter.fmt_write_idx(allocator, L, buf.writer(), @intCast(L.gettop()), formatter.MAX_DEPTH);
+        try Fmt.writeIdx(allocator, L, buf.writer(), @intCast(L.gettop()), Zune.STATE.FORMAT.MAX_DEPTH);
 
         try REF_LEAKED_SOURCE.put(store_index, .{ .scope = scope_copy, .value = try buf.toOwnedSlice() });
     }
@@ -263,7 +263,7 @@ pub fn loadLib(L: *VM.lua.State, enabled: bool) void {
         L.setreadonly(-1, true);
     }
 
-    luaHelper.registerModule(L, LIB_NAME);
+    LuaHelper.registerModule(L, LIB_NAME);
 }
 
 test "Test" {

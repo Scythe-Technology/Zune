@@ -5,11 +5,12 @@ const builtin = @import("builtin");
 
 const Zune = @import("zune");
 
-const Engine = @import("../runtime/engine.zig");
-const Scheduler = @import("../runtime/scheduler.zig");
+const Engine = Zune.Runtime.Engine;
+const Scheduler = Zune.Runtime.Scheduler;
 
-const luaHelper = @import("../utils/luahelper.zig");
-const MethodMap = @import("../utils/method_map.zig");
+const LuaHelper = Zune.Utils.LuaHelper;
+const MethodMap = Zune.Utils.MethodMap;
+
 const tagged = @import("../../tagged.zig");
 
 const VM = luau.VM;
@@ -1715,7 +1716,7 @@ fn ffi_closure_inner(call_info: *const LuaClosure.CallInfo, extern_args: [*]?*an
 
     const L = call_info.thread.newthread();
     defer call_info.thread.pop(1);
-    var ref: luaHelper.Ref(void) = .{
+    var ref: LuaHelper.Ref(void) = .{
         .ref = .{
             .registry = call_info.ref orelse return std.debug.panic("Invalid call info: no reference to call", .{}),
         },
@@ -2333,7 +2334,7 @@ pub fn loadLib(L: *VM.lua.State) void {
     L.setfield(-2, "prefix");
 
     L.setreadonly(-1, true);
-    luaHelper.registerModule(L, LIB_NAME);
+    LuaHelper.registerModule(L, LIB_NAME);
 }
 
 test "ffi" {

@@ -4,13 +4,15 @@ const time = @import("datetime");
 const luau = @import("luau");
 const builtin = @import("builtin");
 
-const Engine = @import("../../../../runtime/engine.zig");
-const Scheduler = @import("../../../../runtime/scheduler.zig");
+const Zune = @import("zune");
+
+const Engine = Zune.Runtime.Engine;
+const Scheduler = Zune.Runtime.Scheduler;
 
 const WebSocket = @import("../websocket.zig");
 
-const MethodMap = @import("../../../../utils/method_map.zig");
-const Lists = @import("../../../../utils/lists.zig");
+const MethodMap = Zune.Utils.MethodMap;
+const Lists = Zune.Utils.Lists;
 
 const VM = luau.VM;
 

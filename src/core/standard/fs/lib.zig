@@ -3,9 +3,11 @@ const xev = @import("xev").Dynamic;
 const luau = @import("luau");
 const builtin = @import("builtin");
 
-const Scheduler = @import("../../runtime/scheduler.zig");
+const Zune = @import("zune");
 
-const luaHelper = @import("../../utils/luahelper.zig");
+const Scheduler = Zune.Runtime.Scheduler;
+
+const LuaHelper = Zune.Utils.LuaHelper;
 
 const File = @import("../../objects/filesystem/File.zig");
 
@@ -42,7 +44,7 @@ fn lua_readFileAsync(L: *VM.lua.State) !i32 {
         file,
         useBuffer,
         1024,
-        luaHelper.MAX_LUAU_SIZE,
+        LuaHelper.MAX_LUAU_SIZE,
         true,
         .File,
         null,
@@ -53,7 +55,7 @@ fn lua_readFileSync(L: *VM.lua.State) !i32 {
     const allocator = luau.getallocator(L);
     const path = L.Lcheckstring(1);
     const useBuffer = L.Loptboolean(2, false);
-    const data = try fs.cwd().readFileAlloc(allocator, path, luaHelper.MAX_LUAU_SIZE);
+    const data = try fs.cwd().readFileAlloc(allocator, path, LuaHelper.MAX_LUAU_SIZE);
     defer allocator.free(data);
 
     if (useBuffer)
@@ -313,8 +315,8 @@ fn lua_symlink(L: *VM.lua.State) !i32 {
 const LuaWatch = struct {
     instance: Watch.FileSystemWatcher,
     active: bool = true,
-    callback: luaHelper.Ref(void),
-    ref: luaHelper.Ref(void),
+    callback: LuaHelper.Ref(void),
+    ref: LuaHelper.Ref(void),
 
     pub fn __index(L: *VM.lua.State) !i32 {
         try L.Zchecktype(1, .Userdata);
@@ -679,7 +681,7 @@ pub fn loadLib(L: *VM.lua.State) void {
 
     L.setreadonly(-1, true);
 
-    luaHelper.registerModule(L, LIB_NAME);
+    LuaHelper.registerModule(L, LIB_NAME);
 }
 
 test {

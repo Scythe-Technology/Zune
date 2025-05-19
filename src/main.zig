@@ -16,13 +16,25 @@ pub const DEFAULT_ALLOCATOR = if (!builtin.single_threaded)
 else
     std.heap.page_allocator;
 
-pub const Engine = @import("core/runtime/engine.zig");
-pub const Scheduler = @import("core/runtime/scheduler.zig");
+pub const Runtime = struct {
+    pub const Engine = @import("core/runtime/engine.zig");
+    pub const Scheduler = @import("core/runtime/scheduler.zig");
+    pub const Profiler = @import("core/runtime/profiler.zig");
+    pub const Debugger = @import("core/runtime/debugger.zig");
+};
 
-const resolvers_file = @import("core/resolvers/file.zig");
-const resolvers_fmt = @import("core/resolvers/fmt.zig");
+pub const Resolvers = struct {
+    pub const File = @import("core/resolvers/file.zig");
+    pub const Fmt = @import("core/resolvers/fmt.zig");
+    pub const Require = @import("core/resolvers/require.zig");
+};
 
-pub const Debugger = @import("core/runtime/debugger.zig");
+pub const Utils = struct {
+    pub const Lists = @import("core/utils/lists.zig");
+    pub const EnumMap = @import("core/utils/enum_map.zig");
+    pub const MethodMap = @import("core/utils/method_map.zig");
+    pub const LuaHelper = @import("core/utils/luahelper.zig");
+};
 
 const zune_info = @import("zune-info");
 
@@ -70,10 +82,21 @@ pub const STATE = struct {
     pub var REQUIRE_MODE: RequireMode = .RelativeToFile;
     pub var ALIASES: std.StringArrayHashMap([]const u8) = .init(DEFAULT_ALLOCATOR);
 
-    pub var DEBUG_LEVEL: u2 = 2;
-    pub var OPTIMIZATION_LEVEL: u2 = 1;
-    pub var CODEGEN: bool = true;
-    pub var JIT_ENABLED: bool = true;
+    pub const LUAU_OPTIONS = struct {
+        pub var DEBUG_LEVEL: u2 = 2;
+        pub var OPTIMIZATION_LEVEL: u2 = 1;
+        pub var CODEGEN: bool = true;
+        pub var JIT_ENABLED: bool = true;
+    };
+
+    pub const FORMAT = struct {
+        pub var MAX_DEPTH: u8 = 4;
+        pub var USE_COLOR: bool = true;
+        pub var SHOW_TABLE_ADDRESS: bool = true;
+        pub var SHOW_RECURSIVE_TABLE: bool = false;
+        pub var DISPLAY_BUFFER_CONTENTS_MAX: usize = 48;
+    };
+
     pub var USE_DETAILED_ERROR: bool = true;
 };
 
@@ -133,11 +156,11 @@ pub fn loadConfiguration(dir: std.fs.Dir) void {
             }
             if (toml.checkOptionTable(luau_config, "options")) |compiling| {
                 if (toml.checkOptionInteger(compiling, "debugLevel")) |debug_level|
-                    STATE.DEBUG_LEVEL = @max(0, @min(2, @as(u2, @truncate(@as(u64, @bitCast(debug_level))))));
+                    STATE.LUAU_OPTIONS.DEBUG_LEVEL = @max(0, @min(2, @as(u2, @truncate(@as(u64, @bitCast(debug_level))))));
                 if (toml.checkOptionInteger(compiling, "optimizationLevel")) |opt_level|
-                    STATE.OPTIMIZATION_LEVEL = @max(0, @min(2, @as(u2, @truncate(@as(u64, @bitCast(opt_level))))));
+                    STATE.LUAU_OPTIONS.OPTIMIZATION_LEVEL = @max(0, @min(2, @as(u2, @truncate(@as(u64, @bitCast(opt_level))))));
                 if (toml.checkOptionBool(compiling, "nativeCodeGen")) |enabled|
-                    STATE.CODEGEN = enabled;
+                    STATE.LUAU_OPTIONS.CODEGEN = enabled;
             }
         }
     }
@@ -145,15 +168,15 @@ pub fn loadConfiguration(dir: std.fs.Dir) void {
     if (toml.checkOptionTable(zconfig, "resolvers")) |resolvers_config| {
         if (toml.checkOptionTable(resolvers_config, "formatter")) |fmt_config| {
             if (toml.checkOptionInteger(fmt_config, "maxDepth")) |depth|
-                resolvers_fmt.MAX_DEPTH = @truncate(@as(u64, @bitCast(depth)));
+                STATE.FORMAT.MAX_DEPTH = @truncate(@as(u64, @bitCast(depth)));
             if (toml.checkOptionBool(fmt_config, "useColor")) |enabled|
-                resolvers_fmt.USE_COLOR = enabled;
+                STATE.FORMAT.USE_COLOR = enabled;
             if (toml.checkOptionBool(fmt_config, "showTableAddress")) |enabled|
-                resolvers_fmt.SHOW_TABLE_ADDRESS = enabled;
+                STATE.FORMAT.SHOW_TABLE_ADDRESS = enabled;
             if (toml.checkOptionBool(fmt_config, "showRecursiveTable")) |enabled|
-                resolvers_fmt.SHOW_RECURSIVE_TABLE = enabled;
+                STATE.FORMAT.SHOW_RECURSIVE_TABLE = enabled;
             if (toml.checkOptionInteger(fmt_config, "displayBufferContentsMax")) |max|
-                resolvers_fmt.DISPLAY_BUFFER_CONTENTS_MAX = @truncate(@as(u64, @bitCast(max)));
+                STATE.FORMAT.DISPLAY_BUFFER_CONTENTS_MAX = @truncate(@as(u64, @bitCast(max)));
         }
 
         if (toml.checkOptionTable(resolvers_config, "require")) |require_config| {
@@ -212,7 +235,7 @@ pub fn loadLuaurc(allocator: std.mem.Allocator, dir: std.fs.Dir, path: ?[]const 
         };
         const keyCopy = try allocator.dupe(u8, key);
         errdefer allocator.free(keyCopy);
-        const valuePath = resolvers_file.resolve(allocator, STATE.ENV_MAP, &.{ path orelse "", valueStr }) catch |err| {
+        const valuePath = Resolvers.File.resolve(allocator, STATE.ENV_MAP, &.{ path orelse "", valueStr }) catch |err| {
             std.debug.print("Warning: .luaurc -> aliases '{s}' field must be a valid path: {}\n", .{ key, err });
             allocator.free(keyCopy);
             continue;
@@ -249,7 +272,7 @@ pub fn openZune(L: *VM.lua.State, args: []const []const u8, flags: Flags) !void 
     L.setreadonly(-1, true);
     L.setglobal("zune");
 
-    L.Zpushfunction(resolvers_fmt.fmt_print, "zune_fmt_print");
+    L.Zpushfunction(Resolvers.Fmt.print, "zune_fmt_print");
     L.setglobal("print");
 
     L.Zsetglobal("_VERSION", VERSION);
@@ -331,14 +354,14 @@ fn shutdown() void {
             if (ML.pcall(0, 0, 0).check()) |_| {
                 L.pop(2); // drop: thread, function
                 return; // User will handle process close.
-            } else |err| Engine.logError(ML, err, false);
+            } else |err| Runtime.Engine.logError(ML, err, false);
             L.pop(1); // drop: thread
         }
         L.pop(1); // drop: ?function
     }
-    @import("commands/debug.zig").SigInt();
-    Scheduler.KillSchedulers();
-    Engine.stateCleanUp();
+    Runtime.Debugger.SigInt();
+    Runtime.Scheduler.KillSchedulers();
+    Runtime.Engine.stateCleanUp();
     std.process.exit(0);
 }
 

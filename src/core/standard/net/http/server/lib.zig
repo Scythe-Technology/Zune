@@ -4,12 +4,14 @@ const time = @import("datetime");
 const luau = @import("luau");
 const builtin = @import("builtin");
 
-const Engine = @import("../../../../runtime/engine.zig");
-const Scheduler = @import("../../../../runtime/scheduler.zig");
+const Zune = @import("zune");
 
-const luaHelper = @import("../../../../utils/luahelper.zig");
-const MethodMap = @import("../../../../utils/method_map.zig");
-const Lists = @import("../../../../utils/lists.zig");
+const Engine = Zune.Runtime.Engine;
+const Scheduler = Zune.Runtime.Scheduler;
+
+const LuaHelper = Zune.Utils.LuaHelper;
+const MethodMap = Zune.Utils.MethodMap;
+const Lists = Zune.Utils.Lists;
 
 const VM = luau.VM;
 
@@ -50,11 +52,11 @@ pub const Timer = struct {
 };
 
 const FnHandlers = struct {
-    request: luaHelper.Ref(void) = .empty,
-    ws_upgrade: luaHelper.Ref(void) = .empty,
-    ws_open: luaHelper.Ref(void) = .empty,
-    ws_message: luaHelper.Ref(void) = .empty,
-    ws_close: luaHelper.Ref(void) = .empty,
+    request: LuaHelper.Ref(void) = .empty,
+    ws_upgrade: LuaHelper.Ref(void) = .empty,
+    ws_open: LuaHelper.Ref(void) = .empty,
+    ws_message: LuaHelper.Ref(void) = .empty,
+    ws_close: LuaHelper.Ref(void) = .empty,
 
     pub fn hasWebSocket(self: *FnHandlers) bool {
         return self.ws_upgrade.hasRef() or
@@ -77,7 +79,7 @@ timer: Timer,
 arena: std.heap.ArenaAllocator,
 socket: xev.TCP,
 state: State,
-ref: luaHelper.Ref(void),
+ref: LuaHelper.Ref(void),
 handlers: FnHandlers,
 scheduler: *Scheduler,
 
@@ -372,7 +374,7 @@ pub fn lua_serve(L: *VM.lua.State) !i32 {
         .state = .{
             .port = final_port,
             .client_timeout = serve_info.clientTimeout orelse 10,
-            .max_body_size = @min(serve_info.maxBodySize orelse 1_048_576, luaHelper.MAX_LUAU_SIZE),
+            .max_body_size = @min(serve_info.maxBodySize orelse 1_048_576, LuaHelper.MAX_LUAU_SIZE),
             .max_connections = serve_info.maxConnections orelse 1024,
         },
     };

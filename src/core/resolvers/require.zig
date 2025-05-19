@@ -3,11 +3,11 @@ const luau = @import("luau");
 
 const Zune = @import("zune");
 
-const Engine = @import("../runtime/engine.zig");
-const Scheduler = @import("../runtime/scheduler.zig");
-const Debugger = @import("../runtime/debugger.zig");
+const Engine = Zune.Runtime.Engine;
+const Scheduler = Zune.Runtime.Scheduler;
+const Debugger = Zune.Runtime.Debugger;
 
-const file = @import("file.zig");
+const File = Zune.Resolvers.File;
 
 const VM = luau.VM;
 
@@ -119,7 +119,7 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
     _ = L.Lfindtable(VM.lua.REGISTRYINDEX, "_MODULES", 1);
     var outErr: ?[]const u8 = null;
     var moduleRelativePath: [:0]const u8 = undefined;
-    var searchResult: ?file.SearchResult([:0]const u8) = null;
+    var searchResult: ?File.SearchResult([:0]const u8) = null;
     defer if (searchResult) |r| r.deinit();
     if (moduleName.len == 0)
         return L.Zerror("must have either \"@\", \"./\", or \"../\" prefix");
@@ -203,11 +203,11 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
     }
 
     std.mem.replaceScalar(u8, resolvedPath.?, NonRegularPathSep, std.fs.path.sep);
-    searchResult = try file.findLuauFileFromPathZ(allocator, dir, resolvedPath orelse unreachable);
+    searchResult = try File.findLuauFileFromPathZ(allocator, dir, resolvedPath orelse unreachable);
 
     if (resolvedPath != null and searchResult != null and searchResult.?.result == .none) {
         const directoryInit = try std.fs.path.join(allocator, &.{ resolvedPath.?, "init" });
-        const initSearchResult = try file.findLuauFileFromPathZ(allocator, dir, directoryInit);
+        const initSearchResult = try File.findLuauFileFromPathZ(allocator, dir, directoryInit);
         if (initSearchResult.result != .none) {
             allocator.free(resolvedPath.?);
             resolvedPath = directoryInit;

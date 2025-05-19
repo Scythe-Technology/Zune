@@ -3,9 +3,7 @@ const luau = @import("luau");
 
 const Zune = @import("zune");
 
-const file = @import("../resolvers/file.zig");
-const require = @import("../resolvers/require.zig");
-const Scheduler = @import("../runtime/scheduler.zig");
+const Scheduler = Zune.Runtime.Scheduler;
 
 const VM = luau.VM;
 
@@ -19,8 +17,8 @@ pub const LuauRunError = enum {
 
 pub fn compileModule(allocator: std.mem.Allocator, content: []const u8, cOpts: ?luau.CompileOptions) !struct { bool, []const u8 } {
     const compileOptions = cOpts orelse luau.CompileOptions{
-        .debug_level = Zune.STATE.DEBUG_LEVEL,
-        .optimization_level = Zune.STATE.OPTIMIZATION_LEVEL,
+        .debug_level = Zune.STATE.LUAU_OPTIONS.DEBUG_LEVEL,
+        .optimization_level = Zune.STATE.LUAU_OPTIONS.OPTIMIZATION_LEVEL,
     };
     const luau_allocator = luau.Ast.Allocator.init();
     defer luau_allocator.deinit();
@@ -69,7 +67,7 @@ pub fn loadModuleBytecode(L: *VM.lua.State, moduleName: [:0]const u8, bytecode: 
     L.load(moduleName, bytecode, 0) catch {
         return LuauCompileError.Syntax;
     };
-    if (luau.CodeGen.Supported() and Zune.STATE.CODEGEN and !nativeAttribute and Zune.STATE.JIT_ENABLED)
+    if (luau.CodeGen.Supported() and Zune.STATE.LUAU_OPTIONS.CODEGEN and !nativeAttribute and Zune.STATE.LUAU_OPTIONS.JIT_ENABLED)
         luau.CodeGen.Compile(L, -1);
 }
 
@@ -501,7 +499,7 @@ pub fn checkStatus(L: *VM.lua.State) !VM.lua.Status {
 }
 
 pub fn prep(L: *VM.lua.State) !void {
-    if (luau.CodeGen.Supported() and Zune.STATE.JIT_ENABLED)
+    if (luau.CodeGen.Supported() and Zune.STATE.LUAU_OPTIONS.JIT_ENABLED)
         luau.CodeGen.Create(L);
 
     L.Lopenlibs();

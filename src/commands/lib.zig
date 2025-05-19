@@ -2,7 +2,7 @@ const std = @import("std");
 
 pub const Command = struct {
     name: []const u8,
-    execute: *const fn (allocator: @import("std").mem.Allocator, args: []const []const u8) anyerror!void,
+    execute: *const fn (allocator: std.mem.Allocator, args: []const []const u8) anyerror!void,
     aliases: ?[]const []const u8 = null,
 };
 
@@ -31,11 +31,13 @@ pub fn initCommands(comptime commands: []const Command) std.StaticStringMap(Comm
     return std.StaticStringMap(Command).initComptime(list);
 }
 
+const Execution = @import("execution.zig");
+
 pub const CommandMap = initCommands(&.{
-    @import("run.zig").Command,
-    @import("test.zig").Command,
-    @import("eval.zig").Command,
-    @import("debug.zig").Command,
+    Execution.RunCmd,
+    Execution.TestCmd,
+    Execution.EvalCmd,
+    Execution.DebugCmd,
     @import("setup.zig").Command,
     @import("repl/lib.zig").Command,
     @import("init.zig").Command,

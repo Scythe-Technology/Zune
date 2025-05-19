@@ -7,17 +7,19 @@ const Zune = @import("zune");
 
 const tagged = @import("../../tagged.zig");
 
-const Engine = @import("../runtime/engine.zig");
-const Scheduler = @import("../runtime/scheduler.zig");
+const Engine = Zune.Runtime.Engine;
+const Scheduler = Zune.Runtime.Scheduler;
+
 const Parser = @import("../utils/parser.zig");
 
 const File = @import("../objects/filesystem/File.zig");
 const ProcessChild = @import("../objects/process//Child.zig");
 
-const luaHelper = @import("../utils/luahelper.zig");
+const LuaHelper = Zune.Utils.LuaHelper;
+const MethodMap = Zune.Utils.MethodMap;
+const EnumMap = Zune.Utils.EnumMap;
+
 const sysfd = @import("../utils/sysfd.zig");
-const EnumMap = @import("../utils/enum_map.zig");
-const MethodMap = @import("../utils/method_map.zig");
 
 const VM = luau.VM;
 
@@ -270,9 +272,9 @@ const ProcessAsyncRunContext = struct {
 
         if (self.poller) |*poller| {
             const stdout_fifo = poller.fifo(.stdout);
-            const stdout = stdout_fifo.readableSliceOfLen(@min(stdout_fifo.count, luaHelper.MAX_LUAU_SIZE));
+            const stdout = stdout_fifo.readableSliceOfLen(@min(stdout_fifo.count, LuaHelper.MAX_LUAU_SIZE));
             const stderr_fifo = poller.fifo(.stderr);
-            const stderr = stderr_fifo.readableSliceOfLen(@min(stderr_fifo.count, luaHelper.MAX_LUAU_SIZE));
+            const stderr = stderr_fifo.readableSliceOfLen(@min(stderr_fifo.count, LuaHelper.MAX_LUAU_SIZE));
 
             L.Zpushvalue(.{
                 .code = code,
@@ -589,7 +591,7 @@ pub fn loadLib(L: *VM.lua.State, args: []const []const u8) !void {
 
     L.setreadonly(-1, true);
 
-    luaHelper.registerModule(L, LIB_NAME);
+    LuaHelper.registerModule(L, LIB_NAME);
 }
 
 test "process" {

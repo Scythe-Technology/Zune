@@ -3,12 +3,14 @@ const luau = @import("luau");
 const time = @import("datetime");
 const builtin = @import("builtin");
 
+const Zune = @import("zune");
+
+const LuaHelper = Zune.Utils.LuaHelper;
+const MethodMap = Zune.Utils.MethodMap;
+
 const parse = @import("parse.zig");
 
 const tagged = @import("../../../tagged.zig");
-
-const luaHelper = @import("../../utils/luahelper.zig");
-const MethodMap = @import("../../utils/method_map.zig");
 
 const VM = luau.VM;
 
@@ -306,7 +308,7 @@ pub fn loadLib(L: *VM.lua.State) void {
     });
     L.setreadonly(-1, true);
 
-    luaHelper.registerModule(L, LIB_NAME);
+    LuaHelper.registerModule(L, LIB_NAME);
 }
 
 test {

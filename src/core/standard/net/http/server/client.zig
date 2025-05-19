@@ -4,12 +4,14 @@ const time = @import("datetime");
 const luau = @import("luau");
 const builtin = @import("builtin");
 
-const Engine = @import("../../../../runtime/engine.zig");
-const Scheduler = @import("../../../../runtime/scheduler.zig");
+const Zune = @import("zune");
 
-const luaHelper = @import("../../../../utils/luahelper.zig");
-const MethodMap = @import("../../../../utils/method_map.zig");
-const Lists = @import("../../../../utils/lists.zig");
+const Engine = Zune.Runtime.Engine;
+const Scheduler = Zune.Runtime.Scheduler;
+
+const LuaHelper = Zune.Utils.LuaHelper;
+const MethodMap = Zune.Utils.MethodMap;
+const Lists = Zune.Utils.Lists;
 
 const Request = @import("../request.zig");
 const WebSocket = @import("../websocket.zig");
@@ -105,7 +107,7 @@ buffers: Buffers = .{},
 
 pub const WebSocketState = struct {
     active: bool = false,
-    ref: luaHelper.Ref(*ClientWebSocket) = .empty,
+    ref: LuaHelper.Ref(*ClientWebSocket) = .empty,
 };
 
 pub const State = packed struct {
@@ -620,7 +622,7 @@ pub fn ws_onRecv(
             else => header.len,
         } + 4; // 4 (masked)
 
-        if (length > luaHelper.MAX_LUAU_SIZE) {
+        if (length > LuaHelper.MAX_LUAU_SIZE) {
             websocket.sendCloseFrame(loop, 1009) catch |err| {
                 std.debug.print("Failed to send close frame: {}\n", .{err});
                 self.ws_close(loop);
