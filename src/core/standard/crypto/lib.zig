@@ -1,13 +1,17 @@
 const std = @import("std");
 const luau = @import("luau");
 
-const Engine = @import("../../runtime/engine.zig");
-const Scheduler = @import("../../runtime/scheduler.zig");
+const Zune = @import("zune");
 
-const luaHelper = @import("../../utils/luahelper.zig");
+const Engine = Zune.Runtime.Engine;
+const Scheduler = Zune.Runtime.Scheduler;
+
+const LuaHelper = Zune.Utils.LuaHelper;
+const MethodMap = Zune.Utils.MethodMap;
+const EnumMap = Zune.Utils.EnumMap;
+const Lists = Zune.Utils.Lists;
+
 const tagged = @import("../../../tagged.zig");
-const MethodMap = @import("../../utils/method_map.zig");
-const EnumMap = @import("../../utils/enum_map.zig");
 
 const common = @import("common.zig");
 
@@ -388,7 +392,7 @@ pub fn loadLib(L: *VM.lua.State) void {
     }
 
     L.setreadonly(-1, true);
-    luaHelper.registerModule(L, LIB_NAME);
+    LuaHelper.registerModule(L, LIB_NAME);
 }
 
 test {
