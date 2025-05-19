@@ -3,10 +3,13 @@ const xev = @import("xev").Dynamic;
 const luau = @import("luau");
 const builtin = @import("builtin");
 
-const Formatter = @import("../resolvers/fmt.zig");
+const Zune = @import("zune");
 
-const luaHelper = @import("../utils/luahelper.zig");
-const MethodMap = @import("../utils/method_map.zig");
+const Fmt = Zune.Resolvers.Fmt;
+
+const LuaHelper = Zune.Utils.LuaHelper;
+const MethodMap = Zune.Utils.MethodMap;
+
 const sysfd = @import("../utils/sysfd.zig");
 const tagged = @import("../../tagged.zig");
 
@@ -60,7 +63,7 @@ const LuaTerminal = struct {
 
 const Stream = struct {
     vtable: *const VTable,
-    ref: luaHelper.Ref(*anyopaque),
+    ref: LuaHelper.Ref(*anyopaque),
     mode: Mode,
 
     pub const VTable = struct {
@@ -270,8 +273,8 @@ const BufferSink = struct {
     limit: u32 = MAX_LUAU_SIZE,
     closed: bool = false,
 
-    ref_table: luaHelper.RefTable,
-    stream_writer: luaHelper.Ref(void) = .empty,
+    ref_table: LuaHelper.RefTable,
+    stream_writer: LuaHelper.Ref(void) = .empty,
 
     pub fn __index(L: *VM.lua.State) !i32 {
         try L.Zchecktype(1, .Userdata);
@@ -314,7 +317,7 @@ const BufferSink = struct {
         if (self.stream_writer.push(L))
             return 1;
 
-        const ref = luaHelper.Ref(*anyopaque).init(L, 1, @ptrCast(@alignCast(self)));
+        const ref = LuaHelper.Ref(*anyopaque).init(L, 1, @ptrCast(@alignCast(self)));
         const stream = L.newuserdatataggedwithmetatable(Stream, TAG_IO_STREAM);
 
         stream.* = .{
@@ -372,11 +375,11 @@ const BufferSink = struct {
 
 const BufferStream = struct {
     pos: u32,
-    buf: luaHelper.Ref([]u8),
+    buf: LuaHelper.Ref([]u8),
 
-    ref_table: luaHelper.RefTable,
-    stream_reader: luaHelper.Ref(void) = .empty,
-    stream_writer: luaHelper.Ref(void) = .empty,
+    ref_table: LuaHelper.RefTable,
+    stream_reader: LuaHelper.Ref(void) = .empty,
+    stream_writer: LuaHelper.Ref(void) = .empty,
 
     pub fn lua_pos(self: *BufferStream, L: *VM.lua.State) !i32 {
         L.pushunsigned(self.pos);
@@ -423,7 +426,7 @@ const BufferStream = struct {
     pub fn lua_writer(self: *BufferStream, L: *VM.lua.State) !i32 {
         if (self.stream_writer.push(L))
             return 1;
-        const ref = luaHelper.Ref(*anyopaque).init(L, 1, @ptrCast(@alignCast(self)));
+        const ref = LuaHelper.Ref(*anyopaque).init(L, 1, @ptrCast(@alignCast(self)));
         const stream = L.newuserdatataggedwithmetatable(Stream, TAG_IO_STREAM);
 
         stream.* = .{
@@ -440,7 +443,7 @@ const BufferStream = struct {
     pub fn lua_reader(self: *BufferStream, L: *VM.lua.State) !i32 {
         if (self.stream_reader.push(L))
             return 1;
-        const ref = luaHelper.Ref(*anyopaque).init(L, 1, @ptrCast(@alignCast(self)));
+        const ref = LuaHelper.Ref(*anyopaque).init(L, 1, @ptrCast(@alignCast(self)));
         const stream = L.newuserdatataggedwithmetatable(Stream, TAG_IO_STREAM);
 
         stream.* = .{
@@ -626,13 +629,13 @@ pub fn loadLib(L: *VM.lua.State) void {
 
     TERMINAL.?.setOutputMode() catch std.debug.print("[Win32] Failed to set output codepoint\n", .{});
 
-    L.Zsetfieldfn(-1, "format", Formatter.fmt_args);
+    L.Zsetfieldfn(-1, "format", Fmt.args);
 
     L.Zsetfieldfn(-1, "createBufferSink", lua_createBufferSink);
     L.Zsetfieldfn(-1, "createFixedBufferStream", lua_createFixedBufferStream);
 
     L.setreadonly(-1, true);
-    luaHelper.registerModule(L, LIB_NAME);
+    LuaHelper.registerModule(L, LIB_NAME);
 }
 
 test "io" {

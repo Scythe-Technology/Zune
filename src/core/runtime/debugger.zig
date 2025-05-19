@@ -4,20 +4,29 @@ const builtin = @import("builtin");
 
 const Zune = @import("zune");
 
-const Engine = @import("engine.zig");
-const Scheduler = @import("scheduler.zig");
+const Engine = Zune.Runtime.Engine;
+const Scheduler = Zune.Runtime.Scheduler;
 
-const debug = @import("../../commands/debug.zig");
+const Fmt = Zune.Resolvers.Fmt;
 
-const formatter = @import("../resolvers/fmt.zig");
+const History = @import("../../commands/repl/History.zig");
 
 const VM = luau.VM;
+
+pub fn PlatformSupported() bool {
+    return switch (comptime builtin.os.tag) {
+        .linux, .macos, .windows => true,
+        else => false,
+    };
+}
 
 const LuaBreakpoint = struct {
     line: i32,
 };
 
 pub var ACTIVE = false;
+
+pub var HISTORY: ?*History = null;
 
 pub var MODULE_REFERENCES = std.StringHashMap(i32).init(Zune.DEFAULT_ALLOCATOR);
 pub var BREAKPOINTS = std.StringHashMap(std.ArrayList(LuaBreakpoint)).init(Zune.DEFAULT_ALLOCATOR);
@@ -26,6 +35,15 @@ const DEBUG_TAG = "\x1b[0m(dbg) ";
 const DEBUG_RESULT_TAG = "\x1b[0m(dbg): ";
 
 const NEW_LINE = if (builtin.os.tag == .windows) '\r' else '\n';
+
+pub fn SigInt() void {
+    if (HISTORY) |history|
+        history.deinit();
+}
+
+pub fn DebuggerExit() void {
+    SigInt();
+}
 
 pub fn addReference(allocator: std.mem.Allocator, L: *VM.lua.State, name: []const u8, id: i32) !void {
     const key = try allocator.dupe(u8, name);
@@ -467,7 +485,7 @@ fn promptOpLocals(L: *VM.lua.State, allocator: std.mem.Allocator, locals_args: [
                             defer buf.deinit();
 
                             const writer = buf.writer();
-                            try formatter.fmt_write_idx(allocator, L, writer, @intCast(L.gettop()), formatter.MAX_DEPTH);
+                            try Fmt.writeIdx(allocator, L, writer, @intCast(L.gettop()), Zune.STATE.FORMAT.MAX_DEPTH);
                             var iter = std.mem.splitScalar(u8, buf.items, '\n');
                             printResult(" | Value: {s}\n", .{iter.first()});
                             while (iter.next()) |line|
@@ -578,7 +596,7 @@ fn promptOpParams(L: *VM.lua.State, allocator: std.mem.Allocator, params_args: [
                             defer buf.deinit();
 
                             const writer = buf.writer();
-                            try formatter.fmt_write_idx(allocator, L, writer, @intCast(L.gettop()), formatter.MAX_DEPTH);
+                            try Fmt.writeIdx(allocator, L, writer, @intCast(L.gettop()), Zune.STATE.FORMAT.MAX_DEPTH);
                             var iter = std.mem.splitScalar(u8, buf.items, '\n');
                             printResult(" | Value: {s}\n", .{iter.first()});
                             while (iter.next()) |line|
@@ -697,7 +715,7 @@ fn promptOpUpvalues(L: *VM.lua.State, allocator: std.mem.Allocator, params_args:
                             defer buf.deinit();
 
                             const writer = buf.writer();
-                            try formatter.fmt_write_idx(allocator, L, writer, @intCast(L.gettop()), formatter.MAX_DEPTH);
+                            try Fmt.writeIdx(allocator, L, writer, @intCast(L.gettop()), Zune.STATE.FORMAT.MAX_DEPTH);
                             var iter = std.mem.splitScalar(u8, buf.items, '\n');
                             printResult(" | Value: {s}\n", .{iter.first()});
                             while (iter.next()) |line|
@@ -814,7 +832,7 @@ fn promptOpGlobals(L: *VM.lua.State, allocator: std.mem.Allocator, globals_args:
                         defer buf.deinit();
 
                         const writer = buf.writer();
-                        try formatter.fmt_write_idx(allocator, L, writer, @intCast(L.gettop()), formatter.MAX_DEPTH);
+                        try Fmt.writeIdx(allocator, L, writer, @intCast(L.gettop()), Zune.STATE.FORMAT.MAX_DEPTH);
                         var iter = std.mem.splitScalar(u8, buf.items, '\n');
                         printResult(" | Value: {s}\n", .{iter.first()});
                         while (iter.next()) |line|
@@ -917,7 +935,7 @@ pub fn prompt(L: *VM.lua.State, comptime kind: BreakKind, debug_info: ?*VM.lua.c
     var in_reader = stdin.reader();
 
     const terminal = &(Zune.corelib.io.TERMINAL orelse std.debug.panic("Terminal not initialized", .{}));
-    const history = debug.HISTORY orelse std.debug.panic("History not initialized", .{});
+    const history = HISTORY orelse std.debug.panic("History not initialized", .{});
 
     var buffer = std.ArrayList(u8).init(allocator);
     defer buffer.deinit();
@@ -1035,7 +1053,7 @@ pub fn prompt(L: *VM.lua.State, comptime kind: BreakKind, debug_info: ?*VM.lua.c
                         printResult("  exception - Show current error\n", .{});
                     },
                     .exit => {
-                        debug.DebuggerExit();
+                        DebuggerExit();
                         std.process.exit(0);
                     },
                     .line => {

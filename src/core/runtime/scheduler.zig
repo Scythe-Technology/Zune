@@ -5,9 +5,9 @@ const builtin = @import("builtin");
 
 const Zune = @import("zune");
 
-const Engine = @import("engine.zig");
+const Engine = Zune.Runtime.Engine;
 
-const Lists = @import("../utils/lists.zig");
+const Lists = Zune.Utils.Lists;
 
 const VM = luau.VM;
 
@@ -492,10 +492,10 @@ pub fn resumeState(state: *VM.lua.State, from: ?*VM.lua.State, args: i32) !VM.lu
         return status.check();
     return state.resumethread(from, args).check() catch |err| {
         Engine.logError(state, err, false);
-        if (Zune.Debugger.ACTIVE) {
+        if (Zune.Runtime.Debugger.ACTIVE) {
             @branchHint(.unlikely);
             switch (err) {
-                error.Runtime => Zune.Debugger.luau_panic(state, -2),
+                error.Runtime => Zune.Runtime.Debugger.luau_panic(state, -2),
                 else => {},
             }
         }
@@ -509,10 +509,10 @@ pub fn resumeStateError(state: *VM.lua.State, from: ?*VM.lua.State) !VM.lua.Stat
         return status.check();
     return state.resumeerror(from).check() catch |err| {
         Engine.logError(state, err, false);
-        if (Zune.Debugger.ACTIVE) {
+        if (Zune.Runtime.Debugger.ACTIVE) {
             @branchHint(.unlikely);
             switch (err) {
-                error.Runtime => Zune.Debugger.luau_panic(state, -2),
+                error.Runtime => Zune.Runtime.Debugger.luau_panic(state, -2),
                 else => {},
             }
         }

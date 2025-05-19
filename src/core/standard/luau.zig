@@ -4,7 +4,7 @@ const json = @import("json");
 
 const Zune = @import("zune");
 
-const luaHelper = @import("../utils/luahelper.zig");
+const LuaHelper = Zune.Utils.LuaHelper;
 
 const SerdeJson = @import("./serde/json.zig");
 
@@ -16,8 +16,8 @@ fn lua_compile(L: *VM.lua.State) !i32 {
     const source = try L.Zcheckvalue([]const u8, 1, null);
 
     var compileOpts = luau.CompileOptions{
-        .debug_level = Zune.STATE.DEBUG_LEVEL,
-        .optimization_level = Zune.STATE.OPTIMIZATION_LEVEL,
+        .debug_level = Zune.STATE.LUAU_OPTIONS.DEBUG_LEVEL,
+        .optimization_level = Zune.STATE.LUAU_OPTIONS.OPTIMIZATION_LEVEL,
     };
 
     if (try L.Zcheckvalue(?struct {
@@ -96,7 +96,7 @@ fn lua_load(L: *VM.lua.State) !i32 {
         } else L.pop(1);
     }
 
-    if (useCodeGen and luau.CodeGen.Supported() and Zune.STATE.JIT_ENABLED)
+    if (useCodeGen and luau.CodeGen.Supported() and Zune.STATE.LUAU_OPTIONS.JIT_ENABLED)
         luau.CodeGen.Compile(L, -1);
 
     return 1;
@@ -306,7 +306,7 @@ pub fn loadLib(L: *VM.lua.State) void {
         .parseExpr = lua_parseExpr,
     });
     L.setreadonly(-1, true);
-    luaHelper.registerModule(L, LIB_NAME);
+    LuaHelper.registerModule(L, LIB_NAME);
 }
 
 test "luau" {

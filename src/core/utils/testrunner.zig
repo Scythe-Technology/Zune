@@ -5,8 +5,8 @@ const builtin = @import("builtin");
 
 const Zune = @import("zune");
 
-const Engine = @import("../runtime/engine.zig");
-const Scheduler = @import("../runtime/scheduler.zig");
+const Engine = Zune.Runtime.Engine;
+const Scheduler = Zune.Runtime.Scheduler;
 
 const VM = luau.VM;
 

@@ -2,8 +2,11 @@ const std = @import("std");
 const luau = @import("luau");
 const pcre2 = @import("regex");
 
-const luaHelper = @import("../utils/luahelper.zig");
-const MethodMap = @import("../utils/method_map.zig");
+const Zune = @import("zune");
+
+const LuaHelper = Zune.Utils.LuaHelper;
+const MethodMap = Zune.Utils.MethodMap;
+
 const tagged = @import("../../tagged.zig");
 
 const VM = luau.VM;
@@ -190,7 +193,7 @@ pub fn loadLib(L: *VM.lua.State) void {
     });
     L.setreadonly(-1, true);
 
-    luaHelper.registerModule(L, LIB_NAME);
+    LuaHelper.registerModule(L, LIB_NAME);
 }
 
 test "regex" {

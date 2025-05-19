@@ -5,8 +5,8 @@ const Zune = @import("zune");
 
 const command = @import("../lib.zig");
 
-const Engine = @import("../../core/runtime/engine.zig");
-const Scheduler = @import("../../core/runtime/scheduler.zig");
+const Engine = Zune.Runtime.Engine;
+const Scheduler = Zune.Runtime.Scheduler;
 
 const History = @import("History.zig");
 const Terminal = @import("Terminal.zig");

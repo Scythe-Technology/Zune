@@ -2,11 +2,13 @@ const std = @import("std");
 const luau = @import("luau");
 const builtin = @import("builtin");
 
+const Zune = @import("zune");
+
+const Scheduler = Zune.Runtime.Scheduler;
+
+const LuaHelper = Zune.Utils.LuaHelper;
+
 const VM = luau.VM;
-
-const Scheduler = @import("../../runtime/scheduler.zig");
-
-const luaHelper = @import("../../utils/luahelper.zig");
 
 const Socket = @import("../../objects/network/Socket.zig");
 
@@ -91,7 +93,7 @@ pub fn loadLib(L: *VM.lua.State) void {
 
     L.setreadonly(-1, true);
 
-    luaHelper.registerModule(L, LIB_NAME);
+    LuaHelper.registerModule(L, LIB_NAME);
 }
 
 test {

@@ -3,14 +3,18 @@ const xev = @import("xev").Dynamic;
 const luau = @import("luau");
 const builtin = @import("builtin");
 
+const Zune = @import("zune");
+
+const Scheduler = Zune.Runtime.Scheduler;
+
+const LuaHelper = Zune.Utils.LuaHelper;
+const MethodMap = Zune.Utils.MethodMap;
+const Lists = Zune.Utils.Lists;
+
 const tagged = @import("../../../tagged.zig");
-const MethodMap = @import("../../utils/method_map.zig");
-const luaHelper = @import("../../utils/luahelper.zig");
 const sysfd = @import("../../utils/sysfd.zig");
 
 const File = @import("../filesystem/File.zig");
-
-const Scheduler = @import("../../runtime/scheduler.zig");
 
 const VM = luau.VM;
 
@@ -29,15 +33,15 @@ stdin: ?std.fs.File = null,
 stdout: ?std.fs.File = null,
 stderr: ?std.fs.File = null,
 
-stdin_file: luaHelper.Ref(void) = .empty,
-stdout_file: luaHelper.Ref(void) = .empty,
-stderr_file: luaHelper.Ref(void) = .empty,
+stdin_file: LuaHelper.Ref(void) = .empty,
+stdout_file: LuaHelper.Ref(void) = .empty,
+stderr_file: LuaHelper.Ref(void) = .empty,
 
 pub const WaitAsyncContext = struct {
     completion: xev.Completion,
     ref: Scheduler.ThreadRef,
     child: xev.Process,
-    handle: luaHelper.Ref(*Child),
+    handle: LuaHelper.Ref(*Child),
 
     pub fn complete(
         ud: ?*WaitAsyncContext,
