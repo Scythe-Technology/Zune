@@ -2119,6 +2119,13 @@ export type SQLiteLib = {
 }
 --[======[ SQLite ]======]--
 
+--[======[ Require ]======]--
+export type RequireLib = {
+    navigate: (path: string, from: string?, config: string?) -> string,
+    getCached: (resolvedPath: string) -> any?,
+}
+--[======[ Require ]======]--
+
 declare zune: {
     fs: FileSystemLib,
     process: ProcessLib,
@@ -2133,4 +2140,5 @@ declare zune: {
     datetime: DatetimeLib,
     ffi: FFILib,
     sqlite: SQLiteLib,
+    require: RequireLib,
 }

@@ -9,6 +9,7 @@ pub const serde = @import("serde/lib.zig");
 pub const sqlite = @import("sqlite.zig");
 pub const crypto = @import("crypto/lib.zig");
 pub const process = @import("process.zig");
+pub const require = @import("require.zig");
 pub const testing = @import("testing.zig");
 pub const datetime = @import("datetime/lib.zig");
 

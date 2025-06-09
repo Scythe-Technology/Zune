@@ -65,7 +65,6 @@ pub fn runTest(comptime testFile: TestFile, args: []const []const u8, comptime o
 
     Zune.loadConfiguration(dir);
 
-    try Zune.loadLuaurc(Zune.DEFAULT_ALLOCATOR, cwd, dir_path);
     try Engine.prepAsync(L, &scheduler);
     try Zune.openZune(L, args, .{ .mode = .Test });
 

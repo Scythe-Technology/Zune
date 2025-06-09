@@ -339,17 +339,18 @@ pub fn logDetailedError(L: *VM.lua.State) !void {
         };
         const source = item.source orelse break :jmp;
         const currentline = item.current_line orelse break :jmp;
-        if (source.len < 1 or source[0] != '@')
+        if (source.len == 0 or source[0] != '@')
             break :jmp;
-        const strip = try std.fmt.allocPrint(allocator, "{s}:{d}: ", .{
-            source[1..],
-            currentline,
-        });
-        defer allocator.free(strip);
 
-        const pos = std.mem.indexOfPosLinear(u8, err_msg, 0, strip);
-        if (pos) |p|
-            err_msg = err_msg[p + strip.len ..];
+        const src_len = source[1..].len;
+        if (!std.mem.startsWith(u8, err_msg, source[1..]))
+            break :jmp;
+        var line_buffer: [64]u8 = undefined;
+        const line_number = try std.fmt.bufPrint(&line_buffer, ":{d}: ", .{currentline});
+        const err_trimmed = err_msg[src_len..];
+        if (!std.mem.startsWith(u8, err_trimmed, line_number))
+            break :jmp;
+        err_msg = err_trimmed[line_number.len..];
     }
 
     var largest_line: usize = 0;

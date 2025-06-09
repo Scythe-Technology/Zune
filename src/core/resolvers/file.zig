@@ -2,84 +2,73 @@ const std = @import("std");
 
 const fs = std.fs;
 
-pub fn doesFileExist(dir: std.fs.Dir, path: []const u8) !bool {
-    var d = dir.openDir(path, .{}) catch |err| switch (err) {
-        error.NotDir => return true,
-        error.FileNotFound => return false,
-        else => return err,
+pub const SearchResult = struct {
+    allocator: std.mem.Allocator,
+    result: Result,
+
+    const File = struct {
+        name: [:0]const u8,
+        handle: std.fs.File,
     };
-    defer d.close();
-    return false;
-}
 
-pub fn SearchResult(comptime T: type) type {
-    return struct {
-        allocator: std.mem.Allocator,
-        result: Result,
+    const Result = union(enum) {
+        results: []const File,
+        none: void,
+    };
 
-        const Result = union(enum) {
-            exact: T,
-            results: []const T,
-            none: void,
+    const Self = @This();
+
+    pub fn deinit(self: Self) void {
+        switch (self.result) {
+            .results => |r| {
+                for (r) |result| {
+                    result.handle.close();
+                    self.allocator.free(result.name);
+                }
+                self.allocator.free(r);
+            },
+            .none => {},
+        }
+    }
+};
+
+pub fn searchForExtensions(allocator: std.mem.Allocator, dir: std.fs.Dir, fileName: []const u8, extensions: []const []const u8) !SearchResult {
+    var list: std.ArrayListUnmanaged(SearchResult.File) = .empty;
+    defer list.deinit(allocator);
+    errdefer for (list.items) |value| {
+        value.handle.close();
+        allocator.free(value.name);
+    };
+    for (extensions) |ext| {
+        const result = try std.mem.concatWithSentinel(allocator, u8, &.{ fileName, ext }, 0);
+        errdefer allocator.free(result);
+
+        const file = dir.openFile(result, .{ .mode = .read_only }) catch |err| switch (err) {
+            else => {
+                allocator.free(result);
+                continue;
+            },
         };
+        errdefer file.close();
 
-        const Self = @This();
-
-        pub fn deinit(self: Self) void {
-            switch (self.result) {
-                .exact => |e| self.allocator.free(e),
-                .results => |r| {
-                    for (r) |result| self.allocator.free(result);
-                    self.allocator.free(r);
-                },
-                .none => {},
-            }
+        const md = try file.metadata();
+        if (md.kind() != .file) {
+            file.close();
+            allocator.free(result);
+            continue;
         }
-    };
-}
 
-pub fn searchForExtensions(allocator: std.mem.Allocator, dir: std.fs.Dir, fileName: []const u8, extensions: []const []const u8) !SearchResult([]const u8) {
-    var list = std.ArrayList([]const u8).init(allocator);
-    defer list.deinit();
-    errdefer for (list.items) |value| allocator.free(value);
-    for (extensions) |ext| {
-        const result = std.mem.join(allocator, "", &.{ fileName, ext }) catch continue;
-        defer allocator.free(result);
-        if (try doesFileExist(dir, result)) {
-            const copy = try allocator.dupe(u8, result);
-            errdefer allocator.free(copy);
-            try list.append(copy);
-        }
+        try list.append(allocator, .{
+            .handle = file,
+            .name = result,
+        });
     }
     if (list.items.len == 0)
         return .{ .allocator = allocator, .result = .none };
     return .{
         .allocator = allocator,
         .result = .{
-            .results = try list.toOwnedSlice(),
-        },
-    };
-}
-
-pub fn searchForExtensionsZ(allocator: std.mem.Allocator, dir: std.fs.Dir, fileName: []const u8, extensions: []const []const u8) !SearchResult([:0]const u8) {
-    var list = std.ArrayList([:0]const u8).init(allocator);
-    defer list.deinit();
-    errdefer for (list.items) |value| allocator.free(value);
-    for (extensions) |ext| {
-        const result = std.mem.join(allocator, "", &.{ fileName, ext }) catch continue;
-        defer allocator.free(result);
-        if (try doesFileExist(dir, result)) {
-            const copy = try allocator.dupeZ(u8, result);
-            errdefer allocator.free(copy);
-            try list.append(copy);
-        }
-    }
-    if (list.items.len == 0)
-        return .{ .allocator = allocator, .result = .none };
-    return .{
-        .allocator = allocator,
-        .result = .{
-            .results = try list.toOwnedSlice(),
+            .results = try list.toOwnedSlice(allocator),
         },
     };
 }
@@ -92,6 +81,8 @@ const LuaFileType = enum {
 pub const POSSIBLE_EXTENSIONS = [_][]const u8{
     ".luau",
     ".lua",
+    "/init.luau",
+    "/init.lua",
 };
 
 pub fn getLuaFileType(path: []const u8) ?LuaFileType {
@@ -102,36 +93,26 @@ pub fn getLuaFileType(path: []const u8) ?LuaFileType {
     return null;
 }
 
-pub fn findLuauFile(allocator: std.mem.Allocator, dir: std.fs.Dir, fileName: []const u8) !SearchResult([]const u8) {
-    return findLuauFileFromPath(allocator, dir, fileName);
-}
-
-pub fn findLuauFileZ(allocator: std.mem.Allocator, dir: std.fs.Dir, fileName: []const u8) !SearchResult([:0]const u8) {
-    return findLuauFileFromPathZ(allocator, dir, fileName);
-}
-
-pub fn findLuauFileFromPath(allocator: std.mem.Allocator, dir: std.fs.Dir, fileName: []const u8) !SearchResult([]const u8) {
+pub fn findLuauFile(allocator: std.mem.Allocator, dir: std.fs.Dir, fileName: []const u8) !SearchResult {
     if (getLuaFileType(fileName)) |_|
         return error.RedundantFileExtension;
     return try searchForExtensions(allocator, dir, fileName, &POSSIBLE_EXTENSIONS);
-}
-
-pub fn findLuauFileFromPathZ(allocator: std.mem.Allocator, dir: std.fs.Dir, fileName: []const u8) !SearchResult([:0]const u8) {
-    if (getLuaFileType(fileName)) |_|
-        return error.RedundantFileExtension;
-    return try searchForExtensionsZ(allocator, dir, fileName, &POSSIBLE_EXTENSIONS);
 }
 
 pub fn getHomeDir(envMap: std.process.EnvMap) ?[]const u8 {
     return envMap.get("HOME") orelse envMap.get("USERPROFILE");
 }
 
-pub fn resolvePath(
+pub inline fn shouldFetchHomeDir(path: []const u8) bool {
+    return std.mem.startsWith(u8, path, "~") and (path.len <= 1 or (path[1] == '/' or path[1] == '\\'));
+}
+
+pub fn loadPathAlloc(
     allocator: std.mem.Allocator,
     envMap: std.process.EnvMap,
     path: []const u8,
 ) ![]u8 {
-    if (path.len > 0 and path[0] == '~' and (path.len == 1 or path[1] == '/' or path[1] == '\\')) {
+    if (shouldFetchHomeDir(path)) {
         const homeDir = getHomeDir(envMap) orelse return error.HomeDirNotFound;
         return try fs.path.join(allocator, &.{ homeDir, path[@min(path.len, 2)..] });
     }
@@ -148,8 +129,18 @@ pub fn resolve(
     defer for (resolvedPaths) |path| allocator.free(path);
 
     for (paths, 0..) |path, i| {
-        resolvedPaths[i] = try resolvePath(allocator, envMap, path);
+        resolvedPaths[i] = try loadPathAlloc(allocator, envMap, path);
     }
 
     return try fs.path.resolve(allocator, resolvedPaths);
+}
+
+pub fn resolveZ(
+    allocator: std.mem.Allocator,
+    envMap: std.process.EnvMap,
+    paths: []const []const u8,
+) ![:0]u8 {
+    const resolved = try resolve(allocator, envMap, paths);
+    defer allocator.free(resolved);
+    return try allocator.dupeZ(u8, resolved);
 }

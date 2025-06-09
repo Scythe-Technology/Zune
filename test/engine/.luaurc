@@ -3,6 +3,6 @@
     "module": "./module",
     "dev": "./dev",
     "sub": "./sublibrary",
-    "sub2": "./sublibrary"
+    "subd": "./sublibrary/subdir"
   }
 }

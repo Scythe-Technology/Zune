@@ -33,31 +33,37 @@ describe("Require", function()
         test("Name Conflict", function()
             local ok, res = pcall(require, "./generated/duplicate");
             expect(ok).toBeFalsy();
-            expect(res).toBe(`module name conflicted.\n\n- .{SEP}generated{SEP}duplicate.luau\n- .{SEP}generated{SEP}duplicate.lua`);
+            expect(res).toBe(`module name conflicted.\n├─ test{SEP}engine{SEP}generated{SEP}duplicate.luau\n└─ test{SEP}engine{SEP}generated{SEP}duplicate.lua`);
         end)
 
         test("Name Conflict #2", function()
             local ok, res = pcall(require, "./generated/duplicate2");
             expect(ok).toBeFalsy();
-            expect(res).toBe(`module name conflicted.\n\n- .{SEP}generated{SEP}duplicate2.luau\n- .{SEP}generated{SEP}duplicate2.lua`);
+            expect(res).toBe(`module name conflicted.\n├─ test{SEP}engine{SEP}generated{SEP}duplicate2.luau\n├─ test{SEP}engine{SEP}generated{SEP}duplicate2.lua\n└─ test{SEP}engine{SEP}generated{SEP}duplicate2{SEP}init.luau`);
+        end)
+
+        test("Name Conflict #3", function()
+            local ok, res = pcall(require, "./generated/duplicate3");
+            expect(ok).toBeFalsy();
+            expect(res).toBe(`module name conflicted.\n├─ test{SEP}engine{SEP}generated{SEP}duplicate3.luau\n└─ test{SEP}engine{SEP}generated{SEP}duplicate3{SEP}init.luau`);
         end)
 
         test("Unknown File", function()
             local ok, res = pcall(require, "./samples/simpleLib2");
             expect(ok).toBeFalsy();
-            expect(res:match("%w+")).toBe("FileNotFound");
+            expect(res:match("%w+ %w+ %w+:")).toBe("module not found:");
         end)
 
         test("Unknown File #2", function()
             local ok, res = pcall(require, "./simpleLib");
             expect(ok).toBeFalsy();
-            expect(res:match("%w+")).toBe("FileNotFound");
+            expect(res:match("%w+ %w+ %w+:")).toBe("module not found:");
         end)
 
         test("Unknown Alias", function()
             local ok, res = pcall(require, "@unknown/module");
             expect(ok).toBeFalsy();
-            expect(res).toBe("NoAlias");
+            expect(res).toBe("@unknown is not a valid alias");
         end)
     end)
 end)
@@ -180,23 +186,18 @@ describe("Aliases", function()
         expect(module.bar()).toBe("bar");
     end)
 
-    test("@Sub2/kool", function()
-        local module = require("@sub2/kool")::any;
+    test("@Sub/kool (overrides sub)", function()
+        local module = require("@sub/kool")::any;
         expect(module).toBe("Sub library");
     end)
 
-    test("@Sub/foo (sub-directory, overridden)", function()
-        local module = require("@sub/foo")::any;
+    test("@Sub/subdir/foo", function()
+        local module = require("@sub/subdir/foo")::any;
         expect(module).toBe("The bar exam");
     end)
 
-    test("@Kool (sub-directory .luaurc defined)", function()
-        local module = require("@kool")::any;
-        expect(module).toBe("Sub library");
-    end)
-
-    test("@Foo (sub-directory x2, .luaurc defined)", function()
-        local module = require("@foo")::any;
+    test("@Subd/foo", function()
+        local module = require("@subd/foo")::any;
         expect(module).toBe("The bar exam");
     end)
 end)

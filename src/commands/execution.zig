@@ -18,7 +18,7 @@ const Terminal = @import("repl/Terminal.zig");
 const VM = luau.VM;
 
 fn getFile(allocator: std.mem.Allocator, dir: std.fs.Dir, input: []const u8) !struct { []const u8, []const u8 } {
-    var maybeResult: ?File.SearchResult([]const u8) = null;
+    var maybeResult: ?File.SearchResult = null;
     defer if (maybeResult) |r| r.deinit();
     var maybeFileName: ?[]const u8 = null;
     errdefer if (maybeFileName) |f| allocator.free(f);
@@ -29,20 +29,21 @@ fn getFile(allocator: std.mem.Allocator, dir: std.fs.Dir, input: []const u8) !st
         maybeFileContent = try std.io.getStdIn().readToEndAlloc(allocator, std.math.maxInt(usize));
         maybeFileName = try allocator.dupe(u8, "STDIN");
     } else {
-        const path = try File.resolvePath(allocator, Zune.STATE.ENV_MAP, input);
+        const path = try File.resolveZ(allocator, Zune.STATE.ENV_MAP, &.{input});
         if (dir.readFileAlloc(allocator, path, std.math.maxInt(usize)) catch null) |content| {
             maybeFileContent = content;
             maybeFileName = path;
         } else {
             defer allocator.free(path);
-            const result = try File.findLuauFile(allocator, dir, input);
+            const result = try File.findLuauFile(allocator, dir, path);
             maybeResult = result;
             switch (result.result) {
-                .exact => |e| maybeFileName = try allocator.dupe(u8, e),
-                .results => |results| maybeFileName = try allocator.dupe(u8, results[0]),
+                .results => |results| {
+                    maybeFileName = try allocator.dupe(u8, results[0].name);
+                    maybeFileContent = try results[0].handle.readToEndAlloc(allocator, std.math.maxInt(usize));
+                },
                 .none => return error.FileNotFound,
             }
-            maybeFileContent = try std.fs.cwd().readFileAlloc(allocator, maybeFileName.?, std.math.maxInt(usize));
         }
     }
 
@@ -145,7 +146,6 @@ fn cmdRun(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     try Scheduler.SCHEDULERS.append(&scheduler);
 
-    try Zune.loadLuaurc(Zune.DEFAULT_ALLOCATOR, std.fs.cwd(), null);
     try Engine.prepAsync(L, &scheduler);
     try Zune.openZune(L, run_args, LOAD_FLAGS);
 
@@ -267,7 +267,6 @@ fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     try Scheduler.SCHEDULERS.append(&scheduler);
 
-    try Zune.loadLuaurc(Zune.DEFAULT_ALLOCATOR, std.fs.cwd(), null);
     try Engine.prepAsync(L, &scheduler);
     try Zune.openZune(L, args, LOAD_FLAGS);
 
@@ -328,7 +327,6 @@ fn cmdEval(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     try Scheduler.SCHEDULERS.append(&scheduler);
 
-    try Zune.loadLuaurc(Zune.DEFAULT_ALLOCATOR, std.fs.cwd(), null);
     try Engine.prepAsync(L, &scheduler);
     try Zune.openZune(L, args, .{ .mode = .Run });
 
@@ -438,7 +436,6 @@ fn cmdDebug(allocator: std.mem.Allocator, args: []const []const u8) !void {
         callbacks.*.debugstep = Debugger.debugstep;
         callbacks.*.debugprotectederror = Debugger.debugprotectederror;
 
-        try Zune.loadLuaurc(allocator, std.fs.cwd(), null);
         try Engine.prepAsync(L, &scheduler);
         try Zune.openZune(L, run_args, LOAD_FLAGS);
 

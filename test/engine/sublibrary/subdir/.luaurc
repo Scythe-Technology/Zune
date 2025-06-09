@@ -1,5 +1,6 @@
 {
   "aliases": {
-    "foo": "./foo"
+    "foo": "./foo",
+    "inner_foo": "./inner"
   }
 }
