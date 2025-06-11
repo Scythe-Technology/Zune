@@ -90,13 +90,11 @@ pub const SearchResult = struct {
     }
 };
 
-pub fn searchLuauFile(dir: std.fs.Dir, fileName: []const u8) !SearchResult {
+pub fn searchLuauFile(buf: []u8, dir: std.fs.Dir, fileName: []const u8) !SearchResult {
     if (getLuaFileType(fileName)) |_|
         return error.RedundantFileExtension;
 
-    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-
-    if (fileName.len > path_buf.len - LARGEST_EXTENSION)
+    if (fileName.len > buf.len - LARGEST_EXTENSION)
         return error.PathTooLong;
 
     var results: SearchResult = .{
@@ -104,9 +102,9 @@ pub fn searchLuauFile(dir: std.fs.Dir, fileName: []const u8) !SearchResult {
     };
 
     for (POSSIBLE_EXTENSIONS) |ext| {
-        @memcpy(path_buf[0..fileName.len], fileName);
-        @memcpy(path_buf[fileName.len..][0..ext.len], ext);
-        const result = path_buf[0 .. fileName.len + ext.len];
+        @memcpy(buf[0..fileName.len], fileName);
+        @memcpy(buf[fileName.len..][0..ext.len], ext);
+        const result = buf[0 .. fileName.len + ext.len];
 
         const file = dir.openFile(result, .{ .mode = .read_only }) catch |err| switch (err) {
             else => continue,
