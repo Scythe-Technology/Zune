@@ -62,8 +62,7 @@ fn lua_navigate(L: *VM.lua.State) !i32 {
     var err_msg: ?[]const u8 = null;
     defer if (err_msg) |msg| allocator.free(msg);
     const script_path = Zune.Resolvers.Navigator.navigate(allocator, &context, src, path, &err_msg) catch |err| switch (err) {
-        error.SyntaxError => return L.Zerrorf("{s}", .{err_msg.?}),
-        error.AliasNotFound => return L.Zerrorf("{s}", .{err_msg.?}),
+        error.SyntaxError, error.AliasNotFound, error.AliasPathNotSupported, error.AliasJumpFail => return L.Zerrorf("{s}", .{err_msg.?}),
         error.PathUnsupported => return L.Zerror("must have either \"@\", \"./\", or \"../\" prefix"),
         else => return err,
     };
