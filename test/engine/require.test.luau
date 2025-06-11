@@ -207,6 +207,18 @@ describe("Aliases", function()
         local module = require("@subd/foo")::any;
         expect(module).toBe("The bar exam");
     end)
+
+    test("@Alias_path, @alias path", function()
+        local ok, err = pcall(require, "@alias_path");
+        expect(ok).toBeFalsy();
+        expect(err).toBe("alias \"@alias_path\" cannot point to an aliased path (\"@test\")");
+    end)
+
+    test("@Unknown_path, no prefix path", function()
+        local ok, err = pcall(require, "@unknown_path");
+        expect(ok).toBeFalsy();
+        expect(err).toBe("could not jump to alias \"test\"");
+    end)
 end)
 
 describe("Require with Context", function()

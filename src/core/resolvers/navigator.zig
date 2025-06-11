@@ -289,6 +289,20 @@ pub fn navigate(allocator: std.mem.Allocator, context: anytype, from: []const u8
             if (alias_value.len > fs.max_path_bytes)
                 return error.PathTooLong;
 
+            switch (PathType.get(alias_value)) {
+                .RelativeToCurrent, .RelativeToParent => {},
+                .Aliased => {
+                    if (out_err) |ptr_out|
+                        ptr_out.* = try std.fmt.allocPrint(allocator, "alias \"@{s}\" cannot point to an aliased path (\"{s}\")", .{ alias_name, alias_value });
+                    return error.AliasPathNotSupported;
+                },
+                .Unsupported => if (!isAbsolute(alias_value)) {
+                    if (out_err) |ptr_out|
+                        ptr_out.* = try std.fmt.allocPrint(allocator, "could not jump to alias \"{s}\"", .{alias_value});
+                    return error.AliasJumpFail;
+                },
+            }
+
             const ext_path = try joinPath(path_allocator, alias_value, path[alias_name.len + 1 ..]);
             std.mem.replaceScalar(u8, ext_path, '\\', '/');
             return try context.resolvePathAlloc(
