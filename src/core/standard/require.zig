@@ -11,16 +11,21 @@ const VM = luau.VM;
 pub const LIB_NAME = "require";
 
 const LuaContext = struct {
+    allocator: std.mem.Allocator,
     contents: ?[]const u8,
     accessed: bool = false,
-    pub fn getConfigAlloc(self: *LuaContext, a: std.mem.Allocator, _: []const u8) ![]const u8 {
+
+    pub fn getConfig(self: *LuaContext, _: []const u8, err: ?*?[]const u8) !Zune.Resolvers.Config {
         if (self.accessed)
             return error.NotPresent;
         self.accessed = true;
-        return a.dupe(u8, self.contents orelse return error.NotPresent);
+        return Zune.Resolvers.Config.parse(self.allocator, self.contents orelse return error.NotPresent, err);
     }
-    pub fn resolvePathAlloc(_: *LuaContext, a: std.mem.Allocator, paths: []const []const u8) ![]u8 {
-        return std.fs.path.resolve(a, paths);
+    pub fn freeConfig(self: *LuaContext, config: *Zune.Resolvers.Config) void {
+        config.deinit(self.allocator);
+    }
+    pub fn resolvePathAlloc(_: *LuaContext, a: std.mem.Allocator, from: []const u8, to: []const u8) ![]u8 {
+        return std.fs.path.resolve(a, &.{ from, to });
     }
 };
 
@@ -33,6 +38,7 @@ fn lua_navigate(L: *VM.lua.State) !i32 {
 
     var context: LuaContext = .{
         .contents = config,
+        .allocator = allocator,
     };
 
     var ar: VM.lua.Debug = .{ .ssbuf = undefined };

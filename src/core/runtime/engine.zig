@@ -7,67 +7,23 @@ const Scheduler = Zune.Runtime.Scheduler;
 
 const VM = luau.VM;
 
-pub const LuauCompileError = error{
-    Syntax,
-};
-
-pub const LuauRunError = enum {
-    Runtime,
-};
-
-pub fn compileModule(allocator: std.mem.Allocator, content: []const u8, cOpts: ?luau.CompileOptions) !struct { bool, []const u8 } {
+pub inline fn loadAndCompileModule(L: *VM.lua.State, moduleName: [:0]const u8, content: []const u8, cOpts: ?luau.CompileOptions) !void {
     const compileOptions = cOpts orelse luau.CompileOptions{
         .debug_level = Zune.STATE.LUAU_OPTIONS.DEBUG_LEVEL,
         .optimization_level = Zune.STATE.LUAU_OPTIONS.OPTIMIZATION_LEVEL,
     };
-    const luau_allocator = luau.Ast.Allocator.init();
-    defer luau_allocator.deinit();
 
-    const astNameTable = luau.Ast.Lexer.AstNameTable.init(luau_allocator);
-    defer astNameTable.deinit();
-
-    const parseResult = luau.Ast.Parser.parse(content, astNameTable, luau_allocator, .{});
-    defer parseResult.deinit();
-
-    const FunctionVisitor = struct {
-        const Ast = luau.Ast.Ast;
-        hasNativeFunction: bool = false,
-        pub fn visit(self: *@This(), _: *Ast.Node) bool {
-            return !self.hasNativeFunction; // fast exit
-        }
-        pub fn visitExprFunction(self: *@This(), node: *Ast.ExprFunction) bool {
-            node.body.visit(self);
-
-            if (!self.hasNativeFunction and node.hasNativeAttribute())
-                self.hasNativeFunction = true;
-
-            return false;
-        }
-    };
-    var visitor: FunctionVisitor = .{};
-
-    parseResult.root.visit(&visitor);
-
-    return .{ visitor.hasNativeFunction, try luau.Compiler.Compiler.compileParseResult(allocator, parseResult, astNameTable, compileOptions) };
+    luau.Compiler.Compiler.compileLoad(L, moduleName, content, compileOptions, 0) catch return error.Syntax;
 }
 
 pub fn loadModule(L: *VM.lua.State, name: [:0]const u8, content: []const u8, cOpts: ?luau.CompileOptions) !void {
-    const allocator = luau.getallocator(L);
     var script = content;
     if (std.mem.startsWith(u8, content, "#!")) {
         const pos = std.mem.indexOf(u8, content, "\n") orelse content.len;
         script = content[pos..];
     }
-    const native, const bytecode = try compileModule(allocator, script, cOpts);
-    defer allocator.free(bytecode);
-    return try loadModuleBytecode(L, name, bytecode, native);
-}
-
-pub fn loadModuleBytecode(L: *VM.lua.State, moduleName: [:0]const u8, bytecode: []const u8, nativeAttribute: bool) LuauCompileError!void {
-    L.load(moduleName, bytecode, 0) catch {
-        return LuauCompileError.Syntax;
-    };
-    if (luau.CodeGen.Supported() and Zune.STATE.LUAU_OPTIONS.CODEGEN and !nativeAttribute and Zune.STATE.LUAU_OPTIONS.JIT_ENABLED)
+    try loadAndCompileModule(L, name, script, cOpts);
+    if (luau.CodeGen.Supported() and Zune.STATE.LUAU_OPTIONS.CODEGEN and Zune.STATE.LUAU_OPTIONS.JIT_ENABLED)
         luau.CodeGen.Compile(L, -1);
 }
 
@@ -86,13 +42,9 @@ const StackInfo = struct {
 
 pub fn setLuaFileContext(L: *VM.lua.State, ctx: FileContext) void {
     L.Zpushvalue(.{
-        .source = ctx.source,
+        .source = if (Zune.STATE.USE_DETAILED_ERROR or Zune.STATE.RUN_MODE == .Test) ctx.source else null,
         .main = ctx.main,
     });
-
-    // TODO: Only include source when USE_DETAILED_ERROR is true or testing.
-    // if (USE_DETAILED_ERROR)
-    // L.Zsetfield(-1, "source", ctx.source);
 
     L.setfield(VM.lua.GLOBALSINDEX, "_FILE");
 }
@@ -558,7 +510,7 @@ test "Run Basic Syntax Error" {
     if (luau.CodeGen.Supported())
         luau.CodeGen.Create(L);
     L.Lopenlibs();
-    try std.testing.expectError(LuauCompileError.Syntax, loadModule(L, "test", "print('Hello, World!'\n", null));
+    try std.testing.expectError(error.Syntax, loadModule(L, "test", "print('Hello, World!'\n", null));
     try std.testing.expectEqualStrings("[string \"test\"]:2: Expected ')' (to close '(' at line 1), got <eof>", L.tostring(-1) orelse "UnknownError");
 }
 

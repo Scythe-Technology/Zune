@@ -279,11 +279,6 @@ pub fn init(allocator: std.mem.Allocator, L: *VM.lua.State) !Scheduler {
     };
 }
 
-pub fn spawnThread(self: *Scheduler, thread: *VM.lua.State, from: ?*VM.lua.State, args: i32) void {
-    _ = self;
-    _ = resumeState(thread, from, args) catch {};
-}
-
 pub fn deferThread(self: *Scheduler, thread: *VM.lua.State, from: ?*VM.lua.State, args: i32) void {
     const ptr = self.allocator.create(DeferredThread) catch |err| std.debug.panic("Error: {}\n", .{err});
     ptr.* = .{
@@ -487,36 +482,36 @@ pub fn freeSync(self: *Scheduler, data: anytype) void {
 }
 
 pub fn resumeState(state: *VM.lua.State, from: ?*VM.lua.State, args: i32) !VM.lua.Status {
-    const status = state.status();
-    if (status != .Yield and status != .Ok)
-        return status.check();
-    return state.resumethread(from, args).check() catch |err| {
-        Engine.logError(state, err, false);
-        if (Zune.Runtime.Debugger.ACTIVE) {
-            @branchHint(.unlikely);
-            switch (err) {
-                error.Runtime => Zune.Runtime.Debugger.luau_panic(state, -2),
-                else => {},
+    return switch (state.status()) {
+        .Yield, .Ok => state.resumethread(from, args).check() catch |err| {
+            Engine.logError(state, err, false);
+            if (Zune.Runtime.Debugger.ACTIVE) {
+                @branchHint(.unpredictable);
+                switch (err) {
+                    error.Runtime => Zune.Runtime.Debugger.luau_panic(state, -2),
+                    else => {},
+                }
             }
-        }
-        return err;
+            return err;
+        },
+        inline else => |e| e.check(),
     };
 }
 
 pub fn resumeStateError(state: *VM.lua.State, from: ?*VM.lua.State) !VM.lua.Status {
-    const status = state.status();
-    if (status != .Yield and status != .Ok)
-        return status.check();
-    return state.resumeerror(from).check() catch |err| {
-        Engine.logError(state, err, false);
-        if (Zune.Runtime.Debugger.ACTIVE) {
-            @branchHint(.unlikely);
-            switch (err) {
-                error.Runtime => Zune.Runtime.Debugger.luau_panic(state, -2),
-                else => {},
+    return switch (state.status()) {
+        .Yield, .Ok => state.resumeerror(from).check() catch |err| {
+            Engine.logError(state, err, false);
+            if (Zune.Runtime.Debugger.ACTIVE) {
+                @branchHint(.unpredictable);
+                switch (err) {
+                    error.Runtime => Zune.Runtime.Debugger.luau_panic(state, -2),
+                    else => {},
+                }
             }
-        }
-        return err;
+            return err;
+        },
+        inline else => |e| e.check(),
     };
 }
 

@@ -14,6 +14,13 @@ describe("Require", function()
             expect(res.size).toBe(32);
             expect(res.buffer).toBe(expect.any("buffer"));
         end)
+        test("Known File", function()
+            local ok, res = pcall(require, ".\\samples\\simpleLib");
+            expect(ok).toBeTruthy();
+            expect(res).toBe(expect.any("table"));
+            expect(res.size).toBe(32);
+            expect(res.buffer).toBe(expect.any("buffer"));
+        end)
     end)
 
     describe("Bad", function()

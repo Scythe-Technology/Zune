@@ -17,37 +17,29 @@ const Terminal = @import("repl/Terminal.zig");
 
 const VM = luau.VM;
 
-fn getFile(allocator: std.mem.Allocator, dir: std.fs.Dir, input: []const u8) !struct { []const u8, []const u8 } {
-    var maybeResult: ?File.SearchResult = null;
-    defer if (maybeResult) |r| r.deinit();
-    var maybeFileName: ?[]const u8 = null;
-    errdefer if (maybeFileName) |f| allocator.free(f);
-    var maybeFileContent: ?[]const u8 = null;
-    errdefer if (maybeFileContent) |c| allocator.free(c);
+fn getFile(allocator: std.mem.Allocator, dir: std.fs.Dir, input: []const u8) !struct { [:0]u8, []const u8 } {
+    var maybe_src: ?[:0]u8 = null;
+    errdefer if (maybe_src) |s| allocator.free(s);
+    var maybe_content: ?[]const u8 = null;
+    errdefer if (maybe_content) |c| allocator.free(c);
 
     if (input.len == 1 and input[0] == '-') {
-        maybeFileContent = try std.io.getStdIn().readToEndAlloc(allocator, std.math.maxInt(usize));
-        maybeFileName = try allocator.dupe(u8, "STDIN");
+        maybe_content = try std.io.getStdIn().readToEndAlloc(allocator, std.math.maxInt(usize));
+        maybe_src = try allocator.dupeZ(u8, "@STDIN");
     } else {
         const path = try File.resolveZ(allocator, Zune.STATE.ENV_MAP, &.{input});
+        defer allocator.free(path);
         if (dir.readFileAlloc(allocator, path, std.math.maxInt(usize)) catch null) |content| {
-            maybeFileContent = content;
-            maybeFileName = path;
+            maybe_content = content;
+            maybe_src = try std.mem.concatWithSentinel(allocator, u8, &.{ "@", path }, 0);
         } else {
-            defer allocator.free(path);
-            const result = try File.findLuauFile(allocator, dir, path);
-            maybeResult = result;
-            switch (result.result) {
-                .results => |results| {
-                    maybeFileName = try allocator.dupe(u8, results[0].name);
-                    maybeFileContent = try results[0].handle.readToEndAlloc(allocator, std.math.maxInt(usize));
-                },
-                .none => return error.FileNotFound,
-            }
+            const result = try File.findLuauFile(dir, path) orelse return error.FileNotFound;
+            maybe_content = try result.handle.readToEndAlloc(allocator, std.math.maxInt(usize));
+            maybe_src = try std.mem.concatWithSentinel(allocator, u8, &.{ "@", path, result.ext }, 0);
         }
     }
 
-    return .{ maybeFileName.?, maybeFileContent.? };
+    return .{ maybe_src.?, maybe_content.? };
 }
 
 fn splitArgs(args: []const []const u8) struct { []const []const u8, ?[]const []const u8 } {
@@ -55,7 +47,7 @@ fn splitArgs(args: []const []const u8) struct { []const []const u8, ?[]const []c
     var flags: ?[]const []const u8 = null;
     blk: {
         for (args, 0..) |arg, ap| {
-            if (arg.len < 1 or arg[0] != '-' or arg.len == 1) {
+            if (arg.len <= 1 or arg[0] != '-') {
                 if (ap > 0)
                     flags = args[0..ap];
                 run_args = args[ap..];
@@ -74,69 +66,80 @@ fn cmdRun(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     if (run_args.len < 1) {
         std.debug.print("Usage: run [OPTIONS] <luau file>\n", .{});
-        return;
+        std.process.exit(1);
     }
+
+    Zune.STATE.RUN_MODE = .Run;
 
     Zune.loadConfiguration(std.fs.cwd());
 
-    var LOAD_FLAGS: Zune.Flags = .{
-        .mode = .Run,
-    };
+    var LOAD_FLAGS: Zune.Flags = .{};
     var PROFILER: ?u64 = null;
     if (flags) |f| for (f) |flag| {
-        if (std.mem.startsWith(u8, flag[0..9], "--profile")) {
-            PROFILER = 10000;
-            if (flag.len > 10 and flag[9] == '=') {
-                const level = try std.fmt.parseInt(u64, flag[10..], 10);
-                PROFILER = level;
-            }
-        } else if (std.mem.startsWith(u8, flag[0..2], "-O")) {
-            if (flag.len == 3 and flag[2] >= '0' and flag[2] <= '2') {
-                const level: u2 = switch (flag[2]) {
-                    '0' => 0,
-                    '1' => 1,
-                    '2' => 2,
-                    else => unreachable,
-                };
-                Zune.STATE.LUAU_OPTIONS.OPTIMIZATION_LEVEL = level;
-            } else {
-                std.debug.print("Flag: -O, Invalid Optimization level, usage: -O<N>\n", .{});
-                return;
-            }
-        } else if (std.mem.startsWith(u8, flag[0..2], "-g")) {
-            if (flag.len == 3 and flag[2] >= '0' and flag[2] <= '2') {
-                const level: u2 = switch (flag[2]) {
-                    '0' => 0,
-                    '1' => 1,
-                    '2' => 2,
-                    else => unreachable,
-                };
-                Zune.STATE.LUAU_OPTIONS.DEBUG_LEVEL = level;
-            } else {
-                std.debug.print("Flag: -g, Invalid Debug level, usage: -g<N>\n", .{});
-                return;
-            }
-        } else if (std.mem.eql(u8, flag, "--native")) {
-            Zune.STATE.LUAU_OPTIONS.CODEGEN = true;
-        } else if (std.mem.eql(u8, flag, "--no-native")) {
-            Zune.STATE.LUAU_OPTIONS.CODEGEN = false;
-        } else if (std.mem.eql(u8, flag, "--no-jit")) {
-            Zune.STATE.LUAU_OPTIONS.JIT_ENABLED = false;
-        } else if (std.mem.eql(u8, flag, "--limbo")) {
-            LOAD_FLAGS.limbo = true;
+        if (flag.len < 2)
+            continue;
+        switch (flag[0]) {
+            '-' => switch (flag[1]) {
+                'O' => if (flag.len == 3 and flag[2] >= '0' and flag[2] <= '2') {
+                    const level: u2 = switch (flag[2]) {
+                        '0' => 0,
+                        '1' => 1,
+                        '2' => 2,
+                        else => unreachable,
+                    };
+                    Zune.STATE.LUAU_OPTIONS.OPTIMIZATION_LEVEL = level;
+                } else {
+                    std.debug.print("Flag: -O, Invalid Optimization level, usage: -O<N>\n", .{});
+                    std.process.exit(1);
+                },
+                'g' => {
+                    if (flag.len == 3 and flag[2] >= '0' and flag[2] <= '2') {
+                        const level: u2 = switch (flag[2]) {
+                            '0' => 0,
+                            '1' => 1,
+                            '2' => 2,
+                            else => unreachable,
+                        };
+                        Zune.STATE.LUAU_OPTIONS.DEBUG_LEVEL = level;
+                    } else {
+                        std.debug.print("Flag: -g, Invalid Debug level, usage: -g<N>\n", .{});
+                        std.process.exit(1);
+                    }
+                },
+                '-' => if (std.mem.startsWith(u8, flag, "--profile")) {
+                    PROFILER = 10000;
+                    if (flag.len > 10 and flag[9] == '=') {
+                        const level = try std.fmt.parseInt(u64, flag[10..], 10);
+                        PROFILER = level;
+                    }
+                } else if (std.mem.eql(u8, flag, "--native")) {
+                    Zune.STATE.LUAU_OPTIONS.CODEGEN = true;
+                } else if (std.mem.eql(u8, flag, "--no-native")) {
+                    Zune.STATE.LUAU_OPTIONS.CODEGEN = false;
+                } else if (std.mem.eql(u8, flag, "--no-jit")) {
+                    Zune.STATE.LUAU_OPTIONS.JIT_ENABLED = false;
+                } else if (std.mem.eql(u8, flag, "--limbo")) {
+                    LOAD_FLAGS.limbo = true;
+                },
+                else => {
+                    std.debug.print("Unknown flag: {s}\n", .{flag});
+                    std.process.exit(1);
+                },
+            },
+            else => unreachable,
         }
     };
 
     const dir = std.fs.cwd();
     const module = run_args[0];
 
-    const filePath, const fileContent = try getFile(allocator, dir, module);
-    defer allocator.free(filePath);
-    defer allocator.free(fileContent);
+    const file_src_path, const file_content = try getFile(allocator, dir, module);
+    defer allocator.free(file_src_path);
+    defer allocator.free(file_content);
 
-    if (fileContent.len == 0) {
+    if (file_content.len == 0) {
         std.debug.print("File is empty: {s}\n", .{run_args[0]});
-        return;
+        std.process.exit(1);
     }
 
     var L = try luau.init(&allocator);
@@ -156,19 +159,16 @@ fn cmdRun(allocator: std.mem.Allocator, args: []const []const u8) !void {
     ML.Lsandboxthread();
 
     Engine.setLuaFileContext(ML, .{
-        .source = fileContent,
+        .source = file_content,
         .main = true,
     });
 
     ML.setsafeenv(VM.lua.GLOBALSINDEX, true);
 
-    const sourceNameZ = try std.mem.concatWithSentinel(allocator, u8, &.{ "@", filePath }, 0);
-    defer allocator.free(sourceNameZ);
-
-    Engine.loadModule(ML, sourceNameZ, fileContent, null) catch |err| switch (err) {
+    Engine.loadModule(ML, file_src_path, file_content, null) catch |err| switch (err) {
         error.Syntax => {
             std.debug.print("SyntaxError: {s}\n", .{ML.tostring(-1) orelse "UnknownError"});
-            return;
+            std.process.exit(1);
         },
         else => return err,
     };
@@ -179,7 +179,7 @@ fn cmdRun(allocator: std.mem.Allocator, args: []const []const u8) !void {
         Profiler.end();
         Profiler.dump("profile.out");
     };
-    Engine.runAsync(ML, &scheduler, .{ .cleanUp = true }) catch return; // Soft exit
+    Engine.runAsync(ML, &scheduler, .{ .cleanUp = true }) catch std.process.exit(1);
 }
 
 fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
@@ -187,62 +187,73 @@ fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     if (run_args.len < 1) {
         std.debug.print("Usage: test <luau file>\n", .{});
-        return;
+        std.process.exit(1);
     }
 
     Zune.loadConfiguration(std.fs.cwd());
 
-    var LOAD_FLAGS: Zune.Flags = .{
-        .mode = .Test,
-    };
+    Zune.STATE.RUN_MODE = .Test;
+
+    var LOAD_FLAGS: Zune.Flags = .{};
     if (flags) |f| for (f) |flag| {
-        if (std.mem.startsWith(u8, flag[0..2], "-O")) {
-            if (flag.len == 3 and flag[2] >= '0' and flag[2] <= '2') {
-                const level: u2 = switch (flag[2]) {
-                    '0' => 0,
-                    '1' => 1,
-                    '2' => 2,
-                    else => unreachable,
-                };
-                Zune.STATE.LUAU_OPTIONS.OPTIMIZATION_LEVEL = level;
-            } else {
-                std.debug.print("Flag: -O, Invalid Optimization level, usage: -O<N>\n", .{});
-                return;
-            }
-        } else if (std.mem.startsWith(u8, flag[0..2], "-g")) {
-            if (flag.len == 3 and flag[2] >= '0' and flag[2] <= '2') {
-                const level: u2 = switch (flag[2]) {
-                    '0' => 0,
-                    '1' => 1,
-                    '2' => 2,
-                    else => unreachable,
-                };
-                Zune.STATE.LUAU_OPTIONS.DEBUG_LEVEL = level;
-            } else {
-                std.debug.print("Flag: -g, Invalid Debug level, usage: -g<N>\n", .{});
-                return;
-            }
-        } else if (std.mem.eql(u8, flag, "--native")) {
-            Zune.STATE.LUAU_OPTIONS.CODEGEN = true;
-        } else if (std.mem.eql(u8, flag, "--no-native")) {
-            Zune.STATE.LUAU_OPTIONS.CODEGEN = false;
-        } else if (std.mem.eql(u8, flag, "--no-jit")) {
-            Zune.STATE.LUAU_OPTIONS.JIT_ENABLED = false;
-        } else if (std.mem.eql(u8, flag, "--limbo")) {
-            LOAD_FLAGS.limbo = true;
+        if (flag.len < 2)
+            continue;
+        switch (flag[0]) {
+            '-' => switch (flag[1]) {
+                'O' => if (flag.len == 3 and flag[2] >= '0' and flag[2] <= '2') {
+                    const level: u2 = switch (flag[2]) {
+                        '0' => 0,
+                        '1' => 1,
+                        '2' => 2,
+                        else => unreachable,
+                    };
+                    Zune.STATE.LUAU_OPTIONS.OPTIMIZATION_LEVEL = level;
+                } else {
+                    std.debug.print("Flag: -O, Invalid Optimization level, usage: -O<N>\n", .{});
+                    std.process.exit(1);
+                },
+                'g' => {
+                    if (flag.len == 3 and flag[2] >= '0' and flag[2] <= '2') {
+                        const level: u2 = switch (flag[2]) {
+                            '0' => 0,
+                            '1' => 1,
+                            '2' => 2,
+                            else => unreachable,
+                        };
+                        Zune.STATE.LUAU_OPTIONS.DEBUG_LEVEL = level;
+                    } else {
+                        std.debug.print("Flag: -g, Invalid Debug level, usage: -g<N>\n", .{});
+                        std.process.exit(1);
+                    }
+                },
+                '-' => if (std.mem.eql(u8, flag, "--native")) {
+                    Zune.STATE.LUAU_OPTIONS.CODEGEN = true;
+                } else if (std.mem.eql(u8, flag, "--no-native")) {
+                    Zune.STATE.LUAU_OPTIONS.CODEGEN = false;
+                } else if (std.mem.eql(u8, flag, "--no-jit")) {
+                    Zune.STATE.LUAU_OPTIONS.JIT_ENABLED = false;
+                } else if (std.mem.eql(u8, flag, "--limbo")) {
+                    LOAD_FLAGS.limbo = true;
+                },
+                else => {
+                    std.debug.print("Unknown flag: {s}\n", .{flag});
+                    std.process.exit(1);
+                },
+            },
+            else => unreachable,
         }
     };
 
     const dir = std.fs.cwd();
     const module = args[0];
 
-    const filePath, const fileContent = try getFile(allocator, dir, module);
-    defer allocator.free(filePath);
-    defer allocator.free(fileContent);
+    const file_src_path, const file_content = try getFile(allocator, dir, module);
+    defer allocator.free(file_src_path);
+    defer allocator.free(file_content);
 
-    if (fileContent.len == 0) {
+    if (file_content.len == 0) {
         std.debug.print("File is empty: {s}\n", .{args[0]});
-        return;
+        std.process.exit(1);
     }
 
     var gpa = std.heap.DebugAllocator(.{
@@ -277,26 +288,23 @@ fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     ML.Lsandboxthread();
 
     Engine.setLuaFileContext(ML, .{
-        .source = fileContent,
+        .source = file_content,
         .main = true,
     });
 
     ML.setsafeenv(VM.lua.GLOBALSINDEX, true);
 
-    const sourceNameZ = try std.mem.concatWithSentinel(allocator, u8, &.{ "@", filePath }, 0);
-    defer allocator.free(sourceNameZ);
-
-    Engine.loadModule(ML, sourceNameZ, fileContent, null) catch |err| switch (err) {
+    Engine.loadModule(ML, file_src_path, file_content, null) catch |err| switch (err) {
         error.Syntax => {
             std.debug.print("SyntaxError: {s}\n", .{ML.tostring(-1) orelse "UnknownError"});
-            return;
+            std.process.exit(1);
         },
         else => return err,
     };
 
     const start = VM.lperf.clock();
 
-    Engine.runAsync(ML, &scheduler, .{ .cleanUp = true }) catch {};
+    Engine.runAsync(ML, &scheduler, .{ .cleanUp = true }) catch std.process.exit(1);
 
     const reuslt = Zune.corelib.testing.finish_testing(L, start);
 
@@ -308,7 +316,7 @@ fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
 fn cmdEval(allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len < 1) {
         std.debug.print("Usage: eval <luau>\n", .{});
-        return;
+        std.process.exit(1);
     }
 
     Zune.loadConfiguration(std.fs.cwd());
@@ -317,7 +325,7 @@ fn cmdEval(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     if (fileContent.len == 0) {
         std.debug.print("Eval is empty\n", .{});
-        return;
+        std.process.exit(1);
     }
 
     var L = try luau.init(&allocator);
@@ -328,7 +336,7 @@ fn cmdEval(allocator: std.mem.Allocator, args: []const []const u8) !void {
     try Scheduler.SCHEDULERS.append(&scheduler);
 
     try Engine.prepAsync(L, &scheduler);
-    try Zune.openZune(L, args, .{ .mode = .Run });
+    try Zune.openZune(L, args, .{});
 
     L.setsafeenv(VM.lua.GLOBALSINDEX, true);
 
@@ -346,12 +354,12 @@ fn cmdEval(allocator: std.mem.Allocator, args: []const []const u8) !void {
     Engine.loadModule(ML, "@EVAL", fileContent, null) catch |err| switch (err) {
         error.Syntax => {
             std.debug.print("SyntaxError: {s}\n", .{ML.tostring(-1) orelse "UnknownError"});
-            return;
+            std.process.exit(1);
         },
         else => return err,
     };
 
-    Engine.runAsync(ML, &scheduler, .{ .cleanUp = true }) catch return; // Soft exit
+    Engine.runAsync(ML, &scheduler, .{ .cleanUp = true }) catch std.process.exit(1);
 }
 
 fn cmdDebug(allocator: std.mem.Allocator, args: []const []const u8) !void {
@@ -366,35 +374,45 @@ fn cmdDebug(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const run_args, const flags = splitArgs(args);
 
     if (run_args.len < 1) {
-        std.debug.print("Usage: run [OPTIONS] <luau file>\n", .{});
-        return;
+        std.debug.print("Usage: debug [OPTIONS] <luau file>\n", .{});
+        std.process.exit(1);
     }
+
+    Zune.STATE.RUN_MODE = .Debug;
 
     Zune.loadConfiguration(std.fs.cwd());
 
-    var LOAD_FLAGS: Zune.Flags = .{
-        .mode = .Debug,
-    };
+    var LOAD_FLAGS: Zune.Flags = .{};
     var ALWAYS_DEBUG = true;
 
     if (flags) |f| for (f) |flag| {
-        if (std.mem.startsWith(u8, flag, "-O")) {
-            if (flag.len == 3 and flag[2] >= '0' and flag[2] <= '2') {
-                const level: u2 = switch (flag[2]) {
-                    '0' => 0,
-                    '1' => 1,
-                    '2' => 2,
-                    else => unreachable,
-                };
-                Zune.STATE.LUAU_OPTIONS.OPTIMIZATION_LEVEL = level;
-            } else {
-                std.debug.print("Flag: -O, Invalid Optimization level, usage: -O<N>\n", .{});
-                return;
-            }
-        } else if (std.mem.eql(u8, flag, "--once")) {
-            ALWAYS_DEBUG = false;
-        } else if (std.mem.eql(u8, flag, "--limbo")) {
-            LOAD_FLAGS.limbo = true;
+        if (flag.len < 2)
+            continue;
+        switch (flag[0]) {
+            '-' => switch (flag[1]) {
+                'O' => if (flag.len == 3 and flag[2] >= '0' and flag[2] <= '2') {
+                    const level: u2 = switch (flag[2]) {
+                        '0' => 0,
+                        '1' => 1,
+                        '2' => 2,
+                        else => unreachable,
+                    };
+                    Zune.STATE.LUAU_OPTIONS.OPTIMIZATION_LEVEL = level;
+                } else {
+                    std.debug.print("Flag: -O, Invalid Optimization level, usage: -O<N>\n", .{});
+                    std.process.exit(1);
+                },
+                '-' => if (std.mem.eql(u8, flag, "--once")) {
+                    ALWAYS_DEBUG = false;
+                } else if (std.mem.eql(u8, flag, "--limbo")) {
+                    LOAD_FLAGS.limbo = true;
+                },
+                else => {
+                    std.debug.print("Unknown flag: {s}\n", .{flag});
+                    std.process.exit(1);
+                },
+            },
+            else => unreachable,
         }
     };
 
@@ -407,13 +425,13 @@ fn cmdDebug(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const dir = std.fs.cwd();
     const module = run_args[0];
 
-    const filePath, const fileContent = try getFile(allocator, dir, module);
-    defer allocator.free(filePath);
-    defer allocator.free(fileContent);
+    const file_src_path, const file_content = try getFile(allocator, dir, module);
+    defer allocator.free(file_src_path);
+    defer allocator.free(file_content);
 
-    if (fileContent.len == 0) {
+    if (file_content.len == 0) {
         std.debug.print("File is empty: {s}\n", .{run_args[0]});
-        return;
+        std.process.exit(1);
     }
 
     while (true) {
@@ -455,24 +473,25 @@ fn cmdDebug(allocator: std.mem.Allocator, args: []const []const u8) !void {
         ML.Lsandboxthread();
 
         Engine.setLuaFileContext(ML, .{
-            .source = fileContent,
+            .source = file_content,
             .main = true,
         });
 
         ML.setsafeenv(VM.lua.GLOBALSINDEX, true);
 
-        const sourceNameZ = try std.mem.concatWithSentinel(allocator, u8, &.{ "@", filePath }, 0);
-        defer allocator.free(sourceNameZ);
-
-        Engine.loadModule(ML, sourceNameZ, fileContent, null) catch |err| switch (err) {
+        Engine.loadModule(ML, file_src_path, file_content, null) catch |err| switch (err) {
             error.Syntax => {
                 std.debug.print("SyntaxError: {s}\n", .{ML.tostring(-1) orelse "UnknownError"});
-                return;
+                std.process.exit(1);
             },
             else => return err,
         };
+
+        const real_path = try dir.realpathAlloc(allocator, file_src_path);
+        defer allocator.free(real_path);
+
         const ref = ML.ref(-1).?;
-        try Debugger.addReference(allocator, ML, filePath, ref);
+        try Debugger.addReference(allocator, ML, real_path, ref);
 
         try Debugger.prompt(ML, .None, null);
         Engine.runAsync(ML, &scheduler, .{ .cleanUp = true, .mode = .Debug }) catch {}; // Soft continue

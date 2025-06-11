@@ -12,14 +12,19 @@ const PathType = enum {
     Unsupported,
 
     pub fn get(path: []const u8) PathType {
-        if (std.mem.startsWith(u8, path, "./")) {
-            return .RelativeToCurrent;
-        } else if (std.mem.startsWith(u8, path, "../")) {
-            return .RelativeToParent;
-        } else if (std.mem.startsWith(u8, path, "@")) {
-            return .Aliased;
-        } else {
+        if (path.len == 0)
             return .Unsupported;
+        switch (path[0]) {
+            '.' => switch (if (path.len == 1) return .Unsupported else path[1]) {
+                '/', '\\' => return .RelativeToCurrent,
+                '.' => switch (if (path.len == 2) return .Unsupported else path[2]) {
+                    '/', '\\' => return .RelativeToParent,
+                    else => return .Unsupported,
+                },
+                else => return .Unsupported,
+            },
+            '@' => return .Aliased,
+            else => return .Unsupported,
         }
     }
 };
@@ -27,6 +32,8 @@ const PathType = enum {
 pub const INIT_SUFFIXES: []const [:0]const u8 = &.{
     "/init.luau",
     "/init.lua",
+    "\\init.luau",
+    "\\init.lua",
 };
 pub const SUFFIXES: []const [:0]const u8 = &.{
     ".luau",
@@ -64,7 +71,7 @@ pub fn getLuaurcPath(buf: []u8, path: []const u8) []const u8 {
         @memcpy(buf[0..path.len], path);
         written += path.len;
         switch (path[path.len - 1]) {
-            '\\', '/' => written -= 1,
+            '/', '\\' => written -= 1,
             else => {},
         }
     }
@@ -72,9 +79,120 @@ pub fn getLuaurcPath(buf: []u8, path: []const u8) []const u8 {
     @memcpy(buf[written .. written + END.len], END);
     const out = buf[0 .. written + END.len];
     if (comptime builtin.os.tag == .windows)
-        _ = std.mem.replace(u8, out, "/", fs.path.sep_str, out);
+        std.mem.replaceScalar(u8, out, '/', fs.path.sep);
     return out;
 }
+
+fn joinPathScalar(out: []u8, scalar: u8, path: []const u8) []u8 {
+    std.debug.assert(out.len >= path.len + 2);
+    out[0] = scalar;
+    if (path.len == 0)
+        return out[0..1];
+    switch (path[0]) {
+        '/', '\\' => {
+            @memcpy(out[1 .. path.len + 1], path);
+            return out[0 .. path.len + 1];
+        },
+        else => {
+            out[1] = fs.path.sep;
+            @memcpy(out[2 .. path.len + 2], path);
+            return out[0 .. path.len + 2];
+        },
+    }
+}
+
+fn joinPath(allocator: std.mem.Allocator, path: []const u8, path2: []const u8) ![]u8 {
+    var size: usize = 0;
+    const non_empty_path = path.len > 0;
+    const non_empty_path2 = path2.len > 0;
+    size += path.len;
+    size += path2.len;
+    var sep: ?u8 = null;
+    var offset: usize = 0;
+    if (non_empty_path and non_empty_path2) {
+        switch (path[path.len - 1]) {
+            '/', '\\' => {},
+            else => {
+                size += 1;
+                sep = fs.path.sep;
+            },
+        }
+        switch (path2[0]) {
+            '/', '\\' => {
+                size -= 1;
+                offset = 1;
+            },
+            else => {},
+        }
+    }
+    const buf = try allocator.alloc(u8, size);
+    var written: usize = 0;
+    if (non_empty_path) {
+        @memcpy(buf[0..path.len], path);
+        written += path.len;
+    }
+    if (sep) |s| {
+        buf[written] = s;
+        written += 1;
+    }
+    if (non_empty_path2) {
+        @memcpy(buf[written..][0 .. path2.len - offset], path2[offset..]);
+        written += path2.len - offset;
+    }
+    std.debug.assert(written == buf.len);
+    return buf[0..written];
+}
+
+pub fn dirname(path: []const u8) ?[]const u8 {
+    // This code is based on std.fs.path.dirnameWindows but modified to work on all platforms
+    if (path.len == 0)
+        return null;
+
+    const root_slice = fs.path.diskDesignator(path);
+    if (path.len == root_slice.len)
+        return null;
+
+    const have_root_slash = path.len > root_slice.len and (path[root_slice.len] == '/' or path[root_slice.len] == '\\');
+
+    var end_index: usize = path.len - 1;
+
+    while (path[end_index] == '/' or path[end_index] == '\\') {
+        if (end_index == 0)
+            return null;
+        end_index -= 1;
+    }
+
+    while (path[end_index] != '/' and path[end_index] != '\\') {
+        if (end_index == 0)
+            return null;
+        end_index -= 1;
+    }
+
+    if (have_root_slash and end_index == root_slice.len) {
+        end_index += 1;
+    }
+
+    if (end_index == 0)
+        return null;
+
+    return path[0..end_index];
+}
+
+pub fn isAbsolute(path: []const u8) bool {
+    if (path.len == 0)
+        return false;
+    if (comptime builtin.os.tag == .windows) {
+        return fs.path.isAbsolute(path);
+    } else {
+        switch (path[0]) {
+            '/', '\\' => return true,
+            else => return false,
+        }
+    }
+}
+
+var path_buffer: [(std.fs.max_path_bytes * 4) + 32]u8 = undefined;
+var PATH_ALLOCATOR = std.heap.FixedBufferAllocator.init(&path_buffer);
 
 /// Resolves the `script` path from provided `from` path and `path`.
 ///
@@ -102,89 +220,101 @@ pub fn navigate(allocator: std.mem.Allocator, context: anytype, from: []const u8
     if (from.len > fs.max_path_bytes or path.len > fs.max_path_bytes)
         return error.PathTooLong;
 
-    const owned_path = try std.mem.replaceOwned(u8, allocator, path, "\\", "/");
-    defer allocator.free(owned_path);
-
-    const path_type = PathType.get(owned_path);
+    const path_type = PathType.get(path);
     if (path_type == .Unsupported)
         return error.PathUnsupported;
 
-    var buf: [fs.max_path_bytes]u8 = undefined;
-    const owned_from = try std.mem.replaceOwned(u8, allocator, from, "\\", "/");
-    defer allocator.free(owned_from);
+    defer PATH_ALLOCATOR.reset();
+
+    const path_allocator = PATH_ALLOCATOR.allocator();
+
+    const chunk_size = @max(from.len, path.len);
+    const chunk_buf: []u8 = try path_allocator.alloc(u8, (chunk_size * 2) + 10);
+
+    const buf = chunk_buf[0 .. chunk_size + 8];
+    const path_buf = chunk_buf[chunk_size + 8 ..][0 .. chunk_size + 2];
 
     switch (path_type) {
         .Aliased => {
-            const alias = try std.ascii.allocLowerString(allocator, try extractAlias(owned_path));
-            defer allocator.free(alias);
+            const alias_name = try std.ascii.allocLowerString(path_allocator, try extractAlias(path));
 
-            const adjusted = removeSuffix(owned_from);
-            var parent: ?[]const u8 = fs.path.dirname(adjusted) orelse
-                if (isInitSuffix(owned_from)) ".." else null;
+            const adjusted = removeSuffix(from);
+            var parent: ?[]const u8 = dirname(adjusted) orelse
+                if (isInitSuffix(from)) ".." else null;
 
-            const absolute = fs.path.isAbsolute(owned_from);
+            const absolute = isAbsolute(from);
             if (absolute and parent == null)
                 return error.PathNotFound;
 
-            const start_parent = if (!absolute) try fs.path.join(allocator, &.{ ".", parent orelse "" }) else parent.?;
-            defer if (!absolute) allocator.free(start_parent);
-
-            parent = start_parent;
+            parent = if (!absolute) joinPathScalar(path_buf, '.', parent orelse "") else parent.?;
 
             var foundAlias: ?[]const u8 = null;
             var config: ?Config = null;
-            defer if (config) |*c| c.deinit(allocator);
-            while (parent) |parent_path| : (parent = fs.path.dirname(parent_path)) {
+            defer if (config) |*c| context.freeConfig(c);
+            while (parent) |parent_path| : (parent = dirname(parent_path)) {
                 blk: {
                     if (parent_path.len + 8 > buf.len)
                         return error.PathTooLong;
-                    const config_path = getLuaurcPath(&buf, parent_path);
-                    const data = context.getConfigAlloc(allocator, config_path) catch |err| switch (@as(anyerror, @errorCast(err))) {
+                    const config_path = getLuaurcPath(buf, parent_path);
+                    if (config) |*c|
+                        context.freeConfig(c);
+                    config = null;
+                    config = context.getConfig(config_path, out_err) catch |err| switch (@as(anyerror, @errorCast(err))) {
                         error.NotPresent => break :blk,
                         else => return err,
                     };
-                    defer allocator.free(data);
 
-                    if (config) |*c|
-                        c.deinit(allocator);
-                    config = try Config.parse(allocator, data, out_err);
-                    if (config.?.aliases.get(alias)) |value| {
+                    if (config.?.aliases.get(alias_name)) |value| {
                         foundAlias = value;
                         break;
                     }
                 }
             }
             if (foundAlias == null) {
-                if (!std.mem.eql(u8, alias, "self")) {
+                if (!std.mem.eql(u8, alias_name, "self")) {
                     if (out_err) |ptr_out|
-                        ptr_out.* = try std.fmt.allocPrint(allocator, "@{s} is not a valid alias", .{alias});
+                        ptr_out.* = try std.fmt.allocPrint(allocator, "@{s} is not a valid alias", .{alias_name});
                     return error.AliasNotFound;
                 }
 
-                parent = fs.path.dirname(owned_from) orelse ".";
-
-                const ext_path = try fs.path.join(allocator, &.{ ".", owned_path[alias.len + 1 ..] });
-                defer allocator.free(ext_path);
-
-                return try context.resolvePathAlloc(allocator, &.{ parent.?, ext_path });
+                const ext_path = joinPathScalar(path_buf, '.', path[alias_name.len + 1 ..]);
+                std.mem.replaceScalar(u8, ext_path, '\\', '/');
+                return try context.resolvePathAlloc(
+                    allocator,
+                    dirname(from) orelse ".",
+                    ext_path,
+                );
             }
-            const ext_path = try fs.path.join(allocator, &.{ foundAlias.?, owned_path[alias.len + 1 ..] });
-            defer allocator.free(ext_path);
+            const alias_value = foundAlias.?;
+            if (alias_value.len > fs.max_path_bytes)
+                return error.PathTooLong;
 
-            return try context.resolvePathAlloc(allocator, &.{ if (parent) |dir| dir else owned_from, ext_path });
+            const ext_path = try joinPath(path_allocator, alias_value, path[alias_name.len + 1 ..]);
+            std.mem.replaceScalar(u8, ext_path, '\\', '/');
+            return try context.resolvePathAlloc(
+                allocator,
+                if (parent) |dir| dir else from,
+                ext_path,
+            );
         },
         .RelativeToCurrent, .RelativeToParent => {
-            const adjusted = removeSuffix(owned_from);
-            const parent: ?[]const u8 = fs.path.dirname(adjusted) orelse
-                if (isInitSuffix(owned_from)) ".." else null;
+            const adjusted = removeSuffix(from);
+            const parent: ?[]const u8 = dirname(adjusted) orelse
+                if (isInitSuffix(from)) ".." else null;
 
-            const absolute = fs.path.isAbsolute(owned_from);
+            const absolute = isAbsolute(from);
             if (absolute and parent == null)
                 return error.PathNotFound;
 
-            const start_parent = if (!absolute) try fs.path.join(allocator, &.{ ".", parent orelse "" }) else parent.?;
-            defer if (!absolute) allocator.free(start_parent);
-            return try context.resolvePathAlloc(allocator, &.{ start_parent, owned_path });
+            const section = buf[0..path.len];
+            @memcpy(section, path);
+            std.mem.replaceScalar(u8, section, '\\', '/');
+
+            return try context.resolvePathAlloc(
+                allocator,
+                if (!absolute) joinPathScalar(path_buf, '.', parent orelse "") else parent.?,
+                section,
+            );
         },
         .Unsupported => unreachable,
     }
@@ -199,13 +329,13 @@ fn OSPath(comptime path: []const u8) []const u8 {
     return static;
 }
 
-fn navigateTest(allocator: std.mem.Allocator, comptime context: type, comptime expected: []const u8, from: []const u8, path: []const u8) !void {
+fn navigateTest(allocator: std.mem.Allocator, context: anytype, comptime expected: []const u8, from: []const u8, path: []const u8) !void {
     const result = try navigate(allocator, context, from, path, null);
     defer allocator.free(result);
     try std.testing.expectEqualStrings(comptime OSPath(expected), result);
 }
 
-fn navigateTestError(allocator: std.mem.Allocator, comptime context: type, from: []const u8, path: []const u8, err: ?[]const u8) !void {
+fn navigateTestError(allocator: std.mem.Allocator, context: anytype, from: []const u8, path: []const u8, err: ?[]const u8) !void {
     var err_out: ?[]const u8 = null;
     defer if (err_out) |e| allocator.free(e);
     if (navigate(allocator, context, from, path, &err_out)) |_|
@@ -220,10 +350,15 @@ fn navigateTestError(allocator: std.mem.Allocator, comptime context: type, from:
 test "empty context" {
     const allocator = std.testing.allocator;
     const EmptyContext = struct {
-        pub fn getConfigAlloc(_: std.mem.Allocator, _: []const u8) ![]const u8 {
+        pub fn getConfig(_: []const u8, _: ?*?[]const u8) !Config {
             unreachable;
         }
-        pub const resolvePathAlloc = fs.path.resolve;
+        pub fn freeConfig(_: *Config) void {
+            unreachable;
+        }
+        pub fn resolvePathAlloc(a: std.mem.Allocator, from: []const u8, to: []const u8) ![]u8 {
+            return fs.path.resolve(a, &.{ from, to });
+        }
     };
 
     try navigateTest(allocator, EmptyContext, "test", "./script/init.luau", "./test");
@@ -252,41 +387,56 @@ test "empty context" {
 test "home context" {
     const allocator = std.testing.allocator;
     const HomeContext = struct {
-        pub fn getConfigAlloc(a: std.mem.Allocator, path: []const u8) ![]const u8 {
+        allocator: std.mem.Allocator,
+        pub fn getConfig(self: *@This(), path: []const u8, _: ?*?[]const u8) !Config {
             if (!std.mem.eql(u8, path, comptime OSPath("./.luaurc")) and !std.mem.eql(u8, path, comptime OSPath("/.luaurc")))
                 std.testing.expectEqualStrings(comptime OSPath("/.luaurc"), path) catch @panic("Path mismatch");
 
-            return a.dupe(u8,
-                \\{
-                \\  "aliases": {
-                \\    "packages": "./packages",
-                \\  }
-                \\}
-            ) catch |err| return err;
+            var config: Config = .{};
+            errdefer config.deinit(self.allocator);
+
+            const key = try allocator.dupe(u8, "packages");
+            errdefer allocator.free(key);
+            const value = try allocator.dupe(u8, "./packages");
+            errdefer allocator.free(value);
+
+            try config.aliases.put(self.allocator, key, value);
+
+            return config;
         }
-        pub const resolvePathAlloc = fs.path.resolve;
+        pub fn freeConfig(self: *@This(), config: *Config) void {
+            config.deinit(self.allocator);
+        }
+        pub fn resolvePathAlloc(_: *@This(), a: std.mem.Allocator, from: []const u8, to: []const u8) ![]u8 {
+            return fs.path.resolve(a, &.{ from, to });
+        }
     };
 
-    try navigateTest(allocator, HomeContext, "packages/json", "script/init.luau", "@packages/json");
-    try navigateTest(allocator, HomeContext, "packages/json", "main.luau", "@packages/json");
-    try navigateTest(allocator, HomeContext, "packages", "main.luau", "@packages");
-    try navigateTest(allocator, HomeContext, "packages", "main.luau", "@packages/");
+    var context: HomeContext = .{
+        .allocator = allocator,
+    };
+    try navigateTest(allocator, &context, "packages/json", "script/init.luau", "@packages/json");
+    try navigateTest(allocator, &context, "packages/json", "main.luau", "@packages/json");
+    try navigateTest(allocator, &context, "packages", "main.luau", "@packages");
+    try navigateTest(allocator, &context, "packages", "main.luau", "@packages/");
 
-    try navigateTest(allocator, HomeContext, "/packages/json", "/script/init.luau", "@packages/json");
-    try navigateTest(allocator, HomeContext, "/packages/json", "/main.luau", "@packages/json");
-    try navigateTest(allocator, HomeContext, "/packages", "/main.luau", "@packages");
-    try navigateTest(allocator, HomeContext, "/packages", "/main.luau", "@packages/");
+    try navigateTest(allocator, &context, "/packages/json", "/script/init.luau", "@packages/json");
+    try navigateTest(allocator, &context, "/packages/json", "/main.luau", "@packages/json");
+    try navigateTest(allocator, &context, "/packages", "/main.luau", "@packages");
+    try navigateTest(allocator, &context, "/packages", "/main.luau", "@packages/");
 }
 
 test "broken config" {
     const allocator = std.testing.allocator;
     const BrokenConfig = struct {
-        pub fn getConfigAlloc(a: std.mem.Allocator, _: []const u8) ![]const u8 {
-            return a.dupe(u8,
-                \\{
-            ) catch |err| return err;
+        pub fn getConfig(_: []const u8, err: ?*?[]const u8) !Config {
+            std.testing.expectError(error.SyntaxError, Config.parse(std.testing.allocator, "{", err)) catch @panic("Expected syntax error");
+            return error.SyntaxError;
         }
-        pub const resolvePathAlloc = fs.path.resolve;
+        pub fn freeConfig(_: *Config) void {}
+        pub fn resolvePathAlloc(a: std.mem.Allocator, from: []const u8, to: []const u8) ![]u8 {
+            return fs.path.resolve(a, &.{ from, to });
+        }
     };
     try navigateTest(allocator, BrokenConfig, "/main", "/src", "./main");
     try navigateTest(allocator, BrokenConfig, "main", "src", "./main");
@@ -325,10 +475,15 @@ test "config tree" {
     });
 
     const ConfigContext = struct {
-        pub fn getConfigAlloc(a: std.mem.Allocator, path: []const u8) ![]const u8 {
-            return try a.dupe(u8, ConfigTree.get(path) orelse return error.NotPresent);
+        pub fn getConfig(path: []const u8, err: ?*?[]const u8) !Config {
+            return Config.parse(std.testing.allocator, ConfigTree.get(path) orelse return error.NotPresent, err);
         }
-        pub const resolvePathAlloc = fs.path.resolve;
+        pub fn freeConfig(config: *Config) void {
+            config.deinit(std.testing.allocator);
+        }
+        pub fn resolvePathAlloc(a: std.mem.Allocator, from: []const u8, to: []const u8) ![]u8 {
+            return fs.path.resolve(a, &.{ from, to });
+        }
     };
 
     try navigateTest(allocator, ConfigContext, "script/packages/main", "script/main.luau", "@packages/main");
