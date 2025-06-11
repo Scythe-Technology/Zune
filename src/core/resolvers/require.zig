@@ -174,8 +174,7 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
         var err_msg: ?[]const u8 = null;
         defer if (err_msg) |err| allocator.free(err);
         break :blk Navigator.navigate(allocator, &nav_context, getFilePath(ar.source), moduleName, &err_msg) catch |err| switch (err) {
-            error.SyntaxError => return L.Zerrorf("{s}", .{err_msg.?}),
-            error.AliasNotFound => return L.Zerrorf("{s}", .{err_msg.?}),
+            error.SyntaxError, error.AliasNotFound, error.AliasPathNotSupported, error.AliasJumpFail => return L.Zerrorf("{s}", .{err_msg.?}),
             error.PathUnsupported => return L.Zerror("must have either \"@\", \"./\", or \"../\" prefix"),
             else => return err,
         };
