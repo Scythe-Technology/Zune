@@ -63,11 +63,12 @@ pub fn runTest(comptime testFile: TestFile, args: []const []const u8, comptime o
     var dir = try cwd.openDir(dir_path, .{});
     defer dir.close();
 
+    Zune.STATE.RUN_MODE = .Test;
+
     Zune.loadConfiguration(dir);
 
-    try Zune.loadLuaurc(Zune.DEFAULT_ALLOCATOR, cwd, dir_path);
     try Engine.prepAsync(L, &scheduler);
-    try Zune.openZune(L, args, .{ .mode = .Test });
+    try Zune.openZune(L, args, .{});
 
     L.setsafeenv(VM.lua.GLOBALSINDEX, true);
 

@@ -11,7 +11,9 @@ pub const cli = @import("cli.zig");
 pub const corelib = @import("core/standard/lib.zig");
 pub const objects = @import("core/objects/lib.zig");
 
-pub const DEFAULT_ALLOCATOR = if (!builtin.single_threaded)
+pub const DEFAULT_ALLOCATOR = if (builtin.link_libc)
+    std.heap.c_allocator
+else if (!builtin.single_threaded)
     std.heap.smp_allocator
 else
     std.heap.page_allocator;
@@ -26,7 +28,9 @@ pub const Runtime = struct {
 pub const Resolvers = struct {
     pub const File = @import("core/resolvers/file.zig");
     pub const Fmt = @import("core/resolvers/fmt.zig");
+    pub const Config = @import("core/resolvers/config.zig");
     pub const Require = @import("core/resolvers/require.zig");
+    pub const Navigator = @import("core/resolvers/navigator.zig");
 };
 
 pub const Utils = struct {
@@ -52,7 +56,6 @@ pub const RequireMode = enum {
 };
 
 pub const Flags = struct {
-    mode: RunMode,
     limbo: bool = false,
 };
 
@@ -73,6 +76,7 @@ const FEATURES = struct {
     pub var datetime = true;
     pub var regex = true;
     pub var sqlite = true;
+    pub var require = true;
     pub var ffi = true;
 };
 
@@ -80,7 +84,7 @@ pub const STATE = struct {
     pub var ENV_MAP: std.process.EnvMap = undefined;
     pub var RUN_MODE: RunMode = .Run;
     pub var REQUIRE_MODE: RequireMode = .RelativeToFile;
-    pub var ALIASES: std.StringArrayHashMap([]const u8) = .init(DEFAULT_ALLOCATOR);
+    pub var CONFIG_CACHE: std.StringArrayHashMap(Resolvers.Config) = .init(DEFAULT_ALLOCATOR);
 
     pub const LUAU_OPTIONS = struct {
         pub var DEBUG_LEVEL: u2 = 2;
@@ -200,56 +204,6 @@ pub fn loadConfiguration(dir: std.fs.Dir) void {
     }
 }
 
-pub fn loadLuaurc(allocator: std.mem.Allocator, dir: std.fs.Dir, path: ?[]const u8) anyerror!void {
-    const local_dir = if (path) |local_path|
-        dir.openDir(local_path, .{
-            .access_sub_paths = true,
-        }) catch return
-    else
-        dir;
-    const rcFile = local_dir.openFile(".luaurc", .{}) catch return;
-    defer rcFile.close();
-
-    const rcContents = try rcFile.readToEndAlloc(allocator, std.math.maxInt(usize));
-    defer allocator.free(rcContents);
-
-    const rcSafeContent = std.mem.trim(u8, rcContents, " \n\t\r");
-    if (rcSafeContent.len == 0)
-        return;
-
-    var rcJsonRoot = json.parse(allocator, rcSafeContent) catch |err| {
-        std.debug.print("Error: .luaurc must be valid JSON: {}\n", .{err});
-        return;
-    };
-    defer rcJsonRoot.deinit();
-
-    const root = rcJsonRoot.value.objectOrNull() orelse return std.debug.print("Error: .luaurc must be an object\n", .{});
-    const aliases = root.get("aliases") orelse return std.debug.print("Error: .luaurc must have an 'aliases' field\n", .{});
-    const aliases_obj = aliases.objectOrNull() orelse return std.debug.print("Error: .luaurc 'aliases' field must be an object\n", .{});
-
-    for (aliases_obj.keys()) |key| {
-        const value = aliases_obj.get(key) orelse continue;
-        const valueStr = if (value == .string) value.asString() else {
-            std.debug.print("Warning: .luaurc -> aliases '{s}' field must be a string\n", .{key});
-            continue;
-        };
-        const keyCopy = try allocator.dupe(u8, key);
-        errdefer allocator.free(keyCopy);
-        const valuePath = Resolvers.File.resolve(allocator, STATE.ENV_MAP, &.{ path orelse "", valueStr }) catch |err| {
-            std.debug.print("Warning: .luaurc -> aliases '{s}' field must be a valid path: {}\n", .{ key, err });
-            allocator.free(keyCopy);
-            continue;
-        };
-        errdefer allocator.free(valuePath);
-        try STATE.ALIASES.put(keyCopy, valuePath);
-    }
-
-    for (aliases_obj.keys()) |key| {
-        const relative_path = STATE.ALIASES.get(key) orelse continue;
-        try loadLuaurc(allocator, dir, relative_path);
-    }
-}
-
 pub fn openZune(L: *VM.lua.State, args: []const []const u8, flags: Flags) !void {
     L.Zsetglobalfn("require", @import("core/resolvers/require.zig").zune_require);
 
@@ -302,8 +256,10 @@ pub fn openZune(L: *VM.lua.State, args: []const []const u8, flags: Flags) !void 
             corelib.ffi.loadLib(L);
         if (FEATURES.sqlite)
             corelib.sqlite.loadLib(L);
+        if (FEATURES.require)
+            corelib.require.loadLib(L);
 
-        corelib.testing.loadLib(L, flags.mode == .Test);
+        corelib.testing.loadLib(L, STATE.RUN_MODE == .Test);
     }
 }
 
@@ -378,7 +334,8 @@ test "Zune" {
 }
 
 test {
-    _ = @import("./core/utils/lib.zig");
-
+    std.testing.refAllDecls(Runtime);
+    std.testing.refAllDecls(Resolvers);
+    std.testing.refAllDecls(Utils);
     std.testing.refAllDecls(@This());
 }

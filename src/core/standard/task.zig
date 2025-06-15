@@ -32,7 +32,6 @@ fn lua_cancel(L: *VM.lua.State) !i32 {
 }
 
 fn lua_spawn(L: *VM.lua.State) !i32 {
-    const scheduler = Scheduler.getScheduler(L);
     const fnType = L.typeOf(1);
     if (fnType != .Function and fnType != .Thread)
         return L.Zerror("Expected function or thread");
@@ -56,7 +55,7 @@ fn lua_spawn(L: *VM.lua.State) !i32 {
             L.xpush(thread, @intCast(i + 2));
     }
 
-    scheduler.spawnThread(thread, L, @intCast(args));
+    _ = Scheduler.resumeState(thread, L, @intCast(args)) catch {};
 
     return 1;
 }

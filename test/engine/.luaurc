@@ -3,6 +3,8 @@
     "module": "./module",
     "dev": "./dev",
     "sub": "./sublibrary",
-    "sub2": "./sublibrary"
+    "subd": "./sublibrary/subdir",
+    "alias_path": "@test",
+    "unknown_path": "test"
   }
 }

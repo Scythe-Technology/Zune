@@ -1,6 +1,7 @@
 {
   "aliases": {
     "kool": "./kool",
-    "sub": "./subdir"
+    "sub": "./subdir",
+    "inner": "./inner"
   }
 }

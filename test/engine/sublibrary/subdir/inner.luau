@@ -1,0 +1,1 @@
+return "inner file foo"
