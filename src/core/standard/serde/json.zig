@@ -201,7 +201,7 @@ pub fn LuaEncoder(comptime json_kind: JsonKind) fn (L: *VM.lua.State) anyerror!i
             const config_type = L.typeOf(2);
             if (!config_type.isnoneornil()) {
                 try L.Zchecktype(2, .Table);
-                const indent_type = L.getfield(2, "prettyIndent");
+                const indent_type = L.rawgetfield(2, "prettyIndent");
                 if (!indent_type.isnoneornil()) {
                     try L.Zchecktype(-1, .Number);
                     kind = switch (L.tointeger(-1) orelse unreachable) {
@@ -261,7 +261,7 @@ fn decodeObject(L: *VM.lua.State, object: *std.StringArrayHashMap(json.JsonValue
 pub fn decodeValue(L: *VM.lua.State, jsonValue: json.JsonValue, preserve_null: bool) anyerror!void {
     switch (jsonValue) {
         .nil => if (preserve_null) {
-            _ = L.getfield(VM.lua.REGISTRYINDEX, "_SERDE_JSON_NULL");
+            _ = L.rawgetfield(VM.lua.REGISTRYINDEX, "_SERDE_JSON_NULL");
         } else L.pushnil(),
         .boolean => |boolean| L.pushboolean(boolean),
         .integer => |integer| L.pushnumber(@floatFromInt(integer)),
@@ -286,7 +286,7 @@ pub fn LuaDecoder(comptime json_kind: JsonKind) fn (L: *VM.lua.State) anyerror!i
             const config_type = L.typeOf(2);
             if (!config_type.isnoneornil()) {
                 try L.Zchecktype(2, .Table);
-                const preserve_null_type = L.getfield(2, "preserveNull");
+                const preserve_null_type = L.rawgetfield(2, "preserveNull");
                 if (!preserve_null_type.isnoneornil()) {
                     try L.Zchecktype(-1, .Boolean);
                     preserve_null = L.toboolean(-1);

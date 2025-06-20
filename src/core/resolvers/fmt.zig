@@ -23,7 +23,7 @@ fn writeMetamethod__tostring(L: *VM.lua.State, writer: anytype, idx: i32) !bool 
     if (L.getmetatable(-1)) {
         if (!L.checkstack(2))
             return error.StackOverflow;
-        const metaType = L.getfield(-1, "__tostring");
+        const metaType = L.rawgetfield(-1, "__tostring");
         defer L.pop(2); // drop: field(or result of function), metatable
         if (!metaType.isnoneornil()) {
             if (metaType != .String) {

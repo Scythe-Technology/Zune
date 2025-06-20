@@ -195,7 +195,7 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
             src_path_buf[full_len] = 0;
 
             const module_relative_path = src_path_buf[0..full_len :0];
-            switch (L.getfield(-1, module_relative_path)) {
+            switch (L.rawgetfield(-1, module_relative_path)) {
                 .Nil => {},
                 .LightUserdata => {
                     const ptr = L.topointer(-1) orelse unreachable;

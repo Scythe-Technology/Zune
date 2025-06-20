@@ -81,7 +81,7 @@ fn lua_getCached(L: *VM.lua.State) !i32 {
     for (Zune.Resolvers.File.POSSIBLE_EXTENSIONS) |ext| {
         const path = try std.mem.concatWithSentinel(allocator, u8, &.{ resolved_path, ext }, 0);
         defer allocator.free(path);
-        if (!L.getfield(-1, path).isnoneornil())
+        if (!L.rawgetfield(-1, path).isnoneornil())
             return 1;
         L.pop(1);
     }

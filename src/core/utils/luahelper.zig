@@ -170,7 +170,7 @@ pub fn Ref(comptime T: type) type {
 /// Pops the module from the stack.
 pub fn registerModule(L: *VM.lua.State, comptime libName: [:0]const u8) void {
     _ = L.Lfindtable(VM.lua.REGISTRYINDEX, "_LIBS", 1);
-    if (L.getfield(-1, libName) != .Table) {
+    if (L.rawgetfield(-1, libName) != .Table) {
         L.pop(1);
         L.pushvalue(-2);
         L.setfield(-2, libName);

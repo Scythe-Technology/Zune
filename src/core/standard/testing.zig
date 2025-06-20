@@ -142,28 +142,28 @@ pub fn finish_testing(L: *VM.lua.State, rawstart: f64) TestResult {
     const end = VM.lperf.clock();
 
     _ = L.Lfindtable(VM.lua.REGISTRYINDEX, "_LIBS", 1);
-    if (L.getfield(-1, LIB_NAME) != .Table)
+    if (L.rawgetfield(-1, LIB_NAME) != .Table)
         std.debug.panic("No test framework loaded", .{});
 
-    const stdOut = if (L.getfield(VM.lua.GLOBALSINDEX, "_testing_stdOut") == .Boolean)
+    const stdOut = if (L.rawgetfield(VM.lua.GLOBALSINDEX, "_testing_stdOut") == .Boolean)
         L.toboolean(-1)
     else
         true;
     L.pop(1);
 
-    const start = if (L.getfield(-1, "_start") == .Number)
+    const start = if (L.rawgetfield(-1, "_start") == .Number)
         L.tonumber(-1) orelse rawstart
     else
         rawstart;
     L.pop(1);
 
     const time = end - start;
-    const mainTestCount = if (L.getfield(-1, "_count") == .Number)
+    const mainTestCount = if (L.rawgetfield(-1, "_count") == .Number)
         L.tointeger(-1) orelse unreachable
     else
         0;
     L.pop(1);
-    const mainFailedCount = if (L.getfield(-1, "_failed") == .Number)
+    const mainFailedCount = if (L.rawgetfield(-1, "_failed") == .Number)
         L.tointeger(-1) orelse unreachable
     else
         0;
@@ -228,7 +228,7 @@ pub fn loadLib(L: *VM.lua.State, enabled: bool) void {
         GL.xmove(L, 1);
         ML.Lsandboxthread();
 
-        if (L.getfield(VM.lua.GLOBALSINDEX, "_testing_stdOut") == .Boolean and !L.toboolean(-1)) {
+        if (L.rawgetfield(VM.lua.GLOBALSINDEX, "_testing_stdOut") == .Boolean and !L.toboolean(-1)) {
             ML.Zsetfieldfn(VM.lua.GLOBALSINDEX, "print", empty);
         } else ML.Zsetfieldfn(VM.lua.GLOBALSINDEX, "print", testing_debug);
         L.pop(1);

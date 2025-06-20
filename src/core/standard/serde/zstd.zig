@@ -16,7 +16,7 @@ pub fn lua_compress(L: *VM.lua.State) !i32 {
 
     if (!options.isnoneornil()) {
         try L.Zchecktype(2, .Table);
-        const levelType = L.getfield(2, "level");
+        const levelType = L.rawgetfield(2, "level");
         if (!levelType.isnoneornil()) {
             if (levelType != .Number)
                 return L.Zerror("Options 'level' field must be a number");

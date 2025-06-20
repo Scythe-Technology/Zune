@@ -164,11 +164,11 @@ pub fn logDetailedDef(L: *VM.lua.State, idx: i32) !void {
                 return printPreviewError(padded_string, source_line, "Failed to get function environment", .{});
             }
             defer L.pop(1); // drop: _FILE
-            if (L.getfield(-1, "_FILE") != .Table) {
+            if (L.rawgetfield(-1, "_FILE") != .Table) {
                 return printPreviewError(padded_string, source_line, "Failed to get file context", .{});
             }
             defer L.pop(1); // drop: source
-            if (L.getfield(-1, "source") != .String) {
+            if (L.rawgetfield(-1, "source") != .String) {
                 return printPreviewError(padded_string, source_line, "Failed to get file source", .{});
             }
             const content = L.tostring(-1) orelse unreachable;
@@ -349,12 +349,12 @@ pub fn logDetailedError(L: *VM.lua.State) !void {
                 continue;
             }
             defer L.pop(1); // drop: _FILE
-            if (L.getfield(-1, "_FILE") != .Table) {
+            if (L.rawgetfield(-1, "_FILE") != .Table) {
                 printPreviewError(padded_string, current_line, "Failed to get file context", .{});
                 continue;
             }
             defer L.pop(1); // drop: source
-            if (L.getfield(-1, "source") != .String) {
+            if (L.rawgetfield(-1, "source") != .String) {
                 printPreviewError(padded_string, current_line, "Failed to get file source", .{});
                 continue;
             }

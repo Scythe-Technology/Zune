@@ -332,7 +332,7 @@ pub fn processResponse(
 ) !void {
     switch (L.typeOf(-1)) {
         .Table => {
-            if (L.getfield(-1, "statusCode") != .Number) {
+            if (L.rawgetfield(-1, "statusCode") != .Number) {
                 L.pop(1);
                 L.pushlstring("Field 'statusCode' must be a number");
                 return error.Runtime;
@@ -361,7 +361,7 @@ pub fn processResponse(
                 server: bool = false,
             } = .{};
 
-            const headersType = L.getfield(-2, "headers");
+            const headersType = L.rawgetfield(-2, "headers");
             if (!headersType.isnoneornil()) {
                 if (headersType != .Table) {
                     L.pop(1);
@@ -419,7 +419,7 @@ pub fn processResponse(
                 try response.appendSlice(allocator, "Server: Zune\r\n");
             }
 
-            const body: ?[]const u8 = switch (L.getfield(-3, "body")) {
+            const body: ?[]const u8 = switch (L.rawgetfield(-3, "body")) {
                 .String => L.Lcheckstring(-1),
                 .Buffer => L.Lcheckbuffer(-1),
                 .Nil => null,

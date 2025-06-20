@@ -124,7 +124,7 @@ const ProcessChildOptions = struct {
 
             childOptions.cwd = try L.Zcheckfield(?[]const u8, 3, "cwd");
 
-            const envType = L.getfield(3, "env");
+            const envType = L.rawgetfield(3, "env");
             if (!envType.isnoneornil()) {
                 if (envType == .Table) {
                     childOptions.env = std.process.EnvMap.init(allocator);
@@ -137,7 +137,7 @@ const ProcessChildOptions = struct {
             }
             L.pop(1);
 
-            switch (L.getfield(3, "stdio")) {
+            switch (L.rawgetfield(3, "stdio")) {
                 .None, .Nil => {},
                 .String => {
                     const stdioOption = L.tostring(-1) orelse unreachable;
@@ -153,7 +153,7 @@ const ProcessChildOptions = struct {
             }
             L.pop(1);
 
-            switch (L.getfield(3, "shell")) {
+            switch (L.rawgetfield(3, "shell")) {
                 .None, .Nil => {},
                 .String => blk: {
                     const shellOption = L.tostring(-1) orelse unreachable;
