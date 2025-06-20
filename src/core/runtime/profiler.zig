@@ -22,8 +22,8 @@ var data = std.StringHashMap(u64).init(std.heap.page_allocator);
 var thread: ?std.Thread = null;
 
 // This code is based on https://github.com/luau-lang/luau/blob/946a097e93fda5df23c9afaf29b101e168a03bd5/CLI/Profiler.cpp
-fn lua_interrupt(lua_state: ?*VM.lua.State, gc: c_int) callconv(.C) void {
-    const L: *VM.lua.State = @ptrCast(lua_state.?);
+fn interrupt(lua_state: *VM.lua.State, gc: c_int) !void {
+    const L: *VM.lua.State = lua_state;
 
     const currTicks = ticks;
     const elapsedTicks = currTicks - currentTicks;
@@ -32,28 +32,28 @@ fn lua_interrupt(lua_state: ?*VM.lua.State, gc: c_int) callconv(.C) void {
         stack.clearRetainingCapacity();
 
         if (gc > 0)
-            stack.appendSlice("GC,GC,") catch |err| std.debug.panic("{}", .{err});
+            try stack.appendSlice("GC,GC,");
 
         var level: i32 = 0;
         var ar: VM.lua.Debug = .{ .ssbuf = undefined };
         while (L.getinfo(level, "sn", &ar)) : (level += 1) {
             if (stack.items.len > 0)
-                stack.append(';') catch |err| std.debug.panic("{}", .{err});
+                try stack.append(';');
 
-            stack.appendSlice(ar.short_src.?) catch |err| std.debug.panic("{}", .{err});
-            stack.append(',') catch |err| std.debug.panic("{}", .{err});
+            try stack.appendSlice(ar.short_src.?);
+            try stack.append(',');
 
             if (ar.name) |name|
-                stack.appendSlice(name) catch |err| std.debug.panic("{}", .{err});
+                try stack.appendSlice(name);
 
-            stack.append(',') catch |err| std.debug.panic("{}", .{err});
+            try stack.append(',');
 
-            stack.writer().print("{d}", .{ar.linedefined.?}) catch |err| std.debug.panic("{}", .{err});
+            try stack.writer().print("{d}", .{ar.linedefined.?});
         }
 
         if (stack.items.len > 0) {
             if (!data.contains(stack.items))
-                data.put(std.heap.page_allocator.dupe(u8, stack.items) catch |err| std.debug.panic("{}", .{err}), elapsedTicks) catch |err| std.debug.panic("{}", .{err})
+                try data.put(try std.heap.page_allocator.dupe(u8, stack.items), elapsedTicks)
             else {
                 const entry = data.getEntry(stack.items) orelse std.debug.panic("[Profiler] entry key not found", .{});
                 entry.value_ptr.* += elapsedTicks;
@@ -67,6 +67,11 @@ fn lua_interrupt(lua_state: ?*VM.lua.State, gc: c_int) callconv(.C) void {
     currentTicks = currTicks;
     if (callbacks) |cb|
         cb.*.interrupt = null;
+}
+
+fn lua_interrupt(lua_state: ?*VM.lua.State, gc: c_int) callconv(.C) void {
+    const L: *VM.lua.State = @ptrCast(lua_state.?);
+    interrupt(L, gc) catch |err| std.debug.panic("{}", .{err});
 }
 
 fn loop() void {
