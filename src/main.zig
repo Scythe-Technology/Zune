@@ -43,7 +43,7 @@ pub const Utils = struct {
 
 pub const debug = struct {
     pub const print = @import("core/utils/print.zig").print;
-    pub const printWriter = @import("core/utils/print.zig").printWriter;
+    pub const writerPrint = @import("core/utils/print.zig").writerPrint;
 };
 
 pub const info = @import("zune-info");

@@ -69,21 +69,21 @@ pub fn printValue(
             .Nil => try writer.print("nil", .{}),
             .Boolean => {
                 const b = L.toboolean(idx);
-                try Zune.debug.printWriter(writer, "<bold><yellow>{s}<clear>", .{if (b) "true" else "false"});
+                try Zune.debug.writerPrint(writer, "<bold><yellow>{s}<clear>", .{if (b) "true" else "false"});
             },
             .Number => {
                 const n = L.tonumber(idx) orelse unreachable;
-                try Zune.debug.printWriter(writer, "<bcyan>{d}<clear>", .{n});
+                try Zune.debug.writerPrint(writer, "<bcyan>{d}<clear>", .{n});
             },
             .String => {
                 const s = L.tostring(idx) orelse unreachable;
                 if (asKey) {
                     if (isPlainText(s)) try writer.print("{s}", .{s}) else {
-                        try Zune.debug.printWriter(writer, "<dim>[<clear><green>\"{s}\"<clear><dim>]<clear>", .{s});
+                        try Zune.debug.writerPrint(writer, "<dim>[<clear><green>\"{s}\"<clear><dim>]<clear>", .{s});
                         return;
                     }
                 } else {
-                    try Zune.debug.printWriter(writer, "<green>\"{s}\"<clear>", .{s});
+                    try Zune.debug.writerPrint(writer, "<green>\"{s}\"<clear>", .{s});
                 }
             },
             .Table => {
@@ -100,9 +100,9 @@ pub fn printValue(
                 if (map) |tracked| {
                     if (tracked.get(ptr)) |_| {
                         if (Zune.STATE.FORMAT.SHOW_TABLE_ADDRESS)
-                            try Zune.debug.printWriter(writer, "<dim><<recursive, table: 0x{x}>><clear>", .{ptr})
+                            try Zune.debug.writerPrint(writer, "<dim><<recursive, table: 0x{x}>><clear>", .{ptr})
                         else
-                            try Zune.debug.printWriter(writer, "<dim><<recursive, table>><clear>", .{});
+                            try Zune.debug.writerPrint(writer, "<dim><<recursive, table>><clear>", .{});
                         return;
                     }
                     try tracked.put(ptr, true);
@@ -111,9 +111,9 @@ pub fn printValue(
                 if (Zune.STATE.FORMAT.SHOW_TABLE_ADDRESS) {
                     if (tostring(allocator, L, idx) catch try allocator.dupe(u8, "!ERR!")) |str| {
                         defer allocator.free(str);
-                        try Zune.debug.printWriter(writer, "<dim><<{s}>> {{<clear>\n", .{str});
-                    } else try Zune.debug.printWriter(writer, "<dim><<table>> {{<clear>\n", .{});
-                } else try Zune.debug.printWriter(writer, "<dim>{{<clear>\n", .{});
+                        try Zune.debug.writerPrint(writer, "<dim><<{s}>> {{<clear>\n", .{str});
+                    } else try Zune.debug.writerPrint(writer, "<dim><<table>> {{<clear>\n", .{});
+                } else try Zune.debug.writerPrint(writer, "<dim>{{<clear>\n", .{});
                 if (!L.checkstack(3))
                     return error.StackOverflow;
                 var i: i32 = L.rawiter(idx, 0);
@@ -123,40 +123,40 @@ pub fn printValue(
                     const n = L.gettop();
                     if (L.typeOf(@intCast(n - 1)) == .String) {
                         try printValue(L, writer, @intCast(n - 1), depth + 1, true, null, max_depth);
-                        try Zune.debug.printWriter(writer, "<dim> = <clear>", .{});
+                        try Zune.debug.writerPrint(writer, "<dim> = <clear>", .{});
                     } else {
-                        try Zune.debug.printWriter(writer, "<dim>[<clear>", .{});
+                        try Zune.debug.writerPrint(writer, "<dim>[<clear>", .{});
                         try printValue(L, writer, @intCast(n - 1), depth + 1, true, null, max_depth);
-                        try Zune.debug.printWriter(writer, "<dim>] = <clear>", .{});
+                        try Zune.debug.writerPrint(writer, "<dim>] = <clear>", .{});
                     }
                     try printValue(L, writer, @intCast(n), depth + 1, false, map, max_depth);
-                    try Zune.debug.printWriter(writer, "<dim>,<clear> \n", .{});
+                    try Zune.debug.writerPrint(writer, "<dim>,<clear> \n", .{});
                     L.pop(2);
                 }
                 for (0..depth) |_|
                     try writer.print("    ", .{});
-                try Zune.debug.printWriter(writer, "<dim>}}<clear>", .{});
+                try Zune.debug.writerPrint(writer, "<dim>}}<clear>", .{});
             },
             .Buffer => {
                 const b = L.tobuffer(idx) orelse unreachable;
                 const ptr: usize = blk: {
                     break :blk @intFromPtr(L.topointer(idx) orelse break :blk 0);
                 };
-                try Zune.debug.printWriter(writer, "<bmagenta><<buffer ", .{});
+                try Zune.debug.writerPrint(writer, "<bmagenta><<buffer ", .{});
                 if (b.len > Zune.STATE.FORMAT.DISPLAY_BUFFER_CONTENTS_MAX) {
                     try writer.print("0x{x} {X}", .{ ptr, b[0..Zune.STATE.FORMAT.DISPLAY_BUFFER_CONTENTS_MAX] });
                     try writer.print(" ...{d} truncated", .{(b.len - Zune.STATE.FORMAT.DISPLAY_BUFFER_CONTENTS_MAX)});
                 } else {
                     try writer.print("0x{x} {X}", .{ ptr, b });
                 }
-                try Zune.debug.printWriter(writer, ">><clear>", .{});
+                try Zune.debug.writerPrint(writer, ">><clear>", .{});
             },
             else => {
                 if (try writeMetamethod__tostring(L, writer, -1))
                     return;
                 if (tostring(allocator, L, idx) catch try allocator.dupe(u8, "!ERR!")) |str| {
                     defer allocator.free(str);
-                    try Zune.debug.printWriter(writer, "<bmagenta><<{s}>><clear>", .{str});
+                    try Zune.debug.writerPrint(writer, "<bmagenta><<{s}>><clear>", .{str});
                 }
             },
         }
@@ -172,8 +172,8 @@ pub fn writeIdx(allocator: std.mem.Allocator, L: *VM.lua.State, writer: anytype,
                 break :blk;
             if (tostring(allocator, L, idx) catch try allocator.dupe(u8, "!ERR!")) |str| {
                 defer allocator.free(str);
-                try Zune.debug.printWriter(writer, "<bmagenta><<{s}>><clear>", .{str});
-            } else try Zune.debug.printWriter(writer, "<bmagenta><<{s}>><clear>", .{VM.lapi.typename(t)});
+                try Zune.debug.writerPrint(writer, "<bmagenta><<{s}>><clear>", .{str});
+            } else try Zune.debug.writerPrint(writer, "<bmagenta><<{s}>><clear>", .{VM.lapi.typename(t)});
         },
         else => {
             if (!Zune.STATE.FORMAT.SHOW_RECURSIVE_TABLE) {

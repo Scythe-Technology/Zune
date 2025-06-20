@@ -119,7 +119,7 @@ pub fn print(comptime fmt: []const u8, args: anytype) void {
     }
 }
 
-pub fn printWriter(writer: anytype, comptime fmt: []const u8, args: anytype) !void {
+pub fn writerPrint(writer: anytype, comptime fmt: []const u8, args: anytype) !void {
     if (Zune.STATE.FORMAT.USE_COLOR == true and std.mem.eql(u8, Zune.STATE.ENV_MAP.get("NO_COLOR") orelse "0", "0")) {
         const color_format = comptime ColorFormat(fmt, true);
         try writer.print(color_format, args);
