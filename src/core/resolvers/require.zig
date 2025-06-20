@@ -63,22 +63,59 @@ fn require_finished(self: *RequireContext, ML: *VM.lua.State, _: *Scheduler) voi
         GL.pushlightuserdata(@ptrCast(&ErrorState))
     else
         ML.xpush(GL, -1);
-    GL.setfield(-2, self.path); // SET: _MODULES[moduleName] = module
+    if (GL.typeOf(-1) != .Nil) {
+        GL.setfield(-2, self.path); // SET: _MODULES[moduleName] = module
+    } else {
+        GL.pop(1); // drop: nil
+        GL.pushlightuserdata(@ptrCast(&LoadedState));
+        GL.setfield(-2, self.path); // SET: _MODULES[moduleName] = <tag>
+    }
 
-    GL.pop(1); // drop: _MODULES
+    ML.pop(1); // drop: result
 
-    for (queue.value_ptr.*.items) |item| {
+    for (queue.value_ptr.*.items, 0..) |item, i| {
         const L = item.state.value;
-        if (outErr) |msg| {
-            L.pushlstring(msg);
-            _ = Scheduler.resumeStateError(L, null) catch {};
-        } else {
-            ML.xpush(L, -1);
-            _ = Scheduler.resumeState(L, null, 1) catch {};
+        if (i == 0) {
+            if (outErr) |msg| {
+                L.pushlstring(msg);
+                _ = Scheduler.resumeStateError(L, null) catch {};
+                continue;
+            }
+        }
+        switch (GL.rawgetfield(-1, self.path)) {
+            .LightUserdata => {
+                const ptr = GL.topointer(-1) orelse unreachable;
+                if (ptr == @as(*const anyopaque, @ptrCast(&ErrorState))) {
+                    GL.pop(1); // drop: value
+                    L.pushlstring("requested module failed to load");
+                    _ = Scheduler.resumeStateError(L, null) catch {};
+                } else if (ptr == @as(*const anyopaque, @ptrCast(&WaitingState))) {
+                    // this should be unreachable, except for everytime we resume
+                    // this could technically change in the future.
+                    GL.pop(1); // drop: value
+                    L.pushlstring("yielded require resumed but not finished");
+                    _ = Scheduler.resumeStateError(L, null) catch {};
+                } else if (ptr == @as(*const anyopaque, @ptrCast(&PreloadedState))) {
+                    GL.pop(1); // drop: value
+                    L.pushlstring("Cyclic dependency detected");
+                    _ = Scheduler.resumeStateError(L, null) catch {};
+                } else if (ptr == @as(*const anyopaque, @ptrCast(&LoadedState))) {
+                    GL.pop(1); // drop: value
+                    L.pushnil();
+                    _ = Scheduler.resumeState(L, null, 1) catch {};
+                } else {
+                    GL.xmove(L, 1);
+                    _ = Scheduler.resumeState(L, null, 1) catch {};
+                }
+            },
+            else => {
+                GL.xmove(L, 1);
+                _ = Scheduler.resumeState(L, null, 1) catch {};
+            },
         }
     }
 
-    ML.pop(1);
+    GL.pop(1); // drop: _MODULES
 }
 
 fn require_dtor(self: *RequireContext, _: *VM.lua.State, _: *Scheduler) void {
