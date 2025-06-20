@@ -263,9 +263,9 @@ fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     defer {
         const result = gpa.deinit();
         if (result == .leak) {
-            std.debug.print(" \x1b[1;31m[Memory leaks detected]\x1b[0m\n", .{});
-            std.debug.print(" This is likely a zune bug, report it on the zune repository.\n", .{});
-            std.debug.print(" \x1b[4mhttps://github.com/Scythe-Technology/Zune\x1b[0m\n\n", .{});
+            Zune.debug.print(" <bold><red>[Memory leaks detected]<clear>\n", .{});
+            Zune.debug.print(" This is likely a zune bug, report it on the zune repository.\n", .{});
+            Zune.debug.print(" <underline>https://github.com/Scythe-Technology/Zune<clear>\n\n", .{});
         }
     }
 

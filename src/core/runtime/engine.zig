@@ -51,15 +51,15 @@ pub fn setLuaFileContext(L: *VM.lua.State, ctx: FileContext) void {
 
 pub fn printSpacedPadding(padding: []u8) void {
     @memset(padding, ' ');
-    std.debug.print("{s}|\n", .{padding});
+    Zune.debug.print("{s}|\n", .{padding});
 }
 
 pub fn printPreviewError(padding: []u8, line: u32, comptime fmt: []const u8, args: anytype) void {
-    std.debug.print("{s}|\n", .{padding});
+    Zune.debug.print("{s}|\n", .{padding});
     _ = std.fmt.bufPrint(padding, "{d}", .{line}) catch |e| std.debug.panic("{}", .{e});
-    std.debug.print("{s}~ \x1b[2mPreviewError: " ++ fmt ++ "\x1b[0m\n", .{padding} ++ args);
+    Zune.debug.print("{s}~ <dim>PreviewError: " ++ fmt ++ "<clear>\n", .{padding} ++ args);
     @memset(padding, ' ');
-    std.debug.print("{s}|\n", .{padding});
+    Zune.debug.print("{s}|\n", .{padding});
 }
 
 pub fn logDetailedDef(L: *VM.lua.State, idx: i32) !void {
@@ -121,9 +121,9 @@ pub fn logDetailedDef(L: *VM.lua.State, idx: i32) !void {
     if (stackInfo != null and stackInfo.?.what == .lua and stackInfo.?.source_line != null) {
         const info = stackInfo.?;
         if (!L.checkstack(4)) {
-            std.debug.print("Failed to show detailed error: StackOverflow\n", .{});
-            std.debug.print("\x1b[32merror\x1b[0m: {s}\n", .{err_msg});
-            std.debug.print("{s}\n", .{L.debugtrace()});
+            Zune.debug.print("Failed to show detailed error: StackOverflow\n", .{});
+            Zune.debug.print("<red>error<clear>: {s}\n", .{err_msg});
+            Zune.debug.print("{s}\n", .{L.debugtrace()});
             return;
         }
 
@@ -146,14 +146,14 @@ pub fn logDetailedDef(L: *VM.lua.State, idx: i32) !void {
                 err_msg = err_msg[p + strip.len ..];
         }
 
-        std.debug.print("\x1b[31merror\x1b[0m: {s}\n", .{err_msg});
+        Zune.debug.print("<red>error<clear>: {s}\n", .{err_msg});
 
         const padded_string = try allocator.alloc(u8, padding + 1);
         defer allocator.free(padded_string);
         @memset(padded_string, ' ');
 
         if (info.source) |src| {
-            std.debug.print("\x1b[1;4m{s}:{d}\x1b[0m\n", .{
+            Zune.debug.print("<bold><underline>{s}:{d}<clear>\n", .{
                 if (src.len > 1 and src[0] == '@') src[1..] else src,
                 source_line,
             });
@@ -190,24 +190,21 @@ pub fn logDetailedDef(L: *VM.lua.State, idx: i32) !void {
             };
             defer allocator.free(line_content);
 
-            std.debug.print("{s}|\n", .{padded_string});
+            Zune.debug.print("{s}|\n", .{padded_string});
             _ = std.fmt.bufPrint(padded_string, "{d}", .{source_line}) catch |e| std.debug.panic("{}", .{e});
-            std.debug.print("{s}| {s}\n", .{ padded_string, line_content });
+            Zune.debug.print("{s}| {s}\n", .{ padded_string, line_content });
             @memset(padded_string, ' ');
-            std.debug.print("{s}|\n", .{padded_string});
+            Zune.debug.print("{s}|\n", .{padded_string});
         }
     } else {
-        std.debug.print("\x1b[32merror\x1b[0m: {s}\n", .{err_msg});
-        std.debug.print("{s}\n", .{L.debugtrace()});
+        Zune.debug.print("<green>error<clear>: {s}\n", .{err_msg});
+        Zune.debug.print("{s}\n", .{L.debugtrace()});
         return;
     }
 }
 
 pub fn logFnDef(L: *VM.lua.State, idx: i32) void {
-    if (L.typeOf(idx) != .Function) {
-        std.debug.print("logFnDef: Expected function\n", .{});
-        return;
-    }
+    std.debug.assert(L.typeOf(idx) == .Function);
     logDetailedDef(L, idx) catch |e| std.debug.panic("{}", .{e});
 }
 
@@ -267,15 +264,15 @@ pub fn logDetailedError(L: *VM.lua.State) !void {
     }
 
     if (list.items.len < 1) {
-        std.debug.print("\x1b[32merror\x1b[0m: {s}\n", .{err_msg});
-        std.debug.print("{s}\n", .{L.debugtrace()});
+        Zune.debug.print("<green>error<clear>: {s}\n", .{err_msg});
+        Zune.debug.print("{s}\n", .{L.debugtrace()});
         return;
     }
 
     if (!L.checkstack(5)) {
-        std.debug.print("Failed to show detailed error: StackOverflow\n", .{});
-        std.debug.print("\x1b[32merror\x1b[0m: {s}\n", .{err_msg});
-        std.debug.print("{s}\n", .{L.debugtrace()});
+        Zune.debug.print("Failed to show detailed error: StackOverflow\n", .{});
+        Zune.debug.print("<green>error<clear>: {s}\n", .{err_msg});
+        Zune.debug.print("{s}\n", .{L.debugtrace()});
         return;
     }
 
@@ -316,7 +313,7 @@ pub fn logDetailedError(L: *VM.lua.State) !void {
     }
     const padding = std.math.log10(largest_line) + 1;
 
-    std.debug.print("\x1b[31merror\x1b[0m: {s}\n", .{err_msg});
+    Zune.debug.print("<red>error<clear>: {s}\n", .{err_msg});
 
     const padded_string = try allocator.alloc(u8, padding + 1);
     defer allocator.free(padded_string);
@@ -330,7 +327,7 @@ pub fn logDetailedError(L: *VM.lua.State) !void {
         if (info.source) |src| blk: {
             const current_line = info.current_line.?;
 
-            std.debug.print("\x1b[1;4m{s}:{d}\x1b[0m\n", .{
+            Zune.debug.print("<bold><underline>{s}:{d}<clear>\n", .{
                 if (src.len > 1 and src[0] == '@') src[1..] else src,
                 current_line,
             });
@@ -380,9 +377,9 @@ pub fn logDetailedError(L: *VM.lua.State) !void {
             };
             defer allocator.free(line_content);
 
-            std.debug.print("{s}|\n", .{padded_string});
+            Zune.debug.print("{s}|\n", .{padded_string});
             _ = std.fmt.bufPrint(padded_string, "{d}", .{current_line}) catch |e| std.debug.panic("{}", .{e});
-            std.debug.print("{s}| {s}\n", .{ padded_string, line_content });
+            Zune.debug.print("{s}| {s}\n", .{ padded_string, line_content });
             @memset(padded_string, ' ');
 
             if (reference_level != null and reference_level.? == lvl) {
@@ -397,9 +394,9 @@ pub fn logDetailedError(L: *VM.lua.State) !void {
 
                 @memset(buf, '^');
 
-                std.debug.print("{s}| {s}\x1b[31m{s}\x1b[0m\n", .{ padded_string, space_slice, buf });
+                Zune.debug.print("{s}| {s}<red>{s}<clear>\n", .{ padded_string, space_slice, buf });
             } else {
-                std.debug.print("{s}|\n", .{padded_string});
+                Zune.debug.print("{s}|\n", .{padded_string});
             }
         }
     }
@@ -412,10 +409,10 @@ pub fn logError(L: *VM.lua.State, err: anyerror, forceDetailed: bool) void {
                 logDetailedError(L) catch |e| std.debug.panic("{}", .{e});
             } else {
                 switch (L.typeOf(-1)) {
-                    .String, .Number => std.debug.print("{s}\n", .{L.tostring(-1).?}),
+                    .String, .Number => Zune.debug.print("{s}\n", .{L.tostring(-1).?}),
                     else => jmp: {
                         if (!L.checkstack(2)) {
-                            std.debug.print("StackOverflow\n", .{});
+                            Zune.debug.print("StackOverflow\n", .{});
                         }
                         const TL = L.newthread();
                         defer L.pop(1); // drop: thread
@@ -429,14 +426,14 @@ pub fn logError(L: *VM.lua.State, err: anyerror, forceDetailed: bool) void {
                             }
                             break :jmp;
                         };
-                        std.debug.print("{s}\n", .{str});
+                        Zune.debug.print("{s}\n", .{str});
                     },
                 }
-                std.debug.print("{s}\n", .{L.debugtrace()});
+                Zune.debug.print("{s}\n", .{L.debugtrace()});
             }
         },
         else => {
-            std.debug.print("Error: {}\n", .{err});
+            Zune.debug.print("Error: {}\n", .{err});
         },
     }
 }
@@ -469,8 +466,8 @@ pub fn prepAsync(L: *VM.lua.State, sched: *Scheduler) !void {
 pub fn stateCleanUp() void {
     if (Zune.corelib.io.TERMINAL) |*terminal| {
         if (terminal.stdout_istty and terminal.stdin_istty) {
-            terminal.restoreSettings() catch std.debug.print("[Zune] Failed to restore terminal settings\n", .{});
-            terminal.restoreOutputMode() catch std.debug.print("[Zune] Failed to restore terminal output mode\n", .{});
+            terminal.restoreSettings() catch Zune.debug.print("[Zune] Failed to restore terminal settings\n", .{});
+            terminal.restoreOutputMode() catch Zune.debug.print("[Zune] Failed to restore terminal output mode\n", .{});
         }
     }
 }

@@ -2,6 +2,7 @@ const xev = @import("xev");
 const std = @import("std");
 const luau = @import("luau");
 const json = @import("json");
+const mimalloc = @import("mimalloc");
 const builtin = @import("builtin");
 
 const toml = @import("libraries/toml.zig");
@@ -40,7 +41,12 @@ pub const Utils = struct {
     pub const LuaHelper = @import("core/utils/luahelper.zig");
 };
 
-const zune_info = @import("zune-info");
+pub const debug = struct {
+    pub const print = @import("core/utils/print.zig").print;
+    pub const writerPrint = @import("core/utils/print.zig").writerPrint;
+};
+
+pub const info = @import("zune-info");
 
 const VM = luau.VM;
 
@@ -61,7 +67,7 @@ pub const Flags = struct {
 
 pub var CONFIGURATIONS = .{.format_max_depth};
 
-pub const VERSION = "Zune " ++ zune_info.version ++ "+" ++ std.fmt.comptimePrint("{d}.{d}", .{ luau.LUAU_VERSION.major, luau.LUAU_VERSION.minor });
+pub const VERSION = "Zune " ++ info.version ++ "+" ++ std.fmt.comptimePrint("{d}.{d}", .{ luau.LUAU_VERSION.major, luau.LUAU_VERSION.minor });
 
 var STD_ENABLED = true;
 const FEATURES = struct {
@@ -148,10 +154,10 @@ pub fn loadConfiguration(dir: std.fs.Dir) void {
                 var iter = fflags_config.table.iterator();
                 while (iter.next()) |entry| {
                     switch (entry.value_ptr.*) {
-                        .boolean => luau.Flags.setBoolean(entry.key_ptr.*, entry.value_ptr.*.boolean) catch |err| {
+                        .boolean => luau.FFlags.SetByName(bool, entry.key_ptr.*, entry.value_ptr.*.boolean) catch |err| {
                             std.debug.print("[zune.toml] FFlag ({s}): {}\n", .{ entry.key_ptr.*, err });
                         },
-                        .integer => luau.Flags.setInteger(entry.key_ptr.*, @truncate(entry.value_ptr.*.integer)) catch |err| {
+                        .integer => luau.FFlags.SetByName(i32, entry.key_ptr.*, @truncate(entry.value_ptr.*.integer)) catch |err| {
                             std.debug.print("[zune.toml] FFlag ({s}): {}\n", .{ entry.key_ptr.*, err });
                         },
                         else => |t| std.debug.print("[zune.toml] Unsupported type for FFlags: {s}\n", .{@tagName(t)}),

@@ -475,7 +475,8 @@ pub fn ws_upgradeResumed(self: *Self, L: *VM.lua.State, _: *Scheduler) void {
     if (top < 3) { // only a lua function could have less than 3 on top
         @branchHint(.unlikely);
         L.pushlstring("Upgrade must return a boolean");
-        Engine.logFnDef(L, -2);
+        if (L.typeOf(-2) == .Function)
+            Engine.logFnDef(L, -2);
         self.state.stage = .closing;
         self.writeAll(HTTP_500);
         return;
@@ -483,7 +484,8 @@ pub fn ws_upgradeResumed(self: *Self, L: *VM.lua.State, _: *Scheduler) void {
         @branchHint(.unlikely);
         L.pop(@intCast(top - 2));
         L.pushlstring("Upgrade returned too many values");
-        Engine.logFnDef(L, -2);
+        if (L.typeOf(-2) == .Function)
+            Engine.logFnDef(L, -2);
         self.state.stage = .closing;
         self.writeAll(HTTP_500);
         return;
@@ -494,7 +496,8 @@ pub fn ws_upgradeResumed(self: *Self, L: *VM.lua.State, _: *Scheduler) void {
         else => {
             L.pop(1);
             L.pushlstring("Upgrade must return a boolean");
-            Engine.logFnDef(L, -2);
+            if (L.typeOf(-2) == .Function)
+                Engine.logFnDef(L, -2);
             self.state.stage = .closing;
             self.writeAll(HTTP_500);
             return;
@@ -735,15 +738,18 @@ pub fn requestResumed(self: *Self, L: *VM.lua.State, _: *Scheduler) void {
         @branchHint(.unlikely);
         L.pop(@intCast(top - 1));
         L.pushlstring("Request returned too many values");
-        Engine.logFnDef(L, -2);
+        if (L.typeOf(-2) == .Function)
+            Engine.logFnDef(L, -2);
         self.state.stage = .closing;
         self.writeAll(HTTP_500);
         return;
     }
 
     self.processResponse(allocator, L) catch |err| {
-        if (err == error.Runtime)
-            Engine.logFnDef(L, -2);
+        if (err == error.Runtime) {
+            if (L.typeOf(-2) == .Function)
+                Engine.logFnDef(L, -2);
+        }
         self.state.stage = .closing;
         self.writeAll(HTTP_500);
         return;
