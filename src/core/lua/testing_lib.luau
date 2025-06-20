@@ -40,17 +40,19 @@ local DEFER_QUEUE = {}::{()->()};
 local SCOPE_STACK = {}::{string};
 local TEST_STACK = {}::{string};
 
-local RESET = "\27[0m";
+local useColor = (zune.process.env["NO_COLOR"] == nil or zune.process.env["NO_COLOR"] == "0");
 
-local DIM = "\27[2m";
-local BOLD = "\27[1m";
-local UNDERLINE = "\27[4m";
+local RESET = if (useColor) then "\27[0m" else "";
 
-local WHITE = "\27[37m";
-local RED = "\27[31m";
-local BLUE = "\27[34m";
-local GREEN = "\27[32m";
-local YELLOW = "\27[33m";
+local DIM = if (useColor) then "\27[2m" else "";
+local BOLD = if (useColor) then "\27[1m" else "";
+local UNDERLINE = if (useColor) then "\27[4m" else "";
+
+local WHITE = if (useColor) then "\27[37m" else "";
+local RED = if (useColor) then "\27[31m" else "";
+local BLUE = if (useColor) then "\27[34m" else "";
+local GREEN = if (useColor) then "\27[32m" else "";
+local YELLOW = if (useColor) then "\27[33m" else "";
 
 function paddedNumber(line: number, longest: number, padding: string): string
     return `{line}{string.rep(padding, longest - #tostring(line))}`
