@@ -96,7 +96,9 @@ jobs:
 
     - name: Run tests
       continue-on-error: ${{ matrix.qemu-platform != '' }}
-      run: NO_COLOR="0" zig build test -Dtarget=${{ matrix.target }}${{ matrix.qemu-platform != '' && ' -fqemu' || '' }} --verbose
+      run: zig build test -Dtarget=${{ matrix.target }}${{ matrix.qemu-platform != '' && ' -fqemu' || '' }} --verbose
+      env:
+        NO_COLOR: 0
    
     - name: Build debug
       run: zig build -Dtarget=${{ matrix.target }} --verbose
