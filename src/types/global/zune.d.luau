@@ -1838,13 +1838,43 @@ type CryptoLib = {
         fill: (buffer: buffer, offset: number, length: number) -> (),
     },
 
-    aes_gcm: {
-        aes128: Aead,
-        aes256: Aead,
-    },
-    aes_ocb: {
-        aes128: Aead,
-        aes256: Aead,
+    aead: {
+        aes_gcm: {
+            Aes128Gcm: Aead,
+            Aes256Gcm: Aead,
+        },
+        aes_ocb: {
+            Aes128Ocb: Aead,
+            Aes256Ocb: Aead,
+        },
+        aegis: {
+            Aegis128X4: Aead,
+            Aegis128X2: Aead,
+            Aegis128L: Aead,
+            Aegis256X4: Aead,
+            Aegis256X2: Aead,
+            Aegis256: Aead,
+            Aegis128X4_256: Aead,
+            Aegis128X2_256: Aead,
+            Aegis128L_256: Aead,
+            Aegis256X4_256: Aead,
+            Aegis256X2_256: Aead,
+            Aegis256_256: Aead,
+        },
+        chacha_poly: {
+            ChaCha8Poly1305: Aead,
+            ChaCha12Poly1305: Aead,
+            ChaCha20Poly1305: Aead,
+            XChaCha8Poly1305: Aead,
+            XChaCha12Poly1305: Aead,
+            XChaCha20Poly1305: Aead,
+        },
+        salsa_poly: {
+            XSalsa20Poly1305: Aead,
+        },
+        isap: {
+            IsapA128A: Aead,
+        },
     },
 }
 --[======[ Crypto ]======]--

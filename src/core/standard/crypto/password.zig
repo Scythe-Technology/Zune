@@ -30,7 +30,6 @@ pub fn lua_hash(L: *VM.lua.State) !i32 {
 
     switch (L.typeOf(2)) {
         .Table => {
-            _ = L.getfield(2, "algorithm");
             if (try L.Zcheckfield(?[:0]const u8, 2, "algorithm")) |option|
                 algorithm = AlgorithmMap.get(option) orelse return L.Zerror("invalid algorithm kind");
             L.pop(1);

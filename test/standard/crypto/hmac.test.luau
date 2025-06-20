@@ -64,6 +64,14 @@ describe("Hmac", function()
             expect(hmac("sha3_512", "test", "some-key")).toBe("7f3c9c71b86f1279395d4989b497784583560558e50f8a31348ab6c81a2ac188f66ce16fdcdfc67886817d1eb795327353edfeeca913fc559af1126754f2c125");
             expect(hmac("sha3_512", "zune+luau", "runtime")).toBe("e9c4a0caf18f7ddcea1ac1b50eb7d1d1144d8eecb4bcd94d4d5257c7ace6055d343184f92cb2a381b12d15db61f124af965e4b57323da1414bbad6c244ed8c9f");
         end)
+        test("sha3_shake128", function()
+            expect(hmac("sha3_shake128", "test", "some-key")).toBe("f65e7233d295cee6ba52a145fc482c27af55274ac15e293d644aaf082722d861");
+            expect(hmac("sha3_shake128", "zune+luau", "runtime")).toBe("439af0b09dc354d805e3351194fd79df2402a552f4c6640be073f8fbd0ee7921");
+        end)
+        test("sha3_shake256", function()
+            expect(hmac("sha3_shake256", "test", "some-key")).toBe("10849b80e5af62406f42e1398acd305c19a45eb124f20646ff3010feeff60091e7e1ffee37a20e6a6939b93ebe8254011fb9d5a38ac120aba259a33767c4b4af");
+            expect(hmac("sha3_shake256", "zune+luau", "runtime")).toBe("dfa80a5f5da701e03c18c2aca719893969505ff3729232d3fcb21c503613eabde2e02c54495a997dd0a001d137f5010fb89c7511ac527c852a7337d5171564ad");
+        end)
     end)
 
     describe("Blake2", function()
