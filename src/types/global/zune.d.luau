@@ -7,8 +7,8 @@ declare _FILE: {
 
 --[======[ FileSystem ]======]--
 export type MetadataKind = "file"
-    | "dir"
-    | "symlink"
+    | "directory"
+    | "sym_link"
     | "door"
     | "character_device"
     | "unix_domain_socket"
@@ -271,9 +271,9 @@ type FileSystemLib = {
         Returns the metadata of a file or directory.
 
         @param path The path to the file or directory.
-        @return `Metadata` Nil or The metadata of the file or directory
+        @return `Metadata` The metadata of the file or directory
     ]]
-    metadata: (path: string) -> Metadata?,
+    metadata: (path: string) -> Metadata,
 
     --[[
         Checks if a directory exists.
