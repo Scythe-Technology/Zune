@@ -12,12 +12,12 @@ pub fn lua_genEncryptFn(comptime algorithm: anytype) VM.zapi.LuaZigFn(anyerror!i
             const key = try L.Zcheckvalue([]const u8, 2, null);
 
             if (key.len != algorithm.key_length)
-                return L.Zerror("InvalidKeyLength (key length != 16)");
+                return L.Zerrorf("InvalidKeyLength (key length != {d})", .{algorithm.key_length});
 
             const nonce = try L.Zcheckvalue([]const u8, 3, null);
 
             if (nonce.len != algorithm.nonce_length)
-                return L.Zerror("InvalidNonceLength (nonce length != 12)");
+                return L.Zerrorf("InvalidNonceLength (nonce length != {d})", .{algorithm.nonce_length});
 
             const ad = try L.Zcheckvalue(?[]const u8, 4, null) orelse "";
 

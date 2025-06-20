@@ -64,6 +64,14 @@ describe("Hash", function()
             expect(hash("sha3_512", "test")).toBe("9ece086e9bac491fac5c1d1046ca11d737b92a2b2ebd93f005d7b710110c0a678288166e7fbe796883a4f2e9b3ca9f484f521d0ce464345cc1aec96779149c14");
             expect(hash("sha3_512", "zune+luau")).toBe("884cddf86715170e6538f518de9eca945005c1f09237d2cceba90bb120cfac59fedfed37b604bde3b9a509a545328dec7d73c81acfd8c0768b5c02e86042db96");
         end)
+        test("sha3_shake128", function()
+            expect(hash("sha3_shake128", "test")).toBe("d3b0aa9cd8b7255622cebc631e867d4093d6f6010191a53973c45fec9b07c774");
+            expect(hash("sha3_shake128", "zune+luau")).toBe("790db5030ee94a3442f5371c70d6959968025458a82d0166e5a56b3a0e7e131d");
+        end)
+        test("sha3_shake256", function()
+            expect(hash("sha3_shake256", "test")).toBe("b54ff7255705a71ee2925e4a3e30e41aed489a579d5595e0df13e32e1e4dd202a7c7f68b31d6418d9845eb4d757adda6ab189e1bb340db818e5b3bc725d992fa");
+            expect(hash("sha3_shake256", "zune+luau")).toBe("de83a434056e119e563a8399fe8a4ddb0de61aa1f08250c35f59e9d2a39005664769f832d024a717edb0a9a3b1fb797a0ff559fdf9281dd0fb62841322837a30");
+        end)
     end)
 
     describe("Blake2", function()

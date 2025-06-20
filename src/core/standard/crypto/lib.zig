@@ -44,6 +44,8 @@ const LuaCryptoHasher = struct {
         sha3_256,
         sha3_384,
         sha3_512,
+        sha3_shake128,
+        sha3_shake256,
         blake2b128,
         blake2b160,
         blake2b256,
@@ -129,6 +131,8 @@ const LuaCryptoHasher = struct {
                 .sha3_256 => hash.sha3.Sha3_256,
                 .sha3_384 => hash.sha3.Sha3_384,
                 .sha3_512 => hash.sha3.Sha3_512,
+                .sha3_shake128 => hash.sha3.Shake128,
+                .sha3_shake256 => hash.sha3.Shake256,
                 .blake2b128 => hash.blake2.Blake2b128,
                 .blake2b160 => hash.blake2.Blake2b160,
                 .blake2b256 => hash.blake2.Blake2b256,
@@ -341,54 +345,25 @@ pub fn loadLib(L: *VM.lua.State) void {
         L.setfield(-2, "random");
     }
 
-    { // aes_gcm
-        L.createtable(0, 2);
-
-        { // aes128
-            L.Zpushvalue(.{
-                .encrypt = common.lua_genEncryptFn(aead.aes_gcm.Aes128Gcm),
-                .decrypt = common.lua_genDecryptFn(aead.aes_gcm.Aes128Gcm),
-            });
+    { // aead
+        L.createtable(0, @typeInfo(aead).@"struct".decls.len);
+        inline for (@typeInfo(aead).@"struct".decls) |algo_decl| {
+            const algo = @field(aead, algo_decl.name);
+            L.createtable(0, @typeInfo(algo).@"struct".decls.len);
+            inline for (@typeInfo(algo).@"struct".decls) |varient| {
+                const enc = @field(algo, varient.name);
+                L.Zpushvalue(.{
+                    .encrypt = common.lua_genEncryptFn(enc),
+                    .decrypt = common.lua_genDecryptFn(enc),
+                });
+                L.setreadonly(-1, true);
+                L.setfield(-2, varient.name);
+            }
             L.setreadonly(-1, true);
-            L.setfield(-2, "aes128");
+            L.setfield(-2, algo_decl.name);
         }
-
-        { // aes256
-            L.Zpushvalue(.{
-                .encrypt = common.lua_genEncryptFn(aead.aes_gcm.Aes256Gcm),
-                .decrypt = common.lua_genDecryptFn(aead.aes_gcm.Aes256Gcm),
-            });
-            L.setreadonly(-1, true);
-            L.setfield(-2, "aes256");
-        }
-
         L.setreadonly(-1, true);
-        L.setfield(-2, "aes_gcm");
-    }
-
-    { // aes_ocb
-        L.createtable(0, 2);
-
-        { // aes128
-            L.Zpushvalue(.{
-                .encrypt = common.lua_genEncryptFn(aead.aes_ocb.Aes128Ocb),
-                .decrypt = common.lua_genDecryptFn(aead.aes_ocb.Aes128Ocb),
-            });
-            L.setreadonly(-1, true);
-            L.setfield(-2, "aes128");
-        }
-
-        { // aes256
-            L.Zpushvalue(.{
-                .encrypt = common.lua_genEncryptFn(aead.aes_ocb.Aes256Ocb),
-                .decrypt = common.lua_genDecryptFn(aead.aes_ocb.Aes256Ocb),
-            });
-            L.setreadonly(-1, true);
-            L.setfield(-2, "aes256");
-        }
-
-        L.setreadonly(-1, true);
-        L.setfield(-2, "aes_ocb");
+        L.setfield(-2, "aead");
     }
 
     L.setreadonly(-1, true);

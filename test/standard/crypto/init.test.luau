@@ -45,6 +45,15 @@ end)
 
 require("@self/hash.test");
 require("@self/hmac.test");
-require("@self/password.test");
 require("@self/random.test");
-require("@self/aes.test");
+
+describe("aead", function()
+    require("@self/aead/aegis");
+    require("@self/aead/aes_gcm");
+    require("@self/aead/aes_ocb");
+    require("@self/aead/chacha_poly");
+    require("@self/aead/isap");
+    require("@self/aead/salsa_poly");
+end)
+
+require("@self/password.test");
