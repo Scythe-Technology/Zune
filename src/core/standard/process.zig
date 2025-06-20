@@ -53,11 +53,9 @@ const ProcessEnvError = error{
 
 fn internal_process_getargs(L: *VM.lua.State, array: *std.ArrayList([]const u8), idx: i32) !void {
     try L.Zchecktype(idx, .Table);
-    L.pushvalue(idx);
-    L.pushnil();
-
-    var i: i32 = 1;
-    while (L.next(-2)) {
+    var i: i32 = L.rawiter(idx, 0);
+    while (i >= 0) : (i = L.rawiter(idx, i)) {
+        defer L.pop(2);
         const keyType = L.typeOf(-2);
         const valueType = L.typeOf(-1);
         if (keyType != .Number)
@@ -72,18 +70,15 @@ fn internal_process_getargs(L: *VM.lua.State, array: *std.ArrayList([]const u8),
         const value = L.tostring(-1) orelse return ProcessArgsError.InvalidArgType;
 
         try array.append(value);
-        L.pop(1);
         i += 1;
     }
-    L.pop(1);
 }
 
 fn internal_process_envmap(L: *VM.lua.State, envMap: *std.process.EnvMap, idx: i32) !void {
     try L.Zchecktype(idx, .Table);
-    L.pushvalue(idx);
-    L.pushnil();
-
-    while (L.next(-2)) {
+    var i: i32 = L.rawiter(idx, 0);
+    while (i >= 0) : (i = L.rawiter(idx, i)) {
+        defer L.pop(2);
         const keyType = L.typeOf(-2);
         const valueType = L.typeOf(-1);
         if (keyType != .String)
@@ -93,9 +88,7 @@ fn internal_process_envmap(L: *VM.lua.State, envMap: *std.process.EnvMap, idx: i
         const key = L.tostring(-2) orelse return ProcessEnvError.InvalidKeyType;
         const value = L.tostring(-1) orelse return ProcessEnvError.InvalidValueType;
         try envMap.put(key, value);
-        L.pop(1);
     }
-    L.pop(1);
 }
 
 const ProcessChildOptions = struct {

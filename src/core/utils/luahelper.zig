@@ -5,23 +5,17 @@ const VM = luau.VM;
 
 pub const MAX_LUAU_SIZE = 1073741824; // 1 GB
 
-pub fn pushCloneTable(L: *VM.lua.State, idx: i32, deep: bool) !void {
-    L.newtable();
-    if (idx == VM.lua.GLOBALSINDEX or idx == VM.lua.REGISTRYINDEX)
-        return error.RegistryIndex;
-    L.pushvalue(if (idx < 0) idx - 1 else idx);
-    L.pushnil();
-    while (L.next(-2)) {
-        L.pushvalue(-2);
-        L.pushvalue(-2);
-        if (deep and L.typeOf(-1) == .Table) {
-            try pushCloneTable(L, L.gettop(), deep);
+pub fn deepclone(L: *VM.lua.State, idx: i32) void {
+    L.clonetable(idx);
+    var i: i32 = L.rawiter(-1, 0);
+    while (i >= 0) : (i = L.rawiter(-1, i)) {
+        defer L.pop(2);
+        if (L.typeOf(-1) == .Table) {
+            deepclone(L, -1);
             L.remove(-2); // remove table
+            L.settable(-3);
         }
-        L.settable(-6);
-        L.pop(1);
     }
-    L.pop(1);
 }
 
 pub const RefTable = struct {

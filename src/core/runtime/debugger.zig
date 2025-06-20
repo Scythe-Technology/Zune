@@ -392,12 +392,12 @@ fn variableJsonDisassemble(allocator: std.mem.Allocator, L: *VM.lua.State, iter:
             return false;
         };
         out: {
-            L.pushnil();
-            while (L.next(-2)) {
+            var i: i32 = L.rawiter(-1, 0);
+            while (i >= 0) : (i = L.rawiter(-1, i)) {
                 order += 1;
                 if (order == id)
                     break :out;
-                L.pop(1);
+                L.pop(2);
             }
             printResult("[]\n", .{}); // leads no where
             return false;
@@ -409,12 +409,12 @@ fn variableJsonDisassemble(allocator: std.mem.Allocator, L: *VM.lua.State, iter:
         printResult("[]\n", .{}); // variable not a table
         return false;
     }
-    L.pushnil();
     var first = false;
     var order: u32 = 1;
-    while (L.next(-2)) {
+    var i: i32 = L.rawiter(-1, 0);
+    while (i >= 0) : (i = L.rawiter(-1, i)) {
         order += 1;
-        defer L.pop(1);
+        defer L.pop(2);
         if (first)
             try writer.writeByte(',');
         first = true;
@@ -815,10 +815,10 @@ fn promptOpGlobals(L: *VM.lua.State, allocator: std.mem.Allocator, globals_args:
                     L.remove(-2); // remove function
                     if (L.typeOf(-1) != .Table)
                         return printResult("global is not a table.\n", .{}); // invalid
-                    L.pushnil();
                     var showed: bool = false;
-                    while (L.next(-2)) {
-                        defer L.pop(1);
+                    var i: i32 = L.rawiter(-1, 0);
+                    while (i >= 0) : (i = L.rawiter(-1, i)) {
+                        defer L.pop(2);
                         showed = true;
                         const key = tostring(L, -2);
                         defer L.pop(1);
@@ -863,9 +863,9 @@ fn promptOpGlobals(L: *VM.lua.State, allocator: std.mem.Allocator, globals_args:
                     } else {
                         var order: u32 = 1;
                         var first = false;
-                        L.pushnil();
-                        while (L.next(-2)) {
-                            defer L.pop(3); // remove str_value, str_key, value
+                        var i: i32 = L.rawiter(-1, 0);
+                        while (i >= 0) : (i = L.rawiter(-1, i)) {
+                            defer L.pop(4); // remove str_value, str_key, value, key
                             order += 1;
                             if (first)
                                 try buf.append(',');

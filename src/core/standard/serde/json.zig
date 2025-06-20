@@ -4,21 +4,6 @@ const json = @import("json");
 
 const VM = luau.VM;
 
-const Error = error{
-    InvalidJSON,
-    InvalidNumber,
-    InvalidString,
-    InvalidLiteral,
-    InvalidArray,
-    InvalidObject,
-    CircularReference,
-    InvalidKey,
-    InvalidValue,
-    TableSizeMismatch,
-    UnsupportedType,
-    TrailingData,
-};
-
 var NULL_PTR: ?*const anyopaque = null;
 
 const charset = "0123456789abcdef";
@@ -78,7 +63,7 @@ fn encode(
     switch (L.typeOf(-1)) {
         .Nil => try buf.appendSlice("null"),
         .Table => {
-            const tablePtr = L.topointer(-1) orelse return error.Failed;
+            const tablePtr = L.topointer(-1).?;
 
             if (NULL_PTR) |ptr| if (tablePtr == ptr) {
                 try buf.appendSlice("null");
@@ -86,58 +71,45 @@ fn encode(
             };
 
             for (tracked.items) |t|
-                if (t == tablePtr) return Error.CircularReference;
+                if (t == tablePtr)
+                    return L.Zerror("table circular reference");
             try tracked.append(tablePtr);
 
             const tableSize = L.objlen(-1);
-            L.pushnil();
-            const nextKey = L.next(-2);
-            if (tableSize > 0 or !nextKey) {
+            var i: i32 = L.rawiter(-1, 0);
+            if (tableSize > 0 or i < 0) {
                 try buf.append('[');
-                if (nextKey) {
-                    if (L.typeOf(-2) != .Number)
-                        return Error.InvalidKey;
-                    try encode(L, allocator, buf, tracked, kind, depth + 1, json_kind);
-                    L.pop(1); // drop: value
-                    var n: i32 = 1;
-                    while (L.next(-2)) {
-                        try buf.append(',');
-                        if (kind != .NO_LINE)
-                            try buf.append(' ');
+                if (i >= 0) {
+                    var n: i32 = 0;
+                    while (i >= 0) : (i = L.rawiter(-1, i)) {
+                        if (i > 1) {
+                            try buf.append(',');
+                            if (kind != .NO_LINE)
+                                try buf.append(' ');
+                        }
 
-                        if (L.typeOf(-2) != .Number)
-                            return Error.InvalidKey;
+                        switch (L.typeOf(-2)) {
+                            .Number => {},
+                            else => |t| return L.Zerrorf("invalid key type (expected number, got {s})", .{(VM.lapi.typename(t))}),
+                        }
 
                         try encode(L, allocator, buf, tracked, kind, depth + 1, json_kind);
-                        L.pop(1); // drop: value
+                        L.pop(2); // drop: value, key
                         n += 1;
                     }
                     if (n != tableSize)
-                        return Error.TableSizeMismatch;
+                        return L.Zerrorf("array size mismatch (expected {d}, got {d})", .{ tableSize, n });
                 }
                 try buf.append(']');
             } else {
                 try buf.appendSlice("{");
-                if (L.typeOf(-2) != .String)
-                    return Error.InvalidKey;
-
-                if (kind != .NO_LINE)
-                    try buf.append('\n');
-                try writeIndent(buf, kind, depth + 1);
-
-                L.pushvalue(-2); // push key
-                try encode(L, allocator, buf, tracked, kind, depth + 1, json_kind);
-                try buf.append(':');
-                if (kind != .NO_LINE)
-                    try buf.append(' ');
-                L.pop(1); // drop: key
-                try encode(L, allocator, buf, tracked, kind, depth + 1, json_kind);
-                L.pop(1); // drop: value
-
-                while (L.next(-2)) {
-                    try buf.append(',');
-                    if (L.typeOf(-2) != .String)
-                        return Error.InvalidKey;
+                while (i >= 0) : (i = L.rawiter(-1, i)) {
+                    if (i > 1)
+                        try buf.append(',');
+                    switch (L.typeOf(-2)) {
+                        .String => {},
+                        else => |t| return L.Zerrorf("invalid key type (expected string, got {s})", .{(VM.lapi.typename(t))}),
+                    }
 
                     if (kind != .NO_LINE)
                         try buf.append('\n');
@@ -150,7 +122,7 @@ fn encode(
                         try buf.append(' ');
                     L.pop(1); // drop: key [copy]
                     try encode(L, allocator, buf, tracked, kind, depth + 1, json_kind);
-                    L.pop(1); // drop: value
+                    L.pop(2); // drop: value, key
                 }
 
                 if (kind != .NO_LINE)
@@ -163,7 +135,8 @@ fn encode(
         .Number => {
             const num = L.Lchecknumber(-1);
             switch (json_kind) {
-                .JSON => if (std.math.isNan(num) or std.math.isInf(num)) return Error.InvalidNumber,
+                .JSON => if (std.math.isNan(num) or std.math.isInf(num))
+                    return L.Zerror("invalid number value (cannot be inf or nan)"),
                 .JSON5 => if (std.math.isInf(num)) {
                     if (num > 0)
                         try buf.appendSlice("Infinity")
@@ -176,18 +149,18 @@ fn encode(
                 },
             }
 
-            const str = L.tostring(-1) orelse return error.Fail;
+            const str = L.tostring(-1).?;
             try buf.appendSlice(str);
         },
         .String => {
-            const str = L.tostring(-1) orelse return error.Fail;
+            const str = L.tostring(-1).?;
             try escape_string(buf, str);
         },
         .Boolean => if (L.toboolean(-1))
             try buf.appendSlice("true")
         else
             try buf.appendSlice("false"),
-        else => return Error.UnsupportedType,
+        else => |t| return L.Zerrorf("unsupported value type (got {s})", .{(VM.lapi.typename(t))}),
     }
 }
 
@@ -222,13 +195,7 @@ pub fn LuaEncoder(comptime json_kind: JsonKind) fn (L: *VM.lua.State) anyerror!i
             defer tracked.deinit();
 
             L.pushvalue(1);
-            encode(L, allocator, &buf, &tracked, kind, 0, json_kind) catch |err| {
-                switch (err) {
-                    Error.InvalidNumber => return L.Zerror("InvalidNumber (Cannot be inf or nan)"),
-                    Error.UnsupportedType => return L.Zerrorf("Unsupported type {s}", .{(VM.lapi.typename(L.typeOf(-1)))}),
-                    else => return L.Zerrorf("{s}", .{@errorName(err)}),
-                }
-            };
+            try encode(L, allocator, &buf, &tracked, kind, 0, json_kind);
             L.pushlstring(buf.items);
 
             return 1;

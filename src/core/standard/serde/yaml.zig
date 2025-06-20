@@ -4,13 +4,6 @@ const luau = @import("luau");
 
 const VM = luau.VM;
 
-const Error = error{
-    InvalidKey,
-    InvalidNumber,
-    TableSizeMismatch,
-    CircularReference,
-};
-
 const charset = "0123456789abcdef";
 fn escape_string(bytes: *std.ArrayList(u8), str: []const u8) !void {
     errdefer bytes.deinit();
@@ -50,59 +43,53 @@ fn encodeValue(L: *VM.lua.State, allocator: std.mem.Allocator, tracked: *std.Arr
         },
         .Number => {
             const num = L.Lchecknumber(-1);
-            if (std.math.isNan(num) or std.math.isInf(num)) return Error.InvalidNumber;
+            if (std.math.isNan(num) or std.math.isInf(num))
+                return L.Zerror("invalid number value (cannot be inf or nan)");
             return yaml.Yaml.Value{ .float = num };
         },
         .Table => {
-            const tablePtr = L.topointer(-1) orelse return error.Failed;
+            const tablePtr = L.topointer(-1).?;
 
-            for (tracked.items) |t| if (t == tablePtr) return Error.CircularReference;
+            for (tracked.items) |t|
+                if (t == tablePtr)
+                    return L.Zerror("table circular reference");
             try tracked.append(tablePtr);
 
             const tableSize = L.objlen(-1);
 
-            L.pushnil();
-            const nextKey = L.next(-2);
-            if (tableSize > 0 or !nextKey) {
+            var i: i32 = L.rawiter(-1, 0);
+            if (tableSize > 0 or i < 0) {
                 const list = try allocator.alloc(yaml.Yaml.Value, @intCast(tableSize));
                 errdefer allocator.free(list);
-                if (nextKey) {
+                if (i >= 0) {
                     var order: usize = 0;
+                    while (i >= 0) : (i = L.rawiter(-1, i)) {
+                        switch (L.typeOf(-2)) {
+                            .Number => {},
+                            else => |t| return L.Zerrorf("invalid key type (expected number, got {s})", .{(VM.lapi.typename(t))}),
+                        }
 
-                    if (L.typeOf(-2) != .Number)
-                        return Error.InvalidKey;
-
-                    list[order] = try encodeValue(L, allocator, tracked);
-                    L.pop(1); // drop: value
-                    while (L.next(-2)) {
-                        if (L.typeOf(-2) != .Number)
-                            return Error.InvalidKey;
-
-                        order += 1;
                         list[order] = try encodeValue(L, allocator, tracked);
-                        L.pop(1); // drop: value
+                        order += 1;
+                        L.pop(2); // drop: value, key
                     }
                     order += 1;
 
                     if (@as(i32, @intCast(order)) != tableSize)
-                        return Error.TableSizeMismatch;
+                        return L.Zerrorf("array size mismatch (expected {d}, got {d})", .{ tableSize, order });
                 }
                 return yaml.Yaml.Value{ .list = list };
             } else {
                 var map = std.StringArrayHashMapUnmanaged(yaml.Yaml.Value){};
                 errdefer map.deinit(allocator);
-
-                if (L.typeOf(-2) != .String)
-                    return Error.InvalidKey;
-
-                try map.put(allocator, L.tostring(-2) orelse unreachable, try encodeValue(L, allocator, tracked));
-                L.pop(1); // drop: value
-                while (L.next(-2)) {
-                    if (L.typeOf(-2) != .String)
-                        return Error.InvalidKey;
+                while (i >= 0) : (i = L.rawiter(-1, i)) {
+                    switch (L.typeOf(-2)) {
+                        .String => {},
+                        else => |t| return L.Zerrorf("invalid key type (expected string, got {s})", .{(VM.lapi.typename(t))}),
+                    }
 
                     try map.put(allocator, L.tostring(-2) orelse unreachable, try encodeValue(L, allocator, tracked));
-                    L.pop(1); // drop: value
+                    L.pop(2); // drop: value
                 }
                 return yaml.Yaml.Value{ .map = map };
             }

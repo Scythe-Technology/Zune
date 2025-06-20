@@ -1283,8 +1283,8 @@ fn lua_struct(L: *VM.lua.State) !i32 {
     }
 
     var order: i32 = 1;
-    L.pushnil();
-    while (L.next(1)) {
+    var i: i32 = L.rawiter(1, 0);
+    while (i >= 0) : (i = L.rawiter(1, i)) {
         if (L.typeOf(-2) != .Number)
             return error.InvalidIndex;
         const index = L.tointeger(-2) orelse unreachable;
@@ -1294,8 +1294,7 @@ fn lua_struct(L: *VM.lua.State) !i32 {
         if (L.typeOf(-1) != .Table)
             return error.InvalidValue;
 
-        L.pushnil();
-        if (!L.next(-2))
+        if (L.rawiter(-1, 0) < 0)
             return error.InvalidValue;
 
         if (L.typeOf(-2) != .String)
@@ -1311,13 +1310,14 @@ fn lua_struct(L: *VM.lua.State) !i32 {
             try struct_map.put(name_copy, try toFFIType(L, -1));
         }
 
-        L.pop(1);
+        L.pop(2);
 
-        if (L.next(-2))
+        if (L.rawiter(-1, 1) >= 0)
             return error.ExtraFieldsFound;
 
+        L.pop(2);
+
         order += 1;
-        L.pop(1);
     }
 
     const data = L.newuserdatataggedwithmetatable(LuaDataType, TAG_FFI_DATATYPE);
@@ -1524,8 +1524,9 @@ fn lua_dlopen(L: *VM.lua.State) !i32 {
         }
     }
 
-    L.pushnil();
-    while (L.next(2)) : (L.pop(1)) {
+    var i: i32 = L.rawiter(2, 0);
+    while (i >= 0) : (i = L.rawiter(2, i)) {
+        defer L.pop(2);
         if (L.typeOf(-2) != .String)
             return error.InvalidName;
         if (L.typeOf(-1) != .Table)
@@ -1548,8 +1549,9 @@ fn lua_dlopen(L: *VM.lua.State) !i32 {
         errdefer allocator.free(args);
 
         var order: usize = 0;
-        L.pushnil();
-        while (L.next(-2)) : (L.pop(1)) {
+        var j: i32 = L.rawiter(-1, 0);
+        while (j >= 0) : (j = L.rawiter(-1, j)) {
+            defer L.pop(2);
             if (L.typeOf(-2) != .Number)
                 return error.InvalidArgOrder;
             if (!isFFIType(L, -1))
@@ -1798,27 +1800,29 @@ fn lua_closure(L: *VM.lua.State) !i32 {
     if (L.rawgetfield(1, "args") != .Table)
         return error.InvalidArgs;
 
-    var order: usize = 0;
-    L.pushnil();
-    while (L.next(-2)) {
-        if (L.typeOf(-2) != .Number)
-            return error.InvalidArgOrder;
-        if (!isFFIType(L, -1))
-            return error.InvalidArgType;
+    {
+        var order: usize = 0;
+        var i: i32 = L.rawiter(-1, 0);
+        while (i >= 0) : (i = L.rawiter(-1, i)) {
+            defer L.pop(2);
+            if (L.typeOf(-2) != .Number)
+                return error.InvalidArgOrder;
+            if (!isFFIType(L, -1))
+                return error.InvalidArgType;
 
-        const index = L.tointeger(-2) orelse unreachable;
-        if (index != order + 1)
-            return error.InvalidArgOrder;
+            const index = L.tointeger(-2) orelse unreachable;
+            if (index != order + 1)
+                return error.InvalidArgOrder;
 
-        const t = try toFFIType(L, -1);
+            const t = try toFFIType(L, -1);
 
-        if (t.size == 0)
-            return error.VoidArg;
+            if (t.size == 0)
+                return error.VoidArg;
 
-        try args.append(t);
+            try args.append(t);
 
-        order += 1;
-        L.pop(1);
+            order += 1;
+        }
     }
 
     const symbol_args = try args.toOwnedSlice();
@@ -2082,8 +2086,9 @@ fn lua_fn(L: *VM.lua.State) !i32 {
         return error.InvalidArgs;
 
     var order: usize = 0;
-    L.pushnil();
-    while (L.next(-2)) {
+    var i: i32 = L.rawiter(-1, 0);
+    while (i >= 0) : (i = L.rawiter(-1, i)) {
+        defer L.pop(2);
         if (L.typeOf(-2) != .Number)
             return error.InvalidArgOrder;
         if (!isFFIType(L, -1))
@@ -2101,7 +2106,6 @@ fn lua_fn(L: *VM.lua.State) !i32 {
         try args.append(t);
 
         order += 1;
-        L.pop(1);
     }
 
     const code = try fetchCallableFunction(symbol_returns, args.items);

@@ -160,8 +160,8 @@ pub fn printValue(
                 }
                 if (!L.checkstack(3))
                     return error.StackOverflow;
-                L.pushnil();
-                while (L.next(idx)) {
+                var i: i32 = L.rawiter(idx, 0);
+                while (i >= 0) : (i = L.rawiter(idx, i)) {
                     for (0..depth + 1) |_| try writer.print("    ", .{});
                     const n = L.gettop();
                     if (L.typeOf(@intCast(n - 1)) == .String) {
@@ -186,7 +186,7 @@ pub fn printValue(
                         try writer.print("\x1b[2m,\x1b[0m \n", .{})
                     else
                         try writer.print(", \n", .{});
-                    L.pop(1);
+                    L.pop(2);
                 }
                 for (0..depth) |_| try writer.print("    ", .{});
                 if (Zune.STATE.FORMAT.USE_COLOR)

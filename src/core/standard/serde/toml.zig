@@ -7,30 +7,23 @@ const json = @import("json.zig");
 
 const VM = luau.VM;
 
-const Error = error{
+const Error = std.mem.Allocator.Error || error{
     InvalidString,
     InvalidIndexString,
     InvalidNumber,
-    InvalidFloat,
     InvalidLiteral,
-    InvalidDateTime,
     InvalidArray,
     InvalidTable,
     InvalidCharacter,
     InvalidStringEof,
     InvalidArrayEof,
     InvalidTableEof,
-    InvalidLength,
     MissingString,
     MissingArray,
     MissingTable,
 
-    InvalidKey,
-    InvalidValue,
-    UnsupportedType,
-    CircularReference,
-    OutOfMemory,
     NoSpaceLeft,
+    InvalidLength,
 };
 
 const charset = "0123456789abcdef";
@@ -102,10 +95,12 @@ fn createIndex(allocator: std.mem.Allocator, all: []const u8, key: []const u8) !
 
 fn encodeArrayPartial(L: *VM.lua.State, allocator: std.mem.Allocator, arraySize: usize, buf: *std.ArrayList(u8), info: EncodeInfo) anyerror!void {
     var size: usize = 0;
-    L.pushnil();
-    while (L.next(-2)) {
-        if (L.typeOf(-2) != .Number)
-            return Error.InvalidKey;
+    var i: i32 = L.rawiter(-1, 0);
+    while (i >= 0) : (i = L.rawiter(-1, i)) {
+        switch (L.typeOf(-2)) {
+            .Number => {},
+            else => |t| return L.Zerrorf("invalid key type (expected number, got {s})", .{(VM.lapi.typename(t))}),
+        }
         switch (L.typeOf(-1)) {
             .String => {
                 size += 1;
@@ -117,7 +112,7 @@ fn encodeArrayPartial(L: *VM.lua.State, allocator: std.mem.Allocator, arraySize:
                 size += 1;
                 const num = L.Lchecknumber(-1);
                 if (std.math.isNan(num) or std.math.isInf(num))
-                    return Error.InvalidNumber;
+                    return L.Zerror("invalid number value (cannot be inf or nan)");
                 const value = L.tostring(-1) orelse std.debug.panic("Number failed to convert to string\n", .{});
                 try buf.appendSlice(value);
                 if (size != arraySize)
@@ -133,30 +128,36 @@ fn encodeArrayPartial(L: *VM.lua.State, allocator: std.mem.Allocator, arraySize:
                     try buf.appendSlice(", ");
             },
             .Table => {},
-            else => return Error.UnsupportedType,
+            else => |t| return L.Zerrorf("unsupported value type (got {s})", .{(VM.lapi.typename(t))}),
         }
-        L.pop(1);
+        L.pop(2);
     }
 
-    L.pushnil();
-    while (L.next(-2)) {
-        if (L.typeOf(-2) != .Number) return Error.InvalidKey;
+    i = L.rawiter(1, 0);
+    while (i >= 0) : (i = L.rawiter(1, i)) {
+        switch (L.typeOf(-2)) {
+            .Number => {},
+            else => |t| return L.Zerrorf("invalid key type (expected number, got {s})", .{(VM.lapi.typename(t))}),
+        }
         switch (L.typeOf(-1)) {
             .String, .Number, .Boolean => {},
             .Table => {
                 size += 1;
                 const tablePtr = L.topointer(-1) orelse return error.Failed;
 
-                for (info.tracked.items) |t| if (t == tablePtr) return Error.CircularReference;
+                for (info.tracked.items) |t|
+                    if (t == tablePtr)
+                        return L.Zerror("table circular reference");
                 try info.tracked.append(tablePtr);
 
                 const tableSize = L.objlen(-1);
-                L.pushnil();
-                const nextKey = L.next(-2);
-                if (tableSize > 0 or !nextKey) {
-                    if (nextKey) {
-                        if (L.typeOf(-2) != .Number)
-                            return Error.InvalidKey;
+                const j: i32 = L.rawiter(-1, 0);
+                if (tableSize > 0 or j < 0) {
+                    if (j >= 0) {
+                        switch (L.typeOf(-2)) {
+                            .Number => {},
+                            else => |t| return L.Zerrorf("invalid key type (expected number, got {s})", .{(VM.lapi.typename(t))}),
+                        }
                         L.pop(2);
                         try buf.append('[');
                         try encodeArrayPartial(L, allocator, tableSize, buf, .{
@@ -183,19 +184,22 @@ fn encodeArrayPartial(L: *VM.lua.State, allocator: std.mem.Allocator, arraySize:
                     if (size != arraySize) try buf.appendSlice(", ");
                 }
             },
-            else => return Error.UnsupportedType,
+            else => unreachable, // checked first loop above
         }
-        L.pop(1);
+        L.pop(2);
     }
 
-    if (arraySize != size) return Error.InvalidArray;
+    if (arraySize != size)
+        return L.Zerrorf("array size mismatch (expected {d}, got {d})", .{ arraySize, size });
 }
 
 fn encodeTable(L: *VM.lua.State, allocator: std.mem.Allocator, buf: *std.ArrayList(u8), info: EncodeInfo) anyerror!void {
-    L.pushnil();
-    while (L.next(-2)) {
-        if (L.typeOf(-2) != .String)
-            return Error.InvalidKey;
+    var i: i32 = L.rawiter(-1, 0);
+    while (i >= 0) : (i = L.rawiter(-1, i)) {
+        switch (L.typeOf(-2)) {
+            .String => {},
+            else => |t| return L.Zerrorf("invalid key type (expected string, got {s})", .{(VM.lapi.typename(t))}),
+        }
         const key = L.tostring(-2) orelse unreachable;
         switch (L.typeOf(-1)) {
             .String => {
@@ -210,7 +214,7 @@ fn encodeTable(L: *VM.lua.State, allocator: std.mem.Allocator, buf: *std.ArrayLi
             .Number => {
                 const num = L.Lchecknumber(-1);
                 if (std.math.isNan(num) or std.math.isInf(num))
-                    return Error.InvalidNumber;
+                    return L.Zerror("invalid number value (cannot be inf or nan)");
                 const name = try createIndex(allocator, if (info.root) "" else info.keyName, key);
                 defer allocator.free(name);
                 try buf.appendSlice(name);
@@ -231,38 +235,38 @@ fn encodeTable(L: *VM.lua.State, allocator: std.mem.Allocator, buf: *std.ArrayLi
                 if (!info.root) try buf.appendSlice(",\n") else try buf.append('\n');
             },
             .Table => {},
-            else => return Error.UnsupportedType,
+            else => |t| return L.Zerrorf("unsupported value type (got {s})", .{(VM.lapi.typename(t))}),
         }
-        L.pop(1);
+        L.pop(2);
     }
 
-    L.pushnil();
-    while (L.next(-2)) {
-        if (L.typeOf(-2) != .String) return Error.InvalidKey;
+    i = L.rawiter(-1, 0);
+    while (i >= 0) : (i = L.rawiter(-1, i)) {
+        switch (L.typeOf(-2)) {
+            .String => {},
+            else => |t| return L.Zerrorf("invalid key type (expected string, got {s})", .{(VM.lapi.typename(t))}),
+        }
         switch (L.typeOf(-1)) {
             .String, .Number, .Boolean => {},
             .Table => {
-                const key = L.tostring(-2) orelse unreachable;
+                const key = L.tostring(-2).?;
                 const name = try createIndex(allocator, info.keyName, key);
                 defer allocator.free(name);
 
-                const tablePtr = L.topointer(-1) orelse return error.Failed;
+                const tablePtr = L.topointer(-1).?;
 
                 for (info.tracked.items) |t|
                     if (t == tablePtr)
-                        return Error.CircularReference;
+                        return L.Zerror("table circular reference");
 
                 try info.tracked.append(tablePtr);
 
                 const tableSize = L.objlen(-1);
-                L.pushnil();
-                const nextKey = L.next(-2);
-                if (tableSize > 0 or !nextKey) {
+                const j: i32 = L.rawiter(-1, 0);
+                if (tableSize > 0 or j < 0) {
                     try buf.appendSlice(name);
                     try buf.appendSlice(" = ");
-                    if (nextKey) {
-                        if (L.typeOf(-2) != .Number)
-                            return Error.InvalidKey;
+                    if (j >= 0) {
                         L.pop(2);
                         try buf.append('[');
                         try encodeArrayPartial(L, allocator, tableSize, buf, .{
@@ -314,9 +318,9 @@ fn encodeTable(L: *VM.lua.State, allocator: std.mem.Allocator, buf: *std.ArrayLi
                     }
                 }
             },
-            else => return Error.UnsupportedType,
+            else => unreachable, // checked first loop above
         }
-        L.pop(1);
+        L.pop(2);
     }
 }
 
