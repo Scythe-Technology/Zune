@@ -1201,10 +1201,11 @@ const ffi_c_interface = struct {
                     .Buffer => {
                         const lua_buf = L.tobuffer(index).?;
                         if (lua_buf.len < size)
-                            return L.LerrorL("Buffer Too Small", .{});
+                            return L.LerrorL("buffer too small", .{});
                         return std.mem.bytesToValue(T, lua_buf[0..size]);
                     },
-                    else => L.LerrorL("Invalid Argument Type", .{}),
+                    .Proto, .UpVal, .Deadkey => unreachable,
+                    inline else => |e| L.LerrorL("invalid argument type (got {s})", .{comptime VM.lapi.typename(e)}),
                 }
             }
         }.inner;
@@ -1282,8 +1283,8 @@ fn lua_struct(L: *VM.lua.State) !i32 {
     }
 
     var order: i32 = 1;
-    L.pushnil();
-    while (L.next(1)) {
+    var i: i32 = L.rawiter(1, 0);
+    while (i >= 0) : (i = L.rawiter(1, i)) {
         if (L.typeOf(-2) != .Number)
             return error.InvalidIndex;
         const index = L.tointeger(-2) orelse unreachable;
@@ -1293,8 +1294,7 @@ fn lua_struct(L: *VM.lua.State) !i32 {
         if (L.typeOf(-1) != .Table)
             return error.InvalidValue;
 
-        L.pushnil();
-        if (!L.next(-2))
+        if (L.rawiter(-1, 0) < 0)
             return error.InvalidValue;
 
         if (L.typeOf(-2) != .String)
@@ -1310,13 +1310,14 @@ fn lua_struct(L: *VM.lua.State) !i32 {
             try struct_map.put(name_copy, try toFFIType(L, -1));
         }
 
-        L.pop(1);
+        L.pop(2);
 
-        if (L.next(-2))
+        if (L.rawiter(-1, 1) >= 0)
             return error.ExtraFieldsFound;
 
+        L.pop(2);
+
         order += 1;
-        L.pop(1);
     }
 
     const data = L.newuserdatataggedwithmetatable(LuaDataType, TAG_FFI_DATATYPE);
@@ -1523,8 +1524,9 @@ fn lua_dlopen(L: *VM.lua.State) !i32 {
         }
     }
 
-    L.pushnil();
-    while (L.next(2)) : (L.pop(1)) {
+    var i: i32 = L.rawiter(2, 0);
+    while (i >= 0) : (i = L.rawiter(2, i)) {
+        defer L.pop(2);
         if (L.typeOf(-2) != .String)
             return error.InvalidName;
         if (L.typeOf(-1) != .Table)
@@ -1532,13 +1534,13 @@ fn lua_dlopen(L: *VM.lua.State) !i32 {
 
         const name = L.tostring(-2) orelse unreachable;
 
-        _ = L.getfield(-1, "returns");
+        _ = L.rawgetfield(-1, "returns");
         if (!isFFIType(L, -1))
             return error.InvalidReturnType;
         const returns_ffi_type = try toFFIType(L, -1);
         L.pop(1); // drop: returns
 
-        if (L.getfield(-1, "args") != .Table)
+        if (L.rawgetfield(-1, "args") != .Table)
             return error.InvalidArgs;
 
         const args_len = L.objlen(-1);
@@ -1547,8 +1549,9 @@ fn lua_dlopen(L: *VM.lua.State) !i32 {
         errdefer allocator.free(args);
 
         var order: usize = 0;
-        L.pushnil();
-        while (L.next(-2)) : (L.pop(1)) {
+        var j: i32 = L.rawiter(-1, 0);
+        while (j >= 0) : (j = L.rawiter(-1, j)) {
+            defer L.pop(2);
             if (L.typeOf(-2) != .Number)
                 return error.InvalidArgOrder;
             if (!isFFIType(L, -1))
@@ -1788,36 +1791,38 @@ fn lua_closure(L: *VM.lua.State) !i32 {
     var args = std.ArrayList(DataType).init(allocator);
     defer args.deinit();
 
-    _ = L.getfield(1, "returns");
+    _ = L.rawgetfield(1, "returns");
     if (!isFFIType(L, -1))
         return error.InvalidReturnType;
     symbol_returns = try toFFIType(L, -1);
     L.pop(1);
 
-    if (L.getfield(1, "args") != .Table)
+    if (L.rawgetfield(1, "args") != .Table)
         return error.InvalidArgs;
 
-    var order: usize = 0;
-    L.pushnil();
-    while (L.next(-2)) {
-        if (L.typeOf(-2) != .Number)
-            return error.InvalidArgOrder;
-        if (!isFFIType(L, -1))
-            return error.InvalidArgType;
+    {
+        var order: usize = 0;
+        var i: i32 = L.rawiter(-1, 0);
+        while (i >= 0) : (i = L.rawiter(-1, i)) {
+            defer L.pop(2);
+            if (L.typeOf(-2) != .Number)
+                return error.InvalidArgOrder;
+            if (!isFFIType(L, -1))
+                return error.InvalidArgType;
 
-        const index = L.tointeger(-2) orelse unreachable;
-        if (index != order + 1)
-            return error.InvalidArgOrder;
+            const index = L.tointeger(-2) orelse unreachable;
+            if (index != order + 1)
+                return error.InvalidArgOrder;
 
-        const t = try toFFIType(L, -1);
+            const t = try toFFIType(L, -1);
 
-        if (t.size == 0)
-            return error.VoidArg;
+            if (t.size == 0)
+                return error.VoidArg;
 
-        try args.append(t);
+            try args.append(t);
 
-        order += 1;
-        L.pop(1);
+            order += 1;
+        }
     }
 
     const symbol_args = try args.toOwnedSlice();
@@ -1940,18 +1945,19 @@ const FFIFunction = struct {
 
     pub const FFICallable = *align(8) const fn (lua_State: *anyopaque, fnPtr: *const anyopaque) callconv(.c) void;
 
-    pub fn fn_inner(L: *VM.lua.State) !i32 {
+    pub fn fn_inner(L: *VM.lua.State) i32 {
         const allocator = luau.getallocator(L);
         const self = L.touserdata(FFIFunction, VM.lua.upvalueindex(1)) orelse unreachable;
 
         if (self.lib) |lib|
             if (!lib.open)
-                return error.LibraryNotOpen;
+                return L.LerrorL("library is closed", .{});
 
         const callable = self.callable;
 
-        if (L.gettop() < self.code.sym.type.args.len)
-            return L.Zerror("Invalid number of arguments");
+        const arg_count = L.gettop();
+        if (arg_count < self.code.sym.type.args.len)
+            return L.LerrorL("invalid number of arguments (expected {d} args, got {d} args)", .{ self.code.sym.type.args.len, arg_count });
 
         var arena: ?std.heap.ArenaAllocator = null;
         defer if (arena) |a| a.deinit();
@@ -1968,36 +1974,64 @@ const FFIFunction = struct {
                         const idx: i32 = @intCast(i);
                         switch (L.typeOf(idx)) {
                             .Userdata => {
-                                const ptr = LuaPointer.value(L, idx) orelse return error.Fail;
-                                if (ptr.destroyed)
-                                    return error.NoAddressAvailable;
-                                if (ptr.data.tag != arg.kind.pointer.tag)
-                                    return error.PointerTagMismatch;
+                                const ptr = LuaPointer.value(L, idx) orelse {
+                                    arena.?.deinit();
+                                    return L.LerrorL("userdata is not a Pointer", .{});
+                                };
+                                if (ptr.destroyed) {
+                                    arena.?.deinit();
+                                    return L.LerrorL("Pointer no address available", .{});
+                                }
+                                if (ptr.data.tag != arg.kind.pointer.tag) {
+                                    arena.?.deinit();
+                                    return L.LerrorL("Pointer tag mismatch", .{});
+                                }
                                 ptrs[order] = @ptrCast(@alignCast(ptr.ptr));
                             },
                             .String => {
                                 const str: [:0]const u8 = L.tostring(idx).?;
-                                const dup = try arena_allocator.dupeZ(u8, str);
+                                const dup = arena_allocator.dupeZ(u8, str) catch {
+                                    arena.?.deinit();
+                                    return L.LerrorL("OutOfMemory", .{});
+                                };
                                 ptrs[order] = @ptrCast(@alignCast(dup.ptr));
                             },
                             .Buffer => {
                                 const buf = L.tobuffer(idx).?;
-                                const dup = try arena_allocator.dupe(u8, buf);
+                                const dup = arena_allocator.dupe(u8, buf) catch {
+                                    arena.?.deinit();
+                                    return L.LerrorL("OutOfMemory", .{});
+                                };
                                 ptrs[order] = @ptrCast(@alignCast(dup.ptr));
                             },
                             .Nil => ptrs[order] = @ptrFromInt(0),
-                            else => return error.InvalidArgType,
+                            .Proto, .UpVal, .Deadkey => unreachable,
+                            inline else => |e| {
+                                arena.?.deinit();
+                                return L.LerrorL("invalid argument type (got {s})", .{comptime VM.lapi.typename(e)});
+                            },
                         }
                     },
                     .@"struct" => {
                         defer order += 1;
                         const idx: i32 = @intCast(i);
-                        if (L.typeOf(idx) != .Buffer)
-                            return error.InvalidArgType;
+                        switch (L.typeOf(idx)) {
+                            .Buffer => {},
+                            .Proto, .UpVal, .Deadkey => unreachable,
+                            inline else => |e| {
+                                arena.?.deinit();
+                                return L.LerrorL("invalid argument type (expected buffer, got {s})", .{comptime VM.lapi.typename(e)});
+                            },
+                        }
                         const buf = L.tobuffer(idx).?;
-                        if (buf.len != arg.size)
-                            return error.InvalidStructSize;
-                        const mem: []u8 = @alignCast((arena_allocator.rawAlloc(arg.size, .fromByteUnits(arg.alignment), @returnAddress()) orelse return error.OutOfMemory)[0..arg.size]);
+                        if (buf.len != arg.size) {
+                            arena.?.deinit();
+                            return L.LerrorL("invalid buffer size mismatch (expected {d} bytes, got {d} bytes)", .{ arg.size, buf.len });
+                        }
+                        const mem: []u8 = @alignCast((arena_allocator.rawAlloc(arg.size, .fromByteUnits(arg.alignment), @returnAddress()) orelse {
+                            arena.?.deinit();
+                            return L.LerrorL("OutOfMemory", .{});
+                        })[0..arg.size]);
                         @memcpy(mem, buf);
                         ptrs[order] = @ptrCast(@alignCast(mem.ptr));
                     },
@@ -2042,18 +2076,19 @@ fn lua_fn(L: *VM.lua.State) !i32 {
     var args = std.ArrayList(DataType).init(allocator);
     defer args.deinit();
 
-    _ = L.getfield(1, "returns");
+    _ = L.rawgetfield(1, "returns");
     if (!isFFIType(L, -1))
         return error.InvalidReturnType;
     symbol_returns = try toFFIType(L, -1);
     L.pop(1);
 
-    if (L.getfield(1, "args") != .Table)
+    if (L.rawgetfield(1, "args") != .Table)
         return error.InvalidArgs;
 
     var order: usize = 0;
-    L.pushnil();
-    while (L.next(-2)) {
+    var i: i32 = L.rawiter(-1, 0);
+    while (i >= 0) : (i = L.rawiter(-1, i)) {
+        defer L.pop(2);
         if (L.typeOf(-2) != .Number)
             return error.InvalidArgOrder;
         if (!isFFIType(L, -1))
@@ -2071,7 +2106,6 @@ fn lua_fn(L: *VM.lua.State) !i32 {
         try args.append(t);
 
         order += 1;
-        L.pop(1);
     }
 
     const code = try fetchCallableFunction(symbol_returns, args.items);

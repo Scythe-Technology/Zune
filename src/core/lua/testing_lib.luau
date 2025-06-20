@@ -503,7 +503,7 @@ local function deepScan(a : any, b : any, state : {[any] : any}, key: string?) :
         end
     end
     if (type(a) ~= type(b)) then
-        return {`{key or ''}{DIM}(type: {RESET}{YELLOW}{type(a)}{RESET}{DIM}) ~= (type: {RESET}{YELLOW}{type(b)}{RESET}{DIM}){RESET}`};
+        return {`{key or ''}{DIM}(type: {RESET}{YELLOW}{type(b)}{RESET}{DIM}) ~= (type: {RESET}{YELLOW}{type(a)}{RESET}{DIM}){RESET}`};
     end
     if (type(a) == "table") then
         if (state[a] == b) then
@@ -537,7 +537,7 @@ local function deepScan(a : any, b : any, state : {[any] : any}, key: string?) :
         end
         return {};
     end
-    return {`{key or ''}{DIM}(value: {RESET}{readable(a)}{DIM}) ~= (value: {RESET}{readable(b)}{DIM}){RESET}`};
+    return {`{key or ''}{DIM}(value: {RESET}{readable(b)}{DIM}) ~= (expected: {RESET}{readable(a)}{DIM}){RESET}`};
 end
 
 local expect = setmetatable({

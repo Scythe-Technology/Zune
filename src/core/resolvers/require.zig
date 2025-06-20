@@ -63,14 +63,27 @@ fn require_finished(self: *RequireContext, ML: *VM.lua.State, _: *Scheduler) voi
         GL.pushlightuserdata(@ptrCast(&ErrorState))
     else
         ML.xpush(GL, -1);
-    GL.setfield(-2, self.path); // SET: _MODULES[moduleName] = module
+    if (GL.typeOf(-1) != .Nil) {
+        GL.setfield(-2, self.path); // SET: _MODULES[moduleName] = module
+    } else {
+        GL.pop(1); // drop: nil
+        GL.pushlightuserdata(@ptrCast(&LoadedState));
+        GL.setfield(-2, self.path); // SET: _MODULES[moduleName] = <tag>
+    }
 
     GL.pop(1); // drop: _MODULES
 
-    for (queue.value_ptr.*.items) |item| {
+    for (queue.value_ptr.*.items, 0..) |item, i| {
         const L = item.state.value;
-        if (outErr) |msg| {
-            L.pushlstring(msg);
+        if (i == 0) {
+            if (outErr) |msg| {
+                L.pushlstring(msg);
+                _ = Scheduler.resumeStateError(L, null) catch {};
+                continue;
+            }
+        }
+        if (outErr != null) {
+            L.pushlstring("requested module failed to load");
             _ = Scheduler.resumeStateError(L, null) catch {};
         } else {
             ML.xpush(L, -1);
@@ -195,7 +208,7 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
             src_path_buf[full_len] = 0;
 
             const module_relative_path = src_path_buf[0..full_len :0];
-            switch (L.getfield(-1, module_relative_path)) {
+            switch (L.rawgetfield(-1, module_relative_path)) {
                 .Nil => {},
                 .LightUserdata => {
                     const ptr = L.topointer(-1) orelse unreachable;

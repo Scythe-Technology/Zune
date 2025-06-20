@@ -83,7 +83,7 @@ fn lua_load(L: *VM.lua.State) !i32 {
         return L.Zerror("Luau Error (Bad Load)");
 
     if (L.typeOf(2) == .Table) {
-        if (L.getfield(2, "env") == .Table) {
+        if (L.rawgetfield(2, "env") == .Table) {
             // TODO: should allow env to have a metatable?
             if (L.getmetatable(-1)) {
                 useCodeGen = false; // dynamic env, disable codegen

@@ -11,9 +11,9 @@ describe("Json", function()
         test("Number", function()
             expect(serde.json.encode(1)).toBe("1");
             expect(serde.json.encode(1.123)).toBe("1.123");
-            expect(function() serde.json.encode(0/0); end).toThrow(`InvalidNumber (Cannot be inf or nan)`);
-            expect(function() serde.json.encode(math.huge); end).toThrow(`InvalidNumber (Cannot be inf or nan)`);
-            expect(function() serde.json.encode(-math.huge); end).toThrow(`InvalidNumber (Cannot be inf or nan)`);
+            expect(function() serde.json.encode(0/0); end).toThrow(`invalid number value (cannot be inf or nan)`);
+            expect(function() serde.json.encode(math.huge); end).toThrow(`invalid number value (cannot be inf or nan)`);
+            expect(function() serde.json.encode(-math.huge); end).toThrow(`invalid number value (cannot be inf or nan)`);
         end)
         test("Boolean", function()
             expect(serde.json.encode(true)).toBe("true");
@@ -62,12 +62,12 @@ describe("Json", function()
             })).toBe(`\{\n  "a": 1,\n  "c": 3,\n  "b": 2\n\}`);
         end)
         test("Fail", function()
-            expect(function() serde.json.encode(function() end); end).toThrow(`Unsupported type function`);
-            expect(function() serde.json.encode(coroutine.create(function() end)); end).toThrow(`Unsupported type thread`);
+            expect(function() serde.json.encode(function() end); end).toThrow(`unsupported value type (got function)`);
+            expect(function() serde.json.encode(coroutine.create(function() end)); end).toThrow(`unsupported value type (got thread)`);
             -- TODO: Remove this when buffer is supported
-            expect(function() serde.json.encode(buffer.create(12)); end).toThrow(`Unsupported type buffer`);
+            expect(function() serde.json.encode(buffer.create(12)); end).toThrow(`unsupported value type (got buffer)`);
 
-            expect(function() serde.json.encode({[function() end] = 1}); end).toThrow(`InvalidKey`);
+            expect(function() serde.json.encode({[function() end] = 1}); end).toThrow(`invalid key type (expected string, got function)`);
         end)
     end)
 

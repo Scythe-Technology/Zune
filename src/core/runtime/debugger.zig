@@ -304,10 +304,7 @@ fn promptOpBreak(L: *VM.lua.State, allocator: std.mem.Allocator, break_args: []c
             const line = std.fmt.parseInt(i32, line_str, 10) catch |err| {
                 return printResult("Line Parse Error: {}\n", .{err});
             };
-            const dir_path = try dir.realpathAlloc(allocator, ".");
-            defer allocator.free(dir_path);
-
-            const file_path = try std.fs.path.relative(allocator, dir_path, file_str);
+            const file_path = try dir.realpathAlloc(allocator, file_str);
             defer allocator.free(file_path);
 
             if (k == .remove) {
@@ -346,10 +343,10 @@ fn promptOpBreak(L: *VM.lua.State, allocator: std.mem.Allocator, break_args: []c
                 while (i > 0) : (i -= 1)
                     _ = removeBreakpoint(L, breakpoints.key_ptr.*, bps[i - 1].line);
             }
-            if (DEBUG.output == .Readable)
-                printResult("Cleared all breakpoints.\n", .{})
-            else
-                printResult("{{\"success\":true}}\n", .{});
+            switch (DEBUG.output) {
+                .Readable => printResult("Cleared all breakpoints.\n", .{}),
+                .Json => printResult("{{\"success\":true}}\n", .{}),
+            }
         },
         .list => {
             if (DEBUG.output == .Json)
@@ -395,12 +392,12 @@ fn variableJsonDisassemble(allocator: std.mem.Allocator, L: *VM.lua.State, iter:
             return false;
         };
         out: {
-            L.pushnil();
-            while (L.next(-2)) {
+            var i: i32 = L.rawiter(-1, 0);
+            while (i >= 0) : (i = L.rawiter(-1, i)) {
                 order += 1;
                 if (order == id)
                     break :out;
-                L.pop(1);
+                L.pop(2);
             }
             printResult("[]\n", .{}); // leads no where
             return false;
@@ -412,12 +409,12 @@ fn variableJsonDisassemble(allocator: std.mem.Allocator, L: *VM.lua.State, iter:
         printResult("[]\n", .{}); // variable not a table
         return false;
     }
-    L.pushnil();
     var first = false;
     var order: u32 = 1;
-    while (L.next(-2)) {
+    var i: i32 = L.rawiter(-1, 0);
+    while (i >= 0) : (i = L.rawiter(-1, i)) {
         order += 1;
-        defer L.pop(1);
+        defer L.pop(2);
         if (first)
             try writer.writeByte(',');
         first = true;
@@ -818,10 +815,10 @@ fn promptOpGlobals(L: *VM.lua.State, allocator: std.mem.Allocator, globals_args:
                     L.remove(-2); // remove function
                     if (L.typeOf(-1) != .Table)
                         return printResult("global is not a table.\n", .{}); // invalid
-                    L.pushnil();
                     var showed: bool = false;
-                    while (L.next(-2)) {
-                        defer L.pop(1);
+                    var i: i32 = L.rawiter(-1, 0);
+                    while (i >= 0) : (i = L.rawiter(-1, i)) {
+                        defer L.pop(2);
                         showed = true;
                         const key = tostring(L, -2);
                         defer L.pop(1);
@@ -866,9 +863,9 @@ fn promptOpGlobals(L: *VM.lua.State, allocator: std.mem.Allocator, globals_args:
                     } else {
                         var order: u32 = 1;
                         var first = false;
-                        L.pushnil();
-                        while (L.next(-2)) {
-                            defer L.pop(3); // remove str_value, str_key, value
+                        var i: i32 = L.rawiter(-1, 0);
+                        while (i >= 0) : (i = L.rawiter(-1, i)) {
+                            defer L.pop(4); // remove str_value, str_key, value, key
                             order += 1;
                             if (first)
                                 try buf.append(',');
@@ -1067,38 +1064,25 @@ pub fn prompt(L: *VM.lua.State, comptime kind: BreakKind, debug_info: ?*VM.lua.c
                         printResult("No debug info available\n", .{});
                     },
                     .file => {
-                        defer L.pop(1);
-                        if (!L.checkstack(2)) {
-                            if (DEBUG.output == .Readable)
-                                printResult("stack overflow.\n", .{})
-                            else
-                                printResult("null\n", .{});
-                            break :out;
-                        }
-                        if (L.getglobal("_FILE") != .Table) {
-                            if (DEBUG.output == .Readable)
-                                printResult("file info not available.\n", .{})
-                            else
-                                printResult("null\n", .{});
-                            break :out;
-                        }
-                        defer L.pop(1);
                         var source: ?[]const u8 = null;
                         var ar: VM.lua.Debug = .{ .ssbuf = undefined };
                         if (L.getinfo(1, "sn", &ar)) {
                             source = ar.source;
                         }
                         if (source == null or !std.mem.startsWith(u8, source.?, "@")) {
-                            if (DEBUG.output == .Readable)
-                                printResult("file info not available.\n", .{})
-                            else
-                                printResult("null\n", .{});
+                            switch (DEBUG.output) {
+                                .Readable => printResult("file info not available.\n", .{}),
+                                .Json => printResult("null\n", .{}),
+                            }
                             break :out;
                         }
-                        if (DEBUG.output == .Readable)
-                            printResult("current file: {s}\n", .{source.?[1..]})
-                        else
-                            printResult("\"{s}\"\n", .{source.?[1..]});
+                        const dir = std.fs.cwd();
+                        const path = try dir.realpathAlloc(allocator, source.?[1..]);
+                        defer allocator.free(path);
+                        switch (DEBUG.output) {
+                            .Readable => printResult("current file: {s}\n", .{path}),
+                            .Json => printResult("\"{s}\"\n", .{path}),
+                        }
                     },
                     .trace => {
                         const args = std.mem.trimLeft(u8, rest, " ");

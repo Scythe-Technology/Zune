@@ -280,37 +280,37 @@ pub fn lua_serve(L: *VM.lua.State) !i32 {
     var handlers: FnHandlers = .{};
     errdefer handlers.derefAll(L);
 
-    if (L.getfield(1, "request") != .Function)
+    if (L.rawgetfield(1, "request") != .Function)
         return L.Zerror("invalid field 'request' (expected function)");
     handlers.request = .init(L, -1, undefined);
     L.pop(1);
 
-    const websocket_type = L.getfield(1, "websocket");
+    const websocket_type = L.rawgetfield(1, "websocket");
     if (!websocket_type.isnoneornil()) {
         if (websocket_type != .Table)
             return L.Zerror("Expected field 'websocket' to be a table");
-        const upgrade_type = L.getfield(-1, "upgrade");
+        const upgrade_type = L.rawgetfield(-1, "upgrade");
         if (!upgrade_type.isnoneornil()) {
             if (upgrade_type != .Function)
                 return L.Zerror("Expected field 'upgrade' to be a function");
             handlers.ws_upgrade = .init(L, -1, undefined);
         }
         L.pop(1);
-        const open_type = L.getfield(-1, "open");
+        const open_type = L.rawgetfield(-1, "open");
         if (!open_type.isnoneornil()) {
             if (open_type != .Function)
                 return L.Zerror("Expected field 'open' to be a function");
             handlers.ws_open = .init(L, -1, undefined);
         }
         L.pop(1);
-        const message_type = L.getfield(-1, "message");
+        const message_type = L.rawgetfield(-1, "message");
         if (!message_type.isnoneornil()) {
             if (message_type != .Function)
                 return L.Zerror("Expected field 'message' to be a function");
             handlers.ws_message = .init(L, -1, undefined);
         }
         L.pop(1);
-        const close_type = L.getfield(-1, "close");
+        const close_type = L.rawgetfield(-1, "close");
         if (!close_type.isnoneornil()) {
             if (close_type != .Function)
                 return L.Zerror("Expected field 'close' to be a function");

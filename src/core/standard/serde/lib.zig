@@ -41,12 +41,12 @@ pub fn loadLib(L: *VM.lua.State) void {
         L.Zsetfieldfn(-1, "encode", json.LuaEncoder(.JSON5));
         L.Zsetfieldfn(-1, "decode", json.LuaDecoder(.JSON5));
 
-        _ = L.getfield(-2, "json");
+        _ = L.rawgetfield(-2, "json");
 
-        _ = L.getfield(-1, "Indents");
+        _ = L.rawgetfield(-1, "Indents");
         L.setfield(-3, "Indents");
 
-        _ = L.getfield(-1, "Values");
+        _ = L.rawgetfield(-1, "Values");
         L.setfield(-3, "Values");
 
         L.pop(1);

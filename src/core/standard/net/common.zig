@@ -21,10 +21,9 @@ pub const HeaderTypeError = error{
 
 pub fn read_headers(L: *VM.lua.State, headers: *std.ArrayList(std.http.Header), idx: i32) !void {
     try L.Zchecktype(idx, .Table);
-    L.pushvalue(idx);
-    L.pushnil();
-
-    while (L.next(-2)) {
+    var i: i32 = L.rawiter(idx, 0);
+    while (i >= 0) : (i = L.rawiter(idx, i)) {
+        defer L.pop(2);
         const keyType = L.typeOf(-2);
         const valueType = L.typeOf(-1);
         if (keyType != .String) return HeaderTypeError.InvalidKeyType;
@@ -32,7 +31,5 @@ pub fn read_headers(L: *VM.lua.State, headers: *std.ArrayList(std.http.Header), 
         const key = L.tostring(-2) orelse return HeaderTypeError.InvalidKeyType;
         const value = L.tostring(-1) orelse return HeaderTypeError.InvalidValueType;
         try headers.append(.{ .name = key, .value = value });
-        L.pop(1);
     }
-    L.pop(1);
 }

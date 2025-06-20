@@ -143,7 +143,7 @@ pub fn lua_request(L: *VM.lua.State) !i32 {
         if (try L.Zcheckfield(?[]const u8, 2, "body")) |body|
             payload = try allocator.dupe(u8, body);
 
-        const headers_type = L.getfield(2, "headers");
+        const headers_type = L.rawgetfield(2, "headers");
         if (headers_type == .Table) {
             var headers_list = std.ArrayListUnmanaged(std.http.Header){};
             defer headers_list.deinit(allocator);
