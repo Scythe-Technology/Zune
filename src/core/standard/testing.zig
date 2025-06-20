@@ -21,7 +21,7 @@ pub var REF_LEAK_CHECK = false;
 
 fn testing_debug(L: *VM.lua.State) i32 {
     const str = L.Lcheckstring(1);
-    std.debug.print("{s}\n", .{str});
+    Zune.debug.print("{s}\n", .{str});
     return 0;
 }
 
@@ -182,26 +182,26 @@ pub fn finish_testing(L: *VM.lua.State, rawstart: f64) TestResult {
             const refIdx = idx + 1;
             if (!header) {
                 header = true;
-                std.debug.print("\n", .{});
-                std.debug.print("\x1b[1;34mLEAK\x1b[0m Runtime leaked references (Information may not be accurate)\x1b[0m", .{});
+                Zune.debug.print("\n", .{});
+                Zune.debug.print("<bold><blue>LEAK<clear> Runtime leaked references (Information may not be accurate)<clear>", .{});
             }
-            std.debug.print("\n {s}\x1b[0m", .{source.scope});
-            std.debug.print("\n  \x1b[96m{}\x1b[0m \x1b[2m-\x1b[0m {s}", .{ refIdx, source.value });
+            Zune.debug.print("\n {s}<clear>", .{source.scope});
+            Zune.debug.print("\n  <bcyan>{}<clear> <dim>-<clear> {s}", .{ refIdx, source.value });
 
             freeRefTrace(allocator, idx);
         }
     }
     if (header)
-        std.debug.print("\n", .{});
+        Zune.debug.print("\n", .{});
 
     if (stdOut) {
-        std.debug.print("\n", .{});
+        Zune.debug.print("\n", .{});
         if (mainFailedCount > 0) {
-            std.debug.print(" \x1b[1mTests\x1b[0m: \x1b[1;31m{} failed\x1b[0m, {} total\n", .{ mainFailedCount, mainTestCount });
+            Zune.debug.print(" <bold>Tests<clear>: <bold><red>{} failed<clear>, {} total\n", .{ mainFailedCount, mainTestCount });
         } else {
-            std.debug.print(" \x1b[1mTests\x1b[0m: {} total\n", .{mainTestCount});
+            Zune.debug.print(" <bold>Tests<clear>: {} total\n", .{mainTestCount});
         }
-        std.debug.print(" \x1b[1mTime\x1b[0m:  {d} s\n", .{std.math.ceil(time * 1000) / 1000});
+        Zune.debug.print(" <bold>Time<clear>:  {d} s\n", .{std.math.ceil(time * 1000) / 1000});
     }
     return .{
         .failed = mainFailedCount,
@@ -247,7 +247,7 @@ pub fn loadLib(L: *VM.lua.State, enabled: bool) void {
         ML.load("test_framework", bytecode_buf, 0) catch |err|
             std.debug.panic("Error loading test framework: {}\n", .{err});
         _ = ML.pcall(0, 1, 0).check() catch |err| {
-            std.debug.print("Error loading test framework (2): {}\n", .{err});
+            Zune.debug.print("Error loading test framework (2): {}\n", .{err});
             Engine.logError(ML, err, false);
             std.debug.panic("Test Framework (2)\n", .{});
         };

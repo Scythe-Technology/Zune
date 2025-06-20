@@ -311,7 +311,7 @@ describe("IO", function()
         local res : string = io.format({[" "] = 1});
         local start : number = (res:find(">")) or error("Bad format");
         start += 1;
-        expect(res:sub(start)).toBe(" {\x1B[0m\n    \x1B[2m[\x1B[0m\x1B[32m\" \"\x1B[0m\x1B[2m]\x1B[0m\x1B[2m = \x1B[0m\x1B[96m1\x1B[0m\x1B[2m,\x1B[0m \n\x1B[2m}\x1B[0m");
+        expect(res:sub(start)).toBe(" {\x1B[0m\n    \x1B[2m[\x1B[0;32m\" \"\x1B[0;2m]\x1B[0m\x1B[2m = \x1B[0m\x1B[96m1\x1B[0m\x1B[2m,\x1B[0m \n\x1B[2m}\x1B[0m");
         expect(((res:sub(1,start)):find("\x1B%[2m<table: 0x.+>"))).never.toBeNil();
     end)
 end)
