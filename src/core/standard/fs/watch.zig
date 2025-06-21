@@ -18,7 +18,7 @@ const WatchEvent = struct {
     };
 };
 
-const WatchInfo = struct {
+pub const WatchInfo = struct {
     allocator: std.mem.Allocator,
     list: std.ArrayList(WatchEvent),
 
@@ -327,7 +327,7 @@ pub const FileSystemWatcher = struct {
             @compileError("Cannot call nextLinux on non-Linux platforms");
 
         const fd = self.backend.linux.fd orelse return error.WatcherNotStarted;
-        const nums = try std.posix.poll(&self.backend.linux.fds, 0);
+        const nums = try std.posix.poll(&self.backend.linux.fds, 1000);
         if (nums == 0)
             return null;
         if (nums < 0)
@@ -380,7 +380,7 @@ pub const FileSystemWatcher = struct {
         var list = &list_arr;
 
         const kevents = map.values();
-        var timespec = std.posix.timespec{ .sec = 0, .nsec = 0 };
+        var timespec = std.posix.timespec{ .sec = 1, .nsec = 0 };
         const count = std.posix.system.kevent(
             fd,
             @as([*]DarwinAttributes.kevent, kevents.ptr),
@@ -462,7 +462,7 @@ pub const FileSystemWatcher = struct {
         var nbytes: std.os.windows.DWORD = 0;
         var key: std.os.windows.ULONG_PTR = 0;
         var overlapped: ?*std.os.windows.OVERLAPPED = null;
-        const rc = std.os.windows.kernel32.GetQueuedCompletionStatus(iocp, &nbytes, &key, &overlapped, 0);
+        const rc = std.os.windows.kernel32.GetQueuedCompletionStatus(iocp, &nbytes, &key, &overlapped, 1000);
         if (rc == 0) {
             const err = std.os.windows.kernel32.GetLastError();
             if (err == .TIMEOUT or err == .WAIT_TIMEOUT) return null else {
