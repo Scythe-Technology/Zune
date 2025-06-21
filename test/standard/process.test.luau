@@ -198,7 +198,7 @@ end)
 
 describe("ChildProcess", function()
 	describe("Run", function()
-		test("Echo w/ arguments", function()
+		test("Echo with arguments", function()
 			local result = process.run("echo", {"some long message"});
 			expect(result).toBe(expect.similar({
 				ok = true,
@@ -208,7 +208,17 @@ describe("ChildProcess", function()
 			}));
 		end)
 
-		test("Echo w/ variables", function()
+		test("Echo with many arguments", function()
+			local result = process.run("echo", {"some", "normal", "very", "long", "message", "test"});
+			expect(result).toBe(expect.similar({
+				ok = true,
+				code = 0,
+				stderr = "",
+				stdout = "some normal very long message test\n",
+			}));
+		end)
+
+		test("Echo with variables", function()
 			-- Windows Powershell requires existing variables to run.
 			local newEnv = table.clone(process.env);
 			newEnv["NAME"] = "Test";
@@ -259,6 +269,22 @@ describe("ChildProcess", function()
 	end)
 
 	describe("Create", function()
+		test("Echo", function()
+			local result = process.create("echo", {"some", "long", "message"});
+			assert(result.stdin)
+			assert(result.stdout)
+			
+			local status = result:wait();
+
+			expect(result.stdout:read(4)).toBe("some");
+			expect(result.stdout:read()).toBe(" long message\n");
+
+			expect(status).toBe(expect.any("table"));
+			expect(status).toBe(expect.similar({
+				ok = true,
+				code = 0,
+			}));
+		end)
 		test("Wait", function()
 			local result = process.create("exit", {"0"}, {
 				shell = true,
