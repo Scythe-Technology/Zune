@@ -269,6 +269,24 @@ describe("ChildProcess", function()
 	end)
 
 	describe("Create", function()
+		test("Echo", function()
+			local result = process.create("echo", {"some", "long", "message"}, {
+				shell = true,
+			});
+			assert(result.stdin)
+			assert(result.stdout)
+			
+			local status = result:wait();
+			
+			expect(result.stdout:read(4)).toBe("some");
+			expect(result.stdout:read()).toBe(" long message\n");
+
+			expect(status).toBe(expect.any("table"));
+			expect(status).toBe(expect.similar({
+				ok = true,
+				code = 0,
+			}));
+		end)
 		test("Wait", function()
 			local result = process.create("exit", {"0"}, {
 				shell = true,
