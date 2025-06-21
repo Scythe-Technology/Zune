@@ -599,10 +599,6 @@ describe("Path", function()
 end)
 
 test("Watch", function()
-    if (process.os == "macos") then
-        warn("Skipping 'Watch' test on macOS.");
-        return; -- Skip on macOS
-    end
     local changes = {};
     task.wait(0.5);
     local watcher = fs.watch(TEMP_DIR, function(path, events)
