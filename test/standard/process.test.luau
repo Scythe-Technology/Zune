@@ -270,14 +270,12 @@ describe("ChildProcess", function()
 
 	describe("Create", function()
 		test("Echo", function()
-			local result = process.create("echo", {"some", "long", "message"}, {
-				shell = true,
-			});
+			local result = process.create("echo", {"some", "long", "message"});
 			assert(result.stdin)
 			assert(result.stdout)
 			
 			local status = result:wait();
-			
+
 			expect(result.stdout:read(4)).toBe("some");
 			expect(result.stdout:read()).toBe(" long message\n");
 
