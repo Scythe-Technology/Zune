@@ -111,7 +111,7 @@ const DarwinAttributes = struct {
                             .udata = @intCast(sub_file.handle),
                             .ident = @intCast(sub_file.handle),
                             .filter = std.c.EVFILT.VNODE,
-                            .flags = std.c.EV.ADD | std.c.EV.ONESHOT | std.c.EV.ENABLE,
+                            .flags = std.c.EV.ADD | std.c.EV.CLEAR | std.c.EV.ENABLE,
                             .fflags = std.c.NOTE.DELETE | std.c.NOTE.WRITE | std.c.NOTE.EXTEND | std.c.NOTE.ATTRIB | std.c.NOTE.RENAME | std.c.NOTE.LINK,
                         });
                         try temp_files.put(copy_path, .{
@@ -136,8 +136,8 @@ const DarwinAttributes = struct {
                             .udata = @intCast(sub_dir.fd),
                             .ident = @intCast(sub_dir.fd),
                             .filter = std.c.EVFILT.VNODE,
-                            .flags = std.c.EV.ADD | std.c.EV.ONESHOT | std.c.EV.ENABLE,
-                            .fflags = std.c.NOTE.DELETE | std.c.NOTE.RENAME | std.c.NOTE.ATTRIB,
+                            .flags = std.c.EV.ADD | std.c.EV.CLEAR | std.c.EV.ENABLE,
+                            .fflags = std.c.NOTE.WRITE | std.c.NOTE.DELETE | std.c.NOTE.RENAME | std.c.NOTE.ATTRIB,
                         });
                         try temp_files.put(copy_path, .{
                             .id = @intCast(sub_dir.fd),
@@ -571,7 +571,7 @@ pub const FileSystemWatcher = struct {
             .udata = 0,
             .ident = @intCast(dir.fd),
             .filter = std.c.EVFILT.VNODE,
-            .flags = std.c.EV.ADD | std.c.EV.ONESHOT | std.c.EV.ENABLE,
+            .flags = std.c.EV.ADD | std.c.EV.CLEAR | std.c.EV.ENABLE,
             .fflags = std.c.NOTE.DELETE | std.c.NOTE.WRITE | std.c.NOTE.RENAME | std.c.NOTE.EXTEND | std.c.NOTE.ATTRIB,
         });
 
