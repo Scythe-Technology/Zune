@@ -52,12 +52,75 @@ fn splitArgs(args: []const []const u8) struct { []const []const u8, ?[]const []c
     return .{ run_args, flags };
 }
 
-pub fn printPreviewError(padding: []u8, line: u32, comptime fmt: []const u8, args: anytype) void {
+fn printPreviewError(padding: []u8, line: u32, comptime fmt: []const u8, args: anytype) void {
     Zune.debug.print("{s}|\n", .{padding});
     _ = std.fmt.bufPrint(padding, "{d}", .{line}) catch |e| std.debug.panic("{}", .{e});
     Zune.debug.print("{s}~ <dim>PreviewError: " ++ fmt ++ "<clear>\n", .{padding} ++ args);
     @memset(padding, ' ');
     Zune.debug.print("{s}|\n", .{padding});
+}
+
+fn printPreviewSource(
+    allocator: std.mem.Allocator,
+    tag: []const u8,
+    message: []const u8,
+    file: []const u8,
+    source: []const u8,
+    location: luau.Ast.Location.Location,
+) void {
+    const line = location.begin.line + 1;
+    const padding = std.math.log10(line) + 1;
+    const padded_string = allocator.alloc(u8, padding + 1) catch |e| std.debug.panic("{}", .{e});
+    defer allocator.free(padded_string);
+    @memset(padded_string, ' ');
+
+    Zune.debug.print("<red>{s}<clear>: {s}\n<bold><underline>{s}:{d}:{d}<clear>\n", .{
+        tag,
+        message,
+        file,
+        location.begin.line + 1,
+        location.begin.column + 1,
+    });
+
+    var stream = std.io.fixedBufferStream(source);
+    const reader = stream.reader();
+    if (line > 1) for (0..@intCast(line - 1)) |_| {
+        while (true) {
+            if (reader.readByte() catch |e| {
+                return printPreviewError(padded_string, line, "Failed to read line: {}", .{e});
+            } == '\n') break;
+        }
+    };
+
+    const line_content = reader.readUntilDelimiterOrEofAlloc(allocator, '\n', std.math.maxInt(usize)) catch |e| {
+        return printPreviewError(padded_string, line, "Failed to read line: {}", .{e});
+    } orelse {
+        return printPreviewError(padded_string, line, "Failed to read line, ended too early", .{});
+    };
+    defer allocator.free(line_content);
+
+    Zune.debug.print("{s}|\n", .{padded_string});
+    _ = std.fmt.bufPrint(padded_string, "{d}", .{line}) catch |e| std.debug.panic("{}", .{e});
+    Zune.debug.print("{s}| {s}\n", .{ padded_string, line_content });
+    @memset(padded_string, ' ');
+
+    const start_pos = location.begin.column;
+    const end_pos = if (location.end.line == location.begin.line)
+        location.end.column
+    else
+        line_content.len - 1;
+
+    const len = (end_pos - start_pos);
+
+    const space_slice = line_content[0..start_pos];
+
+    const buf = allocator.alloc(u8, len) catch |e| std.debug.panic("{}", .{e});
+    defer allocator.free(buf);
+
+    @memset(buf, '^');
+    @memset(space_slice, ' ');
+
+    Zune.debug.print("{s}| {s}<red>{s}<clear>\n", .{ padded_string, space_slice, buf });
 }
 
 fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
@@ -236,59 +299,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
         if (res) |*r| {
             defer r.deinit();
 
-            const line = r.location.begin.line + 1;
-            const padding = std.math.log10(line) + 1;
-            const padded_string = try allocator.alloc(u8, padding + 1);
-            defer allocator.free(padded_string);
-            @memset(padded_string, ' ');
-
-            Zune.debug.print("<red>LoadDefinitionError<clear>: {s}\n<bold><underline>{s}:{d}:{d}<clear>\n", .{
-                r.message,
-                def_file,
-                r.location.begin.line + 1,
-                r.location.begin.column + 1,
-            });
-
-            var stream = std.io.fixedBufferStream(def_content);
-            const reader = stream.reader();
-            if (line > 1) for (0..@intCast(line - 1)) |_| {
-                while (true) {
-                    if (reader.readByte() catch |e| {
-                        return printPreviewError(padded_string, line, "Failed to read line: {}", .{e});
-                    } == '\n') break;
-                }
-            };
-
-            const line_content = reader.readUntilDelimiterOrEofAlloc(allocator, '\n', std.math.maxInt(usize)) catch |e| {
-                return printPreviewError(padded_string, line, "Failed to read line: {}", .{e});
-            } orelse {
-                return printPreviewError(padded_string, line, "Failed to read line, ended too early", .{});
-            };
-            defer allocator.free(line_content);
-
-            Zune.debug.print("{s}|\n", .{padded_string});
-            _ = std.fmt.bufPrint(padded_string, "{d}", .{line}) catch |e| std.debug.panic("{}", .{e});
-            Zune.debug.print("{s}| {s}\n", .{ padded_string, line_content });
-            @memset(padded_string, ' ');
-
-            const start_pos = r.location.begin.column;
-            const end_pos = if (r.location.end.line == r.location.begin.line)
-                r.location.end.column
-            else
-                line_content.len - 1;
-
-            const len = (end_pos - start_pos);
-
-            const space_slice = line_content[0..start_pos];
-
-            const buf = allocator.alloc(u8, len) catch |e| std.debug.panic("{}", .{e});
-            defer allocator.free(buf);
-
-            @memset(buf, '^');
-            @memset(space_slice, ' ');
-
-            Zune.debug.print("{s}| {s}<red>{s}<clear>\n", .{ padded_string, space_slice, buf });
-
+            printPreviewSource(allocator, "LoadDefinitionError", r.message, def_file, def_content, r.location);
             std.process.exit(1);
         }
     }
@@ -323,6 +334,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
                         typeName: [:0]const u8,
                         loc: Ast.Location.Location,
                     ) void {
+                        _ = kind;
                         const source, const source_type = state_inner.file_impl.readSource(readableModuleName) orelse return;
                         _ = source_type;
                         defer state_inner.file_impl.freeString(source);
@@ -333,55 +345,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
                         defer state_inner.allocator.free(padded_string);
                         @memset(padded_string, ' ');
 
-                        Zune.debug.print("<red>{s}<clear>: {s}\n<bold><underline>{s}:{d}:{d}<clear>\n", .{
-                            typeName,
-                            errorMessage,
-                            readableModuleName,
-                            loc.begin.line + 1,
-                            loc.begin.column + 1,
-                        });
-
-                        var stream = std.io.fixedBufferStream(source);
-                        const reader = stream.reader();
-                        if (line > 1) for (0..@intCast(line - 1)) |_| {
-                            while (true) {
-                                if (reader.readByte() catch |e| {
-                                    return printPreviewError(padded_string, line, "Failed to read line: {}", .{e});
-                                } == '\n') break;
-                            }
-                        };
-
-                        const line_content = reader.readUntilDelimiterOrEofAlloc(state_inner.allocator, '\n', std.math.maxInt(usize)) catch |e| {
-                            return printPreviewError(padded_string, line, "Failed to read line: {}", .{e});
-                        } orelse {
-                            return printPreviewError(padded_string, line, "Failed to read line, ended too early", .{});
-                        };
-                        defer state_inner.allocator.free(line_content);
-
-                        Zune.debug.print("{s}|\n", .{padded_string});
-                        _ = std.fmt.bufPrint(padded_string, "{d}", .{line}) catch |e| std.debug.panic("{}", .{e});
-                        Zune.debug.print("{s}| {s}\n", .{ padded_string, line_content });
-                        @memset(padded_string, ' ');
-
-                        const start_pos = loc.begin.column;
-                        const end_pos = if (loc.end.line == loc.begin.line)
-                            loc.end.column
-                        else
-                            line_content.len - 1;
-
-                        const len = (end_pos - start_pos);
-
-                        const space_slice = line_content[0..start_pos];
-
-                        const buf = state_inner.allocator.alloc(u8, len) catch |e| std.debug.panic("{}", .{e});
-                        defer state_inner.allocator.free(buf);
-
-                        @memset(buf, '^');
-                        @memset(space_slice, ' ');
-
-                        Zune.debug.print("{s}| {s}<red>{s}<clear>\n", .{ padded_string, space_slice, buf });
-
-                        _ = kind;
+                        printPreviewSource(allocator, typeName, errorMessage, readableModuleName, source, loc);
                     }
                 }.inner)) {
                     .None => {}, // should be unreachable since getCheckResult is called after checkQueuedModules
@@ -392,13 +356,11 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
             }
         }.checkedModule,
         struct {
-            fn checkedModuleError(_: *@TypeOf(State), name: [:0]const u8, errMsg: [:0]const u8, loc: Ast.Location.Location) void {
-                std.debug.print("Error in module {s}: {s} at {d}:{d}\n", .{
-                    name,
-                    errMsg,
-                    loc.begin.line + 1,
-                    loc.begin.column + 1,
-                });
+            fn checkedModuleError(state_inner: *@TypeOf(State), readableModuleName: [:0]const u8, errMsg: [:0]const u8, loc: Ast.Location.Location) void {
+                const source, const source_type = state_inner.file_impl.readSource(readableModuleName) orelse return;
+                _ = source_type;
+                defer state_inner.file_impl.freeString(source);
+                printPreviewSource(allocator, "CheckError", errMsg, readableModuleName, source, loc);
             }
         }.checkedModuleError,
     );
