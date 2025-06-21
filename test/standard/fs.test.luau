@@ -599,9 +599,9 @@ describe("Path", function()
 end)
 
 test("Watch", function()
-    if (process.os == "macos") then
-        warn("Skipping 'Watch' test on macOS.");
-        return; -- Skip on macOS
+    if (process.os == "macos" and process.arch == "x86_64") then
+        warn("Skipping watch test on macOS x86_64 due to known issues with fs.watch");
+        return;
     end
     local changes = {};
     task.wait(0.5);
