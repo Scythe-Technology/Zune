@@ -670,7 +670,7 @@ test "Platform Watch" {
     }
 
     // TODO: Renable test for macOs, cannot detect file modification in tests.
-    if (builtin.os.tag == .macos)
+    if (builtin.os.tag == .macos and builtin.cpu.arch == .x86_64)
         return error.SkipZigTest;
 
     { // Create file
