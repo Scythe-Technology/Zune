@@ -70,7 +70,6 @@ fn internal_process_getargs(L: *VM.lua.State, array: *std.ArrayList([]const u8),
         const value = L.tostring(-1) orelse return ProcessArgsError.InvalidArgType;
 
         try array.append(value);
-        i += 1;
     }
 }
 
