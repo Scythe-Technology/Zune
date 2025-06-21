@@ -339,13 +339,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
                         _ = source_type;
                         defer state_inner.file_impl.freeString(source);
 
-                        const line = loc.begin.line + 1;
-                        const padding = std.math.log10(line) + 1;
-                        const padded_string = state_inner.allocator.alloc(u8, padding + 1) catch |e| std.debug.panic("{}", .{e});
-                        defer state_inner.allocator.free(padded_string);
-                        @memset(padded_string, ' ');
-
-                        printPreviewSource(allocator, typeName, errorMessage, readableModuleName, source, loc);
+                        printPreviewSource(state_inner.allocator, typeName, errorMessage, readableModuleName, source, loc);
                     }
                 }.inner)) {
                     .None => {}, // should be unreachable since getCheckResult is called after checkQueuedModules
@@ -360,7 +354,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
                 const source, const source_type = state_inner.file_impl.readSource(readableModuleName) orelse return;
                 _ = source_type;
                 defer state_inner.file_impl.freeString(source);
-                printPreviewSource(allocator, "CheckError", errMsg, readableModuleName, source, loc);
+                printPreviewSource(state_inner.allocator, "CheckError", errMsg, readableModuleName, source, loc);
             }
         }.checkedModuleError,
     );
@@ -377,3 +371,15 @@ pub const Command = command.Command{
     .execute = Execute,
     .aliases = null,
 };
+
+test "cmdCheck" {
+    const allocator = std.testing.allocator;
+    {
+        const args: []const []const u8 = &.{"test/cli/run.luau"};
+        try Execute(allocator, args);
+    }
+    {
+        const args: []const []const u8 = &.{"test/cli/test.luau"};
+        try Execute(allocator, args);
+    }
+}
