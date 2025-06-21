@@ -172,6 +172,8 @@ const DarwinAttributes = struct {
 
             var file_iter = fds.iterator();
             while (file_iter.next()) |entry| {
+                if (entry.value_ptr.handle == dir.fd)
+                    continue;
                 const info = temp_fds.get(entry.key_ptr.*) orelse {
                     const name = try allocator.dupe(u8, entry.key_ptr.*);
                     errdefer allocator.free(name);
@@ -200,7 +202,8 @@ const DarwinAttributes = struct {
 
             var temp_fds_iter = temp_fds.iterator();
             while (temp_fds_iter.next()) |entry| {
-                if (fds.get(entry.key_ptr.*) != null) continue;
+                if (fds.get(entry.key_ptr.*) != null)
+                    continue;
                 const name = try allocator.dupe(u8, entry.key_ptr.*);
                 errdefer allocator.free(name);
                 try diff.append(.{
