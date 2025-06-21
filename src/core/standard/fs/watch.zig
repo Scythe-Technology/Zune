@@ -117,14 +117,7 @@ const DarwinAttributes = struct {
                             changes += 1;
 
                             if (changes == changelist.len) {
-                                _ = std.posix.system.kevent(
-                                    self.fd.?,
-                                    @as([*]DarwinAttributes.kevent, &changelist),
-                                    changes,
-                                    @as([*]DarwinAttributes.kevent, &changelist),
-                                    0,
-                                    null,
-                                );
+                                _ = std.posix.system.kevent(self.fd.?, &changelist, changes, &changelist, 0, null);
                                 changes = 0;
                             }
 
@@ -151,14 +144,7 @@ const DarwinAttributes = struct {
                             changes += 1;
 
                             if (changes == changelist.len) {
-                                _ = std.posix.system.kevent(
-                                    self.fd.?,
-                                    @as([*]DarwinAttributes.kevent, &changelist),
-                                    changes,
-                                    @as([*]DarwinAttributes.kevent, &changelist),
-                                    0,
-                                    null,
-                                );
+                                _ = std.posix.system.kevent(self.fd.?, &changelist, changes, &changelist, 0, null);
                                 changes = 0;
                             }
 
@@ -175,14 +161,7 @@ const DarwinAttributes = struct {
                 }
 
                 if (changes > 0) {
-                    _ = std.posix.system.kevent(
-                        self.fd.?,
-                        @as([*]DarwinAttributes.kevent, &changelist),
-                        changes,
-                        @as([*]DarwinAttributes.kevent, &changelist),
-                        0,
-                        null,
-                    );
+                    _ = std.posix.system.kevent(self.fd.?, &changelist, changes, &changelist, 0, null);
                     changes = 0;
                 }
 
@@ -405,14 +384,7 @@ pub const FileSystemWatcher = struct {
         var list_arr: [128]DarwinAttributes.kevent = std.mem.zeroes([128]DarwinAttributes.kevent);
 
         var timespec = std.posix.timespec{ .sec = 1, .nsec = 0 };
-        const count = std.posix.system.kevent(
-            fd,
-            @as([*]DarwinAttributes.kevent, &list_arr),
-            0,
-            @as([*]DarwinAttributes.kevent, &list_arr),
-            128,
-            &timespec,
-        );
+        const count = std.posix.system.kevent(fd, &list_arr, 0, &list_arr, 128, &timespec);
         if (count == 0)
             return null;
         if (count < 0)
@@ -575,10 +547,11 @@ pub const FileSystemWatcher = struct {
             return error.KQueueError;
         errdefer std.posix.close(fd);
 
-        const dir = try self.dir.openDir(self.path, .{
+        var dir = try self.dir.openDir(self.path, .{
             .access_sub_paths = false,
             .iterate = true,
         });
+        errdefer dir.close();
 
         const copy_path = try self.allocator.dupe(u8, self.path);
         errdefer self.allocator.free(copy_path);
@@ -588,7 +561,9 @@ pub const FileSystemWatcher = struct {
             .kind = .directory,
             .modified = 0,
         });
+        errdefer std.debug.assert(self.backend.darwin.fds.orderedRemove(copy_path));
         try self.backend.darwin.named_fds.put(self.allocator, @intCast(dir.fd), copy_path);
+        errdefer std.debug.assert(self.backend.darwin.named_fds.orderedRemove(@intCast(dir.fd)));
 
         var kevent: [1]DarwinAttributes.kevent = .{
             .{
@@ -601,17 +576,12 @@ pub const FileSystemWatcher = struct {
             },
         };
 
-        _ = std.posix.system.kevent(
-            fd,
-            @as([*]DarwinAttributes.kevent, &kevent),
-            1,
-            @as([*]DarwinAttributes.kevent, &kevent),
-            0,
-            null,
-        );
+        _ = std.posix.system.kevent(fd, &kevent, 1, &kevent, 0, null);
 
         self.backend.darwin.fd = fd;
         self.backend.darwin.dir = dir;
+        errdefer self.backend.darwin.dir = null;
+        errdefer self.backend.darwin.fd = null;
 
         self.allocator.free(try self.backend.darwin.scanDirectory(self.allocator));
     }
