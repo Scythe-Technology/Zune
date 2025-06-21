@@ -1,6 +1,7 @@
 const TagNames: []const []const u8 = &.{
     // FS
     "FS_FILE",
+    "FS_WATCHER",
     // NET
     "NET_SOCKET",
     // IO

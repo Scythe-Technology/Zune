@@ -8,10 +8,15 @@ const Zune = @import("zune");
 const Scheduler = Zune.Runtime.Scheduler;
 
 const LuaHelper = Zune.Utils.LuaHelper;
+const MethodMap = Zune.Utils.MethodMap;
 
 const File = @import("../../objects/filesystem/File.zig");
 
 const Watch = @import("./watch.zig");
+
+const tagged = @import("../../../tagged.zig");
+
+const TAG_FS_WATCHER = tagged.Tags.get("FS_WATCHER").?;
 
 const VM = luau.VM;
 
@@ -313,96 +318,22 @@ fn lua_symlink(L: *VM.lua.State) !i32 {
 }
 
 const LuaWatch = struct {
-    instance: Watch.FileSystemWatcher,
-    active: bool = true,
-    callback: LuaHelper.Ref(void),
-    ref: LuaHelper.Ref(void),
+    state: *WatchState,
 
-    pub fn __index(L: *VM.lua.State) !i32 {
-        try L.Zchecktype(1, .Userdata);
+    pub fn lua_stop(self: *LuaWatch, L: *VM.lua.State) !i32 {
+        if (self.state.state.load(.acquire) != .Alive)
+            return L.Zerror("watcher already stopped");
+        _ = self.state.state.cmpxchgStrong(.Alive, .Terminating, .release, .acquire);
         return 0;
     }
 
-    pub fn __namecall(L: *VM.lua.State) !i32 {
-        try L.Zchecktype(1, .Userdata);
-        const obj = L.touserdata(LuaWatch, 1) orelse unreachable;
+    const __index = MethodMap.CreateStaticIndexMap(LuaWatch, TAG_FS_WATCHER, .{
+        .{ "stop", lua_stop },
+    });
 
-        const namecall = L.namecallstr() orelse return 0;
-
-        // TODO: prob should switch to static string map
-        if (std.mem.eql(u8, namecall, "stop")) {
-            obj.active = false;
-        } else return L.Zerrorf("Unknown method: {s}", .{namecall});
-        return 0;
-    }
-
-    pub fn update(ctx: *LuaWatch, L: *VM.lua.State, _: *Scheduler) Scheduler.TaskResult {
-        if (!ctx.active)
-            return .Stop;
-        const watch = &ctx.instance;
-
-        if (ctx.callback.ref == null)
-            return .Stop;
-
-        if (watch.next() catch |err| {
-            std.debug.print("LuaWatch error: {}\n", .{err});
-            return .Stop;
-        }) |info| {
-            defer info.deinit();
-            for (info.list.items) |item| {
-                if (ctx.callback.push(L)) {
-                    if (L.typeOf(-1) != .Function) {
-                        L.pop(1); // drop callback
-                        return .Stop;
-                    }
-                    const thread = L.newthread();
-                    L.xpush(thread, -2); // push: function
-                    thread.pushlstring(item.name);
-                    var count: u32 = 0;
-                    var values: [6][]const u8 = undefined;
-                    if (item.event.created) {
-                        values[count] = "created";
-                        count += 1;
-                    }
-                    if (item.event.modify) {
-                        values[count] = "modified";
-                        count += 1;
-                    }
-                    if (item.event.delete) {
-                        values[count] = "deleted";
-                        count += 1;
-                    }
-                    if (item.event.rename) {
-                        values[count] = "renamed";
-                        count += 1;
-                    }
-                    if (item.event.metadata) {
-                        values[count] = "metadata";
-                        count += 1;
-                    }
-                    if (item.event.move_from or item.event.move_to) {
-                        values[count] = "moved";
-                        count += 1;
-                    }
-                    thread.createtable(@intCast(count), 0);
-                    for (values[0..count], 1..) |value, i| {
-                        thread.pushlstring(value);
-                        thread.rawseti(-2, @intCast(i));
-                    }
-                    L.pop(2); // drop thread, function
-
-                    _ = Scheduler.resumeState(thread, L, 2) catch {};
-                }
-            }
-        }
-
-        return .Continue;
-    }
-
-    pub fn dtor(ctx: *LuaWatch, L: *VM.lua.State, _: *Scheduler) void {
-        ctx.callback.deref(L);
-        ctx.ref.deref(L);
-        ctx.instance.deinit();
+    pub fn __dtor(L: *VM.lua.State, self: *LuaWatch) void {
+        _ = self;
+        _ = L;
     }
 };
 
@@ -503,6 +434,106 @@ fn lua_realPath(L: *VM.lua.State) !i32 {
     return 1;
 }
 
+const WatchState = struct {
+    watcher: Watch.FileSystemWatcher,
+    callback: LuaHelper.Ref(void),
+    mutex: std.Thread.Mutex = .{},
+    cond: std.Thread.Condition = .{},
+    info: ?Watch.WatchInfo = null,
+    state: std.atomic.Value(LoopState) = .{ .raw = .Alive },
+
+    pub const LoopState = enum(u8) { Alive, Terminating, Dead };
+
+    pub fn complete(self: *WatchState, scheduler: *Scheduler) void {
+        self.mutex.lock();
+        const state = self.state.load(.acquire);
+        if (state == .Dead) {
+            defer scheduler.freeSync(self);
+            defer if (self.info) |info| info.deinit();
+            defer self.mutex.unlock();
+            self.callback.deref(scheduler.global);
+            return;
+        }
+        defer self.mutex.unlock();
+        defer self.cond.signal();
+
+        defer scheduler.asyncWaitForSync(self);
+
+        if (state == .Terminating) {
+            if (self.info) |info| {
+                defer info.deinit();
+                self.info = null;
+            }
+            return;
+        }
+
+        if (self.info) |info| {
+            defer info.deinit();
+            for (info.list.items) |item| {
+                if (self.callback.hasRef()) {
+                    const ML = scheduler.global.newthread();
+                    _ = self.callback.push(ML);
+                    ML.pushlstring(item.name);
+                    var count: u32 = 0;
+                    var values: [6][]const u8 = undefined;
+                    if (item.event.created) {
+                        values[count] = "created";
+                        count += 1;
+                    }
+                    if (item.event.modify) {
+                        values[count] = "modified";
+                        count += 1;
+                    }
+                    if (item.event.delete) {
+                        values[count] = "deleted";
+                        count += 1;
+                    }
+                    if (item.event.rename) {
+                        values[count] = "renamed";
+                        count += 1;
+                    }
+                    if (item.event.metadata) {
+                        values[count] = "metadata";
+                        count += 1;
+                    }
+                    if (item.event.move_from or item.event.move_to) {
+                        values[count] = "moved";
+                        count += 1;
+                    }
+                    ML.createtable(@intCast(count), 0);
+                    for (values[0..count], 1..) |value, i| {
+                        ML.pushlstring(value);
+                        ML.rawseti(-2, @intCast(i));
+                    }
+
+                    scheduler.global.pop(1);
+
+                    _ = Scheduler.resumeState(ML, null, 2) catch {};
+                }
+            }
+            self.info = null;
+        }
+    }
+
+    pub fn threadLoop(self: *WatchState, scheduler: *Scheduler) void {
+        while (self.state.load(.acquire) == .Alive) {
+            self.mutex.lock();
+            defer self.mutex.unlock();
+            if (self.watcher.next() catch |err| {
+                std.debug.print("LuaWatch error: {}\n", .{err});
+                break;
+            }) |info| {
+                self.info = info;
+                scheduler.synchronize(self);
+                self.cond.wait(&self.mutex);
+            }
+        }
+
+        self.state.store(.Dead, .release);
+        scheduler.synchronize(self);
+    }
+};
+
 fn lua_watch(L: *VM.lua.State) !i32 {
     switch (comptime builtin.os.tag) {
         .windows, .linux, .macos => {},
@@ -527,21 +558,21 @@ fn lua_watch(L: *VM.lua.State) !i32 {
     errdefer watch.deinit();
     try watch.start();
 
-    const ptr = L.newuserdata(LuaWatch);
-
-    if (L.Lgetmetatable(@typeName(LuaWatch)) == .Table)
-        _ = L.setmetatable(-2)
-    else
-        std.debug.panic("InternalError (Watch Metatable not initialized)", .{});
-
-    ptr.* = .{
-        .instance = watch,
-        .active = true,
+    const state = try scheduler.createSync(WatchState, WatchState.complete);
+    errdefer scheduler.freeSync(state);
+    state.* = .{
+        .watcher = watch,
         .callback = .{ .ref = .{ .registry = ref }, .value = undefined },
-        .ref = .init(L, -1, undefined),
     };
 
-    scheduler.addTask(LuaWatch, ptr, L, LuaWatch.update, LuaWatch.dtor);
+    const ptr = L.newuserdatataggedwithmetatable(LuaWatch, TAG_FS_WATCHER);
+    ptr.state = state;
+
+    const thread = try std.Thread.spawn(.{ .allocator = allocator }, WatchState.threadLoop, .{ state, scheduler });
+
+    scheduler.asyncWaitForSync(state);
+
+    thread.detach();
 
     return 1;
 }
@@ -637,12 +668,12 @@ const Path = struct {
 pub fn loadLib(L: *VM.lua.State) void {
     {
         _ = L.Znewmetatable(@typeName(LuaWatch), .{
-            .__index = LuaWatch.__index,
-            .__namecall = LuaWatch.__namecall,
             .__metatable = "Metatable is locked",
         });
+        LuaWatch.__index(L, -1);
         L.setreadonly(-1, true);
-        L.pop(1);
+        L.setuserdatametatable(TAG_FS_WATCHER);
+        L.setuserdatadtor(LuaWatch, TAG_FS_WATCHER, LuaWatch.__dtor);
     }
 
     L.Zpushvalue(.{

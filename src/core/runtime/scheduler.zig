@@ -144,7 +144,7 @@ const Synchronization = struct {
     pub fn Node(comptime T: type) type {
         return struct {
             node: LinkedList.Node,
-            callback: *const fn (ud: *anyopaque) void,
+            callback: *const fn (ud: *anyopaque, scheduler: *Scheduler) void,
             free: *const fn (ud: *anyopaque, allocator: std.mem.Allocator) void,
             data: T,
 
@@ -451,7 +451,7 @@ pub fn asyncWaitForSync(self: *Scheduler, data: anytype) void {
     self.sync.wait(self);
 }
 
-pub fn createSync(self: *Scheduler, comptime T: type, callback: fn (*T) void) !*T {
+pub fn createSync(self: *Scheduler, comptime T: type, callback: fn (*T, *Scheduler) void) !*T {
     if (T == void)
         @compileError("Void type not allowed");
     const Node = Synchronization.Node(T);
@@ -459,9 +459,9 @@ pub fn createSync(self: *Scheduler, comptime T: type, callback: fn (*T) void) !*
     ptr.* = .{
         .node = .{},
         .callback = struct {
-            fn inner(ud: *anyopaque) void {
+            fn inner(ud: *anyopaque, sched: *Scheduler) void {
                 const node: *Node = @alignCast(@ptrCast(ud));
-                @call(.always_inline, callback, .{&node.data});
+                @call(.always_inline, callback, .{ &node.data, sched });
             }
         }.inner,
         .free = struct {
@@ -600,8 +600,7 @@ inline fn processFrame(self: *Scheduler, comptime frame: FrameKind) void {
 
             while (self.sync.completed.popFirst()) |node| {
                 const sync: *SyncNode = @fieldParentPtr("node", node);
-                defer sync.free(sync, self.allocator);
-                sync.callback(sync);
+                sync.callback(sync, self);
             }
         },
         .Task => {

@@ -63,7 +63,8 @@ const RequestAsyncContext = struct {
         scheduler.synchronize(self);
     }
 
-    pub fn complete(self: *RequestAsyncContext) void {
+    pub fn complete(self: *RequestAsyncContext, scheduler: *Scheduler) void {
+        defer scheduler.freeSync(self);
         const L = self.ref.value;
 
         const allocator = luau.getallocator(L);
