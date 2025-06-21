@@ -168,7 +168,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     const FileImpl = struct {
         allocator: std.mem.Allocator,
-        dir: std.fs.Dir = std.fs.cwd(),
+        dir: std.fs.Dir,
 
         const Self = @This();
         pub fn readSource(self: *Self, path: []const u8) ?struct { []const u8, FileResolver.SourceCodeType } {
