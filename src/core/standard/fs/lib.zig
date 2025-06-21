@@ -451,6 +451,7 @@ const WatchState = struct {
             defer scheduler.freeSync(self);
             defer if (self.info) |info| info.deinit();
             defer self.mutex.unlock();
+            self.watcher.deinit();
             self.callback.deref(scheduler.global);
             return;
         }
