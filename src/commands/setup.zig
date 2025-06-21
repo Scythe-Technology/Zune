@@ -10,7 +10,7 @@ const typedef = struct {
     content: []const u8,
 };
 
-const luaudefs = &[_]typedef{
+pub const luaudefs = &[_]typedef{
     typedef{ .name = "global/zune", .content = @embedFile("../types/global/zune.d.luau.gz") },
 };
 
