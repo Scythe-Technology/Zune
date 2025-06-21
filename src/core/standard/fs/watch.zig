@@ -175,10 +175,8 @@ const DarwinAttributes = struct {
                 if (entry.value_ptr.handle == dir.fd)
                     continue;
                 const info = temp_fds.get(entry.key_ptr.*) orelse {
-                    const name = try allocator.dupe(u8, entry.key_ptr.*);
-                    errdefer allocator.free(name);
                     try diff.append(.{
-                        .name = name,
+                        .name = entry.key_ptr.*,
                         .state = .deleted,
                     });
                     std.posix.close(@intCast(entry.value_ptr.handle));
