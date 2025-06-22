@@ -325,6 +325,7 @@ type FileSystemLib = {
         stem: (path: string) -> string,
         extension: (path: string) -> string,
         isAbsolute: (path: string) -> boolean,
+        globMatch: (path: string, pattern: string) -> boolean,
     },
 }
 --[======[ FileSystem ]======]--

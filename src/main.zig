@@ -5,7 +5,8 @@ const json = @import("json");
 const mimalloc = @import("mimalloc");
 const builtin = @import("builtin");
 
-const toml = @import("libraries/toml.zig");
+pub const toml = @import("libraries/toml.zig");
+pub const glob = @import("libraries/glob.zig");
 
 pub const cli = @import("cli.zig");
 
