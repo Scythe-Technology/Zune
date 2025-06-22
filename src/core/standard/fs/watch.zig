@@ -61,7 +61,6 @@ const DarwinAttributes = struct {
     const FdInfo = struct {
         handle: usize,
         kind: std.fs.File.Kind,
-        modified: i128,
     };
 
     const FileDifference = struct {
@@ -94,6 +93,13 @@ const DarwinAttributes = struct {
             {
                 errdefer for (temp_fds.keys()) |key| if (fds.get(key) == null) allocator.free(key);
 
+                {
+                    const key = fds.keys()[0];
+                    const value = fds.values()[0];
+                    try temp_fds.put(allocator, key, value);
+                    try named_fds.put(allocator, value.handle, key);
+                }
+
                 var changes: u8 = 0;
                 var changelist: [64]DarwinAttributes.kevent = std.mem.zeroes([64]DarwinAttributes.kevent);
 
@@ -104,7 +110,6 @@ const DarwinAttributes = struct {
                             const copy_path = try allocator.dupe(u8, entry.name);
                             errdefer allocator.free(copy_path);
                             const sub_file = try dir.openFile(entry.name, .{});
-                            const stat = try sub_file.stat();
 
                             changelist[changes] = .{
                                 .data = 0,
@@ -112,7 +117,7 @@ const DarwinAttributes = struct {
                                 .ident = @intCast(sub_file.handle),
                                 .filter = std.c.EVFILT.VNODE,
                                 .flags = std.c.EV.ADD | std.c.EV.CLEAR | std.c.EV.ENABLE,
-                                .fflags = std.c.NOTE.DELETE | std.c.NOTE.WRITE | std.c.NOTE.EXTEND | std.c.NOTE.ATTRIB | std.c.NOTE.RENAME | std.c.NOTE.LINK,
+                                .fflags = std.c.NOTE.DELETE | std.c.NOTE.WRITE | std.c.NOTE.ATTRIB | std.c.NOTE.RENAME | std.c.NOTE.LINK,
                             };
                             changes += 1;
 
@@ -124,7 +129,6 @@ const DarwinAttributes = struct {
                             try temp_fds.put(allocator, copy_path, .{
                                 .handle = @intCast(sub_file.handle),
                                 .kind = .file,
-                                .modified = stat.ctime,
                             });
                             try named_fds.put(allocator, @intCast(sub_file.handle), copy_path);
                         } else if (entry.kind == .directory) {
@@ -151,7 +155,6 @@ const DarwinAttributes = struct {
                             try temp_fds.put(allocator, copy_path, .{
                                 .handle = @intCast(sub_dir.fd),
                                 .kind = .directory,
-                                .modified = 0,
                             });
                             try named_fds.put(allocator, @intCast(sub_dir.fd), copy_path);
                         }
@@ -169,33 +172,18 @@ const DarwinAttributes = struct {
                 self.named_fds.deinit(allocator);
                 self.named_fds = named_fds;
             }
+            errdefer for (fds.keys()) |key| if (temp_fds.get(key) == null) allocator.free(key);
 
-            var file_iter = fds.iterator();
-            while (file_iter.next()) |entry| {
-                if (entry.value_ptr.handle == dir.fd)
+            var fds_iter = fds.iterator();
+            while (fds_iter.next()) |entry| {
+                if (temp_fds.get(entry.key_ptr.*) != null)
                     continue;
-                const info = temp_fds.get(entry.key_ptr.*) orelse {
-                    try diff.append(.{
-                        .name = entry.key_ptr.*,
-                        .state = .deleted,
-                    });
-                    std.posix.close(@intCast(entry.value_ptr.handle));
-                    continue;
-                };
-                if (info.kind == .file) {
-                    const file = std.fs.File{
-                        .handle = @intCast(info.handle),
-                    };
-                    const stat = try file.stat();
-                    if (stat.ctime != info.modified) {
-                        const name = try allocator.dupe(u8, entry.key_ptr.*);
-                        errdefer allocator.free(name);
-                        try diff.append(.{
-                            .name = name,
-                            .state = .modified,
-                        });
-                    }
-                }
+                const name = try allocator.dupe(u8, entry.key_ptr.*);
+                errdefer allocator.free(name);
+                try diff.append(.{
+                    .name = name,
+                    .state = .deleted,
+                });
             }
 
             var temp_fds_iter = temp_fds.iterator();
@@ -412,12 +400,12 @@ pub const FileSystemWatcher = struct {
                     defer self.allocator.free(scandiff);
                     defer for (scandiff) |change| self.allocator.free(change.name);
                     for (scandiff) |change| {
+                        if (change.state != .created or change.state != .deleted)
+                            continue;
                         try watchInfo.list.append(.{
                             .event = WatchEvent.Event{
                                 .created = change.state == .created,
                                 .delete = change.state == .deleted,
-                                .modify = change.state == .modified,
-                                .rename = change.state == .renamed,
                             },
                             .name = try self.allocator.dupe(u8, change.name),
                         });
@@ -427,18 +415,16 @@ pub const FileSystemWatcher = struct {
                     continue;
                 }
                 const name = self.backend.darwin.named_fds.get(event.udata) orelse continue;
-                const info = self.backend.darwin.fds.get(name) orelse continue;
-                if (info.kind == .file) {
-                    const file = std.fs.File{
-                        .handle = @intCast(event.ident),
-                    };
-                    const stat = try file.stat();
-                    if (stat.ctime == info.modified) continue;
-                    try watchInfo.list.append(.{
-                        .event = WatchEvent.Event{ .modify = true },
-                        .name = try self.allocator.dupe(u8, name),
-                    });
-                }
+                if ((event.fflags & std.c.NOTE.DELETE) != 0)
+                    continue;
+                try watchInfo.list.append(.{
+                    .event = .{
+                        .modify = (event.fflags & std.c.NOTE.WRITE) != 0,
+                        .rename = (event.fflags & (std.c.NOTE.RENAME | std.c.NOTE.LINK)) != 0,
+                        .metadata = (event.fflags & std.c.NOTE.ATTRIB) != 0,
+                    },
+                    .name = try self.allocator.dupe(u8, name),
+                });
             }
         }
 
@@ -560,7 +546,6 @@ pub const FileSystemWatcher = struct {
         try self.backend.darwin.fds.put(self.allocator, copy_path, .{
             .handle = @intCast(dir.fd),
             .kind = .directory,
-            .modified = 0,
         });
         errdefer std.debug.assert(self.backend.darwin.fds.orderedRemove(copy_path));
         try self.backend.darwin.named_fds.put(self.allocator, @intCast(dir.fd), copy_path);
@@ -671,10 +656,6 @@ test "Platform Watch" {
             return error.UnexpectedEvent;
         }
     }
-
-    // TODO: Renable test for macOs, cannot detect file modification in tests.
-    if (builtin.os.tag == .macos and builtin.cpu.arch == .x86_64)
-        return error.SkipZigTest;
 
     { // Create file
         const file = try tempDir.createFile("fs-watch-test/test.txt", .{});
