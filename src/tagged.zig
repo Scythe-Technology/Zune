@@ -14,6 +14,8 @@ const TagNames: []const []const u8 = &.{
     "PROCESS_CHILD",
     // CRYPTO
     "CRYPTO_HASHER",
+    // RANDOM
+    "RANDOM",
     // REGEX
     "REGEX_COMPILED",
     // FFI
