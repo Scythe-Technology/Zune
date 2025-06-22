@@ -172,7 +172,8 @@ const DarwinAttributes = struct {
                 self.named_fds.deinit(allocator);
                 self.named_fds = named_fds;
             }
-            errdefer for (fds.keys()) |key| if (temp_fds.get(key) == null) allocator.free(key);
+            defer fds.deinit(allocator);
+            defer for (fds.keys()) |key| if (temp_fds.get(key) == null) allocator.free(key);
 
             var fds_iter = fds.iterator();
             while (fds_iter.next()) |entry| {
@@ -197,8 +198,6 @@ const DarwinAttributes = struct {
                     .state = .created,
                 });
             }
-
-            fds.deinit(allocator);
         }
 
         return diff.toOwnedSlice();
@@ -400,7 +399,7 @@ pub const FileSystemWatcher = struct {
                     defer self.allocator.free(scandiff);
                     defer for (scandiff) |change| self.allocator.free(change.name);
                     for (scandiff) |change| {
-                        if (change.state != .created or change.state != .deleted)
+                        if (change.state != .created and change.state != .deleted)
                             continue;
                         try watchInfo.list.append(.{
                             .event = WatchEvent.Event{
