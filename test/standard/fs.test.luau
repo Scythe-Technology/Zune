@@ -598,11 +598,14 @@ describe("Path", function()
     end)
 end)
 
+test("Glob Match", function()
+    expect(fs.path.globMatch("foo/bar/luau", "foo/bar/luau")).toBeTruthy();
+    expect(fs.path.globMatch("foo/bar/luau", "foo/*/luau")).toBeTruthy();
+    expect(fs.path.globMatch("foo/bar/luau", "foo/bar/*")).toBeTruthy();
+    expect(fs.path.globMatch("foo/bar/luau", "foo/bar/luau.txt")).toBeFalsy();
+end)
+
 test("Watch", function()
-    if (process.os == "macos" and process.arch == "x86_64") then
-        warn("Skipping watch test on macOS x86_64 due to known issues with fs.watch");
-        return;
-    end
     local changes = {};
     task.wait(0.5);
     local watcher = fs.watch(TEMP_DIR, function(path, events)

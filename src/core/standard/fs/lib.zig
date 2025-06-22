@@ -664,6 +664,15 @@ const Path = struct {
         L.pushboolean(fs.path.isAbsolute(path));
         return 1;
     }
+
+    pub fn lua_globMatch(L: *VM.lua.State) !i32 {
+        const path = try L.Zcheckvalue([:0]const u8, 1, null);
+        const pattern = try L.Zcheckvalue([:0]const u8, 2, null);
+
+        L.pushboolean(Zune.glob.match(pattern, path).matches());
+
+        return 1;
+    }
 };
 
 pub fn loadLib(L: *VM.lua.State) void {
@@ -707,6 +716,7 @@ pub fn loadLib(L: *VM.lua.State) void {
         .stem = Path.lua_stem,
         .extension = Path.lua_extension,
         .isAbsolute = Path.lua_isAbsolute,
+        .globMatch = Path.lua_globMatch,
     });
     L.setreadonly(-1, true);
     L.setfield(-2, "path");
