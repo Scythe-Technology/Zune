@@ -2157,6 +2157,36 @@ export type RequireLib = {
 }
 --[======[ Require ]======]--
 
+--[======[ Random ]======]--
+declare class Random
+    nextNumber:
+        & ((self: Random) -> number)
+        & ((self: Random, min: number, max: number) -> number)
+    NextNumber:
+        & ((self: Random) -> number)
+        & ((self: Random, min: number, max: number) -> number)
+    function nextInteger(self, min: number, max: number): number
+    function NextInteger(self, min: number, max: number): number
+    function clone(self): Random
+    function Clone(self): Random
+end
+
+type RandomConstructor = {
+    new: (seed: number) -> Random,
+}
+
+export type RandomLib = RandomConstructor & {
+    LuauPcg32: RandomConstructor,
+    Pcg32: RandomConstructor,
+    Isaac64: RandomConstructor,
+    Pcg32: RandomConstructor,
+    Xoroshiro128: RandomConstructor,
+    Xoshiro256: RandomConstructor,
+    Sfc64: RandomConstructor,
+    RomuTrio: RandomConstructor,
+}
+--[======[ Random ]======]--
+
 declare zune: {
     fs: FileSystemLib,
     process: ProcessLib,
@@ -2172,4 +2202,5 @@ declare zune: {
     ffi: FFILib,
     sqlite: SQLiteLib,
     require: RequireLib,
+    random: RandomLib,
 }

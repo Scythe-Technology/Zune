@@ -84,6 +84,7 @@ const FEATURES = struct {
     pub var regex = true;
     pub var sqlite = true;
     pub var require = true;
+    pub var random = true;
     pub var ffi = true;
 };
 
@@ -265,6 +266,8 @@ pub fn openZune(L: *VM.lua.State, args: []const []const u8, flags: Flags) !void 
             corelib.sqlite.loadLib(L);
         if (FEATURES.require)
             corelib.require.loadLib(L);
+        if (FEATURES.random)
+            corelib.random.loadLib(L);
 
         corelib.testing.loadLib(L, STATE.RUN_MODE == .Test);
     }
