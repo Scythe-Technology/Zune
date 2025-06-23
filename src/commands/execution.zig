@@ -420,8 +420,6 @@ fn cmdDebug(allocator: std.mem.Allocator, args: []const []const u8) !void {
     Zune.STATE.LUAU_OPTIONS.CODEGEN = false;
     Zune.STATE.LUAU_OPTIONS.JIT_ENABLED = false;
 
-    Zune.STATE.RUN_MODE = .Debug;
-
     const dir = std.fs.cwd();
     const module = run_args[0];
 
@@ -436,7 +434,6 @@ fn cmdDebug(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     while (true) {
         defer Debugger.DEBUG.dead = false;
-        Debugger.MODULE_REFERENCES.clearAndFree();
 
         var L = try luau.init(&allocator);
         defer L.deinit();
@@ -486,12 +483,6 @@ fn cmdDebug(allocator: std.mem.Allocator, args: []const []const u8) !void {
             },
             else => return err,
         };
-
-        const real_path = try dir.realpathAlloc(allocator, file_src_path);
-        defer allocator.free(real_path);
-
-        const ref = ML.ref(-1).?;
-        try Debugger.addReference(allocator, ML, real_path, ref);
 
         try Debugger.prompt(ML, .None, null);
         Engine.runAsync(ML, &scheduler, .{ .cleanUp = true, .mode = .Debug }) catch {}; // Soft continue
