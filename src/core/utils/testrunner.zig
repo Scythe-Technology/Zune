@@ -84,7 +84,7 @@ pub fn runTest(comptime testFile: TestFile, args: []const []const u8, comptime o
     ML.setsafeenv(VM.lua.GLOBALSINDEX, true);
 
     Engine.loadModule(ML, "@" ++ testFile.path, content, .{
-        .debug_level = 2,
+        .debugLevel = 2,
     }) catch |err| switch (err) {
         error.Syntax => {
             std.debug.print("Syntax: {s}\n", .{ML.tostring(-1) orelse "UnknownError"});

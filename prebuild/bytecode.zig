@@ -20,8 +20,8 @@ pub fn main() !void {
     defer allocator.free(luau_source);
 
     const luau_bytecode = try luau.compile(allocator, luau_source, luau.CompileOptions{
-        .debug_level = 1,
-        .optimization_level = 2,
+        .debugLevel = 1,
+        .optimizationLevel = 2,
     });
 
     const luau_bytecode_path = try std.fs.createFileAbsolute(args[2], .{});
