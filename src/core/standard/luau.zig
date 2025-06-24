@@ -28,16 +28,16 @@ fn lua_compile(L: *VM.lua.State) !i32 {
         // vector_lib: ?[:0]const u8,
         // vector_type: ?[:0]const u8,
     }, 2, null)) |opts| {
-        compileOpts.debugLevel = opts.debug_level orelse compileOpts.debug_level;
-        if (compileOpts.debugLevel < 0 or compileOpts.debug_level > 2)
+        compileOpts.debugLevel = opts.debug_level orelse compileOpts.debugLevel;
+        if (compileOpts.debugLevel < 0 or compileOpts.debugLevel > 2)
             return L.Zerror("Invalid debug level");
 
-        compileOpts.optimizationLevel = opts.optimization_level orelse compileOpts.optimization_level;
-        if (compileOpts.optimizationLevel < 0 or compileOpts.optimization_level > 3)
+        compileOpts.optimizationLevel = opts.optimization_level orelse compileOpts.optimizationLevel;
+        if (compileOpts.optimizationLevel < 0 or compileOpts.optimizationLevel > 3)
             return L.Zerror("Invalid optimization level");
 
-        compileOpts.coverageLevel = opts.coverage_level orelse compileOpts.coverage_level;
-        if (compileOpts.coverage_level < 0 or compileOpts.coverage_level > 2)
+        compileOpts.coverageLevel = opts.coverage_level orelse compileOpts.coverageLevel;
+        if (compileOpts.coverageLevel < 0 or compileOpts.coverageLevel > 2)
             return L.Zerror("Invalid coverage level");
 
         // TODO: Enable after tests are added
