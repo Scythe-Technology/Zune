@@ -16,8 +16,8 @@ fn lua_compile(L: *VM.lua.State) !i32 {
     const source = try L.Zcheckvalue([]const u8, 1, null);
 
     var compileOpts = luau.CompileOptions{
-        .debug_level = Zune.STATE.LUAU_OPTIONS.DEBUG_LEVEL,
-        .optimization_level = Zune.STATE.LUAU_OPTIONS.OPTIMIZATION_LEVEL,
+        .debugLevel = Zune.STATE.LUAU_OPTIONS.DEBUG_LEVEL,
+        .optimizationLevel = Zune.STATE.LUAU_OPTIONS.OPTIMIZATION_LEVEL,
     };
 
     if (try L.Zcheckvalue(?struct {
@@ -28,15 +28,15 @@ fn lua_compile(L: *VM.lua.State) !i32 {
         // vector_lib: ?[:0]const u8,
         // vector_type: ?[:0]const u8,
     }, 2, null)) |opts| {
-        compileOpts.debug_level = opts.debug_level orelse compileOpts.debug_level;
-        if (compileOpts.debug_level < 0 or compileOpts.debug_level > 2)
+        compileOpts.debugLevel = opts.debug_level orelse compileOpts.debug_level;
+        if (compileOpts.debugLevel < 0 or compileOpts.debug_level > 2)
             return L.Zerror("Invalid debug level");
 
-        compileOpts.optimization_level = opts.optimization_level orelse compileOpts.optimization_level;
-        if (compileOpts.optimization_level < 0 or compileOpts.optimization_level > 3)
+        compileOpts.optimizationLevel = opts.optimization_level orelse compileOpts.optimization_level;
+        if (compileOpts.optimizationLevel < 0 or compileOpts.optimization_level > 3)
             return L.Zerror("Invalid optimization level");
 
-        compileOpts.coverage_level = opts.coverage_level orelse compileOpts.coverage_level;
+        compileOpts.coverageLevel = opts.coverage_level orelse compileOpts.coverage_level;
         if (compileOpts.coverage_level < 0 or compileOpts.coverage_level > 2)
             return L.Zerror("Invalid coverage level");
 

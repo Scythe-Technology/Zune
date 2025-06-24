@@ -9,8 +9,8 @@ const VM = luau.VM;
 
 pub inline fn loadAndCompileModule(L: *VM.lua.State, moduleName: [:0]const u8, content: []const u8, cOpts: ?luau.CompileOptions) !void {
     const compileOptions = cOpts orelse luau.CompileOptions{
-        .debug_level = Zune.STATE.LUAU_OPTIONS.DEBUG_LEVEL,
-        .optimization_level = Zune.STATE.LUAU_OPTIONS.OPTIMIZATION_LEVEL,
+        .debugLevel = Zune.STATE.LUAU_OPTIONS.DEBUG_LEVEL,
+        .optimizationLevel = Zune.STATE.LUAU_OPTIONS.OPTIMIZATION_LEVEL,
     };
 
     luau.Compiler.Compiler.compileLoad(L, moduleName, content, compileOptions, 0) catch return error.Syntax;
