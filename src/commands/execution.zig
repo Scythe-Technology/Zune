@@ -33,7 +33,10 @@ fn getFile(allocator: std.mem.Allocator, dir: std.fs.Dir, input: []const u8) !st
             maybe_content = content;
             maybe_src = try std.mem.concatWithSentinel(allocator, u8, &.{ "@", path }, 0);
         } else {
-            const result = try File.findLuauFile(dir, path) orelse return error.FileNotFound;
+            const result = File.findLuauFile(dir, path) catch |err| switch (err) {
+                error.RedundantFileExtension => return error.FileNotFound,
+                else => return err,
+            } orelse return error.FileNotFound;
             maybe_content = try result.handle.readToEndAlloc(allocator, std.math.maxInt(usize));
             maybe_src = try std.mem.concatWithSentinel(allocator, u8, &.{ "@", path, result.ext }, 0);
         }
@@ -133,7 +136,13 @@ fn cmdRun(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const dir = std.fs.cwd();
     const module = run_args[0];
 
-    const file_src_path, const file_content = try getFile(allocator, dir, module);
+    const file_src_path, const file_content = getFile(allocator, dir, module) catch |err| switch (err) {
+        error.FileNotFound => {
+            std.debug.print("file not found: {s}\n", .{module});
+            std.process.exit(1);
+        },
+        else => return err,
+    };
     defer allocator.free(file_src_path);
     defer allocator.free(file_content);
 
@@ -247,7 +256,13 @@ fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const dir = std.fs.cwd();
     const module = args[0];
 
-    const file_src_path, const file_content = try getFile(allocator, dir, module);
+    const file_src_path, const file_content = getFile(allocator, dir, module) catch |err| switch (err) {
+        error.FileNotFound => {
+            std.debug.print("file not found: {s}\n", .{module});
+            std.process.exit(1);
+        },
+        else => return err,
+    };
     defer allocator.free(file_src_path);
     defer allocator.free(file_content);
 
@@ -420,12 +435,16 @@ fn cmdDebug(allocator: std.mem.Allocator, args: []const []const u8) !void {
     Zune.STATE.LUAU_OPTIONS.CODEGEN = false;
     Zune.STATE.LUAU_OPTIONS.JIT_ENABLED = false;
 
-    Zune.STATE.RUN_MODE = .Debug;
-
     const dir = std.fs.cwd();
     const module = run_args[0];
 
-    const file_src_path, const file_content = try getFile(allocator, dir, module);
+    const file_src_path, const file_content = getFile(allocator, dir, module) catch |err| switch (err) {
+        error.FileNotFound => {
+            std.debug.print("file not found: {s}\n", .{module});
+            std.process.exit(1);
+        },
+        else => return err,
+    };
     defer allocator.free(file_src_path);
     defer allocator.free(file_content);
 
@@ -436,7 +455,6 @@ fn cmdDebug(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     while (true) {
         defer Debugger.DEBUG.dead = false;
-        Debugger.MODULE_REFERENCES.clearAndFree();
 
         var L = try luau.init(&allocator);
         defer L.deinit();
@@ -486,12 +504,6 @@ fn cmdDebug(allocator: std.mem.Allocator, args: []const []const u8) !void {
             },
             else => return err,
         };
-
-        const real_path = try dir.realpathAlloc(allocator, file_src_path);
-        defer allocator.free(real_path);
-
-        const ref = ML.ref(-1).?;
-        try Debugger.addReference(allocator, ML, real_path, ref);
 
         try Debugger.prompt(ML, .None, null);
         Engine.runAsync(ML, &scheduler, .{ .cleanUp = true, .mode = .Debug }) catch {}; // Soft continue

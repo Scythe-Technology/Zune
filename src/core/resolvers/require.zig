@@ -296,19 +296,6 @@ pub fn zune_require(L: *VM.lua.State) !i32 {
         };
     }
 
-    if (comptime Debugger.PlatformSupported()) {
-        switch (Zune.STATE.RUN_MODE) {
-            .Debug => {
-                @branchHint(.unpredictable);
-                const ref = ML.ref(-1) orelse unreachable;
-                const full_path = try cwd.realpathAlloc(allocator, module_relative_path);
-                defer allocator.free(full_path);
-                try Debugger.addReference(allocator, ML, full_path, ref);
-            },
-            else => {},
-        }
-    }
-
     L.pushlightuserdata(@ptrCast(&PreloadedState));
     L.setfield(-3, module_relative_path);
 

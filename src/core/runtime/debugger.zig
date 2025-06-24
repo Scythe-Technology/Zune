@@ -10,6 +10,7 @@ const Scheduler = Zune.Runtime.Scheduler;
 const Fmt = Zune.Resolvers.Fmt;
 
 const History = @import("../../commands/repl/History.zig");
+const Terminal = @import("../../commands/repl/Terminal.zig");
 
 const VM = luau.VM;
 
@@ -22,19 +23,27 @@ pub fn PlatformSupported() bool {
 
 const LuaBreakpoint = struct {
     line: i32,
+    enabled: bool = false,
+    remove: bool = false,
+};
+
+const BreakpointState = struct {
+    changes: u32 = 0,
+    list: std.ArrayListUnmanaged(LuaBreakpoint),
 };
 
 pub var ACTIVE = false;
 
 pub var HISTORY: ?*History = null;
 
-pub var MODULE_REFERENCES = std.StringHashMap(i32).init(Zune.DEFAULT_ALLOCATOR);
-pub var BREAKPOINTS = std.StringHashMap(std.ArrayList(LuaBreakpoint)).init(Zune.DEFAULT_ALLOCATOR);
+pub var BREAKPOINTS = std.StringHashMap(BreakpointState).init(Zune.DEFAULT_ALLOCATOR);
+pub var MAPPED_SOURCES = std.StringHashMap([]const u8).init(Zune.DEFAULT_ALLOCATOR);
+var CHANGES_COUNT: u32 = 0;
 
 const DEBUG_TAG = "\x1b[0m(dbg) ";
 const DEBUG_RESULT_TAG = "\x1b[0m(dbg): ";
 
-const NEW_LINE = if (builtin.os.tag == .windows) '\r' else '\n';
+var MAIN_MUTEX: std.Thread.Mutex = .{};
 
 pub fn SigInt() void {
     if (HISTORY) |history|
@@ -45,106 +54,159 @@ pub fn DebuggerExit() void {
     SigInt();
 }
 
-pub fn addReference(allocator: std.mem.Allocator, L: *VM.lua.State, name: []const u8, id: i32) !void {
-    const key = try allocator.dupe(u8, name);
-    errdefer allocator.free(key);
-    try MODULE_REFERENCES.put(key, id);
-    if (BREAKPOINTS.getEntry(key)) |entry| {
+pub fn fileSourceOr(maybeSrc: ?[]const u8) ?[]const u8 {
+    const src = maybeSrc orelse return null;
+    if (src.len == 0)
+        return null;
+    if (!std.mem.startsWith(u8, src, "@"))
+        return src;
+    const rest = src[1..];
+    if (rest.len == 0)
+        return null;
+    return rest;
+}
+
+pub fn updateBreakpoints(L: *VM.lua.State) !void {
+    if (CHANGES_COUNT == 0)
+        return;
+    L.rawcheckstack(1);
+    var ar: VM.lua.Debug = .{ .ssbuf = undefined };
+    {
+        var level: i32 = 0;
+        while (true) : (level += 1) {
+            if (!L.getinfo(level, "sf", &ar))
+                return error.NoSource;
+            if (ar.what == .lua)
+                break;
+            L.pop(1);
+        }
+    }
+    defer L.pop(1);
+
+    const path = ar.source orelse "";
+    if (!std.mem.startsWith(u8, path, "@"))
+        return error.InvalidPath;
+
+    const file_path = path[1..];
+    if (file_path.len == 0)
+        return error.InvalidPath;
+
+    const abs_path = MAPPED_SOURCES.get(path) orelse if (std.fs.path.isAbsolute(file_path)) blk: {
+        try MAPPED_SOURCES.put(path, file_path);
+        break :blk file_path;
+    } else blk: {
+        const real_path = try std.fs.cwd().realpathAlloc(MAPPED_SOURCES.allocator, path[1..]);
+        try MAPPED_SOURCES.put(path, real_path);
+        break :blk real_path;
+    };
+    if (BREAKPOINTS.getEntry(abs_path)) |entry| {
         const breakpoints = entry.value_ptr;
-        for (breakpoints.items) |bp| {
+        if (breakpoints.changes == 0)
+            return; // no changes
+        for (breakpoints.list.items) |*bp| {
+            if (bp.remove) {
+                std.debug.assert(bp.enabled == true); // in cases its disabled, should be removed at the removeBreakpoint call
+                const target = L.breakpoint(-1, bp.line, false);
+                if (target == -1)
+                    @panic("Debugger no target or closest line found");
+                if (target != bp.line) {
+                    if (getExactBreakpoint(&breakpoints.list, target)) |e|
+                        _ = L.breakpoint(-1, target, e[0].enabled); // re-add breakpoint
+                }
+                CHANGES_COUNT -= 1;
+                breakpoints.changes -= 1;
+                continue;
+            }
+            if (bp.enabled == true)
+                continue; // already set
+            bp.enabled = true;
             const target = L.breakpoint(-1, bp.line, true);
+            defer CHANGES_COUNT -= 1;
+            defer breakpoints.changes -= 1;
             if (target == -1)
                 @panic("Debugger no target or closest line found");
             if (target == bp.line)
                 continue;
-            const exact = getExactBreakpoint(breakpoints, target);
-            if (exact == null)
-                _ = L.breakpoint(-1, target, false); // remove breakpoint
+            const exact = getExactBreakpoint(&breakpoints.list, target);
+            if (exact == null or !exact.?[0].enabled)
+                _ = L.breakpoint(-1, target, false); // remove breakpoint unwanted
+        }
+        out: while (true) {
+            for (breakpoints.list.items, 0..) |bp, id| {
+                if (bp.remove) {
+                    _ = breakpoints.list.orderedRemove(id);
+                    break;
+                }
+            }
+            break :out;
         }
     }
 }
 
-pub fn getExactBreakpoint(breakpoints: *std.ArrayList(LuaBreakpoint), line: i32) ?LuaBreakpoint {
-    for (breakpoints.items) |bp| {
+pub fn getExactBreakpoint(breakpoints: *std.ArrayListUnmanaged(LuaBreakpoint), line: i32) ?struct { *LuaBreakpoint, usize } {
+    for (breakpoints.items, 0..) |*bp, i| {
         if (bp.line == line)
-            return bp;
+            return .{ bp, i };
     }
     return null;
 }
 
-const BreakpointResult = union(enum) {
-    saved: void,
-    exists: void,
-    suggested: i32,
+const BreakpointResult = enum {
+    saved,
+    exists,
 };
-pub fn addBreakpoint(allocator: std.mem.Allocator, L: *VM.lua.State, path: []const u8, line: i32) !BreakpointResult {
+pub fn addBreakpoint(path: []const u8, line: i32) !BreakpointResult {
+    const allocator = BREAKPOINTS.allocator;
     const key = try allocator.dupe(u8, path);
     errdefer allocator.free(key);
     const breakpoints = list: {
         const entry = BREAKPOINTS.getEntry(key) orelse e: {
-            var array = std.ArrayList(LuaBreakpoint).init(allocator);
-            errdefer array.deinit();
-            try BREAKPOINTS.put(key, array);
+            try BREAKPOINTS.put(key, .{
+                .changes = 0,
+                .list = .empty,
+            });
             break :e BREAKPOINTS.getEntry(key) orelse unreachable;
         };
         break :list entry.value_ptr;
     };
     const breakpoint: LuaBreakpoint = .{ .line = line };
-    var suggested: ?i32 = null;
-    if (MODULE_REFERENCES.get(key)) |ref| {
-        if (L.rawgeti(VM.lua.REGISTRYINDEX, ref) != .Function)
-            @panic("Debugger invalid reference");
-        defer L.pop(1);
-        const target = L.breakpoint(-1, line, true);
-        if (target == -1)
-            @panic("Debugger no target or closest line found");
-        if (target != line) {
-            if (getExactBreakpoint(breakpoints, target) == null) {
-                _ = L.breakpoint(-1, target, false); // remove breakpoint
-                suggested = target;
-            }
-        }
-    }
-    if (getExactBreakpoint(breakpoints, line)) |_|
+    if (getExactBreakpoint(&breakpoints.list, line)) |entry| {
+        const bp, _ = entry;
+        if (bp.remove)
+            bp.remove = false; // re-add breakpoint
         return .exists;
-    try breakpoints.append(breakpoint);
-    if (suggested) |num|
-        return .{ .suggested = num };
+    }
+    CHANGES_COUNT += 1;
+    breakpoints.changes += 1;
+    try breakpoints.list.append(allocator, breakpoint);
     return .saved;
 }
 
-pub fn removeBreakpoint(L: *VM.lua.State, path: []const u8, line: i32) bool {
+pub fn removeBreakpoint(path: []const u8, line: i32) bool {
     const breakpoints = list: {
         const entry = BREAKPOINTS.getEntry(path) orelse return false;
         break :list entry.value_ptr;
     };
-    if (MODULE_REFERENCES.get(path)) |ref| {
-        if (L.rawgeti(VM.lua.REGISTRYINDEX, ref) != .Function)
-            @panic("Debugger invalid reference");
-        defer L.pop(1);
-        const target = L.breakpoint(-1, line, false);
-        if (target == -1)
-            @panic("Debugger no target or closest line found");
-        if (target != line) {
-            if (getExactBreakpoint(breakpoints, target)) |_|
-                _ = L.breakpoint(-1, target, true); // add breakpoint
+    if (getExactBreakpoint(&breakpoints.list, line)) |entry| {
+        const bp, const id = entry;
+        if (!bp.enabled) {
+            _ = breakpoints.list.orderedRemove(id);
+        } else {
+            bp.remove = true;
+            CHANGES_COUNT += 1;
+            breakpoints.changes += 1;
         }
-    }
-    for (breakpoints.items, 0..) |bp, id| {
-        if (bp.line == line) {
-            _ = breakpoints.orderedRemove(id);
-            return true;
-        }
+        return true;
     }
     return false;
 }
 
 pub fn print(comptime fmt: []const u8, args: anytype) void {
-    std.debug.print(DEBUG_TAG ++ fmt, args);
+    Zune.debug.print(DEBUG_TAG ++ fmt, args);
 }
 
 pub fn printResult(comptime fmt: []const u8, args: anytype) void {
-    std.debug.print(DEBUG_RESULT_TAG ++ fmt, args);
+    Zune.debug.print(DEBUG_RESULT_TAG ++ fmt, args);
 }
 
 const COMMAND_MAP = std.StaticStringMap(enum {
@@ -274,10 +336,10 @@ fn toBase64(allocator: std.mem.Allocator, input: []const u8) !struct { []u8, []c
     return .{ base64_buf, std.base64.standard.Encoder.encode(base64_buf, input) };
 }
 
-fn promptOpBreak(L: *VM.lua.State, allocator: std.mem.Allocator, break_args: []const u8) !void {
+fn promptOpBreak(allocator: std.mem.Allocator, break_args: []const u8) !void {
     if (break_args.len <= 0) {
-        printResult("Usage: break <command>\n", .{});
-        printResult("  try 'break help'\n", .{});
+        printResult("<red>Usage<clear>: break <<command>>\n", .{});
+        printResult("  <dim>try 'break help'<clear>\n", .{});
         return;
     }
     const command_input, const rest = getNextArg(break_args);
@@ -286,29 +348,32 @@ fn promptOpBreak(L: *VM.lua.State, allocator: std.mem.Allocator, break_args: []c
     }) {
         .help => {
             printResult("Break Commands:\n", .{});
-            printResult("  help   - Show sub-commands\n", .{});
-            printResult("  add    - Add a breakpoint\n", .{});
-            printResult("  remove - Remove a breakpoint\n", .{});
-            printResult("  clear  - Clear breakpoints\n", .{});
-            printResult("  list   - List breakpoints\n", .{});
+            printResult("  <bold>help<clear>   - Show sub-commands\n", .{});
+            printResult("  <bold>add<clear>    - Add a breakpoint\n", .{});
+            printResult("  <bold>remove<clear> - Remove a breakpoint\n", .{});
+            printResult("  <bold>clear<clear>  - Clear breakpoints\n", .{});
+            printResult("  <bold>list<clear>   - List breakpoints\n", .{});
         },
         .add, .remove => |k| {
             if (rest.len <= 0)
-                return printResult("Usage: break {s} <file>:<line>\n", .{command_input});
+                return printResult("<red>Usage<clear>: break {s} <<file>>:<<line>>\n", .{command_input});
             const dir = std.fs.cwd();
             var args = std.mem.splitBackwardsScalar(u8, rest, ':');
             const line_str = std.mem.trim(u8, args.first(), " ");
             const file_str = std.mem.trim(u8, args.rest(), " ");
             if (line_str.len == 0 or file_str.len == 0)
-                return printResult("Usage: break {s} <file>:<line>\n", .{command_input});
+                return printResult("<red>Usage<clear>: break {s} <<file>>:<<line>>\n", .{command_input});
             const line = std.fmt.parseInt(i32, line_str, 10) catch |err| {
                 return printResult("Line Parse Error: {}\n", .{err});
             };
-            const file_path = try dir.realpathAlloc(allocator, file_str);
+            const file_path = dir.realpathAlloc(allocator, file_str) catch |err| switch (err) {
+                error.FileNotFound => return printResult("file not found: {s}\n", .{file_str}),
+                else => return printResult("failed to resolve file '{s}': {}\n", .{ file_str, err }),
+            };
             defer allocator.free(file_path);
 
             if (k == .remove) {
-                if (removeBreakpoint(L, file_path, line)) {
+                if (removeBreakpoint(file_path, line)) {
                     if (DEBUG.output == .Readable)
                         printResult("Removed breakpoint, line: {}\n", .{line});
                 } else {
@@ -316,36 +381,33 @@ fn promptOpBreak(L: *VM.lua.State, allocator: std.mem.Allocator, break_args: []c
                         printResult("Breakpoint does not exist.\n", .{});
                 }
                 if (DEBUG.output == .Json)
-                    printResult("{{\"success\":true}}\n", .{});
+                    printResult("{d}\n", .{line});
             } else {
-                const result = try addBreakpoint(allocator, L, file_path, line);
+                const result = try addBreakpoint(file_path, line);
                 switch (DEBUG.output) {
                     .Readable => {
                         switch (result) {
-                            .suggested => |target| {
-                                printResult("Suggested, line: {}.\n", .{target});
-                                printResult("- This breakpoint may be ignored.\n", .{});
-                                printResult("Added breakpoint, line: {}.\n", .{line});
-                            },
                             .saved => printResult("Added breakpoint, line: {}.\n", .{line}),
                             .exists => printResult("Breakpoint already exists, line: {}.\n", .{line}),
                         }
                     },
-                    .Json => printResult("{{\"success\":true}}\n", .{}),
+                    .Json => printResult("{d}\n", .{line}),
                 }
             }
         },
         .clear => {
             var iter = BREAKPOINTS.iterator();
+            var count: usize = 0;
             while (iter.next()) |breakpoints| {
-                const bps = breakpoints.value_ptr.items;
+                const bps = breakpoints.value_ptr.list.items;
                 var i = bps.len;
+                count += i;
                 while (i > 0) : (i -= 1)
-                    _ = removeBreakpoint(L, breakpoints.key_ptr.*, bps[i - 1].line);
+                    _ = removeBreakpoint(breakpoints.key_ptr.*, bps[i - 1].line);
             }
             switch (DEBUG.output) {
                 .Readable => printResult("Cleared all breakpoints.\n", .{}),
-                .Json => printResult("{{\"success\":true}}\n", .{}),
+                .Json => printResult("{d}\n", .{count}),
             }
         },
         .list => {
@@ -353,26 +415,32 @@ fn promptOpBreak(L: *VM.lua.State, allocator: std.mem.Allocator, break_args: []c
                 return;
             if (rest.len <= 0) {
                 printResult("Breakpoints:\n", .{});
+                var order: usize = 0;
                 var iter = BREAKPOINTS.iterator();
                 while (iter.next()) |entry| {
                     const file_str = entry.key_ptr.*;
                     const breakpoints = entry.value_ptr;
-                    if (breakpoints.items.len == 0)
+                    if (breakpoints.list.items.len == 0)
                         continue;
-                    printResult("  {s}:\n", .{file_str});
-                    for (breakpoints.items) |bp| {
-                        printResult("    line: {}\n", .{bp.line});
+                    printResult("  {d}:\n", .{order});
+                    for (breakpoints.list.items, 0..) |bp, i| {
+                        printResult("    <dim>{d}:<clear> <bold>{s}:{d}<clear>\n", .{ i, file_str, bp.line });
                     }
+                    order += 1;
                 }
             } else {
                 const file_str = std.mem.trim(u8, rest, " ");
                 if (BREAKPOINTS.getEntry(file_str)) |entry| {
                     const breakpoints = entry.value_ptr;
-                    printResult("Breakpoints for {s}:\n", .{file_str});
-                    for (breakpoints.items) |bp|
-                        printResult("  line: {}\n", .{bp.line});
+                    if (breakpoints.list.items.len == 0) {
+                        printResult("No breakpoints for '{s}'\n", .{file_str});
+                        return;
+                    }
+                    printResult("Breakpoints:\n", .{});
+                    for (breakpoints.list.items, 0..) |bp, i|
+                        printResult("  <dim>{d}:<clear> <bold>{s}:{d}<clear>\n", .{ i, file_str, bp.line });
                 } else {
-                    printResult("No breakpoints for {s}\n", .{file_str});
+                    printResult("No breakpoints for '{s}'\n", .{file_str});
                 }
             }
         },
@@ -442,8 +510,8 @@ fn variableJsonDisassemble(allocator: std.mem.Allocator, L: *VM.lua.State, iter:
 
 fn promptOpLocals(L: *VM.lua.State, allocator: std.mem.Allocator, locals_args: []const u8) !void {
     if (locals_args.len <= 0) {
-        printResult("Usage: locals <command>\n", .{});
-        printResult("  try 'locals help'\n", .{});
+        printResult("<red>Usage<clear>: locals <<command>>\n", .{});
+        printResult("  <dim>try 'locals help'<clear>\n", .{});
         return;
     }
 
@@ -453,8 +521,8 @@ fn promptOpLocals(L: *VM.lua.State, allocator: std.mem.Allocator, locals_args: [
     }) {
         .help => { // locals help
             printResult("Locals Commands:\n", .{});
-            printResult("  help - Show sub-commands\n", .{});
-            printResult("  list - List locals and their value (if argument is passed to locals command)\n", .{});
+            printResult("  <bold>help<clear> - Show sub-commands\n", .{});
+            printResult("  <bold>list<clear> - List locals and their value (if argument is passed to locals command)\n", .{});
         },
         .list => { // locals list <n> <n>?,<n>?,...
             const level_in, const args_rest = getNextArg(rest);
@@ -466,15 +534,14 @@ fn promptOpLocals(L: *VM.lua.State, allocator: std.mem.Allocator, locals_args: [
             }
             switch (DEBUG.output) {
                 .Readable => {
-                    if (!L.checkstack(2))
-                        return printResult("stack overflow.\n", .{});
+                    L.rawcheckstack(2);
                     var i: i32 = 1;
                     var showed: bool = false;
                     while (true) : (i += 1) {
                         if (L.getlocal(level, i)) |name| {
                             defer L.pop(1);
                             showed = true;
-                            printResult(" {d} -> {s} ({s})\n", .{ i, name, @tagName(L.typeOf(-1)) });
+                            printResult(" {d} ->> {s} ({s})\n", .{ i, name, @tagName(L.typeOf(-1)) });
                             if (level_in.len == 0)
                                 continue;
 
@@ -493,8 +560,7 @@ fn promptOpLocals(L: *VM.lua.State, allocator: std.mem.Allocator, locals_args: [
                         printResult("No locals found.\n", .{});
                 },
                 .Json => {
-                    if (!L.checkstack(6))
-                        return printResult("[]\n", .{}); // stack overflow
+                    L.rawcheckstack(6);
                     var iter = std.mem.splitScalar(u8, std.mem.trimLeft(u8, args_rest, " "), ',');
 
                     var buf = std.ArrayList(u8).init(allocator);
@@ -547,8 +613,8 @@ fn promptOpLocals(L: *VM.lua.State, allocator: std.mem.Allocator, locals_args: [
 
 fn promptOpParams(L: *VM.lua.State, allocator: std.mem.Allocator, params_args: []const u8) !void {
     if (params_args.len <= 0) {
-        printResult("Usage: params <command>\n", .{});
-        printResult("  try 'params help'\n", .{});
+        printResult("<red>Usage<clear>: params <<command>>\n", .{});
+        printResult("  <dim>try 'params help'<clear>\n", .{});
         return;
     }
 
@@ -558,8 +624,8 @@ fn promptOpParams(L: *VM.lua.State, allocator: std.mem.Allocator, params_args: [
     }) {
         .help => { // params help
             printResult("Params Commands:\n", .{});
-            printResult("  help - Show sub-commands\n", .{});
-            printResult("  list - List params and their value (if argument is passed to params command)\n", .{});
+            printResult("  <bold>help<clear> - Show sub-commands\n", .{});
+            printResult("  <bold>list<clear> - List params and their value (if argument is passed to params command)\n", .{});
         },
         .list => { // params list <n> <n>?,<n>?,...
             const level_in, const args_rest = getNextArg(rest);
@@ -572,8 +638,7 @@ fn promptOpParams(L: *VM.lua.State, allocator: std.mem.Allocator, params_args: [
             var ar: VM.lua.Debug = .{ .ssbuf = undefined };
             switch (DEBUG.output) {
                 .Readable => {
-                    if (!L.checkstack(2))
-                        return printResult("stack overflow.\n", .{});
+                    L.rawcheckstack(2);
                     if (!L.getinfo(level, "a", &ar))
                         return printResult("no function found.\n", .{}); // nothing
                     var i: i32 = 1;
@@ -583,9 +648,9 @@ fn promptOpParams(L: *VM.lua.State, allocator: std.mem.Allocator, params_args: [
                             defer L.pop(1);
                             showed = true;
                             if (i > ar.nparams)
-                                printResult(" {d} -> vararg: ({s})\n", .{ i, @tagName(L.typeOf(-1)) })
+                                printResult(" {d} ->> vararg: ({s})\n", .{ i, @tagName(L.typeOf(-1)) })
                             else
-                                printResult(" {d} -> ({s})\n", .{ i, @tagName(L.typeOf(-1)) });
+                                printResult(" {d} ->> ({s})\n", .{ i, @tagName(L.typeOf(-1)) });
                             if (level_in.len == 0)
                                 continue;
 
@@ -604,8 +669,7 @@ fn promptOpParams(L: *VM.lua.State, allocator: std.mem.Allocator, params_args: [
                         printResult("No params found.\n", .{});
                 },
                 .Json => {
-                    if (!L.checkstack(6))
-                        return printResult("[]\n", .{}); // stack overflow
+                    L.rawcheckstack(6);
                     if (!L.getinfo(level, "a", &ar))
                         return printResult("[]\n", .{}); // nothing
                     var iter = std.mem.splitScalar(u8, std.mem.trimLeft(u8, args_rest, " "), ',');
@@ -667,8 +731,8 @@ fn promptOpParams(L: *VM.lua.State, allocator: std.mem.Allocator, params_args: [
 
 fn promptOpUpvalues(L: *VM.lua.State, allocator: std.mem.Allocator, params_args: []const u8) !void {
     if (params_args.len <= 0) {
-        printResult("Usage: upvalues <command>\n", .{});
-        printResult("  try 'upvalues help'\n", .{});
+        printResult("<red>Usage<clear>: upvalues <<command>>\n", .{});
+        printResult("  <dim>try 'upvalues help'<clear>\n", .{});
         return;
     }
 
@@ -678,8 +742,8 @@ fn promptOpUpvalues(L: *VM.lua.State, allocator: std.mem.Allocator, params_args:
     }) {
         .help => { // upvalues help
             printResult("Upvalues Commands:\n", .{});
-            printResult("  help - Show sub-commands\n", .{});
-            printResult("  list - List upvalues and their value (if argument is passed to upvalues command)\n", .{});
+            printResult("  <bold>help<clear> - Show sub-commands\n", .{});
+            printResult("  <bold>list<clear> - List upvalues and their value (if argument is passed to upvalues command)\n", .{});
         },
         .list => { // upvalues list <n> <n>?,<n>?,...
             const level_in, const args_rest = getNextArg(rest);
@@ -692,8 +756,7 @@ fn promptOpUpvalues(L: *VM.lua.State, allocator: std.mem.Allocator, params_args:
             var ar: VM.lua.Debug = .{ .ssbuf = undefined };
             switch (DEBUG.output) {
                 .Readable => {
-                    if (!L.checkstack(3))
-                        return printResult("stack overflow.\n", .{});
+                    L.rawcheckstack(3);
                     if (!L.getinfo(level, "af", &ar))
                         return printResult("no function found.\n", .{}); // nothing
                     defer L.pop(1); // remove function
@@ -704,7 +767,7 @@ fn promptOpUpvalues(L: *VM.lua.State, allocator: std.mem.Allocator, params_args:
                         if (L.getupvalue(@intCast(fn_idx), i)) |name| {
                             defer L.pop(1);
                             showed = true;
-                            printResult(" {d} -> {s} ({s})\n", .{ i, name, @tagName(L.typeOf(-1)) });
+                            printResult(" {d} ->> {s} ({s})\n", .{ i, name, @tagName(L.typeOf(-1)) });
                             if (level_in.len == 0)
                                 continue;
 
@@ -723,8 +786,7 @@ fn promptOpUpvalues(L: *VM.lua.State, allocator: std.mem.Allocator, params_args:
                         printResult("No upvalue found.\n", .{});
                 },
                 .Json => {
-                    if (!L.checkstack(7))
-                        return printResult("[]\n", .{}); // stack overflow
+                    L.rawcheckstack(7);
                     if (!L.getinfo(level, "af", &ar))
                         return printResult("[]\n", .{}); // nothing
                     defer L.pop(1); // remove function
@@ -781,8 +843,8 @@ fn promptOpUpvalues(L: *VM.lua.State, allocator: std.mem.Allocator, params_args:
 
 fn promptOpGlobals(L: *VM.lua.State, allocator: std.mem.Allocator, globals_args: []const u8) !void {
     if (globals_args.len <= 0) {
-        printResult("Usage: globals <command>\n", .{});
-        printResult("  try 'globals help'\n", .{});
+        printResult("<red>Usage<clear>: globals <<command>>\n", .{});
+        printResult("  <dim>try 'globals help'<clear>\n", .{});
         return;
     }
 
@@ -792,8 +854,8 @@ fn promptOpGlobals(L: *VM.lua.State, allocator: std.mem.Allocator, globals_args:
     }) {
         .help => { // globals help
             printResult("Globals Commands:\n", .{});
-            printResult("  help - Show sub-commands\n", .{});
-            printResult("  list - List globals and their value (if argument is passed to globals command)\n", .{});
+            printResult("  <bold>help<clear> - Show sub-commands\n", .{});
+            printResult("  <bold>list<clear> - List globals and their value (if argument is passed to globals command)\n", .{});
         },
         .list => { // globals list <n> <n>?,<n>?,...
             const level_in, const args_rest = getNextArg(rest);
@@ -806,8 +868,7 @@ fn promptOpGlobals(L: *VM.lua.State, allocator: std.mem.Allocator, globals_args:
             var ar: VM.lua.Debug = .{ .ssbuf = undefined };
             switch (DEBUG.output) {
                 .Readable => {
-                    if (!L.checkstack(4))
-                        return printResult("stack overflow.\n", .{});
+                    L.rawcheckstack(4);
                     if (!L.getinfo(level, "af", &ar))
                         return printResult("no function found.\n", .{}); // nothing
                     L.getfenv(-1);
@@ -822,7 +883,7 @@ fn promptOpGlobals(L: *VM.lua.State, allocator: std.mem.Allocator, globals_args:
                         showed = true;
                         const key = tostring(L, -2);
                         defer L.pop(1);
-                        printResult(" {s} -> ({s})\n", .{ key, @tagName(L.typeOf(-1)) });
+                        printResult(" {s} ->> ({s})\n", .{ key, @tagName(L.typeOf(-1)) });
                         if (level_in.len == 0)
                             continue;
                         var buf = std.ArrayList(u8).init(allocator);
@@ -839,8 +900,7 @@ fn promptOpGlobals(L: *VM.lua.State, allocator: std.mem.Allocator, globals_args:
                         printResult("No globals found.\n", .{});
                 },
                 .Json => {
-                    if (!L.checkstack(7))
-                        return printResult("[]\n", .{}); // stack overflow
+                    L.rawcheckstack(7);
                     if (!L.getinfo(level, "af", &ar))
                         return printResult("[]\n", .{}); // nothing
                     L.getfenv(-1);
@@ -968,373 +1028,475 @@ pub fn prompt(L: *VM.lua.State, comptime kind: BreakKind, debug_info: ?*VM.lua.c
     std.debug.print(DEBUG_TAG, .{});
 
     while (true) {
-        const byte = try in_reader.readByte();
-        if (byte == 0x1B) {
-            if (try in_reader.readByte() != '[') continue;
-            switch (try in_reader.readByte()) {
-                'A' => { // Up Arrow
-                    if (history.size() == 0)
-                        continue;
-                    if (history.isLatest())
-                        history.saveTemp(buffer.items);
-                    if (history.previous()) |line| {
-                        buffer.clearRetainingCapacity();
-                        try buffer.appendSlice(line);
-                        position = line.len;
-
-                        try terminal.clearLine();
-                        print("{s}", .{buffer.items});
-                    }
-                },
-                'B' => { // Down Arrow
-                    if (history.next()) |line| {
-                        buffer.clearRetainingCapacity();
-                        try buffer.appendSlice(line);
-                        position = line.len;
-
-                        try terminal.clearLine();
-                        print("{s}", .{buffer.items});
-                    }
-                    if (history.isLatest())
-                        history.clearTemp();
-                },
-                'C' => { // Right Arrow
-                    if (position < buffer.items.len) {
-                        try terminal.moveCursor(.Right);
-                        position += 1;
-                    }
-                },
-                'D' => { // Left Arrow
-                    if (position > 0) {
-                        try terminal.moveCursor(.Left);
-                        position -= 1;
-                    }
-                },
-                else => {},
-            }
-        } else if (byte == NEW_LINE) {
-            std.debug.print("\n", .{});
-            out: {
-                defer position = 0;
-                defer buffer.clearAndFree();
-
-                defer history.reset();
-
-                history.save(buffer.items);
-
-                if (buffer.items.len == 0)
-                    break :out;
-                const command_input, const rest = getNextArg(buffer.items);
-                switch (COMMAND_MAP.get(command_input) orelse {
-                    break :out printResult("Unknown command\n", .{});
-                }) {
-                    .help => {
-                        printResult("Commands:\n", .{});
-                        printResult("  help      - Display this message\n", .{});
-                        printResult("  exit      - Terminate debugger\n", .{});
-                        printResult("  break     - modify Breakpoint\n", .{});
-                        printResult("  modules   - Loaded modules\n", .{});
-                        printResult("  line      - Show current line\n", .{});
-                        printResult("  file      - Show current file\n", .{});
-                        printResult("  trace     - Show stack trace\n", .{});
-                        printResult("  step      - Step into\n", .{});
-                        printResult("  stepi     - Step instruction\n", .{});
-                        printResult("  stepo     - Step out\n", .{});
-                        printResult("  next      - Step over\n", .{});
-                        printResult("  run       - Continue execution\n", .{});
-                        printResult("  locals    - Local variables\n", .{});
-                        printResult("  params    - Parameters\n", .{});
-                        printResult("  upvalues  - Upvalues\n", .{});
-                        printResult("  globals   - Global variables\n", .{});
-                        printResult("  restart   - Restart execution\n", .{});
-                        printResult("  exception - Show current error\n", .{});
-                    },
-                    .exit => {
-                        DebuggerExit();
-                        std.process.exit(0);
-                    },
-                    .line => {
-                        if (debug_info) |ar| {
-                            if (ar.currentline > 0)
-                                printResult("current line: {d}\n", .{ar.currentline})
-                            else
-                                printResult("unknown line (C call)\n", .{});
-                            break :out;
+        switch (try in_reader.readByte()) {
+            0x1B => {
+                if (try in_reader.readByte() != '[')
+                    continue;
+                var currentByte = try in_reader.readByte();
+                var modifier: Terminal.MODIFIER = .{};
+                switch (currentByte) {
+                    '1' => {
+                        if (try in_reader.readByte() != ';')
+                            continue;
+                        switch (try in_reader.readByte()) {
+                            '2' => modifier = .init(false, true, false),
+                            '3' => modifier = .init(false, false, true),
+                            '4' => modifier = .init(false, true, true),
+                            '5' => modifier = .init(true, false, false),
+                            '6' => modifier = .init(true, false, true),
+                            else => continue,
                         }
-                        printResult("No debug info available\n", .{});
+                        currentByte = try in_reader.readByte();
                     },
-                    .file => {
-                        var source: ?[]const u8 = null;
-                        var ar: VM.lua.Debug = .{ .ssbuf = undefined };
-                        if (L.getinfo(1, "sn", &ar)) {
-                            source = ar.source;
-                        }
-                        if (source == null or !std.mem.startsWith(u8, source.?, "@")) {
-                            switch (DEBUG.output) {
-                                .Readable => printResult("file info not available.\n", .{}),
-                                .Json => printResult("null\n", .{}),
-                            }
-                            break :out;
-                        }
-                        const dir = std.fs.cwd();
-                        const path = try dir.realpathAlloc(allocator, source.?[1..]);
-                        defer allocator.free(path);
-                        switch (DEBUG.output) {
-                            .Readable => printResult("current file: {s}\n", .{path}),
-                            .Json => printResult("\"{s}\"\n", .{path}),
+                    else => {},
+                }
+                switch (currentByte) {
+                    'A' => { // Up Arrow
+                        if (history.size() == 0)
+                            continue;
+                        if (history.isLatest())
+                            history.saveTemp(buffer.items);
+                        if (history.previous()) |line| {
+                            buffer.clearRetainingCapacity();
+                            try buffer.appendSlice(line);
+                            position = line.len;
+
+                            try terminal.clearLine();
+                            print("{s}", .{buffer.items});
                         }
                     },
-                    .trace => {
-                        const args = std.mem.trimLeft(u8, rest, " ");
-                        const levels_index = std.mem.indexOf(u8, args, " ") orelse args.len;
-                        var levels: u32 = 0;
-                        if (levels_index > 0) {
-                            levels = std.fmt.parseInt(u32, args[0..levels_index], 10) catch |err| {
-                                break :out printResult("Levels Parse Error: {}\n", .{err});
+                    'B' => { // Down Arrow
+                        if (history.next()) |line| {
+                            buffer.clearRetainingCapacity();
+                            try buffer.appendSlice(line);
+                            position = line.len;
+
+                            try terminal.clearLine();
+                            print("{s}", .{buffer.items});
+                        }
+                        if (history.isLatest())
+                            history.clearTemp();
+                    },
+                    'C' => { // Right Arrow
+                        if (position == buffer.items.len)
+                            continue;
+                        if (modifier.onlyCtrl()) {
+                            const slice = buffer.items[position..];
+                            const front = std.mem.indexOfAny(u8, slice, Terminal.NON_LETTER) orelse {
+                                try terminal.moveCursor(.Right, slice.len);
+                                position = buffer.items.len;
+                                continue;
                             };
-                        }
-                        var level_depth: u32 = 0;
-                        var ar: VM.lua.Debug = .{ .ssbuf = undefined };
-                        switch (DEBUG.output) {
-                            .Readable => {
-                                while (L.getinfo(@intCast(level_depth), "sln", &ar)) : (level_depth += 1) {
-                                    if (level_depth > levels and levels != 0)
-                                        break;
-                                    if (level_depth == 0) {
-                                        if (ar.name) |fn_name| {
-                                            printResult("from {s} in {s} (line {d})\n", .{
-                                                fn_name,
-                                                ar.short_src.?,
-                                                ar.currentline orelse ar.linedefined orelse 0,
-                                            });
-                                        } else {
-                                            printResult("in {s} (line {d})\n", .{
-                                                ar.short_src.?,
-                                                ar.currentline orelse ar.linedefined orelse 0,
-                                            });
-                                        }
-                                    } else {
-                                        if (ar.name) |fn_name| {
-                                            printResult("- {d}: {s} in {s} (line {d})\n", .{
-                                                level_depth,
-                                                fn_name,
-                                                ar.short_src.?,
-                                                ar.currentline orelse ar.linedefined orelse 0,
-                                            });
-                                        } else {
-                                            printResult("- {d}: {s} (line {d})\n", .{
-                                                level_depth,
-                                                ar.short_src.?,
-                                                ar.currentline orelse ar.linedefined orelse 0,
-                                            });
-                                        }
-                                    }
-                                }
-                            },
-                            .Json => {
-                                var buf = std.ArrayList(u8).init(allocator);
-                                defer buf.deinit();
-                                const writer = buf.writer();
-                                try buf.append('[');
-                                while (L.getinfo(@intCast(level_depth), "sln", &ar)) : (level_depth += 1) {
-                                    if (level_depth > levels and levels != 0)
-                                        break;
-                                    if (level_depth > 0)
-                                        try buf.append(',');
-                                    const src_base64_buf, const base64_src = try toBase64(allocator, ar.short_src.?);
-                                    defer allocator.free(src_base64_buf);
-                                    if (ar.name) |fn_name|
-                                        try writer.print("{{\"name\":\"{s}\",\"src\":\"{s}\",\"line\":{d},\"context\":{d}}}", .{
-                                            fn_name,
-                                            base64_src,
-                                            ar.currentline orelse ar.linedefined orelse 0,
-                                            @intFromEnum(ar.what),
-                                        })
-                                    else
-                                        try writer.print("{{\"name\":null,\"src\":\"{s}\",\"line\":{d},\"context\":{d}}}", .{
-                                            base64_src,
-                                            ar.currentline orelse ar.linedefined orelse 0,
-                                            @intFromEnum(ar.what),
-                                        });
-                                }
-                                try buf.append(']');
-                                printResult("{s}\n", .{buf.items});
-                            },
+                            const index = (std.mem.indexOfNone(u8, slice[front..], Terminal.NON_LETTER) orelse {
+                                try terminal.moveCursor(.Right, slice.len);
+                                position = buffer.items.len;
+                                continue;
+                            }) + front;
+                            try terminal.moveCursor(.Right, index);
+                            position += index;
+                        } else if (modifier.none()) {
+                            try terminal.moveCursor(.Right, 1);
+                            position += 1;
                         }
                     },
-                    .@"break" => try promptOpBreak(L, allocator, rest),
-                    .modules => {
-                        switch (DEBUG.output) {
-                            .Readable => {
-                                printResult("Modules ({d}):\n", .{MODULE_REFERENCES.count()});
-                                var iter = MODULE_REFERENCES.iterator();
-                                while (iter.next()) |entry|
-                                    printResult("  {s} -> id: {d}\n", .{ entry.key_ptr.*, entry.value_ptr.* });
+                    'D' => { // Left Arrow
+                        if (position == 0)
+                            continue;
+                        if (modifier.onlyCtrl()) {
+                            const slice = buffer.items[0..position];
+                            const back = std.mem.lastIndexOfNone(u8, slice, Terminal.NON_LETTER) orelse {
+                                try terminal.moveCursor(.Left, @intCast(position));
+                                position = 0;
+                                continue;
+                            };
+                            const index = slice.len - (std.mem.lastIndexOfAny(u8, slice[0..back], Terminal.NON_LETTER) orelse {
+                                try terminal.moveCursor(.Left, @intCast(position));
+                                position = 0;
+                                continue;
+                            }) - 1;
+                            try terminal.moveCursor(.Left, index);
+                            position -= index;
+                        } else {
+                            try terminal.moveCursor(.Left, 1);
+                            position -= 1;
+                        }
+                    },
+                    else => |b| std.debug.print("Unknown escape sequence: {d}\n", .{b}),
+                }
+            },
+            Terminal.NEW_LINE => {
+                std.debug.print("\n", .{});
+                out: {
+                    defer position = 0;
+                    defer buffer.clearAndFree();
+
+                    defer history.reset();
+
+                    history.save(buffer.items);
+
+                    if (buffer.items.len == 0)
+                        break :out;
+                    const command_input, const rest = getNextArg(buffer.items);
+                    switch (COMMAND_MAP.get(command_input) orelse {
+                        break :out printResult("unknown command '{s}'\n", .{command_input});
+                    }) {
+                        .help => {
+                            printResult("Commands:\n", .{});
+                            printResult("  <bold>help<clear>      - Display this message\n", .{});
+                            printResult("  <bold>exit<clear>      - Terminate debugger\n", .{});
+                            printResult("  <bold>break<clear>     - modify Breakpoint\n", .{});
+                            printResult("  <bold>modules<clear>   - Loaded modules\n", .{});
+                            printResult("  <bold>line<clear>      - Show current line\n", .{});
+                            printResult("  <bold>file<clear>      - Show current file\n", .{});
+                            printResult("  <bold>trace<clear>     - Show stack trace\n", .{});
+                            printResult("  <bold>step<clear>      - Step into\n", .{});
+                            printResult("  <bold>stepi<clear>     - Step instruction\n", .{});
+                            printResult("  <bold>stepo<clear>     - Step out\n", .{});
+                            printResult("  <bold>next<clear>      - Step over\n", .{});
+                            printResult("  <bold>run<clear>       - Continue execution\n", .{});
+                            printResult("  <bold>locals<clear>    - Local variables\n", .{});
+                            printResult("  <bold>params<clear>    - Parameters\n", .{});
+                            printResult("  <bold>upvalues<clear>  - Upvalues\n", .{});
+                            printResult("  <bold>globals<clear>   - Global variables\n", .{});
+                            printResult("  <bold>restart<clear>   - Restart execution\n", .{});
+                            printResult("  <bold>exception<clear> - Show current error\n", .{});
+                        },
+                        .exit => {
+                            DebuggerExit();
+                            std.process.exit(0);
+                        },
+                        .line => {
+                            if (debug_info) |ar| {
+                                if (ar.currentline > 0)
+                                    printResult("current line: {d}\n", .{ar.currentline})
+                                else
+                                    printResult("unknown line (C call)\n", .{});
                                 break :out;
-                            },
-                            .Json => {
-                                var buf = std.ArrayList(u8).init(allocator);
-                                defer buf.deinit();
-                                const writer = buf.writer();
-
-                                try buf.append('{');
-                                var first = false;
-                                var iter = MODULE_REFERENCES.iterator();
-                                while (iter.next()) |entry| {
-                                    if (first)
-                                        try buf.append(',');
-                                    try writer.print("\"{s}\":{d}", .{ entry.key_ptr.*, entry.value_ptr.* });
-                                    first = true;
+                            }
+                            printResult("No debug info available\n", .{});
+                        },
+                        .file => {
+                            var source: ?[]const u8 = null;
+                            var ar: VM.lua.Debug = .{ .ssbuf = undefined };
+                            if (L.getinfo(0, "sn", &ar))
+                                source = ar.source;
+                            if (source == null or !std.mem.startsWith(u8, source.?, "@")) {
+                                switch (DEBUG.output) {
+                                    .Readable => printResult("file info not available.\n", .{}),
+                                    .Json => printResult("null\n", .{}),
                                 }
-                                try buf.append('}');
-                                printResult("{s}\n", .{buf.items});
-                            },
-                        }
-                    },
-                    .step => {
-                        DEBUG.step = .Step;
-                        if (debug_info) |ar|
-                            if (ar.currentline > 0) {
-                                DEBUG.line = @intCast(ar.currentline);
-                            };
-
-                        try terminal.setNormalMode();
-                        break;
-                    },
-                    .step_out => {
-                        DEBUG.step = .Step;
-                        const depth = L.stackdepth();
-                        if (depth > 0) {
-                            DEBUG.depth = depth - 1;
-                            try terminal.setNormalMode();
-                        }
-                        break;
-                    },
-                    .step_instruction => {
-                        DEBUG.step = .Step;
-                        try terminal.setNormalMode();
-                        break;
-                    },
-                    .next => {
-                        DEBUG.step = .Step;
-                        DEBUG.depth = L.stackdepth();
-                        if (debug_info) |ar|
-                            if (ar.currentline > 0) {
-                                DEBUG.line = @intCast(ar.currentline);
-                            };
-                        try terminal.setNormalMode();
-                        break;
-                    },
-                    .locals => try promptOpLocals(L, allocator, rest),
-                    .params => try promptOpParams(L, allocator, rest),
-                    .upvalues => try promptOpUpvalues(L, allocator, rest),
-                    .globals => try promptOpGlobals(L, allocator, rest),
-                    .run => {
-                        DEBUG.step = .Run;
-                        try terminal.setNormalMode();
-                        break;
-                    },
-                    .restart => {
-                        // force a break, ignoring yield status
-                        L.curr_status = @intFromEnum(VM.lua.Status.Break);
-                        DEBUG.dead = true;
-                        Scheduler.KillSchedulers();
-                        return;
-                    },
-                    .output_mode => {
-                        const option = std.mem.trimLeft(u8, rest, " ");
-                        if (std.mem.eql(u8, option, "json")) {
-                            DEBUG.output = .Json;
-                            printResult("{{\"mode\":\"json\"}}\n", .{});
-                        } else {
-                            DEBUG.output = .Readable;
-                            printResult("Output mode set to readable\n", .{});
-                        }
-                    },
-                    .exception => {
-                        const option, const args_rest = getNextArg(rest);
-                        const enabled = std.mem.eql(u8, std.mem.trimLeft(u8, args_rest, " "), "true");
-                        if (std.mem.eql(u8, option, "UnhandledError")) {
-                            DEBUG.unhandled_exception = enabled;
-                            switch (DEBUG.output) {
-                                .Readable => printResult("UnhandledError set to {}\n", .{DEBUG.unhandled_exception}),
-                                .Json => printResult("{{\"success\":true,\"state\":{}}}\n", .{DEBUG.unhandled_exception}),
+                                break :out;
                             }
-                        } else if (std.mem.eql(u8, option, "HandledError")) {
-                            DEBUG.handled_exception = enabled;
+                            const dir = std.fs.cwd();
+                            const path = dir.realpathAlloc(allocator, source.?[1..]) catch |err| switch (err) {
+                                error.FileNotFound => switch (DEBUG.output) {
+                                    .Readable => break :out printResult("current file: {s}\n", .{source.?[1..]}),
+                                    .Json => break :out printResult("null\n", .{}),
+                                },
+                                else => return err,
+                            };
+                            defer allocator.free(path);
                             switch (DEBUG.output) {
-                                .Readable => printResult("HandledError set to {}\n", .{DEBUG.handled_exception}),
-                                .Json => printResult("{{\"success\":true,\"state\":{}}}\n", .{DEBUG.handled_exception}),
+                                .Readable => printResult("current file: {s}\n", .{path}),
+                                .Json => printResult("\"{s}\"\n", .{path}),
                             }
-                        } else {
+                        },
+                        .trace => {
+                            const args = std.mem.trimLeft(u8, rest, " ");
+                            const levels_index = std.mem.indexOf(u8, args, " ") orelse args.len;
+                            var levels: u32 = 0;
+                            if (levels_index > 0) {
+                                levels = std.fmt.parseInt(u32, args[0..levels_index], 10) catch |err| {
+                                    break :out printResult("Levels Parse Error: {}\n", .{err});
+                                };
+                            }
+                            var level_depth: u32 = 0;
+                            var ar: VM.lua.Debug = .{ .ssbuf = undefined };
                             switch (DEBUG.output) {
                                 .Readable => {
-                                    if (kind == .UnhandledException or kind == .HandledException) {
-                                        if (L.gettop() > 0) {
-                                            if (!L.checkstack(1))
-                                                break :out printResult("stack overflow.\n", .{}); // stack overflow
-                                            const err = tostring(L, -1);
-                                            defer L.pop(1);
-                                            break :out printResult("Error: {s}\n", .{err});
+                                    while (L.getinfo(@intCast(level_depth), "sln", &ar)) : (level_depth += 1) {
+                                        if (level_depth > levels and levels != 0)
+                                            break;
+                                        if (level_depth == 0) {
+                                            if (ar.name) |fn_name| {
+                                                printResult("from <bmagenta><<function {s}>><clear> in <bold>{s}:{d}<clear>\n", .{
+                                                    fn_name,
+                                                    fileSourceOr(ar.source) orelse "???", // source is optional
+                                                    ar.currentline orelse ar.linedefined orelse 0,
+                                                });
+                                            } else {
+                                                printResult("in <bold>{s}:{d}<clear>\n", .{
+                                                    fileSourceOr(ar.source) orelse "???",
+                                                    ar.currentline orelse ar.linedefined orelse 0,
+                                                });
+                                            }
+                                        } else {
+                                            if (ar.name) |fn_name| {
+                                                printResult("- <dim>{d}:<clear> <bmagenta><<function {s}>><clear> in <bold>{s}:{d}<clear>\n", .{
+                                                    level_depth,
+                                                    fn_name,
+                                                    fileSourceOr(ar.source) orelse "???",
+                                                    ar.currentline orelse ar.linedefined orelse 0,
+                                                });
+                                            } else {
+                                                printResult("- <dim>{d}:<clear> <bold>{s}:{d}<clear>\n", .{
+                                                    level_depth,
+                                                    fileSourceOr(ar.source) orelse "???",
+                                                    ar.currentline orelse ar.linedefined orelse 0,
+                                                });
+                                            }
                                         }
                                     }
-                                    printResult("No errors found.\n", .{});
                                 },
                                 .Json => {
-                                    if (kind == .UnhandledException or kind == .HandledException) {
-                                        if (L.gettop() > 0) {
-                                            if (!L.checkstack(1))
-                                                break :out printResult("{{\"reason\":null,\"type\":null,\"kind\":{d}}}\n", .{@intFromEnum(kind)}); // stack overflow
-                                            const typename = VM.lapi.typename(L.typeOf(-1));
-                                            const err = tostring(L, -1);
-                                            defer L.pop(1);
-                                            const err_base64_buf, const base64_err = try toBase64(allocator, err);
-                                            defer allocator.free(err_base64_buf);
-                                            break :out printResult("{{\"reason\":\"{s}\",\"type\":\"{s}\",\"kind\":{d}}}\n", .{ base64_err, typename, @intFromEnum(kind) });
-                                        }
+                                    var buf = std.ArrayList(u8).init(allocator);
+                                    defer buf.deinit();
+                                    const writer = buf.writer();
+                                    try buf.append('[');
+                                    while (L.getinfo(@intCast(level_depth), "sln", &ar)) : (level_depth += 1) {
+                                        if (level_depth > levels and levels != 0)
+                                            break;
+                                        if (level_depth > 0)
+                                            try buf.append(',');
+                                        const src_base64_buf, const base64_src = try toBase64(allocator, ar.short_src.?);
+                                        defer allocator.free(src_base64_buf);
+                                        if (ar.name) |fn_name|
+                                            try writer.print("{{\"name\":\"{s}\",\"src\":\"{s}\",\"line\":{d},\"context\":{d}}}", .{
+                                                fn_name,
+                                                base64_src,
+                                                ar.currentline orelse ar.linedefined orelse 0,
+                                                @intFromEnum(ar.what),
+                                            })
+                                        else
+                                            try writer.print("{{\"name\":null,\"src\":\"{s}\",\"line\":{d},\"context\":{d}}}", .{
+                                                base64_src,
+                                                ar.currentline orelse ar.linedefined orelse 0,
+                                                @intFromEnum(ar.what),
+                                            });
                                     }
-                                    printResult("{{\"reason\":null,\"type\":null,\"kind\":{d}}}\n", .{@intFromEnum(kind)});
+                                    try buf.append(']');
+                                    printResult("{s}\n", .{buf.items});
                                 },
                             }
-                        }
-                    },
+                        },
+                        .@"break" => try promptOpBreak(allocator, rest),
+                        .modules => {
+                            L.rawcheckstack(3);
+                            _ = L.Lfindtable(VM.lua.REGISTRYINDEX, "_MODULES", 1);
+                            defer L.pop(1); // pop table
+                            switch (DEBUG.output) {
+                                .Readable => {
+                                    printResult("<bold>modules<clear>:\n", .{});
+                                    var count: usize = 0;
+                                    var i: i32 = L.rawiter(-1, 0);
+                                    while (i >= 0) : (i = L.rawiter(-1, i)) {
+                                        defer L.pop(2);
+                                        switch (L.typeOf(-2)) {
+                                            .String => printResult("  <dim>{d}:<clear> <bold>@{s}<clear>\n", .{ i, L.tostring(-2).? }),
+                                            else => printResult("  <dim>{d}:<clear> <dim><<unknown>><clear>\n", .{i}),
+                                        }
+                                        count += 1;
+                                    }
+                                    printResult("<bold>amount<clear>: {d}\n", .{count});
+                                    break :out;
+                                },
+                                .Json => {
+                                    var buf = std.ArrayList(u8).init(allocator);
+                                    defer buf.deinit();
+                                    const writer = buf.writer();
+
+                                    try buf.append('[');
+                                    var count: usize = 0;
+                                    var i: i32 = L.rawiter(-1, 0);
+                                    while (i >= 0) : (i = L.rawiter(-1, i)) {
+                                        defer L.pop(2);
+                                        if (count > 0)
+                                            try buf.append(',');
+                                        switch (L.typeOf(-2)) {
+                                            .String => try writer.print("\"{s}\"", .{L.tostring(-2).?}),
+                                            else => try writer.print("\"<unknown>\"", .{}),
+                                        }
+                                        count += 1;
+                                    }
+                                    try buf.append(']');
+                                    printResult("{s}\n", .{buf.items});
+
+                                    break :out;
+                                },
+                            }
+                        },
+                        .step => {
+                            DEBUG.step = .Step;
+                            if (debug_info) |ar|
+                                if (ar.currentline > 0) {
+                                    DEBUG.line = @intCast(ar.currentline);
+                                };
+
+                            try terminal.setNormalMode();
+                            break;
+                        },
+                        .step_out => {
+                            DEBUG.step = .Step;
+                            const depth = L.stackdepth();
+                            if (depth > 0) {
+                                DEBUG.depth = depth - 1;
+                                try terminal.setNormalMode();
+                            }
+                            break;
+                        },
+                        .step_instruction => {
+                            DEBUG.step = .Step;
+                            try terminal.setNormalMode();
+                            break;
+                        },
+                        .next => {
+                            DEBUG.step = .Step;
+                            DEBUG.depth = L.stackdepth();
+                            if (debug_info) |ar|
+                                if (ar.currentline > 0) {
+                                    DEBUG.line = @intCast(ar.currentline);
+                                };
+                            try terminal.setNormalMode();
+                            break;
+                        },
+                        .locals => try promptOpLocals(L, allocator, rest),
+                        .params => try promptOpParams(L, allocator, rest),
+                        .upvalues => try promptOpUpvalues(L, allocator, rest),
+                        .globals => try promptOpGlobals(L, allocator, rest),
+                        .run => {
+                            DEBUG.step = .Run;
+                            try terminal.setNormalMode();
+                            break;
+                        },
+                        .restart => {
+                            // force a break, ignoring yield status
+                            L.curr_status = @intFromEnum(VM.lua.Status.Break);
+                            DEBUG.dead = true;
+                            Scheduler.KillSchedulers();
+                            return;
+                        },
+                        .output_mode => {
+                            const option = std.mem.trimLeft(u8, rest, " ");
+                            if (std.mem.eql(u8, option, "json")) {
+                                DEBUG.output = .Json;
+                                printResult("{{\"mode\":\"json\"}}\n", .{});
+                            } else {
+                                DEBUG.output = .Readable;
+                                printResult("output mode set to readable\n", .{});
+                            }
+                        },
+                        .exception => {
+                            const option, const args_rest = getNextArg(rest);
+                            const enabled = std.mem.eql(u8, std.mem.trimLeft(u8, args_rest, " "), "true");
+                            if (std.mem.eql(u8, option, "UnhandledError")) {
+                                DEBUG.unhandled_exception = enabled;
+                                switch (DEBUG.output) {
+                                    .Readable => printResult("UnhandledError set to {}\n", .{DEBUG.unhandled_exception}),
+                                    .Json => printResult("{}\n", .{DEBUG.unhandled_exception}),
+                                }
+                            } else if (std.mem.eql(u8, option, "HandledError")) {
+                                DEBUG.handled_exception = enabled;
+                                switch (DEBUG.output) {
+                                    .Readable => printResult("HandledError set to {}\n", .{DEBUG.handled_exception}),
+                                    .Json => printResult("{}\n", .{DEBUG.handled_exception}),
+                                }
+                            } else {
+                                switch (DEBUG.output) {
+                                    .Readable => {
+                                        if (kind == .UnhandledException or kind == .HandledException) {
+                                            if (L.gettop() > 0) {
+                                                L.rawcheckstack(1);
+                                                const err = tostring(L, -1);
+                                                defer L.pop(1);
+                                                break :out printResult("<red>error<clear>: {s}\n", .{err});
+                                            }
+                                        }
+                                        printResult("no errors found.\n", .{});
+                                    },
+                                    .Json => {
+                                        if (kind == .UnhandledException or kind == .HandledException) {
+                                            if (L.gettop() > 0) {
+                                                L.rawcheckstack(1);
+                                                const typename = VM.lapi.typename(L.typeOf(-1));
+                                                const err = tostring(L, -1);
+                                                defer L.pop(1);
+                                                const err_base64_buf, const base64_err = try toBase64(allocator, err);
+                                                defer allocator.free(err_base64_buf);
+                                                break :out printResult("{{\"reason\":\"{s}\",\"type\":\"{s}\",\"kind\":{d}}}\n", .{ base64_err, typename, @intFromEnum(kind) });
+                                            }
+                                        }
+                                        printResult("{{\"reason\":null,\"type\":null,\"kind\":{d}}}\n", .{@intFromEnum(kind)});
+                                    },
+                                }
+                            }
+                        },
+                    }
                 }
-            }
-            try terminal.clearStyles();
-            print("", .{});
-        } else if (byte == 127) {
-            if (position > 0) {
+                try terminal.clearStyles();
+                print("", .{});
+            },
+            127 => {
+                if (position == 0)
+                    continue;
                 const append = position < buffer.items.len;
                 std.debug.print("{c}", .{127});
-                try terminal.moveCursor(.Left);
+                try terminal.moveCursor(.Left, 1);
                 position -= 1;
                 _ = buffer.orderedRemove(position);
                 try terminal.clearEndToCursor();
                 if (append)
                     try terminal.writeAllRetainCursor(buffer.items[position..]);
-            }
-        } else if (byte == 3 or byte == 4) {
-            terminal.restoreSettings() catch {};
-            terminal.restoreOutputMode() catch {};
-            std.process.exit(0);
-        } else {
-            if (buffer.items.len > 256)
-                @panic("Buffer Maximized");
-            switch (byte) {
-                22...31 => continue,
-                else => {},
-            }
-            const append = position < buffer.items.len;
-            try buffer.insert(position, byte);
-            std.debug.print("{c}", .{byte});
-            position += 1;
-            if (append)
-                try terminal.writeAllRetainCursor(buffer.items[position..]);
+            },
+            23 => { // Ctrl+Backspace
+                const slice = buffer.items[0..position];
+                if (slice.len == 0)
+                    continue;
+                const append = position < buffer.items.len;
+                const index: usize = blk: {
+                    const back = std.mem.lastIndexOfNone(u8, slice, Terminal.NON_LETTER) orelse break :blk position;
+                    break :blk slice.len - (std.mem.lastIndexOfAny(u8, slice[0..back], Terminal.NON_LETTER) orelse break :blk position) - 1;
+                };
+                for (0..index) |_| {
+                    std.debug.print("{c}", .{127});
+                    try terminal.moveCursor(.Left, 1);
+                    position -= 1;
+                    _ = buffer.orderedRemove(position);
+                    try terminal.clearEndToCursor();
+                    if (append)
+                        try terminal.writeAllRetainCursor(buffer.items[position..]);
+                }
+            },
+            3, 4 => { // Ctrl+C, Ctrl+D
+                terminal.restoreSettings() catch {};
+                terminal.restoreOutputMode() catch {};
+                std.process.exit(0);
+            },
+            else => |b| {
+                var byte: u8 = b;
+                switch (byte) {
+                    22...31 => std.debug.print("Unknown byte: {d}\n", .{byte}),
+                    9 => byte = ' ',
+                    else => {},
+                }
+                const append = position < buffer.items.len;
+                try buffer.insert(position, byte);
+                std.debug.print("{c}", .{byte});
+                position += 1;
+                if (append)
+                    try terminal.writeAllRetainCursor(buffer.items[position..]);
+            },
         }
     }
 }
 
 pub fn debugstep(L: *VM.lua.State, ar: *VM.lua.c.lua_Debug) callconv(.C) void {
+    MAIN_MUTEX.lock();
+    defer MAIN_MUTEX.unlock();
+    updateBreakpoints(L) catch |err| switch (err) {
+        error.NoSource => {},
+        error.InvalidPath => {},
+        else => std.debug.panic("Error: {}\n", .{err}),
+    };
     if (DEBUG.step == .Run or DEBUG.dead)
         return;
     if (DEBUG.line) |line| {
@@ -1353,6 +1515,8 @@ pub fn debugstep(L: *VM.lua.State, ar: *VM.lua.c.lua_Debug) callconv(.C) void {
 }
 
 pub fn debugbreak(L: *VM.lua.State, ar: *VM.lua.c.lua_Debug) callconv(.C) void {
+    MAIN_MUTEX.lock();
+    defer MAIN_MUTEX.unlock();
     if (DEBUG.dead)
         return;
     prompt(L, .Breakpoint, ar) catch |err| {
@@ -1361,6 +1525,8 @@ pub fn debugbreak(L: *VM.lua.State, ar: *VM.lua.c.lua_Debug) callconv(.C) void {
 }
 
 pub fn luau_panic(L: *VM.lua.State, errcode: i32) void {
+    MAIN_MUTEX.lock();
+    defer MAIN_MUTEX.unlock();
     if (DEBUG.dead or !DEBUG.unhandled_exception)
         return;
     _ = errcode;
@@ -1370,6 +1536,8 @@ pub fn luau_panic(L: *VM.lua.State, errcode: i32) void {
 }
 
 pub fn debugprotectederror(L: *VM.lua.State) callconv(.C) void {
+    MAIN_MUTEX.lock();
+    defer MAIN_MUTEX.unlock();
     if (DEBUG.dead or !DEBUG.handled_exception)
         return;
     prompt(L, .HandledException, null) catch |err| {

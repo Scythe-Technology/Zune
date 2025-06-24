@@ -32,6 +32,26 @@ mode: Modes,
 pub const NEW_LINE = if (builtin.os.tag == .windows) '\r' else '\n';
 pub const C_EXIT = if (builtin.os.tag == .windows) 3 else null;
 
+pub const NON_LETTER = " `~!@#$%^&*()-_=+[]{}\\|;:'\",<.>/?";
+
+pub const MODIFIER = packed struct {
+    Ctrl: bool = false,
+    Alt: bool = false,
+    Shift: bool = false,
+
+    pub fn init(ctrl: bool, alt: bool, shift: bool) MODIFIER {
+        return .{ .Ctrl = ctrl, .Alt = alt, .Shift = shift };
+    }
+
+    pub inline fn onlyCtrl(self: MODIFIER) bool {
+        return self.Ctrl and !self.Alt and !self.Shift;
+    }
+
+    pub inline fn none(self: MODIFIER) bool {
+        return !self.Ctrl and !self.Alt and !self.Shift;
+    }
+};
+
 pub const MoveCursorAction = enum {
     Left,
     Right,
@@ -130,11 +150,18 @@ pub fn writeAllRetainCursor(self: *Terminal, string: []const u8) !void {
     try self.stdout_writer.writeAll(string);
     try self.stdout_writer.print("\x1b[{d}D", .{string.len});
 }
-pub fn moveCursor(self: *Terminal, action: MoveCursorAction) !void {
-    try self.stdout_writer.writeAll("\x1b[" ++ switch (action) {
-        .Left => "D",
-        .Right => "C",
-    });
+pub fn moveCursor(self: *Terminal, comptime action: MoveCursorAction, amount: usize) !void {
+    switch (amount) {
+        0 => return,
+        1 => try self.stdout_writer.writeAll("\x1b[" ++ switch (action) {
+            .Left => "D",
+            .Right => "C",
+        }),
+        else => |d| try self.stdout_writer.print("\x1b[{d}" ++ switch (action) {
+            .Left => "D",
+            .Right => "C",
+        }, .{d}),
+    }
 }
 
 pub fn setOutputMode(self: *Terminal) !void {
