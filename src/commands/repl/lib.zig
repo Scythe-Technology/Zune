@@ -184,7 +184,7 @@ fn Execute(allocator: std.mem.Allocator, args: []const []const u8) !void {
                             }) - 1;
                             try terminal.moveCursor(.Left, index);
                             position -= index;
-                        } else {
+                        } else if (modifier.none()) {
                             try terminal.moveCursor(.Left, 1);
                             position -= 1;
                         }

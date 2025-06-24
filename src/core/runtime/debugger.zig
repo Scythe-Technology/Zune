@@ -1116,7 +1116,7 @@ pub fn prompt(L: *VM.lua.State, comptime kind: BreakKind, debug_info: ?*VM.lua.c
                             }) - 1;
                             try terminal.moveCursor(.Left, index);
                             position -= index;
-                        } else {
+                        } else if (modifier.none()) {
                             try terminal.moveCursor(.Left, 1);
                             position -= 1;
                         }
